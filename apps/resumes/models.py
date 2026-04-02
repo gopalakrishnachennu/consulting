@@ -71,36 +71,3 @@ class LLMInputPreference(models.Model):
 
     def __str__(self):
         return f"LLM Input Prefs for {self.user.username}"
-
-
-class ResumeTemplate(models.Model):
-    name = models.CharField(max_length=120, unique=True)
-    description = models.TextField(blank=True)
-    # Structured layout + AI injection rules
-    layout = models.JSONField(default=dict, blank=True)
-    is_active = models.BooleanField(default=True)
-    marketing_roles = models.ManyToManyField('users.MarketingRole', blank=True, related_name='resume_templates')
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['name']
-
-    def __str__(self):
-        return self.name
-
-
-class ResumeTemplatePack(models.Model):
-    name = models.CharField(max_length=120, unique=True)
-    description = models.TextField(blank=True)
-    marketing_roles = models.ManyToManyField('users.MarketingRole', blank=True, related_name='template_packs')
-    templates = models.ManyToManyField(ResumeTemplate, blank=True, related_name='packs')
-    is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['name']
-
-    def __str__(self):
-        return self.name

@@ -1,96 +1,637 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto px-4 py-8">
-    <!-- Header -->
-    <div class="mb-8">
-        <h1 class="text-3xl font-bold text-gray-800">Admin Dashboard</h1>
-        <p class="text-gray-500 mt-1">Welcome back, {{ request.user.get_full_name|default:request.user.username }}!</p>
+<div class="max-w-7xl mx-auto px-4 py-6">
+    <!-- HERO HEADER -->
+    <div class="hero-gradient rounded-2xl px-8 py-6 mb-6 relative overflow-hidden">
+        <div class="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+            <div>
+                <p class="text-blue-100 text-xs uppercase tracking-wide mb-1">Admin</p>
+                <h1 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
+                    Dashboard
+                </h1>
+                <p class="text-blue-100 mt-2 text-sm md:text-base">
+                    Welcome back, {{ request.user.get_full_name|default:request.user.username }}.
+                    A quick snapshot of jobs, consultants, and applications.
+                </p>
+            </div>
+            <div class="flex flex-col items-end gap-2 text-xs text-blue-50">
+                <div class="flex gap-2">
+                    <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white/10 text-white font-medium">
+                        Jobs {{ total_jobs }}
+                    </span>
+                    <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white/10 text-white font-medium">
+                        Consultants {{ total_consultants }}
+                    </span>
+                    <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white/10 text-white font-medium">
+                        Applications {{ total_applications }}
+                    </span>
+                </div>
+                <div class="flex gap-2">
+                    <a href="{% url 'job-create' %}"
+                       class="bg-white text-indigo-700 font-bold py-2 px-5 rounded-xl shadow-lg hover:shadow-xl transition text-sm flex items-center gap-2">
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                        </svg>
+                        Post Job
+                    </a>
+                    <a href="{% url 'submission-list' %}"
+                       class="px-4 py-2 rounded-xl bg-white/15 border border-white/30 text-sm font-medium text-white hover:bg-white/25 transition backdrop-blur-sm">
+                        View Applications
+                    </a>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <!-- KPI Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
-        <div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-blue-500">
-            <p class="text-sm text-gray-500 uppercase tracking-wide">Total Jobs</p>
-            <p class="text-3xl font-bold text-gray-800 mt-2">{{ total_jobs }}</p>
+    <!-- KPI CARDS (compact) -->
+    <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
+        <div class="bg-white rounded-xl border border-gray-200 px-4 py-3">
+            <p class="text-xs text-gray-500 uppercase tracking-wide">Total Jobs</p>
+            <p class="mt-1 text-xl font-bold text-gray-900">{{ total_jobs }}</p>
         </div>
-        <div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-green-500">
-            <p class="text-sm text-gray-500 uppercase tracking-wide">Active Jobs</p>
-            <p class="text-3xl font-bold text-gray-800 mt-2">{{ active_jobs }}</p>
+        <div class="bg-white rounded-xl border border-gray-200 px-4 py-3">
+            <p class="text-xs text-gray-500 uppercase tracking-wide">Active Jobs</p>
+            <p class="mt-1 text-xl font-bold text-gray-900">{{ active_jobs }}</p>
         </div>
-        <div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-indigo-500">
-            <p class="text-sm text-gray-500 uppercase tracking-wide">Consultants</p>
-            <p class="text-3xl font-bold text-gray-800 mt-2">{{ total_consultants }}</p>
+        <div class="bg-white rounded-xl border border-gray-200 px-4 py-3">
+            <p class="text-xs text-gray-500 uppercase tracking-wide">Consultants</p>
+            <p class="mt-1 text-xl font-bold text-gray-900">{{ total_consultants }}</p>
         </div>
-        <div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-amber-500">
-            <p class="text-sm text-gray-500 uppercase tracking-wide">Employees</p>
-            <p class="text-3xl font-bold text-gray-800 mt-2">{{ total_employees }}</p>
+        <div class="bg-white rounded-xl border border-gray-200 px-4 py-3">
+            <p class="text-xs text-gray-500 uppercase tracking-wide">Employees</p>
+            <p class="mt-1 text-xl font-bold text-gray-900">{{ total_employees }}</p>
         </div>
-        <div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-purple-500">
-            <p class="text-sm text-gray-500 uppercase tracking-wide">Applications</p>
-            <p class="text-3xl font-bold text-gray-800 mt-2">{{ total_applications }}</p>
+        <div class="bg-white rounded-xl border border-gray-200 px-4 py-3">
+            <p class="text-xs text-gray-500 uppercase tracking-wide">Applications</p>
+            <p class="mt-1 text-xl font-bold text-gray-900">{{ total_applications }}</p>
         </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+    {% if pending_applications_count and pending_applications_count > 0 %}
+    <div class="mb-5 py-3 px-4 rounded-lg bg-blue-50 border border-blue-100 flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+            <span class="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+            </span>
+            <div>
+                <p class="font-medium text-blue-900 text-sm">{{ pending_applications_count }} application{{ pending_applications_count|pluralize }} pending review</p>
+                <p class="text-xs text-blue-600">New submissions awaiting your action.</p>
+            </div>
+        </div>
+        <a href="{% url 'submission-list' %}?status=APPLIED" class="shrink-0 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition">Review applications →</a>
+    </div>
+    {% endif %}
+
+    <!-- Tabs: Overview | Analytics | Employees | Consultants -->
+    <div class="mb-5 border-b border-gray-200">
+        <nav class="flex gap-1" aria-label="Dashboard sections">
+            <button type="button" data-tab="overview" class="admin-tab px-4 py-3 text-sm font-semibold rounded-t-lg border border-b-0 border-gray-200 bg-white text-blue-600 -mb-px">
+                Overview
+            </button>
+            <button type="button" data-tab="analytics" class="admin-tab px-4 py-3 text-sm font-semibold rounded-t-lg border border-b-0 border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50">
+                Analytics
+            </button>
+            <button type="button" data-tab="employees" class="admin-tab px-4 py-3 text-sm font-semibold rounded-t-lg border border-b-0 border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50">
+                Employees
+            </button>
+            <button type="button" data-tab="consultants" class="admin-tab px-4 py-3 text-sm font-semibold rounded-t-lg border border-b-0 border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50">
+                Consultants
+            </button>
+        </nav>
+    </div>
+
+    <div id="tab-overview" class="admin-tab-panel">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
         <!-- Recent Jobs -->
-        <div class="bg-white rounded-xl shadow-md p-6">
+        <div class="bg-white rounded-xl border border-gray-200 p-5">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-bold text-gray-800">Recent Job Postings</h2>
-                <a href="{% url 'job-list' %}" class="text-blue-600 text-sm hover:underline">View All &rarr;</a>
+                <h2 class="text-lg font-semibold text-gray-800">Recent Job Postings</h2>
+                <a href="{% url 'job-list' %}" class="text-blue-600 text-sm font-medium hover:underline">View all →</a>
             </div>
             {% if recent_jobs %}
-            <div class="space-y-3">
+            <div class="divide-y divide-gray-100">
                 {% for job in recent_jobs %}
-                <a href="{% url 'job-detail' pk=job.pk %}" class="block p-3 bg-gray-50 rounded-lg hover:bg-blue-50 transition">
-                    <div class="flex justify-between items-center">
-                        <div>
-                            <p class="font-medium text-gray-800">{{ job.title }}</p>
-                            <p class="text-sm text-gray-500">{{ job.company }} &middot; {{ job.location }}</p>
-                        </div>
-                        <span class="px-3 py-1 text-xs font-semibold rounded-full {% if job.status == 'OPEN' %}bg-green-100 text-green-800{% else %}bg-gray-100 text-gray-600{% endif %}">{{ job.status }}</span>
+                <a href="{% url 'job-detail' pk=job.pk %}" class="flex justify-between items-center py-3 first:pt-0 last:pb-0 hover:bg-gray-50 -mx-2 px-2 rounded-lg transition">
+                    <div class="min-w-0">
+                        <p class="font-medium text-gray-800 truncate">{{ job.title }}</p>
+                        <p class="text-sm text-gray-500 truncate">{{ job.company }} · {{ job.location }}</p>
                     </div>
+                    <span class="shrink-0 ml-2 px-2.5 py-0.5 text-xs font-medium rounded-full {% if job.status == 'OPEN' %}bg-emerald-50 text-emerald-700{% else %}bg-gray-100 text-gray-600{% endif %}">{{ job.status }}</span>
                 </a>
                 {% endfor %}
             </div>
             {% else %}
-            <p class="text-gray-500 text-center py-4">No jobs posted yet.</p>
+            <p class="text-gray-500 text-sm py-6 text-center">No jobs posted yet.</p>
             {% endif %}
         </div>
 
         <!-- Recent Applications -->
-        <div class="bg-white rounded-xl shadow-md p-6">
+        <div class="bg-white rounded-xl border border-gray-200 p-5">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-bold text-gray-800">Recent Applications</h2>
-                <a href="{% url 'submission-list' %}" class="text-blue-600 text-sm hover:underline">View All &rarr;</a>
+                <h2 class="text-lg font-semibold text-gray-800">Recent Applications</h2>
+                <a href="{% url 'submission-list' %}" class="text-blue-600 text-sm font-medium hover:underline">View all →</a>
             </div>
             {% if recent_applications %}
-            <div class="space-y-3">
+            <div class="divide-y divide-gray-100">
                 {% for app in recent_applications %}
-                <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                    <div>
-                        <p class="font-medium text-gray-800">{{ app.job.title }}</p>
-                        <p class="text-sm text-gray-500">by {{ app.consultant.user.get_full_name|default:app.consultant.user.username }}</p>
+                <a href="{% url 'submission-detail' pk=app.pk %}" class="flex justify-between items-center py-3 first:pt-0 last:pb-0 hover:bg-gray-50 -mx-2 px-2 rounded-lg transition">
+                    <div class="min-w-0">
+                        <p class="font-medium text-gray-800 truncate">{{ app.job.title }}</p>
+                        <p class="text-sm text-gray-500 truncate">by {{ app.consultant.user.get_full_name|default:app.consultant.user.username }}</p>
                     </div>
-                    <span class="px-3 py-1 text-xs font-semibold rounded-full {% if app.status == 'APPLIED' %}bg-yellow-100 text-yellow-800{% elif app.status == 'REJECTED' %}bg-red-100 text-red-800{% else %}bg-green-100 text-green-800{% endif %}">{{ app.status }}</span>
-                </div>
+                    <span class="shrink-0 ml-2 px-2.5 py-0.5 text-xs font-medium rounded-full {% if app.status == 'APPLIED' %}bg-amber-50 text-amber-800{% elif app.status == 'IN_PROGRESS' %}bg-sky-50 text-sky-700{% elif app.status == 'REJECTED' %}bg-red-50 text-red-700{% elif app.status == 'INTERVIEW' or app.status == 'OFFER' %}bg-emerald-50 text-emerald-700{% else %}bg-gray-100 text-gray-600{% endif %}">{{ app.get_status_display }}</span>
+                </a>
                 {% endfor %}
             </div>
             {% else %}
-            <p class="text-gray-500 text-center py-4">No applications yet.</p>
+            <p class="text-gray-500 text-sm py-6 text-center">No applications yet.</p>
             {% endif %}
         </div>
 
-        <!-- Quick Actions -->
-        <div class="bg-white rounded-xl shadow-md p-6 lg:col-span-2">
-            <h2 class="text-xl font-bold text-gray-800 mb-4">Quick Actions</h2>
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <a href="{% url 'job-create' %}" class="block text-center px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium">&#x2795; Post Job</a>
-                <a href="{% url 'consultant-add' %}" class="block text-center px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium">&#x2795; Add Consultant</a>
-                <a href="{% url 'analytics-dashboard' %}" class="block text-center px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition font-medium">&#x1F4CA; Analytics</a>
-                <a href="{% url 'employee-list' %}" class="block text-center px-4 py-3 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition font-medium">&#x1F465; Employees</a>
+        <!-- Quick Actions (only useful links) -->
+        <div class="bg-white rounded-xl border border-gray-200 p-5 lg:col-span-2">
+            <h2 class="text-sm font-semibold text-gray-700 mb-3">Quick Actions</h2>
+            <div class="flex flex-wrap gap-2">
+                <a href="{% url 'job-create' %}" class="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">Post Job</a>
+                <a href="{% url 'consultant-add' %}" class="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700">Add Consultant</a>
+                <a href="{% url 'submission-list' %}" class="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700">Applications</a>
+                <a href="{% url 'submission-list' %}?status=OFFER" class="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700">Offers</a>
+                <a href="{% url 'war-room' %}" class="inline-flex items-center gap-2 px-4 py-2.5 border border-amber-300 bg-amber-50 hover:bg-amber-100 text-sm font-medium text-amber-800">War Room</a>
+                <a href="{% url 'employee-list' %}" class="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700">Employees</a>
+                <a href="{% url 'job-list' %}" class="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700">Jobs</a>
+                <a href="{% url 'consultant-list' %}" class="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700">Consultants</a>
+                <a href="{% url 'settings-dashboard' %}" class="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700">Settings</a>
+            </div>
+        </div>
+    </div>
+    </div>
+
+    <!-- Analytics tab: Funnel, Consultant Performance, Time-to-Hire -->
+    <div id="tab-analytics" class="admin-tab-panel hidden">
+        <!-- 1. Submission Funnel Dashboard -->
+        <div class="bg-white rounded-xl border border-gray-200 p-5 mb-5">
+            <h2 class="text-lg font-semibold text-gray-800 border-b border-gray-100 pb-3 mb-4">📊 Submission Funnel Dashboard</h2>
+            <p class="text-sm text-gray-500 mb-4">Pipeline: Resumes generated → Submitted → Interview → Hired. Drop-off rates show where candidates leave the funnel.</p>
+
+            <!-- Global funnel visual -->
+            <div class="mb-6">
+                <h3 class="text-sm font-medium text-gray-700 mb-3">Global funnel</h3>
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+                    <div class="rounded-lg border-l-4 border-blue-500 bg-blue-50/50 p-3">
+                        <p class="text-xs text-gray-600 uppercase">Resumes generated</p>
+                        <p class="text-xl font-bold text-gray-900">{{ funnel_global.resumes }}</p>
+                    </div>
+                    <div class="rounded-lg border-l-4 border-amber-500 bg-amber-50/50 p-3">
+                        <p class="text-xs text-gray-600 uppercase">Submitted</p>
+                        <p class="text-xl font-bold text-gray-900">{{ funnel_global.submitted }}</p>
+                        {% if funnel_global.conv_resumes_to_submitted_pct is not None %}
+                        <p class="text-xs text-gray-500 mt-1">{{ funnel_global.conv_resumes_to_submitted_pct }}% conversion · {{ funnel_global.drop_off_resumes_to_submitted }} drop-off</p>
+                        {% endif %}
+                    </div>
+                    <div class="rounded-lg border-l-4 border-indigo-500 bg-indigo-50/50 p-3">
+                        <p class="text-xs text-gray-600 uppercase">Interview</p>
+                        <p class="text-xl font-bold text-gray-900">{{ funnel_global.interview }}</p>
+                        {% if funnel_global.conv_submitted_to_interview_pct is not None %}
+                        <p class="text-xs text-gray-500 mt-1">{{ funnel_global.conv_submitted_to_interview_pct }}% conversion · {{ funnel_global.drop_off_submitted_to_interview }} drop-off</p>
+                        {% endif %}
+                    </div>
+                    <div class="rounded-lg border-l-4 border-emerald-500 bg-emerald-50/50 p-3">
+                        <p class="text-xs text-gray-600 uppercase">Hired (Offer)</p>
+                        <p class="text-xl font-bold text-gray-900">{{ funnel_global.hired }}</p>
+                        {% if funnel_global.conv_interview_to_hired_pct is not None %}
+                        <p class="text-xs text-gray-500 mt-1">{{ funnel_global.conv_interview_to_hired_pct }}% conversion · {{ funnel_global.drop_off_interview_to_hired }} drop-off</p>
+                        {% endif %}
+                    </div>
+                    <div class="rounded-lg border-l-4 border-red-500 bg-red-50/50 p-3">
+                        <p class="text-xs text-gray-600 uppercase">Rejected</p>
+                        <p class="text-xl font-bold text-gray-900">{{ funnel_global.rejected }}</p>
+                        {% if funnel_global.rejection_rate_submitted_pct is not None %}
+                        <p class="text-xs text-gray-500 mt-1">{{ funnel_global.rejection_rate_submitted_pct }}% of submitted</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Per-employee funnel -->
+            <h3 class="text-sm font-medium text-gray-700 mb-3">Funnel by employee (drop-off rates)</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            <th class="px-4 py-3">Employee</th>
+                            <th class="px-4 py-3 text-right font-mono">Resumes</th>
+                            <th class="px-4 py-3 text-right font-mono">Submitted</th>
+                            <th class="px-4 py-3 text-right font-mono">Interview</th>
+                            <th class="px-4 py-3 text-right font-mono">Hired</th>
+                            <th class="px-4 py-3 text-right font-mono">Rejected</th>
+                            <th class="px-4 py-3 text-right">Res→Sub %</th>
+                            <th class="px-4 py-3 text-right">Sub→Int %</th>
+                            <th class="px-4 py-3 text-right">Int→Hire %</th>
+                            <th class="px-4 py-3 text-right">Reject %</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in funnel_by_employee %}
+                        <tr class="border-b border-gray-100 hover:bg-gray-50/50">
+                            <td class="px-4 py-3 font-medium text-gray-900">{{ row.user.get_full_name|default:row.user.username }}</td>
+                            <td class="px-4 py-3 text-right font-mono">{{ row.resumes }}</td>
+                            <td class="px-4 py-3 text-right font-mono">{{ row.submitted }}</td>
+                            <td class="px-4 py-3 text-right font-mono">{{ row.interview }}</td>
+                            <td class="px-4 py-3 text-right font-mono">{{ row.hired }}</td>
+                            <td class="px-4 py-3 text-right font-mono text-red-700">{{ row.rejected|default:0 }}</td>
+                            <td class="px-4 py-3 text-right">{% if row.conv_resumes_to_submitted_pct is not None %}{{ row.conv_resumes_to_submitted_pct }}%{% else %}—{% endif %}</td>
+                            <td class="px-4 py-3 text-right">{% if row.conv_submitted_to_interview_pct is not None %}{{ row.conv_submitted_to_interview_pct }}%{% else %}—{% endif %}</td>
+                            <td class="px-4 py-3 text-right">{% if row.conv_interview_to_hired_pct is not None %}{{ row.conv_interview_to_hired_pct }}%{% else %}—{% endif %}</td>
+                            <td class="px-4 py-3 text-right">{% if row.rejection_rate_submitted_pct is not None %}{{ row.rejection_rate_submitted_pct }}%{% else %}—{% endif %}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="10" class="px-4 py-6 text-center text-gray-500">No employee data.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 2. Consultant Performance Score -->
+        <div class="bg-white rounded-xl border border-gray-200 p-5 mb-5">
+            <h2 class="text-lg font-semibold text-gray-800 border-b border-gray-100 pb-3 mb-4">👤 Consultant Performance Score</h2>
+            <p class="text-sm text-gray-500 mb-4">Score each consultant on interview rate, hire rate, and avg employer response time (days). Helps employees pick the best performers.</p>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            <th class="px-4 py-3">Consultant</th>
+                            <th class="px-4 py-3 text-right font-mono">Submissions</th>
+                            <th class="px-4 py-3 text-right">Interview rate</th>
+                            <th class="px-4 py-3 text-right">Hire rate</th>
+                            <th class="px-4 py-3 text-right">Avg response (days)</th>
+                            <th class="px-4 py-3 text-right">Rejected</th>
+                            <th class="px-4 py-3 text-right">Reject %</th>
+                            <th class="px-4 py-3 text-right">Score (0–100)</th>
+                            <th class="px-4 py-3 w-20"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in consultant_performance %}
+                        <tr class="border-b border-gray-100 hover:bg-gray-50/50">
+                            <td class="px-4 py-3 font-medium text-gray-900">{{ row.consultant.user.get_full_name|default:row.consultant.user.username }}</td>
+                            <td class="px-4 py-3 text-right font-mono">{{ row.total_submissions }}</td>
+                            <td class="px-4 py-3 text-right">{% if row.interview_rate_pct is not None %}{{ row.interview_rate_pct }}%{% else %}—{% endif %}</td>
+                            <td class="px-4 py-3 text-right">{% if row.hire_rate_pct is not None %}{{ row.hire_rate_pct }}%{% else %}—{% endif %}</td>
+                            <td class="px-4 py-3 text-right">{% if row.avg_response_days is not None %}{{ row.avg_response_days }}{% else %}—{% endif %}</td>
+                            <td class="px-4 py-3 text-right font-mono text-red-700">{{ row.rejected_count|default:0 }}</td>
+                            <td class="px-4 py-3 text-right">{% if row.rejection_rate_pct is not None %}{{ row.rejection_rate_pct }}%{% else %}—{% endif %}</td>
+                            <td class="px-4 py-3 text-right">
+                                {% if row.performance_score is not None %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold {% if row.performance_score >= 70 %}bg-emerald-100 text-emerald-800{% elif row.performance_score >= 40 %}bg-amber-100 text-amber-800{% else %}bg-gray-100 text-gray-700{% endif %}">{{ row.performance_score }}</span>
+                                {% else %}—
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-3">
+                                <a href="{% url 'consultant-detail' row.consultant.user.pk %}" class="text-blue-600 hover:underline text-xs font-medium">Profile</a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="9" class="px-4 py-6 text-center text-gray-500">No consultants yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 3. Time-to-Hire Tracker -->
+        <div class="bg-white rounded-xl border border-gray-200 p-5 mb-5">
+            <h2 class="text-lg font-semibold text-gray-800 border-b border-gray-100 pb-3 mb-4">⏱ Time-to-Hire Tracker</h2>
+            <p class="text-sm text-gray-500 mb-4">Average days per stage. Bottleneck = stage with the longest average time.</p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div class="rounded-lg border border-gray-200 p-4">
+                    <p class="text-xs text-gray-600 uppercase mb-1">Draft → Submit</p>
+                    <p class="text-2xl font-bold text-gray-900">{% if time_to_hire_avg_draft_to_submit is not None %}{{ time_to_hire_avg_draft_to_submit }} days{% else %}—{% endif %}</p>
+                    <p class="text-xs text-gray-500 mt-1">Resume created to application submitted</p>
+                </div>
+                <div class="rounded-lg border border-gray-200 p-4">
+                    <p class="text-xs text-gray-600 uppercase mb-1">Submit → Interview</p>
+                    <p class="text-2xl font-bold text-gray-900">{% if time_to_hire_avg_submit_to_interview is not None %}{{ time_to_hire_avg_submit_to_interview }} days{% else %}—{% endif %}</p>
+                    <p class="text-xs text-gray-500 mt-1">Submission to first interview scheduled</p>
+                </div>
+                <div class="rounded-lg border border-gray-200 p-4">
+                    <p class="text-xs text-gray-600 uppercase mb-1">Submit → Offer</p>
+                    <p class="text-2xl font-bold text-gray-900">{% if time_to_hire_avg_submit_to_offer is not None %}{{ time_to_hire_avg_submit_to_offer }} days{% else %}—{% endif %}</p>
+                    <p class="text-xs text-gray-500 mt-1">Submission to offer (time to hire)</p>
+                </div>
+            </div>
+            {% if time_to_hire_bottleneck %}
+            <div class="py-3 px-4 rounded-lg bg-amber-50 border border-amber-200">
+                <p class="text-sm font-medium text-amber-900">Bottleneck: <span class="font-semibold">{{ time_to_hire_bottleneck }}</span></p>
+                <p class="text-xs text-amber-700 mt-1">Longest average stage — focus here to shorten time-to-hire.</p>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- 4. Employee Leaderboard -->
+        <div class="bg-white rounded-xl border border-gray-200 p-5 mb-5">
+            <h2 class="text-lg font-semibold text-gray-800 border-b border-gray-100 pb-3 mb-4">🏆 Employee Leaderboard</h2>
+            <p class="text-sm text-gray-500 mb-4">Submission-to-interview rate and most hires. Creates healthy competition and identifies top performers.</p>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            <th class="px-4 py-3 w-12">#</th>
+                            <th class="px-4 py-3">Employee</th>
+                            <th class="px-4 py-3 text-right font-mono">Submissions</th>
+                            <th class="px-4 py-3 text-right font-mono">Interviews</th>
+                            <th class="px-4 py-3 text-right font-mono">Hires</th>
+                            <th class="px-4 py-3 text-right font-mono">Rejected</th>
+                            <th class="px-4 py-3 text-right">Sub→Interview %</th>
+                            <th class="px-4 py-3 text-right">Reject %</th>
+                            <th class="px-4 py-3 w-20"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in employee_leaderboard %}
+                        <tr class="border-b border-gray-100 hover:bg-gray-50/50 {% if row.rank == 1 %}bg-amber-50/50{% endif %}">
+                            <td class="px-4 py-3 font-bold text-gray-700">{% if row.rank <= 3 %}{{ row.rank }}{% else %}{{ row.rank }}{% endif %}</td>
+                            <td class="px-4 py-3 font-medium text-gray-900">{{ row.user.get_full_name|default:row.user.username }}</td>
+                            <td class="px-4 py-3 text-right font-mono">{{ row.submissions }}</td>
+                            <td class="px-4 py-3 text-right font-mono">{{ row.interviews }}</td>
+                            <td class="px-4 py-3 text-right font-mono text-emerald-700">{{ row.hires }}</td>
+                            <td class="px-4 py-3 text-right font-mono text-red-700">{{ row.rejections|default:0 }}</td>
+                            <td class="px-4 py-3 text-right">{% if row.sub_to_interview_rate_pct is not None %}{{ row.sub_to_interview_rate_pct }}%{% else %}—{% endif %}</td>
+                            <td class="px-4 py-3 text-right">{% if row.rejection_rate_pct is not None %}{{ row.rejection_rate_pct }}%{% else %}—{% endif %}</td>
+                            <td class="px-4 py-3"><a href="{% url 'employee-detail' row.user.pk %}" class="text-blue-600 hover:underline text-xs font-medium">Profile</a></td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="9" class="px-4 py-6 text-center text-gray-500">No employees yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 4b. Submission Quality Score -->
+        <div class="bg-white rounded-xl border border-gray-200 p-5 mb-5">
+            <h2 class="text-lg font-semibold text-gray-800 border-b border-gray-100 pb-3 mb-4">📌 Submission Quality Score</h2>
+            <p class="text-sm text-gray-500 mb-4">
+                Interview rate per employee (interviews ÷ submissions). Shows who is doing the smartest work, not just the most work.
+            </p>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            <th class="px-4 py-3">Employee</th>
+                            <th class="px-4 py-3 text-right font-mono">Submissions</th>
+                            <th class="px-4 py-3 text-right font-mono">Interviews</th>
+                            <th class="px-4 py-3 text-right">Quality %</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in submission_quality %}
+                        <tr class="border-b border-gray-100 hover:bg-gray-50/50">
+                            <td class="px-4 py-3 font-medium text-gray-900">{{ row.user.get_full_name|default:row.user.username }}</td>
+                            <td class="px-4 py-3 text-right font-mono">{{ row.submissions }}</td>
+                            <td class="px-4 py-3 text-right font-mono">{{ row.interviews }}</td>
+                            <td class="px-4 py-3 text-right">
+                                {% if row.quality_pct is not None %}
+                                    {{ row.quality_pct }}%
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="4" class="px-4 py-6 text-center text-gray-500">No employee submissions yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 5. Market Intelligence Dashboard -->
+        <div class="bg-white rounded-xl border border-gray-200 p-5 mb-5">
+            <h2 class="text-lg font-semibold text-gray-800 border-b border-gray-100 pb-3 mb-4">📈 Market Intelligence Dashboard</h2>
+            <p class="text-sm text-gray-500 mb-4">Trends from job data: skills/roles in demand, companies hiring most, salary ranges by role. Valuable for consultants planning their career.</p>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                    <h3 class="text-sm font-semibold text-gray-700 mb-2">Most in-demand roles (OPEN jobs)</h3>
+                    <ul class="space-y-1.5">
+                        {% for r in market_top_roles %}
+                        <li class="flex justify-between text-sm">
+                            <span class="text-gray-800">{{ r.name }}</span>
+                            <span class="font-mono text-gray-600">{{ r.job_count }} jobs</span>
+                        </li>
+                        {% empty %}
+                        <li class="text-gray-500 text-sm">No roles with OPEN jobs.</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                <div>
+                    <h3 class="text-sm font-semibold text-gray-700 mb-2">Companies hiring most (OPEN jobs)</h3>
+                    <ul class="space-y-1.5">
+                        {% for c in market_top_companies %}
+                        <li class="flex justify-between text-sm">
+                            <span class="text-gray-800 truncate mr-2">{{ c.company }}</span>
+                            <span class="font-mono text-gray-600 shrink-0">{{ c.job_count }} jobs</span>
+                        </li>
+                        {% empty %}
+                        <li class="text-gray-500 text-sm">No companies with OPEN jobs.</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+            <div class="mt-6">
+                <h3 class="text-sm font-semibold text-gray-700 mb-2">Job type breakdown (OPEN)</h3>
+                <div class="flex flex-wrap gap-3">
+                    {% for code, label, count in market_job_type_breakdown %}
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">{{ label }}: {{ count }}</span>
+                    {% empty %}
+                    <span class="text-gray-500 text-sm">No OPEN jobs.</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% if market_salary_by_role %}
+            <div class="mt-6">
+                <h3 class="text-sm font-semibold text-gray-700 mb-2">Salary ranges by role (OPEN jobs)</h3>
+                <div class="space-y-3">
+                    {% for role_name, ranges in market_salary_by_role.items %}
+                    {% if ranges %}
+                    <div>
+                        <p class="text-xs font-medium text-gray-600">{{ role_name }}</p>
+                        <p class="text-sm text-gray-800">{{ ranges|join:", " }}</p>
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- 6. Consultant ROI Score -->
+        <div class="bg-white rounded-xl border border-gray-200 p-5 mb-5">
+            <h2 class="text-lg font-semibold text-gray-800 border-b border-gray-100 pb-3 mb-4">💰 Consultant ROI Score</h2>
+            <p class="text-sm text-gray-500 mb-4">Total submissions, interviews, placements, and revenue proxy. Shows which consultants are worth investing time in.</p>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            <th class="px-4 py-3">Consultant</th>
+                            <th class="px-4 py-3 text-right font-mono">Submissions</th>
+                            <th class="px-4 py-3 text-right font-mono">Interviews</th>
+                            <th class="px-4 py-3 text-right font-mono">Placements</th>
+                            <th class="px-4 py-3 text-right font-mono">Rejected</th>
+                            <th class="px-4 py-3 text-right">Revenue proxy</th>
+                            <th class="px-4 py-3 text-right">ROI Score</th>
+                            <th class="px-4 py-3 w-20"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in consultant_roi %}
+                        <tr class="border-b border-gray-100 hover:bg-gray-50/50">
+                            <td class="px-4 py-3 font-medium text-gray-900">{{ row.consultant.user.get_full_name|default:row.consultant.user.username }}</td>
+                            <td class="px-4 py-3 text-right font-mono">{{ row.total_submissions }}</td>
+                            <td class="px-4 py-3 text-right font-mono">{{ row.interviews }}</td>
+                            <td class="px-4 py-3 text-right font-mono text-emerald-700">{{ row.placements }}</td>
+                            <td class="px-4 py-3 text-right font-mono text-red-700">{{ row.rejections|default:0 }}</td>
+                            <td class="px-4 py-3 text-right">{% if row.revenue_generated is not None %}${{ row.revenue_generated|floatformat:0 }}{% else %}—{% endif %}</td>
+                            <td class="px-4 py-3 text-right">
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold {% if row.roi_score >= 60 %}bg-emerald-100 text-emerald-800{% elif row.roi_score >= 30 %}bg-amber-100 text-amber-800{% else %}bg-gray-100 text-gray-700{% endif %}">{{ row.roi_score }}</span>
+                            </td>
+                            <td class="px-4 py-3"><a href="{% url 'consultant-detail' row.consultant.user.pk %}" class="text-blue-600 hover:underline text-xs font-medium">Profile</a></td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="8" class="px-4 py-6 text-center text-gray-500">No consultants yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="tab-employees" class="admin-tab-panel hidden">
+        <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+                <h2 class="text-sm font-semibold text-gray-800">Employees · micro view</h2>
+                <a href="{% url 'employee-list' %}" class="text-sm font-medium text-blue-600 hover:underline">View all →</a>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            <th class="px-4 py-3">Employee</th>
+                            <th class="px-4 py-3">Company / Dept</th>
+                            <th class="px-4 py-3 text-right font-mono">Jobs</th>
+                            <th class="px-4 py-3 text-right font-mono">Open</th>
+                            <th class="px-4 py-3 text-right font-mono">Apps</th>
+                            <th class="px-4 py-3 text-right font-mono">Pending</th>
+                            <th class="px-4 py-3 w-20"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in employee_stats %}
+                        <tr class="border-b border-gray-100 hover:bg-gray-50/50">
+                            <td class="px-4 py-3">
+                                <span class="font-medium text-gray-900">{{ row.user.get_full_name|default:row.user.username }}</span>
+                                <span class="block text-xs text-gray-500">{{ row.user.email }}</span>
+                            </td>
+                            <td class="px-4 py-3 text-gray-600">
+                                {{ row.user.employee_profile.company_name|default:"—" }}
+                                {% if row.user.employee_profile.department %}
+                                <span class="text-gray-400"> · {{ row.user.employee_profile.department.name }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-3 text-right font-mono text-gray-800">{{ row.jobs_posted }}</td>
+                            <td class="px-4 py-3 text-right font-mono text-gray-800">{{ row.open_jobs }}</td>
+                            <td class="px-4 py-3 text-right font-mono text-gray-800">{{ row.apps_received }}</td>
+                            <td class="px-4 py-3 text-right font-mono {% if row.pending %}text-amber-600 font-semibold{% else %}text-gray-500{% endif %}">{{ row.pending }}</td>
+                            <td class="px-4 py-3">
+                                <a href="{% url 'employee-detail' row.user.pk %}" class="text-blue-600 hover:underline text-xs font-medium">Profile</a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="7" class="px-4 py-8 text-center text-gray-500">No employees yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="tab-consultants" class="admin-tab-panel hidden">
+        <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+                <h2 class="text-sm font-semibold text-gray-800">Consultants · micro view</h2>
+                <a href="{% url 'consultant-list' %}" class="text-sm font-medium text-blue-600 hover:underline">View all →</a>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            <th class="px-4 py-3">Consultant</th>
+                            <th class="px-4 py-3">Status</th>
+                            <th class="px-4 py-3 text-right font-mono">Total</th>
+                            <th class="px-4 py-3 text-right font-mono">In progress</th>
+                            <th class="px-4 py-3 text-right font-mono">Applied</th>
+                            <th class="px-4 py-3 text-right font-mono">Interview</th>
+                            <th class="px-4 py-3 text-right font-mono">Offer</th>
+                            <th class="px-4 py-3 text-right font-mono">Rejected</th>
+                            <th class="px-4 py-3 w-20"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for c in consultant_stats %}
+                        <tr class="border-b border-gray-100 hover:bg-gray-50/50">
+                            <td class="px-4 py-3">
+                                <span class="font-medium text-gray-900">{{ c.user.get_full_name|default:c.user.username }}</span>
+                            </td>
+                            <td class="px-4 py-3">
+                                <span class="px-2 py-0.5 rounded-full text-xs font-medium
+                                    {% if c.status == 'ACTIVE' %}bg-emerald-50 text-emerald-700
+                                    {% elif c.status == 'BENCH' %}bg-amber-50 text-amber-700
+                                    {% elif c.status == 'PLACED' %}bg-blue-50 text-blue-700
+                                    {% else %}bg-gray-100 text-gray-600{% endif %}">
+                                    {{ c.get_status_display }}
+                                </span>
+                            </td>
+                            <td class="px-4 py-3 text-right font-mono text-gray-800">{{ c.total_apps }}</td>
+                            <td class="px-4 py-3 text-right font-mono text-gray-600">{{ c.in_progress }}</td>
+                            <td class="px-4 py-3 text-right font-mono text-gray-600">{{ c.applied }}</td>
+                            <td class="px-4 py-3 text-right font-mono text-gray-600">{{ c.interview }}</td>
+                            <td class="px-4 py-3 text-right font-mono text-gray-600">{{ c.offer }}</td>
+                            <td class="px-4 py-3 text-right font-mono text-gray-600">{{ c.rejected }}</td>
+                            <td class="px-4 py-3 flex gap-2">
+                                <a href="{% url 'consultant-detail' c.user.pk %}" class="text-blue-600 hover:underline text-xs font-medium">Profile</a>
+                                <a href="{% url 'consultant-public-profile' slug=c.profile_slug %}" target="_blank" rel="noopener" class="text-gray-500 hover:text-gray-700 text-xs font-medium" title="Public profile">Public</a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="9" class="px-4 py-8 text-center text-gray-500">No consultants yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+    (function () {
+        const tabs = document.querySelectorAll('.admin-tab');
+        const panels = document.querySelectorAll('.admin-tab-panel');
+        tabs.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = 'tab-' + btn.dataset.tab;
+                tabs.forEach(t => {
+                    t.classList.remove('bg-white', 'text-blue-600', '-mb-px', 'border-gray-200');
+                    t.classList.add('border-transparent', 'text-gray-600');
+                });
+                btn.classList.add('bg-white', 'text-blue-600', '-mb-px', 'border-gray-200');
+                btn.classList.remove('border-transparent', 'text-gray-600');
+                panels.forEach(p => {
+                    p.classList.add('hidden');
+                    if (p.id === id) p.classList.remove('hidden');
+                });
+            });
+        });
+    })();
+</script>
 {% endblock %}

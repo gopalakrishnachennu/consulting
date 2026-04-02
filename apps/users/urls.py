@@ -1,6 +1,7 @@
 from django.urls import path
 from .views import (
-    ConsultantListView, EmployeeListView, EmployeeDetailView, EmployeeCreateView,
+    ConsultantListView, ConsultantExportCSVView,
+    EmployeeListView, EmployeeExportCSVView, EmployeeDetailView, EmployeeCreateView,
     EmployeeEditView, ConsultantEditView, ConsultantDetailView, ConsultantDashboardView,
     SaveJobView, SavedJobListView, ConsultantCreateView,
     MarketingRoleListView, MarketingRoleCreateView, MarketingRoleUpdateView, MarketingRoleDeleteView,
@@ -14,12 +15,14 @@ from resumes.preview_views import draft_preview_llm
 
 
 urlpatterns = [
+    path('employees/export/', EmployeeExportCSVView.as_view(), name='employee-export-csv'),
     path('employees/', EmployeeListView.as_view(), name='employee-list'),
     path('employees/create/', EmployeeCreateView.as_view(), name='employee-create'),
     
     path('settings/', SettingsView.as_view(), name='settings-dashboard'),
     
-    path('consultants/', ConsultantListView.as_view(), name='consultant-list'),
+    path('', ConsultantListView.as_view(), name='consultant-list'),
+    path('export/', ConsultantExportCSVView.as_view(), name='consultant-export-csv'),
     path('add/', ConsultantCreateView.as_view(), name='consultant-add'),
     path('<int:pk>/', ConsultantDetailView.as_view(), name='consultant-detail'),
     path('<int:pk>/edit/', ConsultantEditView.as_view(), name='consultant-edit'),

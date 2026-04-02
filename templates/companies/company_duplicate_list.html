@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8 max-w-5xl">
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">Potential duplicate companies</h1>
+            <p class="text-sm text-gray-600 mt-1">
+                These pairs were detected by rules-based matching (name similarity + domain). Merge cautiously.
+            </p>
+        </div>
+        <a href="{% url 'company-list' %}" class="text-blue-600 hover:text-blue-800 text-sm font-medium">
+            &larr; Back to Companies
+        </a>
+    </div>
+
+    {% if duplicate_pairs %}
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                <tr>
+                    <th class="px-4 py-3 text-left">Canonical (keep)</th>
+                    <th class="px-4 py-3 text-left">Duplicate (merge from)</th>
+                    <th class="px-4 py-3 text-center">Score</th>
+                    <th class="px-4 py-3 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in duplicate_pairs %}
+                <tr class="border-b border-gray-100 hover:bg-gray-50/60">
+                    <td class="px-4 py-3 align-top">
+                        <div class="font-medium text-gray-900">{{ row.target.name }}</div>
+                        {% if row.target.website %}
+                        <div class="text-xs text-blue-600 truncate max-w-xs">
+                            {{ row.target.website }}
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 align-top">
+                        <div class="font-medium text-gray-900">{{ row.source.name }}</div>
+                        {% if row.source.website %}
+                        <div class="text-xs text-blue-600 truncate max-w-xs">
+                            {{ row.source.website }}
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-center align-top">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                            {{ row.score }}
+                        </span>
+                    </td>
+                    <td class="px-4 py-3 text-right align-top">
+                        <div class="flex items-center justify-end gap-3">
+                            <a href="{% url 'company-detail' pk=row.target.pk %}" class="text-xs text-gray-600 hover:text-gray-900">
+                                View canonical
+                            </a>
+                            <a href="{% url 'company-detail' pk=row.source.pk %}" class="text-xs text-gray-600 hover:text-gray-900">
+                                View duplicate
+                            </a>
+                            <form method="post" action="{% url 'company-merge' %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="target_id" value="{{ row.target.pk }}">
+                                <input type="hidden" name="source_id" value="{{ row.source.pk }}">
+                                <button type="submit"
+                                    class="inline-flex items-center px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-700"
+                                    onclick="return confirm('Merge {{ row.source.name }} into {{ row.target.name }}? This cannot be undone.');">
+                                    Merge
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 text-sm text-gray-600">
+        No obvious duplicate companies detected in the recent records.
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+

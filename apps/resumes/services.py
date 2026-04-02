@@ -14,31 +14,38 @@ from docx.oxml import OxmlElement
 from io import BytesIO
 from prompts_app.services import get_active_prompt_for_job
 from prompts_app.models import Prompt
+from .prompt_strings import (
+    DEFAULT_SYSTEM_PROMPT,
+    BULLETS_SYSTEM_PROMPT,
+    BULLETS_PROMPT_BASE,
+    BULLETS_PROMPT_NO_BASE,
+    BULLETS_REPAIR_PROMPT,
+    BULLETS_MISSING_TERMS_PROMPT,
+    BUILD_PROMPT_SUMMARY_INSTRUCTION,
+    BUILD_PROMPT_SKILLS_WITH_PROFILE,
+    BUILD_PROMPT_SKILLS_GENERATE,
+    BUILD_PROMPT_BASE_RESUME_LABEL,
+    BUILD_PROMPT_BASE_RESUME_MISSING,
+    BUILD_PROMPT_BASE_RESUME_GUIDE_1,
+    BUILD_PROMPT_BASE_RESUME_GUIDE_2,
+    BUILD_PROMPT_BASE_RESUME_GUIDE_3,
+    BUILD_PROMPT_EXPERIENCE_LABEL,
+    BUILD_PROMPT_NO_EXPERIENCE,
+    BUILD_PROMPT_EDUCATION_LABEL,
+    BUILD_PROMPT_NO_EDUCATION,
+    BUILD_PROMPT_JD_HEADER,
+    BUILD_PROMPT_ROLE_NO_DESC,
+    BUILD_PROMPT_TEMPLATE_SUFFIX,
+    BUILD_PROMPT_BASE_SECTION_WITH,
+    BUILD_PROMPT_BASE_SECTION_WITHOUT,
+    BUILD_PROMPT_REQUIRED_SECTIONS,
+)
 from django.utils.html import strip_tags
-from core.models import LLMConfig, LLMUsageLog
+from core.models import LLMConfig, LLMUsageLog, PlatformConfig
 from core.security import decrypt_value
 from core.llm_services import calculate_cost
 
 logger = logging.getLogger("apps.resumes")
-
-SKILL_BULLET_PREFIXES = [
-    "cloud platforms",
-    "iac",
-    "ci/cd",
-    "ci/cd & devops tools",
-    "containers",
-    "containers & orchestration",
-    "scripting",
-    "scripting & automation",
-    "monitoring",
-    "monitoring & logging",
-    "security",
-    "security & compliance",
-    "ops",
-    "ops & governance",
-    "databases",
-    "documentation tools",
-]
 
 FILLER_PHRASES = []
 EXPANSION_PHRASES = []
@@ -50,19 +57,14 @@ ACTION_VERBS = {
     "configured","deployed","monitored","troubleshot","maintained","documented","collaborated","coordinated",
 }
 
+def _fill_prompt(template, **kwargs):
+    """Replace {key} placeholders without interpreting other braces."""
+    text = template
+    for k, v in kwargs.items():
+        text = text.replace("{" + k + "}", v)
+    return text
 
-DEFAULT_SYSTEM_PROMPT = (
-    "You are a professional resume writer specializing in consulting and IT staffing. "
-    "Generate a polished, ATS-optimized resume tailored to the specific job description. "
-    "Use plain text only with these sections (uppercase headings):\n"
-    "PROFESSIONAL SUMMARY\n"
-    "SKILLS\n"
-    "PROFESSIONAL EXPERIENCE\n"
-    "EDUCATION\n"
-    "CERTIFICATIONS (only if provided)\n\n"
-    "Be specific, quantify achievements where possible, and align the resume language "
-    "with the job description keywords."
-)
+
 
 STOPWORDS = {
     "the","and","for","with","that","this","from","your","you","our","are","was","were","will","shall","can",
@@ -81,14 +83,6 @@ STOPWORDS = {
     "minimum","maximum","salary","salaries","commission","compensation","benefits","posting",
     "schedule","full","time","apply","applynow","date","identification","id",
 }
-
-JD_TOPIC_KEYWORDS = [
-    "aws","ec2","s3","rds","vpc","lambda","cloud","linux","windows","iis",
-    "monitor","monitoring","logging","troubleshoot","troubleshooting",
-    "security","compliance","network","firewall","segmentation","connectivity",
-    "ci/cd","pipeline","docker","container","automation","iac","terraform","cloudformation",
-    "git","api","rest","http","xml","support","ticket","on-call","backup","dr","ha","cost","optimiz",
-]
 
 
 def extract_keywords(text, max_keywords=200):
@@ -143,16 +137,6 @@ def _contains_jd_long_phrase(line, jd_phrase_set, n=4):
         if " ".join(tokens[i:i+n]) in jd_phrase_set:
             return True
     return False
-
-
-def _topic_keywords_from_jd(jd_text):
-    keywords = set(extract_keywords(jd_text or "", max_keywords=200))
-    topics = set()
-    for k in keywords:
-        for t in JD_TOPIC_KEYWORDS:
-            if t in k:
-                topics.add(t)
-    return topics
 
 
 def _humanize_bullet(line):
@@ -432,10 +416,16 @@ def _is_skill_bullet(line):
     if not line:
         return False
     normalized = _clean_bullet_line(line).lower()
-    for prefix in SKILL_BULLET_PREFIXES:
-        if normalized.startswith(prefix + ":"):
-            return True
-    return False
+    if ":" not in normalized:
+        return False
+    label, items = [p.strip() for p in normalized.split(":", 1)]
+    if not label or not items:
+        return False
+    # Heuristic: skill lines usually have short labels and comma-separated items.
+    if len(label.split()) > 4:
+        return False
+    item_parts = [p.strip() for p in items.split(",") if p.strip()]
+    return len(item_parts) >= 2
 
 
 def _bullet_word_count(line):
@@ -460,6 +450,15 @@ def _cap_bullet_words(line, max_words=25):
     if not trimmed.endswith("."):
         trimmed = trimmed.rstrip(" ,;-") + "."
     return trimmed
+
+def _strip_vague_adverbs(line):
+    if not line:
+        return line
+    adverbs = {"significantly", "substantially", "notably", "dramatically", "remarkably"}
+    tokens = line.split()
+    filtered = [t for t in tokens if t.lower().strip(",.;") not in adverbs]
+    out = " ".join(filtered)
+    return out.strip()
 
 def _normalize_bullet_for_dedupe(line):
     if not line:
@@ -705,92 +704,7 @@ def _total_experience_years_display(consultant):
 
 
 def _required_terms_from_jd(jd_text):
-    jd = (jd_text or "").lower()
-    terms = []
-    candidates = [
-        "windows", "linux", "iis", "rest", "xml", "http headers", "response codes",
-        "firewall", "network connectivity", "network segmentation",
-        "aws", "ec2", "s3", "rds", "vpc", "lambda",
-        "python", "bash", "powershell", "git", "docker", "ci/cd", "monitoring", "logging",
-        "support tickets", "on-call", "troubleshoot", "documentation",
-    ]
-    for t in candidates:
-        if t in jd:
-            terms.append(t)
-    return terms
-
-
-def _ensure_terms_in_core_skills(text, terms):
-    if not terms or "SKILLS" not in text:
-        return text
-    headings = ["PROFESSIONAL SUMMARY", "SKILLS", "PROFESSIONAL EXPERIENCE", "CERTIFICATIONS", "EDUCATION"]
-    section = extract_section(text, "SKILLS", headings)
-    if not section:
-        return text
-    lower = section.lower()
-    missing = [t for t in terms if t not in lower]
-    if not missing:
-        # Also normalize Core Skills to key:value lines (no bullets).
-        lines = section.splitlines()
-        normalized = []
-        for line in lines:
-            m = re.match(r"^\s*[-•*]?\s*([^:]+):\s*(.*)$", line.strip())
-            if m:
-                label = m.group(1).strip()
-                items = m.group(2).strip()
-                normalized.append(f"{label}: {items}".strip())
-            else:
-                normalized.append(line.strip())
-        section = "\n".join([l for l in normalized if l])
-        return replace_section(text, "SKILLS", headings, section)
-    # Place missing terms into existing buckets when possible
-    buckets = {
-        "Cloud Platforms": ["aws", "ec2", "s3", "rds", "vpc", "lambda"],
-        "IaC": ["iac", "terraform", "cloudformation"],
-        "CI/CD & DevOps Tools": ["ci/cd", "jenkins", "git", "gitlab", "github actions"],
-        "Containers & Orchestration": ["docker", "kubernetes"],
-        "Scripting & Automation": ["python", "bash", "powershell"],
-        "Monitoring & Logging": ["monitoring", "logging"],
-        "Security & Compliance": ["security", "compliance", "firewall"],
-        "Ops & Governance": ["network", "network connectivity", "network segmentation"],
-        "Documentation Tools": ["documentation", "xml", "rest", "http headers", "response codes"],
-    }
-    lines = section.splitlines()
-    for i, line in enumerate(lines):
-        m = re.match(r"^\s*[-•*]?\s*([^:]+):\s*(.*)$", line.strip())
-        if not m:
-            continue
-        label = m.group(1).strip()
-        items = m.group(2).strip()
-        label_terms = buckets.get(label, [])
-        add = []
-        for t in list(missing):
-            for hint in label_terms:
-                if hint in t:
-                    add.append(t)
-                    break
-        if add:
-            items = items.rstrip().rstrip(",")
-            items = items + (", " if items else "") + ", ".join(sorted(set(add)))
-            lines[i] = f"{label}: {items}"
-            for t in add:
-                if t in missing:
-                    missing.remove(t)
-    # Any remaining missing terms go into Ops & Governance
-    if missing:
-        for i, line in enumerate(lines):
-            if line.lower().lstrip("-•* ").startswith("ops & governance:"):
-                items = line.split(":", 1)[1].strip()
-                items = items.rstrip().rstrip(",")
-                items = items + (", " if items else "") + ", ".join(sorted(set(missing)))
-                lines[i] = "Ops & Governance: " + items
-                missing = []
-                break
-    if missing:
-        lines.append("Additional: " + ", ".join(sorted(set(missing))))
-        missing = []
-    section = "\n".join(lines)
-    return replace_section(text, "SKILLS", headings, section)
+    return extract_required_terms_from_jd(jd_text)
 
 
 def _normalize_core_skills_format(text):
@@ -926,48 +840,19 @@ def generate_experience_bullets_with_counts(job, consultant, roles_needed, syste
     has_base = bool(base_resume.strip())
 
     if has_base:
-        user_prompt = (
-            "Generate responsibilities bullets for the roles below.\n"
-            "Use ONLY the job description and base resume text as sources.\n"
-            "Do NOT invent companies, titles, dates, certifications, or education.\n"
-            "Do NOT repeat the same sentence or phrase across bullets or roles.\n"
-            "Do NOT keyword-stuff or append lists of JD terms.\n"
-            "Do NOT use the words 'led' or 'mentor' or 'mentored' in any bullet.\n"
-            "Each bullet must be 22–25 words and follow: Action + Tool/Method + Outcome.\n"
-            "Return valid JSON ONLY in this format:\n"
-            '{"roles":[{"title":"","company":"","count":0,"bullets":["..."]}]}\n\n'
-            f"ROLES:\n{json.dumps(roles_needed)}\n\n"
-            f"JOB DESCRIPTION:\n{jd}\n\n"
-            f"BASE RESUME:\n{base_resume}\n"
+        user_prompt = _fill_prompt(
+            BULLETS_PROMPT_BASE,
+            roles=json.dumps(roles_needed),
+            jd=jd,
+            base_resume=base_resume,
         )
     else:
-        user_prompt = (
-            "Generate responsibilities bullets for the roles below.\n"
-            "There is NO base resume. You must CREATE bullets from scratch.\n\n"
-            "RULES:\n"
-            "- Each bullet must follow this structure: [Action Verb] + [Specific Technology/Method] + [Context/Challenge] + [Quantifiable Outcome]\n"
-            "- Each bullet must be 22–25 words\n"
-            "- Do NOT keyword-stuff or append lists of JD terms\n"
-            "- Do NOT use the words 'led' or 'mentor' or 'mentored' in any bullet\n"
-            "- Map JD responsibilities to realistic tasks a person in each role would perform\n"
-            "- The most recent role should reflect the seniority and scope matching the JD\n"
-            "- Older roles should show growth progression leading to the current level\n"
-            "- Do NOT invent companies, titles, dates, certifications, or education\n"
-            "- Do NOT copy JD responsibilities word-for-word; rephrase as accomplishments\n"
-            "- Naturally integrate specific tools/services mentioned in the JD (e.g., EC2, Docker, Python) into sentences. Do NOT list them.\n"
-            "- Do NOT repeat the same sentence or phrase across bullets or roles\n"
-            "- Example: 'Engineered a scalable CI/CD pipeline using Jenkins and Docker, reducing deployment cycle times by 40% and ensuring 99.9% uptime.'\n\n"
-            "METRIC RULES:\n"
-            "- Most recent role: up to 2 quantified bullets if JD mentions KPIs/SLA/performance\n"
-            "- Older roles: max 1 quantified bullet each\n"
-            "- Every metric must have [Action] + [Tool] + [Result] (no orphaned numbers)\n"
-            "- Mix metric types: %, $, time, scale. Do NOT repeat the same unit\n\n"
-            "Return valid JSON ONLY in this format:\n"
-            '{"roles":[{"title":"","company":"","count":0,"bullets":["..."]}]}\n\n'
-            f"ROLES:\n{json.dumps(roles_needed)}\n\n"
-            f"JOB DESCRIPTION:\n{jd}\n"
+        user_prompt = _fill_prompt(
+            BULLETS_PROMPT_NO_BASE,
+            roles=json.dumps(roles_needed),
+            jd=jd,
         )
-    system_prompt = system_prompt or "You are a resume assistant. Return only JSON, no prose."
+    system_prompt = system_prompt or BULLETS_SYSTEM_PROMPT
     content, _, error = llm.generate_with_prompts(job, consultant, system_prompt, user_prompt)
     if error or not content:
         logger.warning("Bullet generation failed: %s", error or "empty response")
@@ -1004,16 +889,11 @@ def generate_experience_bullets_with_counts(job, consultant, roles_needed, syste
         for b in bl
     )
     if needs_fix:
-        repair_prompt = (
-            "Rewrite the bullets below to strictly follow:\n"
-            "- 22–25 words per bullet\n"
-            "- Action + Tool/Method + Outcome\n"
-            "- No repeated sentences or phrases\n"
-            "Return valid JSON ONLY in this format:\n"
-            '{"roles":[{"title":"","company":"","count":0,"bullets":["..."]}]}\n\n'
-            f"ROLES:\n{json.dumps(roles_needed)}\n\n"
-            f"CURRENT BULLETS:\n{json.dumps(bullets_map)}\n\n"
-            f"JOB DESCRIPTION:\n{jd}\n"
+        repair_prompt = _fill_prompt(
+            BULLETS_REPAIR_PROMPT,
+            roles=json.dumps(roles_needed),
+            bullets_map=json.dumps(bullets_map),
+            jd=jd,
         )
         content2, _, error2 = llm.generate_with_prompts(job, consultant, system_prompt, repair_prompt)
         if not error2 and content2:
@@ -1040,7 +920,7 @@ def build_experience_bullets_map(job, consultant, source_content):
     needs = []
     targets = _target_counts_for_experiences(consultant.experience.all())
     method_keywords = _collect_method_keywords(job, consultant)
-    jd_topics = _topic_keywords_from_jd(job.description or "")
+    required_terms = _required_terms_from_jd(job.description or "")
     for e, min_count, max_count in targets:
         base_bullets = []
         if e.description:
@@ -1093,10 +973,98 @@ def build_experience_bullets_map(job, consultant, source_content):
         bullets_map[key] = [_cap_bullet_words(b, 25) for b in bullets_map[key]]
         bullets_map[key] = _apply_metric_rules(bullets_map[key], job, method_keywords, _cap_metrics_for_role(job, idx))
         bullets_map[key] = _apply_jd_alignment_rules(bullets_map[key], job.description or "")
+        bullets_map[key] = [_strip_vague_adverbs(b) for b in bullets_map[key]]
         bullets_map[key] = [_expand_bullet_to_min_words_strict(b, job, 22, method_keywords) for b in bullets_map[key]]
         bullets_map[key] = [_cap_bullet_words(b, 25) for b in bullets_map[key]]
         bullets_map[key] = [_fix_broken_bullet_text(b) for b in bullets_map[key]]
         bullets_map[key] = _dedupe_bullets(bullets_map[key])
+
+    # Enforce required terms across experience bullets (auto-rewrite if missing)
+    if required_terms:
+        all_text = " ".join(
+            " ".join(bullets_map.get(f"{_normalize_match_text(e.title)}||{_normalize_match_text(e.company)}", []))
+            for e, _, _ in targets
+        ).lower()
+        missing = [t for t in required_terms if t not in all_text]
+        if missing:
+            llm = LLMService()
+            if llm.client:
+                roles_payload = []
+                for e, _, _ in targets:
+                    key = f"{_normalize_match_text(e.title)}||{_normalize_match_text(e.company)}"
+                    roles_payload.append({
+                        "title": e.title,
+                        "company": e.company,
+                        "bullets": bullets_map.get(key, [])
+                    })
+                rewrite_prompt = (
+                    _fill_prompt(
+                        BULLETS_MISSING_TERMS_PROMPT,
+                        missing_terms=", ".join(missing),
+                        roles_payload=json.dumps(roles_payload),
+                    )
+                )
+                content, _, error = llm.generate_with_prompts(
+                    job, consultant, BULLETS_SYSTEM_PROMPT, rewrite_prompt, force_new=True
+                )
+                if not error and content:
+                    try:
+                        data = json.loads(content)
+                        roles_out = data.get("roles") if isinstance(data, dict) else None
+                        if roles_out:
+                            for r in roles_out:
+                                title = (r.get("title") or "").strip()
+                                company = (r.get("company") or "").strip()
+                                bullets = [b.strip() for b in (r.get("bullets") or []) if str(b).strip()]
+                                if not title or not company or not bullets:
+                                    continue
+                                key = f"{_normalize_match_text(title)}||{_normalize_match_text(company)}"
+                                bullets_map[key] = bullets
+                    except Exception:
+                        pass
+
+    # If JD-critical operational terms are still missing, enforce targeted bullets for the most recent role.
+    jd_text = job.description or ""
+    crit_terms = ["support tickets", "on-call", "on call", "xml", "rest api", "http", "response codes", "firewall", "network connectivity"]
+    crit_missing = [t for t in crit_terms if t in jd_text.lower() and t not in all_text]
+    if crit_missing and targets:
+        llm = LLMService()
+        if llm.client:
+            # Most recent role is first in targets
+            e, _, _ = targets[0]
+            key = f"{_normalize_match_text(e.title)}||{_normalize_match_text(e.company)}"
+            existing = bullets_map.get(key, [])
+            prompt = _fill_prompt(
+                BULLETS_MISSING_TERMS_PROMPT,
+                missing_terms=", ".join(crit_missing),
+                roles_payload=json.dumps(
+                    [
+                        {
+                            "title": e.title,
+                            "company": e.company,
+                            "bullets": existing,
+                        }
+                    ]
+                ),
+            )
+            content3, _, error3 = llm.generate_with_prompts(
+                job, consultant, BULLETS_SYSTEM_PROMPT, prompt, force_new=True
+            )
+            if not error3 and content3:
+                try:
+                    data3 = json.loads(content3)
+                    roles3 = data3.get("roles") if isinstance(data3, dict) else None
+                    if roles3:
+                        for r in roles3:
+                            title = (r.get("title") or "").strip()
+                            company = (r.get("company") or "").strip()
+                            bullets = [b.strip() for b in (r.get("bullets") or []) if str(b).strip()]
+                            if not title or not company or not bullets:
+                                continue
+                            key = f"{_normalize_match_text(title)}||{_normalize_match_text(company)}"
+                            bullets_map[key] = bullets
+                except Exception:
+                    pass
     return bullets_map
 
 
@@ -1126,8 +1094,9 @@ def _build_certifications_section(consultant):
     return "\n".join(lines)
 
 
-def _build_skills_section(job):
-    return generate_skills_from_jd(job)
+def _build_skills_section(job, consultant):
+    required_terms = _required_terms_from_jd(job.description or "")
+    return generate_skills_from_jd(job, required_terms, consultant)
 
 
 def _extract_metrics_from_text(text):
@@ -1154,17 +1123,57 @@ def _normalize_title(t):
     return t
 
 
-def _validate_summary(summary, title, years_display, jd_keywords):
+def _term_present(summary_lower, term):
+    if not term:
+        return False
+    t = term.lower()
+    if t in summary_lower:
+        return True
+    # For multi-word terms, allow token presence
+    tokens = [tok for tok in re.findall(r"[A-Za-z0-9']+", t) if tok]
+    if len(tokens) >= 2:
+        return all(tok in summary_lower for tok in tokens)
+    return False
+
+
+def _sanitize_summary(summary, title, years_display):
+    if not summary:
+        return summary
+    text = " ".join(summary.strip().split())
+    # Drop generic qualifier phrases in summary to keep it technical and concrete.
+    text = re.sub(r"\b(basic understanding of|knowledge of|familiarity with|general)\b\s+", "", text, flags=re.I)
+    # Remove sentences containing JD meta or work-arrangement language.
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    filtered = []
+    for s in sentences:
+        if re.search(r"\b(hybrid|onsite|on-site|remote|work arrangement|arrangements|vision)\b", s, re.I):
+            continue
+        filtered.append(s)
+    text = " ".join(filtered).strip()
+    # Ensure summary starts with the exact job title.
+    if title and not text.lower().startswith(title.lower()):
+        if years_display and f"{years_display} years" in text:
+            remainder = re.sub(r"^[^ ]+.*?\bwith\b\s+", "", text, flags=re.I)
+        else:
+            remainder = text
+        prefix = f"{title} with {years_display} years of experience "
+        text = prefix + remainder
+    # Ensure years appear
+    if years_display and f"{years_display} years" not in text:
+        text = f"{title} with {years_display} years of experience " + text[len(title):].lstrip()
+    return " ".join(text.split())
+
+
+def _validate_summary(summary, title, years_display, jd_keywords, required_terms=None):
     reasons = []
     if not summary:
         reasons.append("empty")
         return False, reasons
-    # Must be a single paragraph (no line breaks)
-    if "\n" in summary.strip():
-        reasons.append("contains line breaks")
-    words = re.findall(r"[A-Za-z0-9']+", summary)
-    if len(words) < 70 or len(words) > 80:
-        reasons.append(f"word_count={len(words)}")
+    lines = [l for l in summary.splitlines() if l.strip()]
+    if len(lines) < 4 or len(lines) > 6:
+        reasons.append(f"line_count={len(lines)}")
+    if any(l.strip().startswith(("-", "•", "*")) for l in lines):
+        reasons.append("bullet_line_found")
     # No pronouns
     if re.search(r"\b(i|my|me|we|our|us|he|she|his|her)\b", summary, re.I):
         reasons.append("pronoun_found")
@@ -1175,21 +1184,31 @@ def _validate_summary(summary, title, years_display, jd_keywords):
         reasons.append("generic_phrase_found")
     if re.search(r"\b(minimum|maximum|salary|compensation|benefits|posting date)\b", summary, re.I):
         reasons.append("jd_noise_terms")
-    # Must include title and years
-    if title.lower() not in summary.lower():
+    if re.search(r"\b(hybrid|onsite|on-site|remote|work arrangement|arrangements)\b", summary, re.I):
+        reasons.append("work_arrangement_term")
+    if re.search(r"\b(vision for|contributing to the vision|vision)\b", summary, re.I):
+        reasons.append("vision_phrase")
+    # Must include title and years on line 1
+    if not lines or not lines[0].lower().startswith(title.lower()):
         # allow normalized title match (e.g., DevOps Engineer I -> DevOps Engineer)
         norm_title = _normalize_title(title)
-        if norm_title and norm_title not in summary.lower():
+        if norm_title and not lines[0].lower().startswith(norm_title):
             reasons.append("title_missing")
     if years_display and f"{years_display} years".lower() not in summary.lower():
         reasons.append("years_missing")
-    # Must include 3+ JD keywords (exact tokens)
+    # Must include 4+ JD keywords (exact tokens)
     hits = 0
     for k in jd_keywords:
         if k in summary.lower():
             hits += 1
-    if hits < 3:
-        reasons.append("jd_keywords<3")
+    if hits < 4:
+        reasons.append("jd_keywords<4")
+    # Must include required terms when present
+    required_terms = [t for t in (required_terms or []) if t]
+    summary_lower = summary.lower()
+    missing = [t for t in required_terms if not _term_present(summary_lower, t)]
+    if missing:
+        reasons.append("required_terms_missing")
     return (len(reasons) == 0), reasons
 
 
@@ -1205,7 +1224,13 @@ def _build_summary_section(job, consultant):
     title = job.title or "DevOps Engineer"
     years_display = _total_experience_years_display(consultant) or "0+"
 
-    jd_keywords = _pick_top_keywords(jd_text, limit=10)
+    parsed = getattr(job, "parsed_jd", None) or {}
+    if not parsed:
+        return "PROFESSIONAL SUMMARY\nSummary unavailable (JD not parsed)."
+
+    jd_keywords = [k.lower() for k in (parsed.get("keywords_for_ats") or []) if isinstance(k, str)]
+    required_terms_summary = [k.lower() for k in (parsed.get("required_skills") or []) if isinstance(k, str)]
+    required_terms_summary = required_terms_summary[:4]
     metrics = []
     for exp in consultant.experience.all():
         metrics.extend(_extract_metrics_from_text(exp.description or ""))
@@ -1219,71 +1244,77 @@ def _build_summary_section(job, consultant):
     last_fail_reasons = []
     if llm.client:
         system_prompt = (
-            "You are a resume writer. Output ONLY one paragraph for PROFESSIONAL SUMMARY, "
-            "70–80 words, no bullets, no line breaks."
+            "You are a resume writer. Return ONLY the summary text as 4–6 lines, no bullets, no labels."
         )
         user_prompt = (
-            "Write a PROFESSIONAL SUMMARY following these rules:\n"
-            "- Single paragraph, 70–80 words.\n"
-            "- First phrase must start with the job title from the JD.\n"
-            f"- Include \"{years_display} years\" exactly.\n"
-            "- Use at least 3–4 JD keywords (exact terms).\n"
-            "- No pronouns, no company names, no buzzwords.\n"
-            "- Do NOT use generic phrases like 'innovative solutions' or 'proven track record'.\n"
-            "- Do NOT use the words 'led' or 'mentor' or 'mentored' in the summary; use neutral collaboration verbs instead.\n"
-            "- Do NOT mention salary, compensation, posting date, or location details.\n"
-            "- Active voice, confident but grounded.\n"
-            "- Mention collaboration with cross-functional teams.\n"
-            "- Use a measurable outcome if available.\n"
-            "\nJD KEYWORDS:\n"
-            f"{', '.join(jd_keywords)}\n"
-            "\nEXPERIENCE SUMMARY:\n"
-            f"{exp_summary_text}\n"
-            "\nAVAILABLE METRICS:\n"
-            f"{', '.join(metrics) if metrics else 'None'}\n"
-            "\nJOB DESCRIPTION:\n"
-            f"{jd_text}\n"
+            "STEP 2 — WRITE THE PROFESSIONAL SUMMARY USING THIS FORMULA\n"
+            "Line 1: [Exact Job Title] with [X] years of experience [top 2 responsibilities using JD's exact language]\n"
+            "Line 2: Proven expertise in [4–5 exact keywords from the JD] with demonstrated impact in [primary outcome the JD cares about]\n"
+            "Line 3: [A strength that mirrors the JD's requirements section — use the JD's own phrasing]\n"
+            "Line 4: [A line that mirrors the JD's culture tone — collaborative, mission-critical, data-driven, etc.]\n"
+            "Lines 5–6: optional only if needed to include required JD wording.\n"
+            "\nSTRICT RULES:\n"
+            "- Return ONLY the summary lines. No labels, no explanations, no bullet points.\n"
+            "- Exactly 4–6 lines (line breaks required).\n"
+            "- Use exact keywords from the JD analysis.\n"
+            "- Do not use: \"dynamic professional\", \"results-oriented\", \"passionate about\", or any first person.\n"
+            "- The summary must feel like the JD wrote it about the candidate.\n"
+            f"- Use this exact job title: {title}\n"
+            f"- Use this exact years format: {years_display} years\n"
+            "\nPARSED JD JSON:\n"
+            f"{json.dumps(parsed, ensure_ascii=True)}\n"
         )
         content, _, error = llm.generate_with_prompts(job, consultant, system_prompt, user_prompt)
+        candidate = ""
         if not error and content:
-            candidate = " ".join(content.strip().split())
-            ok, reasons = _validate_summary(candidate, title, years_display, jd_keywords)
+            candidate = "\n".join([l.strip() for l in content.strip().splitlines() if l.strip()])
+            ok, reasons = _validate_summary(candidate, title, years_display, jd_keywords, required_terms_summary)
             last_fail_reasons = reasons
             if ok:
                 return "PROFESSIONAL SUMMARY\n" + candidate
             logger.warning("Summary candidate rejected: %s", candidate)
 
         # Second attempt with tighter instructions
-        user_prompt += "\\nRewrite to meet all rules exactly. Do not exceed 80 words."
+        if required_terms_summary:
+            user_prompt += "\\nInclude these exact terms: " + ", ".join(required_terms_summary)
+        user_prompt += "\\nRewrite to meet all rules exactly."
         content2, _, error2 = llm.generate_with_prompts(job, consultant, system_prompt, user_prompt)
         if not error2 and content2:
-            candidate = " ".join(content2.strip().split())
-            ok, reasons = _validate_summary(candidate, title, years_display, jd_keywords)
+            candidate = "\n".join([l.strip() for l in content2.strip().splitlines() if l.strip()])
+            ok, reasons = _validate_summary(candidate, title, years_display, jd_keywords, required_terms_summary)
             last_fail_reasons = reasons
             if ok:
                 return "PROFESSIONAL SUMMARY\n" + candidate
             logger.warning("Summary candidate rejected (retry): %s", candidate)
         if last_fail_reasons:
             logger.warning("Summary validation failed: %s", ", ".join(last_fail_reasons))
+        if candidate:
+            return "PROFESSIONAL SUMMARY\n" + candidate
 
-    # No fallback template. If LLM fails, return a clear placeholder.
-    return "PROFESSIONAL SUMMARY\nSummary generation failed. Update and retry."
+    # If LLM unavailable, return a clear note.
+    return "PROFESSIONAL SUMMARY\nSummary unavailable (LLM not configured)."
 
 
 def normalize_generated_resume(content, job, consultant, bullets_map=None):
     header_block = _build_header_block(job, consultant)
     summary_section = _build_summary_section(job, consultant)
-    skills_section = _build_skills_section(job)
+    skills_section = _build_skills_section(job, consultant)
     edu_section = _build_education_section(consultant)
     cert_section = _build_certifications_section(consultant)
 
     if bullets_map is None:
         bullets_map = build_experience_bullets_map(job, consultant, "")
+    # Decide whether to match most recent role title to the JD title
+    match_override = consultant.match_jd_title_override
+    if match_override is None:
+        match_override = PlatformConfig.load().match_jd_title_default
+    override_title = job.title if match_override else None
+
     exp_section = _build_experience_section(
         consultant,
         source_content="",
         bullets_map=bullets_map,
-        override_title=job.title
+        override_title=override_title
     )
 
     # Assemble a clean, deterministic resume using the required structure.
@@ -1320,7 +1351,7 @@ SECTION_KEYS = {
 }
 
 
-def build_user_prompt_from_sections(job, consultant, sections, template_layout=None):
+def build_user_prompt_from_sections(job, consultant, sections):
     selected = set(sections or [])
     selected = selected.intersection(SECTION_KEYS)
 
@@ -1351,11 +1382,6 @@ def build_user_prompt_from_sections(job, consultant, sections, template_layout=N
     contact_email = consultant.user.email or "Not provided."
     contact_phone = consultant.phone or "Not provided."
 
-    if template_layout:
-        parts.append("TEMPLATE LAYOUT (fixed vs AI sections):")
-        parts.append(json.dumps(template_layout))
-        parts.append("")
-
     if "name" in selected:
         parts.append(f"Name: {contact_name}")
     if "email" in selected:
@@ -1370,29 +1396,29 @@ def build_user_prompt_from_sections(job, consultant, sections, template_layout=N
         parts.append(f"Total Experience (use exactly): {years_display} years")
 
     if "professional_summary" in selected:
-        parts.append("PROFESSIONAL SUMMARY: Generate a concise summary using the prompt rules and the inputs below.")
+        parts.append(BUILD_PROMPT_SUMMARY_INSTRUCTION)
 
     if "skills" in selected:
         skills = consultant.skills or []
         if skills:
-            parts.append("SKILLS (key:value lines, no bullets). Example: Cloud Platforms: AWS (EC2, S3), Azure.")
+            parts.append(BUILD_PROMPT_SKILLS_WITH_PROFILE)
             parts.append(f"Skills (from profile): {', '.join(skills)}")
         else:
-            parts.append("SKILLS: Generate key:value lines based on JD and consultant profile (no bullets).")
+            parts.append(BUILD_PROMPT_SKILLS_GENERATE)
 
     if "base_resume" in selected:
         base_resume_text = consultant.base_resume_text or ""
         if base_resume_text.strip():
-            parts.append("Base Resume:")
+            parts.append(BUILD_PROMPT_BASE_RESUME_LABEL)
             parts.append(base_resume_text)
         else:
-            parts.append("Base Resume: NOT PROVIDED — Generate all content from scratch.")
-            parts.append("Use the JD responsibilities, required qualifications, and the consultant's role titles/companies/dates to create realistic, relevant experience bullets.")
-            parts.append("Each bullet must follow: [Action Verb] + [Specific Technology/Method] + [Business Outcome].")
-            parts.append("Do NOT copy JD language word-for-word; rephrase as personal accomplishments.")
+            parts.append(BUILD_PROMPT_BASE_RESUME_MISSING)
+            parts.append(BUILD_PROMPT_BASE_RESUME_GUIDE_1)
+            parts.append(BUILD_PROMPT_BASE_RESUME_GUIDE_2)
+            parts.append(BUILD_PROMPT_BASE_RESUME_GUIDE_3)
 
     if "experience" in selected:
-        parts.append("PROFESSIONAL EXPERIENCE:")
+        parts.append(BUILD_PROMPT_EXPERIENCE_LABEL)
         experiences = list(consultant.experience.all())
         ordered = [e for e, _, _ in _target_counts_for_experiences(experiences)]
         if experiences:
@@ -1403,19 +1429,13 @@ def build_user_prompt_from_sections(job, consultant, sections, template_layout=N
                 if e.description:
                     role_line += f"\n  Responsibilities: {e.description}"
                 else:
-                    role_line += (
-                        "\n  Responsibilities: Generate bullets from scratch using the JD."
-                        " The first role listed is most recent and needs 7–10 bullets; all other roles need exactly 6."
-                        " Each bullet: [Action Verb] + [Technology/Tool] + [Context] + [Outcome], 22–25 words. Do NOT copy JD text verbatim."
-                        " Do NOT use the words 'led' or 'mentor' or 'mentored'."
-                        " Keep the role title, company, and dates exactly as provided."
-                    )
+                    role_line += f"\n  {BUILD_PROMPT_ROLE_NO_DESC}"
                 parts.append(role_line)
         else:
-            parts.append("- No experience listed.")
+            parts.append(BUILD_PROMPT_NO_EXPERIENCE)
 
     if "education" in selected:
-        parts.append("EDUCATION:")
+        parts.append(BUILD_PROMPT_EDUCATION_LABEL)
         educations = consultant.education.all()
         if educations:
             for e in educations:
@@ -1424,10 +1444,10 @@ def build_user_prompt_from_sections(job, consultant, sections, template_layout=N
                 year = end if end else start
                 parts.append(f"{e.degree} | {e.institution} | {year}")
         else:
-            parts.append("- No education listed.")
+            parts.append(BUILD_PROMPT_NO_EDUCATION)
 
     if "jd_description" in selected:
-        parts.append("--- JOB DESCRIPTION ---")
+        parts.append(BUILD_PROMPT_JD_HEADER)
         parts.append(job.description or "Not provided.")
 
     return "\n".join(parts).strip()
@@ -1555,16 +1575,15 @@ class LLMService:
                 )
                 return (
                     f"{base}\n\n"
-                    f"--- JOB DESCRIPTION ---\n"
-                    f"{job.description or 'Not provided.'}\n"
+                    f"{BUILD_PROMPT_TEMPLATE_SUFFIX.format(jd_text=job.description or 'Not provided.')}"
                 )
             except (KeyError, IndexError):
                 pass  # Fall through to default
 
         base_section = (
-            f"Base Resume:\n{base_resume_text}\n" if base_resume_text.strip()
-            else "Base Resume: NOT PROVIDED — Generate all content from scratch using the JD.\n"
-                 "Each bullet: [Action Verb] + [Technology/Tool] + [Outcome].\n"
+            BUILD_PROMPT_BASE_SECTION_WITH.format(base_resume_text=base_resume_text)
+            if base_resume_text.strip()
+            else BUILD_PROMPT_BASE_SECTION_WITHOUT
         )
 
         return (
@@ -1581,7 +1600,7 @@ class LLMService:
             f"Title: {job.title}\n"
             f"Company: {job.company}\n"
             f"Description:\n{job.description}\n"
-            f"\nRequired Resume Sections: PROFESSIONAL SUMMARY, SKILLS, PROFESSIONAL EXPERIENCE, EDUCATION\n"
+            f"\n{BUILD_PROMPT_REQUIRED_SECTIONS}"
         )
 
     def generate_resume_content(self, job, consultant, actor=None, prompt_override=None, force_new=False):
@@ -1678,7 +1697,16 @@ class LLMService:
             )
             return None, 0, str(e)
 
-    def generate_with_prompts(self, job, consultant, system_prompt, user_prompt, actor=None, force_new=False):
+    def generate_with_prompts(
+        self,
+        job,
+        consultant,
+        system_prompt,
+        user_prompt,
+        actor=None,
+        force_new=False,
+        temperature_override=None,
+    ):
         """Generate resume content using explicit prompts. Returns (content, tokens_used, error)."""
         if not self.client:
             mock = (
@@ -1712,13 +1740,17 @@ class LLMService:
                 self.config.save()
                 return None, 0, "Monthly token cap reached. Generation disabled."
 
+        temperature = float(self.config.temperature)
+        if temperature_override is not None:
+            temperature = float(temperature_override)
+
         request_payload = {
             "model": self.config.active_model or "gpt-4o-mini",
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            "temperature": float(self.config.temperature),
+            "temperature": temperature,
             "max_tokens": self.config.max_output_tokens,
         }
 
@@ -1771,12 +1803,12 @@ class LLMService:
 
 
 class DocxService:
-    FONT_NAME = "Aptos"
+    FONT_NAME = "Calibri"
     FONT_SIZE_BODY = Pt(11)
-    FONT_SIZE_H1 = Pt(14)
+    FONT_SIZE_H1 = Pt(12)
     FONT_SIZE_H2 = Pt(12)
     FONT_SIZE_NAME = Pt(16)
-    FONT_SIZE_CONTACT = Pt(10)
+    FONT_SIZE_CONTACT = Pt(11)
 
     def _set_font(self, run, size=None, bold=False):
         """Apply Aptos font to a run."""
@@ -1794,6 +1826,7 @@ class DocxService:
             p.paragraph_format.space_after = space_after
         if space_before is not None:
             p.paragraph_format.space_before = space_before
+        p.paragraph_format.line_spacing = 1.0
 
         # Parse markdown bold (**text**) into actual bold runs
         parts = re.split(r'(\*\*.*?\*\*)', text)
@@ -1849,6 +1882,7 @@ class DocxService:
             "EDUCATION",
             "CERTIFICATIONS",
         }
+        current_section = None
 
         for i, line in enumerate(lines):
             stripped = line.strip()
@@ -1932,8 +1966,25 @@ class DocxService:
                 self._add_formatted_paragraph(
                     doc, stripped, bold=True,
                     font_size=self.FONT_SIZE_H2,
-                    space_before=Pt(6), space_after=Pt(3)
+                    space_before=Pt(6), space_after=Pt(4)
                 )
+                current_section = stripped
+                continue
+
+            # Experience role line (Title | Company | Dates) - bold title only
+            if current_section == "PROFESSIONAL EXPERIENCE" and " | " in stripped and not stripped.startswith('- '):
+                parts = [p.strip() for p in stripped.split('|')]
+                p = doc.add_paragraph()
+                p.paragraph_format.space_after = Pt(2)
+                p.paragraph_format.space_before = Pt(6)
+                p.paragraph_format.line_spacing = 1.0
+                if parts:
+                    run = p.add_run(parts[0])
+                    self._set_font(run, size=self.FONT_SIZE_BODY, bold=True)
+                    if len(parts) > 1:
+                        rest = " | " + " | ".join(parts[1:])
+                        run2 = p.add_run(rest)
+                        self._set_font(run2, size=self.FONT_SIZE_BODY, bold=False)
                 continue
 
             # Bullet point (- text)
@@ -1942,6 +1993,7 @@ class DocxService:
                 p = doc.add_paragraph(style='List Bullet')
                 p.paragraph_format.space_after = Pt(1)
                 p.paragraph_format.space_before = Pt(1)
+                p.paragraph_format.line_spacing = 1.0
                 # Parse bold within bullet
                 parts = re.split(r'(\*\*.*?\*\*)', bullet_text)
                 for part in parts:
@@ -1960,4 +2012,4 @@ class DocxService:
         doc.save(buffer)
         buffer.seek(0)
         return buffer
-from .skills_extractor import generate_skills_from_jd
+from .skills_extractor import generate_skills_from_jd, extract_required_terms_from_jd

@@ -5,9 +5,33 @@ from django.conf import settings
 from users.models import User, ConsultantProfile
 from jobs.models import Job
 
+
+class Organisation(models.Model):
+    """
+    Lightweight organisation/tenant for future white-label support.
+    Currently optional and single-instance; safe to ignore when unused.
+    """
+    name = models.CharField(max_length=150, unique=True)
+    slug = models.SlugField(max_length=160, unique=True)
+    logo_url = models.URLField(blank=True)
+    primary_color = models.CharField(max_length=20, blank=True, help_text="Tailwind color token or hex (e.g. 'blue-600' or '#0f172a').")
+    accent_color = models.CharField(max_length=20, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Organisation"
+        verbose_name_plural = "Organisations"
+
+    def __str__(self):
+        return self.name
+
+
 class PlatformConfig(models.Model):
     """
     Singleton model to store global platform configuration.
+    For future white-label, this can be extended to be per-organisation.
     """
     # Branding
     site_name = models.CharField(max_length=100, default="EduConsult")
@@ -27,12 +51,94 @@ class PlatformConfig(models.Model):
     enable_consultant_registration = models.BooleanField(default=True, help_text="Allow new consultants to register")
     enable_job_applications = models.BooleanField(default=True, help_text="Allow consultants to apply for jobs")
     enable_public_consultant_view = models.BooleanField(default=True, help_text="Allow guests to view consultant profiles")
+    match_jd_title_default = models.BooleanField(
+        default=False,
+        help_text="If enabled, the most recent resume role title is replaced with the JD title by default."
+    )
+    enable_consultant_global_interview_calendar = models.BooleanField(
+        default=False,
+        help_text="If enabled, consultants can view the full interview calendar (all candidates) instead of only their own."
+    )
 
     # System
     maintenance_mode = models.BooleanField(default=False)
     maintenance_message = models.TextField(default="We are currently performing scheduled maintenance. Please check back later.")
     session_timeout_minutes = models.IntegerField(default=60, help_text="Session expiry time in minutes")
     max_upload_size_mb = models.IntegerField(default=5, help_text="Max file upload size in MB")
+
+    # Email ingestion (IMAP) – configuration only (future feature)
+    email_ingest_enabled = models.BooleanField(
+        default=False,
+        help_text="Enable IMAP email ingestion for status updates (requires IMAP credentials).",
+    )
+    email_imap_host = models.CharField(
+        max_length=255,
+        blank=True,
+        default="imap.gmail.com",
+        help_text="IMAP server hostname (e.g. imap.gmail.com).",
+    )
+    email_imap_port = models.IntegerField(
+        default=993,
+        help_text="IMAP port (993 for SSL).",
+    )
+    email_imap_use_ssl = models.BooleanField(
+        default=True,
+        help_text="Use SSL/TLS for IMAP connection (recommended).",
+    )
+    email_imap_username = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="IMAP username (usually the email address of the inbox).",
+    )
+    email_imap_encrypted_password = models.TextField(
+        blank=True,
+        help_text="Encrypted IMAP password or app password (stored encrypted).",
+    )
+    email_poll_interval_seconds = models.IntegerField(
+        default=60,
+        help_text="How often to poll the IMAP inbox for new messages (in seconds).",
+    )
+    email_auto_poll_enabled = models.BooleanField(
+        default=False,
+        help_text="If enabled, a background worker (Celery Beat) will poll IMAP automatically.",
+    )
+    email_ai_fallback_enabled = models.BooleanField(
+        default=False,
+        help_text="If enabled, use AI as a fallback when rules are unsure (token usage).",
+    )
+    email_ai_confidence_threshold = models.PositiveSmallIntegerField(
+        default=80,
+        help_text="AI confidence threshold (0–100). Only apply AI results at or above this number.",
+    )
+    email_notify_employee_on_auto_update = models.BooleanField(
+        default=False,
+        help_text="Send an email to the employee who submitted the application when an auto-update happens.",
+    )
+    email_notify_consultant_on_auto_update = models.BooleanField(
+        default=False,
+        help_text="Send an email to the consultant when an auto-update happens.",
+    )
+
+    # Data pipeline / enrichment (Phase 4)
+    google_kg_api_key = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Google Knowledge Graph API key for company enrichment (optional).",
+    )
+    apollo_api_key = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Apollo.io API key for organization enrichment (optional).",
+    )
+    hunter_api_key = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Hunter.io API key for company enrichment (optional).",
+    )
+    auto_enrich_on_create = models.BooleanField(
+        default=True,
+        help_text="When enabled, new companies are automatically queued for enrichment (Clearbit, OG, optional APIs).",
+    )
 
     # Social Media
     twitter_url = models.URLField(blank=True)
@@ -63,6 +169,22 @@ class PlatformConfig(models.Model):
             obj, created = cls.objects.get_or_create(pk=1)
             cache.set('platform_config', obj)
         return cache.get('platform_config')
+
+
+class PipelineRunLog(models.Model):
+    """
+    Tracks last run of pipeline tasks for Settings UI.
+    """
+    task_name = models.CharField(max_length=100, unique=True, db_index=True)
+    last_run_at = models.DateTimeField(null=True, blank=True)
+    last_run_result = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        verbose_name = "Pipeline run log"
+        verbose_name_plural = "Pipeline run logs"
+
+    def __str__(self):
+        return f"{self.task_name} @ {self.last_run_at}"
 
 
 class AuditLog(models.Model):

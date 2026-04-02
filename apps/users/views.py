@@ -1,35 +1,65 @@
+import csv
 from django.shortcuts import render, get_object_or_404, redirect
-from django.views.generic import ListView, DetailView, CreateView, UpdateView, DeleteView, TemplateView
+from django.views.generic import ListView, DetailView, CreateView, UpdateView, DeleteView, TemplateView, View
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db.models import Q, Avg, Count
 from django.urls import reverse_lazy
-from .models import User, ConsultantProfile, Experience, Education, Certification, SavedJob, MarketingRole, EmployeeProfile
-from .forms import ExperienceForm, EducationForm, CertificationForm, ConsultantCreateForm, UserProfileForm, EmployeeProfileForm, ConsultantProfileEditForm, MarketingRoleForm, EmployeeCreateForm
 from django.contrib import messages
 from django.views import View as BaseView
+from django.http import HttpResponse
+from django.core.serializers.json import DjangoJSONEncoder
+import json
+
+from .models import User, ConsultantProfile, Experience, Education, Certification, SavedJob, MarketingRole, EmployeeProfile
+from .forms import (
+    ExperienceForm,
+    EducationForm,
+    CertificationForm,
+    ConsultantCreateForm,
+    UserProfileForm,
+    EmployeeProfileForm,
+    ConsultantProfileEditForm,
+    MarketingRoleForm,
+    EmployeeCreateForm,
+)
 from jobs.models import Job
+from jobs.services import match_jobs_for_consultant
 from submissions.models import ApplicationSubmission, SubmissionResponse
 from resumes.models import ResumeDraft
 from interviews_app.models import Interview
 from config.constants import (
-    PAGINATION_CONSULTANTS, PAGINATION_SAVED_JOBS, DASHBOARD_RECENT_ITEMS, DASHBOARD_RECENT_JOBS,
-    MSG_EXPERIENCE_ADDED, MSG_EXPERIENCE_UPDATED, MSG_EXPERIENCE_DELETED,
-    MSG_EDUCATION_ADDED, MSG_EDUCATION_UPDATED, MSG_EDUCATION_DELETED,
-    MSG_CERT_ADDED, MSG_CERT_UPDATED, MSG_CERT_DELETED,
-    MSG_JOB_SAVED, MSG_JOB_UNSAVED, MSG_ONLY_CONSULTANTS_SAVE,
+    PAGINATION_CONSULTANTS,
+    PAGINATION_SAVED_JOBS,
+    DASHBOARD_RECENT_ITEMS,
+    DASHBOARD_RECENT_JOBS,
+    MSG_EXPERIENCE_ADDED,
+    MSG_EXPERIENCE_UPDATED,
+    MSG_EXPERIENCE_DELETED,
+    MSG_EDUCATION_ADDED,
+    MSG_EDUCATION_UPDATED,
+    MSG_EDUCATION_DELETED,
+    MSG_CERT_ADDED,
+    MSG_CERT_UPDATED,
+    MSG_CERT_DELETED,
+    MSG_JOB_SAVED,
+    MSG_JOB_UNSAVED,
+    MSG_ONLY_CONSULTANTS_SAVE,
 )
+from core.models import PlatformConfig, LLMUsageLog
 
 class ConsultantListView(LoginRequiredMixin, ListView):
     model = User
     template_name = 'users/consultant_list.html'
     context_object_name = 'consultants'
     paginate_by = PAGINATION_CONSULTANTS
+    ordering = ['-date_joined']
 
     def get_queryset(self):
         qs = User.objects.filter(role=User.Role.CONSULTANT, consultant_profile__isnull=False)
         search_query = self.request.GET.get('search')
         role_filter = self.request.GET.get('role')
-        
+        status_filter = self.request.GET.get('status')
+
         if search_query:
             try:
                 qs = qs.filter(
@@ -42,20 +72,141 @@ class ConsultantListView(LoginRequiredMixin, ListView):
                     Q(username__icontains=search_query) |
                     Q(consultant_profile__bio__icontains=search_query)
                 )
+
         if role_filter:
             qs = qs.filter(consultant_profile__marketing_roles__slug=role_filter)
+
+        if status_filter:
+            qs = qs.filter(consultant_profile__status=status_filter)
+
         return qs.select_related('consultant_profile').distinct()
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['marketing_roles'] = MarketingRole.objects.all()
         context['selected_role'] = self.request.GET.get('role', '')
+        context['selected_status'] = self.request.GET.get('status', '')
+        qd = self.request.GET.copy()
+        qd.pop('page', None)
+        context['pagination_query'] = qd.urlencode()
+        # Status summary for header chips (Active / Bench / Placed / Inactive)
+        status_counts = {
+            'ACTIVE': 0,
+            'BENCH': 0,
+            'PLACED': 0,
+            'INACTIVE': 0,
+        }
+        for row in self.object_list.values('consultant_profile__status').annotate(count=Count('id')):
+            code = row.get('consultant_profile__status')
+            if code in status_counts:
+                status_counts[code] = row['count']
+        context['status_summary'] = status_counts
         return context
 
     def get_template_names(self):
         if self.request.headers.get('HX-Request'):
             return ['users/_consultant_list_partial.html']
         return super().get_template_names()
+
+
+def _get_consultant_list_queryset(request):
+    """Shared queryset for consultant list and CSV export (search, role, status, min/max rate)."""
+    qs = User.objects.filter(role=User.Role.CONSULTANT, consultant_profile__isnull=False)
+    search_query = request.GET.get('search')
+    role_filter = request.GET.get('role')
+    status_filter = request.GET.get('status')
+    if search_query:
+        try:
+            qs = qs.filter(
+                Q(username__icontains=search_query)
+                | Q(consultant_profile__bio__icontains=search_query)
+                | Q(consultant_profile__skills__icontains=search_query)
+            )
+        except Exception:
+            qs = qs.filter(
+                Q(username__icontains=search_query)
+                | Q(consultant_profile__bio__icontains=search_query)
+            )
+    if role_filter:
+        qs = qs.filter(consultant_profile__marketing_roles__slug=role_filter)
+    if status_filter:
+        qs = qs.filter(consultant_profile__status=status_filter)
+    return qs.select_related('consultant_profile').prefetch_related('consultant_profile__marketing_roles').distinct()
+
+
+class ConsultantExportCSVView(LoginRequiredMixin, BaseView):
+    """Export consultant list as CSV with same filters as list view."""
+
+    def get(self, request, *args, **kwargs):
+        qs = _get_consultant_list_queryset(request)
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="consultants.csv"'
+        writer = csv.writer(response)
+        writer.writerow([
+            'Username', 'Full Name', 'Email', 'Status', 'Hourly Rate', 'Phone',
+            'Marketing Roles', 'Skills', 'Bio (first 200 chars)', 'Date Joined'
+        ])
+        for user in qs:
+            profile = user.consultant_profile
+            roles = ', '.join(r.name for r in profile.marketing_roles.all())
+            skills = ', '.join(profile.skills) if isinstance(profile.skills, list) else (profile.skills or '')
+            bio = (profile.bio or '')[:200]
+            writer.writerow([
+                user.username,
+                user.get_full_name() or '',
+                user.email or '',
+                profile.get_status_display(),
+                profile.hourly_rate or '',
+                profile.phone or '',
+                roles,
+                skills,
+                bio,
+                user.date_joined.strftime('%Y-%m-%d %H:%M'),
+            ])
+        return response
+
+
+def _get_employee_list_queryset(request):
+    """Shared queryset for employee list and CSV export (search)."""
+    qs = User.objects.filter(role=User.Role.EMPLOYEE)
+    search_query = request.GET.get('search')
+    if search_query:
+        qs = qs.filter(
+            Q(username__icontains=search_query)
+            | Q(email__icontains=search_query)
+            | Q(employee_profile__department__name__icontains=search_query)
+        )
+    return qs.select_related('employee_profile', 'employee_profile__department')
+
+
+class EmployeeExportCSVView(LoginRequiredMixin, UserPassesTestMixin, BaseView):
+    """Export employee list as CSV with same filters as list view (admin only)."""
+
+    def test_func(self):
+        return self.request.user.is_superuser or self.request.user.role == 'ADMIN'
+
+    def get(self, request, *args, **kwargs):
+        qs = _get_employee_list_queryset(request)
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="employees.csv"'
+        writer = csv.writer(response)
+        writer.writerow(['Username', 'Full Name', 'Email', 'Department', 'Company', 'Can Manage Consultants', 'Date Joined'])
+        for user in qs:
+            profile = getattr(user, 'employee_profile', None)
+            dept = profile.department.name if profile and profile.department else ''
+            company = profile.company_name if profile else ''
+            can_manage = getattr(profile, 'can_manage_consultants', False)
+            writer.writerow([
+                user.username,
+                user.get_full_name() or '',
+                user.email or '',
+                dept,
+                company,
+                'Yes' if can_manage else 'No',
+                user.date_joined.strftime('%Y-%m-%d %H:%M'),
+            ])
+        return response
+
 
 class EmployeeListView(LoginRequiredMixin, UserPassesTestMixin, ListView):
     model = User
@@ -65,19 +216,14 @@ class EmployeeListView(LoginRequiredMixin, UserPassesTestMixin, ListView):
 
     def test_func(self):
         return self.request.user.is_superuser or self.request.user.role == 'ADMIN'
-        # return self.request.user.is_superuser or self.request.user.role == 'ADMIN'
 
     def get_queryset(self):
-        qs = User.objects.filter(role=User.Role.EMPLOYEE)
-        search_query = self.request.GET.get('search')
-        
-        if search_query:
-            qs = qs.filter(
-                Q(username__icontains=search_query) |
-                Q(email__icontains=search_query) |
-                Q(employee_profile__department__icontains=search_query)
-            )
-        return qs.select_related('employee_profile')
+        return _get_employee_list_queryset(self.request)
+
+    def get_template_names(self):
+        if self.request.headers.get('HX-Request'):
+            return ['users/_employee_list_partial.html']
+        return super().get_template_names()
 
 class EmployeeDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
     model = User
@@ -210,6 +356,34 @@ class ConsultantEditView(LoginRequiredMixin, UserPassesTestMixin, BaseView):
             'cancel_url': reverse_lazy('consultant-detail', kwargs={'pk': pk}),
             'multi_form': True,
         })
+
+class PublicConsultantProfileView(View):
+    """
+    Shareable public profile at /c/<slug>/ (e.g. /c/john-doe).
+    Shown when PlatformConfig.enable_public_consultant_view is True.
+    """
+    template_name = 'users/consultant_public_profile.html'
+
+    def get(self, request, slug):
+        config = PlatformConfig.load()
+        if not getattr(config, 'enable_public_consultant_view', True):
+            return render(request, 'users/consultant_public_profile_disabled.html', status=404)
+        profile = get_object_or_404(
+            ConsultantProfile.objects.select_related('user').prefetch_related(
+                'marketing_roles', 'experience', 'education', 'certifications'
+            ),
+            profile_slug=slug,
+        )
+        context = {
+            'profile': profile,
+            'consultant': profile.user,
+            'experiences': profile.experience.all(),
+            'educations': profile.education.all(),
+            'certifications': profile.certifications.all(),
+            'site_name': getattr(config, 'site_name', ''),
+        }
+        return render(request, self.template_name, context)
+
 
 class ConsultantDetailView(LoginRequiredMixin, DetailView):
     model = User
@@ -468,9 +642,25 @@ class ConsultantDashboardView(LoginRequiredMixin, UserPassesTestMixin, TemplateV
         context['recent_submissions'] = my_submissions.order_by('-created_at')[:5]
         
         # Status Breakdown
-        context['status_breakdown'] = my_submissions.values('status').annotate(count=Count('status'))
+        status_breakdown_qs = my_submissions.values('status').annotate(count=Count('status'))
+        status_breakdown = list(status_breakdown_qs)
+        context['status_breakdown'] = status_breakdown
+
+        # Chart-friendly data for status breakdown
+        status_display_map = dict(ApplicationSubmission.Status.choices)
+        context['status_chart_labels'] = json.dumps(
+            [status_display_map.get(row['status'], row['status']) for row in status_breakdown],
+            cls=DjangoJSONEncoder,
+        )
+        context['status_chart_data'] = json.dumps(
+            [row['count'] for row in status_breakdown],
+            cls=DjangoJSONEncoder,
+        )
         
-        # Recent Jobs
+        # Recommended Jobs (AI-style matching)
+        context['recommended_jobs'] = match_jobs_for_consultant(profile, limit=5)
+
+        # Recent Open Jobs (fallback / extra section)
         context['recent_jobs'] = Job.objects.filter(status='OPEN').order_by('-created_at')[:5]
         
         # Saved Jobs
@@ -617,5 +807,18 @@ class SettingsView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        # Add any necessary context for settings dashboard here
+        platform = PlatformConfig.load()
+        logs = LLMUsageLog.objects.all()
+
+        context.update(
+            {
+                "platform_config": platform,
+                "maintenance_mode": platform.maintenance_mode,
+                "enable_consultant_registration": platform.enable_consultant_registration,
+                "enable_job_applications": platform.enable_job_applications,
+                "llm_total_calls": logs.count(),
+                "llm_success_calls": logs.filter(success=True).count(),
+                "llm_failed_calls": logs.filter(success=False).count(),
+            }
+        )
         return context

@@ -1,14 +1,13 @@
-from django.urls import reverse_lazy, reverse
-from django.db import models
+from django.urls import reverse
 import json
-from django.views.generic import DetailView, View, ListView, CreateView, UpdateView
+from django.views.generic import DetailView, View
 from django.views import View as BaseView
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, render, redirect
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib import messages
-from .models import ResumeDraft, LLMInputPreference, ResumeTemplate, ResumeTemplatePack
-from .forms import DraftGenerateForm, ResumeTemplateForm, ResumeTemplatePackForm
+from .models import ResumeDraft, LLMInputPreference
+from .forms import DraftGenerateForm
 from .services import (
     LLMService, DocxService, build_input_summary, get_system_prompt_text,
     build_user_prompt_from_sections, score_ats, validate_resume,
@@ -17,6 +16,7 @@ from .services import (
 from users.models import ConsultantProfile
 from core.models import LLMConfig
 from prompts_app.models import Prompt
+from jobs.services import JDParserService
 
 class AdminOrEmployeeMixin(LoginRequiredMixin, UserPassesTestMixin):
     """Only Admins and Employees can access draft features."""
@@ -49,6 +49,8 @@ class DraftGenerateView(AdminOrEmployeeMixin, BaseView):
             return redirect('consultant-detail', pk=pk)
 
         job = form.cleaned_data['job']
+        if not job.parsed_jd:
+            JDParserService.parse_job(job, actor=request.user)
 
         # Create draft record in PROCESSING state
         draft = ResumeDraft(
@@ -100,60 +102,6 @@ class DraftGenerateView(AdminOrEmployeeMixin, BaseView):
         return redirect('consultant-detail', pk=pk)
 
 
-class ResumeTemplateListView(AdminOrEmployeeMixin, ListView):
-    model = ResumeTemplate
-    template_name = 'resumes/template_list.html'
-    context_object_name = 'templates'
-
-    def get_queryset(self):
-        qs = ResumeTemplate.objects.all().order_by('name')
-        q = self.request.GET.get('q', '').strip()
-        if q:
-            qs = qs.filter(name__icontains=q)
-        return qs
-
-
-class ResumeTemplateCreateView(AdminOrEmployeeMixin, CreateView):
-    model = ResumeTemplate
-    form_class = ResumeTemplateForm
-    template_name = 'resumes/template_form.html'
-    success_url = reverse_lazy('resume-template-list')
-
-
-class ResumeTemplateUpdateView(AdminOrEmployeeMixin, UpdateView):
-    model = ResumeTemplate
-    form_class = ResumeTemplateForm
-    template_name = 'resumes/template_form.html'
-    success_url = reverse_lazy('resume-template-list')
-
-
-class ResumeTemplatePackListView(AdminOrEmployeeMixin, ListView):
-    model = ResumeTemplatePack
-    template_name = 'resumes/template_pack_list.html'
-    context_object_name = 'packs'
-
-    def get_queryset(self):
-        qs = ResumeTemplatePack.objects.all().order_by('name')
-        q = self.request.GET.get('q', '').strip()
-        if q:
-            qs = qs.filter(name__icontains=q)
-        return qs
-
-
-class ResumeTemplatePackCreateView(AdminOrEmployeeMixin, CreateView):
-    model = ResumeTemplatePack
-    form_class = ResumeTemplatePackForm
-    template_name = 'resumes/template_pack_form.html'
-    success_url = reverse_lazy('resume-template-pack-list')
-
-
-class ResumeTemplatePackUpdateView(AdminOrEmployeeMixin, UpdateView):
-    model = ResumeTemplatePack
-    form_class = ResumeTemplatePackForm
-    template_name = 'resumes/template_pack_form.html'
-    success_url = reverse_lazy('resume-template-pack-list')
-
-
 class DraftDetailView(DraftAccessMixin, DetailView):
     """View a single draft's generated content."""
     model = ResumeDraft
@@ -195,19 +143,6 @@ class DraftDetailView(DraftAccessMixin, DetailView):
             if required not in default_sections:
                 default_sections.append(required)
         context['llm_builder_defaults'] = default_sections
-        templates_qs = ResumeTemplate.objects.filter(is_active=True)
-        if hasattr(draft.consultant, 'marketing_roles'):
-            roles = draft.consultant.marketing_roles.all()
-            if roles.exists():
-                packs = ResumeTemplatePack.objects.filter(is_active=True, marketing_roles__in=roles).distinct()
-                pack_templates = ResumeTemplate.objects.filter(packs__in=packs, is_active=True).distinct()
-                if pack_templates.exists():
-                    templates_qs = pack_templates
-                else:
-                    templates_qs = templates_qs.filter(
-                        models.Q(marketing_roles__in=roles) | models.Q(marketing_roles__isnull=True)
-                    ).distinct()
-        context['resume_templates'] = templates_qs.order_by('name')
         context['llm_builder_data'] = {
             "name": draft.consultant.user.get_full_name() or draft.consultant.user.username,
             "email": draft.consultant.user.email or "Not provided.",
@@ -245,6 +180,20 @@ class DraftDetailView(DraftAccessMixin, DetailView):
             "temperature": float(config.temperature),
             "max_tokens": config.max_output_tokens,
         }
+        # JD parse proof + summary line count for UI
+        job = draft.job
+        context['jd_parse_status'] = getattr(job, "parsed_jd_status", "")
+        context['jd_parse_updated_at'] = getattr(job, "parsed_jd_updated_at", None)
+        context['jd_parse_error'] = getattr(job, "parsed_jd_error", "")
+        context['jd_parse_present'] = bool(getattr(job, "parsed_jd", None))
+        summary_section = extract_section(draft.content or "", "PROFESSIONAL SUMMARY", [
+            "PROFESSIONAL SUMMARY", "SKILLS", "PROFESSIONAL EXPERIENCE", "EDUCATION", "CERTIFICATIONS"
+        ])
+        if summary_section:
+            lines = [l for l in summary_section.splitlines() if l.strip()][1:] if summary_section else []
+            context['summary_line_count'] = len(lines)
+        else:
+            context['summary_line_count'] = 0
         return context
 
 
@@ -291,6 +240,8 @@ class DraftRegenerateView(AdminOrEmployeeMixin, BaseView):
         existing = get_object_or_404(ResumeDraft, pk=pk)
         consultant_profile = existing.consultant
         job = existing.job
+        if not job.parsed_jd:
+            JDParserService.parse_job(job, actor=request.user)
 
         sections = request.POST.getlist('sections')
         if not sections:
@@ -322,17 +273,7 @@ class DraftRegenerateView(AdminOrEmployeeMixin, BaseView):
         if "professional_summary" not in sections:
             sections.append("professional_summary")
 
-        template_id = request.POST.get('template_id') or None
-        if not template_id:
-            messages.error(request, "Please select a resume template before generating.")
-            return redirect(f"{reverse('draft-detail', kwargs={'pk': existing.pk})}#llm-builder")
-        template_layout = None
-        if template_id:
-            tmpl = ResumeTemplate.objects.filter(pk=template_id, is_active=True).first()
-            if tmpl:
-                template_layout = tmpl.layout
-
-        user_prompt = build_user_prompt_from_sections(job, consultant_profile, sections, template_layout=template_layout)
+        user_prompt = build_user_prompt_from_sections(job, consultant_profile, sections)
         system_prompt = get_system_prompt_text(job, consultant_profile)
 
         config = LLMConfig.load()

@@ -2,33 +2,33 @@
 {% load widget_tweaks %}
 
 {% block content %}
-<div class="flex items-center justify-center min-h-screen bg-gray-100">
-    <div class="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
+<div class="flex items-center justify-center py-12">
+    <div class="bg-white p-8 rounded-xl shadow-sm border border-gray-200 w-full max-w-md">
         <h2 class="text-2xl font-bold mb-6 text-center text-gray-800">{{ MSG_LOGIN_HEADING }}</h2>
 
         <form method="post" action="{% url 'login' %}">
             {% csrf_token %}
 
             {% if form.errors %}
-            <div class="mb-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+            <div class="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm" role="alert">
                 <strong class="font-bold">Error!</strong>
                 <span class="block sm:inline">Invalid username or password.</span>
             </div>
             {% endif %}
 
             <div class="mb-4">
-                <label class="block text-gray-700 text-sm font-bold mb-2" for="username">
+                <label class="block text-gray-600 text-sm font-medium mb-2" for="username">
                     Username
                 </label>
-                {% render_field form.username class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" %}
+                {% render_field form.username class="border border-gray-300 rounded-lg w-full py-2 px-3 text-gray-700 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" %}
             </div>
 
             <div class="mb-6">
-                <label class="block text-gray-700 text-sm font-bold mb-2" for="password">
+                <label class="block text-gray-600 text-sm font-medium mb-2" for="password">
                     Password
                 </label>
                 <div class="relative">
-                    {% render_field form.password class="shadow appearance-none border rounded w-full py-2 px-3 pr-10 text-gray-700 mb-3 leading-tight focus:outline-none focus:shadow-outline" id="id_password" %}
+                    {% render_field form.password class="border border-gray-300 rounded-lg w-full py-2 px-3 pr-10 text-gray-700 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" id="id_password" %}
                     <button type="button" onclick="togglePassword('id_password', this)"
                         class="absolute right-3 top-2.5 text-gray-500 hover:text-gray-700 focus:outline-none">
                         <svg class="h-5 w-5 eye-open" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -49,7 +49,7 @@
 
             <div class="flex items-center justify-between">
                 <button
-                    class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full"
+                    class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 rounded-lg w-full transition"
                     type="submit">
                     Sign In
                 </button>

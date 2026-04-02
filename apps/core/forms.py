@@ -1,6 +1,6 @@
 from django import forms
 from .models import PlatformConfig, LLMConfig
-from .security import encrypt_value
+from .security import encrypt_value, decrypt_value
 
 
 class LLMConfigForm(forms.ModelForm):
@@ -45,6 +45,13 @@ class LLMConfigForm(forms.ModelForm):
         return instance
 
 class PlatformConfigForm(forms.ModelForm):
+    email_imap_password = forms.CharField(
+        required=False,
+        widget=forms.TextInput(),
+        help_text="IMAP app password or mailbox password. Visible here, stored encrypted in the database.",
+        label="IMAP Password",
+    )
+
     class Meta:
         model = PlatformConfig
         fields = '__all__'
@@ -59,7 +66,26 @@ class PlatformConfigForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         # Add basic styling
         for field in self.fields:
-            if isinstance(self.fields[field].widget, (forms.TextInput, forms.URLInput, forms.EmailInput, forms.NumberInput, forms.Textarea)):
-                 self.fields[field].widget.attrs.update({'class': 'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500'})
-            elif isinstance(self.fields[field].widget, forms.CheckboxInput):
-                 self.fields[field].widget.attrs.update({'class': 'h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded'})
+            widget = self.fields[field].widget
+            if isinstance(widget, (forms.TextInput, forms.URLInput, forms.EmailInput, forms.NumberInput, forms.Textarea, forms.PasswordInput)):
+                widget.attrs.update({'class': 'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500'})
+            elif isinstance(widget, forms.CheckboxInput):
+                widget.attrs.update({'class': 'h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded'})
+
+        instance: PlatformConfig = self.instance
+        if getattr(instance, "email_imap_encrypted_password", ""):
+            # Decrypt so the admin can see and re-use the exact value.
+            self.initial.setdefault(
+                "email_imap_password",
+                decrypt_value(instance.email_imap_encrypted_password),
+            )
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        password = (self.cleaned_data.get('email_imap_password') or "").strip()
+        if password:
+            instance.email_imap_encrypted_password = encrypt_value(password)
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance

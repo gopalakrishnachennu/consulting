@@ -2,41 +2,23 @@
 {% load widget_tweaks %}
 
 {% block content %}
-<div class="flex justify-center items-center h-screen bg-gray-100">
-    <div class="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
-        <h2 class="text-2xl font-bold mb-6 text-center text-gray-800">Bulk Upload Jobs</h2>
-
-        <p class="mb-4 text-sm text-gray-600">
-            Upload a CSV file with the following headers:
-            <code
-                class="bg-gray-200 p-1 rounded">title, company, location, description, requirements, salary_range</code>
+<div class="flex justify-center py-12">
+    <div class="bg-white p-8 rounded-xl shadow-sm border border-gray-200 w-full max-w-md">
+        <h2 class="text-2xl font-bold text-gray-800 mb-2">Bulk upload jobs</h2>
+        <p class="text-gray-600 text-sm mb-6">
+            Upload a CSV with headers: <code class="bg-gray-100 px-1.5 py-0.5 rounded text-xs">title, company, location, description, requirements, salary_range</code>
         </p>
-
         <form method="post" enctype="multipart/form-data">
             {% csrf_token %}
-
-            <div class="mb-4">
-                <label for="{{ form.csv_file.id_for_label }}" class="block text-gray-700 font-bold mb-2">
-                    Select CSV File
-                </label>
-                {% render_field form.csv_file class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" %}
-                {% if form.csv_file.help_text %}
-                <p class="text-gray-600 text-xs italic mt-1">{{ form.csv_file.help_text }}</p>
-                {% endif %}
-                {% if form.csv_file.errors %}
-                <div class="text-red-500 text-xs italic mt-1">{{ form.csv_file.errors }}</div>
-                {% endif %}
+            <div class="mb-6">
+                <label for="{{ form.csv_file.id_for_label }}" class="block text-gray-600 text-sm font-medium mb-2">CSV file</label>
+                {% render_field form.csv_file class="border border-gray-300 rounded-lg w-full py-2 px-3 text-gray-700 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" %}
+                {% if form.csv_file.help_text %}<p class="text-gray-500 text-xs mt-1">{{ form.csv_file.help_text }}</p>{% endif %}
+                {% if form.csv_file.errors %}<div class="text-red-600 text-xs mt-1">{{ form.csv_file.errors }}</div>{% endif %}
             </div>
-
-            <div class="flex items-center justify-between mt-6">
-                <a href="{% url 'job-list' %}" class="text-gray-600 hover:text-gray-900 font-bold">
-                    Cancel
-                </a>
-                <button
-                    class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-                    type="submit">
-                    Upload Jobs
-                </button>
+            <div class="flex justify-between items-center">
+                <a href="{% url 'job-list' %}" class="text-gray-600 hover:text-gray-800 text-sm font-medium">Cancel</a>
+                <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-medium py-2.5 px-5 rounded-lg transition">Upload</button>
             </div>
         </form>
     </div>

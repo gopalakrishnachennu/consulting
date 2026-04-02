@@ -1,32 +1,308 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="flex justify-between items-center mb-6">
-    <h1 class="text-3xl font-bold text-gray-800">Job Applications</h1>
+<!-- HERO HEADER -->
+<div class="hero-gradient rounded-2xl px-8 py-6 mb-6 relative overflow-hidden">
+    <div class="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+        <div>
+            <div class="flex items-center gap-3 mb-2">
+                {% if request.user.is_superuser or request.user.role == 'ADMIN' %}
+                <a href="{% url 'admin-dashboard' %}" class="text-blue-200 hover:text-white text-sm font-medium transition">← Dashboard</a>
+                {% elif request.user.role == 'EMPLOYEE' %}
+                <a href="{% url 'employee-dashboard' %}" class="text-blue-200 hover:text-white text-sm font-medium transition">← Dashboard</a>
+                {% else %}
+                <a href="{% url 'consultant-dashboard' %}" class="text-blue-200 hover:text-white text-sm font-medium transition">← Dashboard</a>
+                {% endif %}
+            </div>
+            <h1 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight flex items-center gap-4">
+                <svg class="w-9 h-9 text-blue-200 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                        d="M8 7h8m-8 4h5m-1 8H6a2 2 0 01-2-2V7a2 2 0 012-2h1l1-2h6l1 2h1a2 2 0 012 2v10a2 2 0 01-2 2h-2" />
+                </svg>
+                Job Applications
+                <span class="bg-white/20 text-white text-sm font-semibold px-3 py-1 rounded-full backdrop-blur-sm">
+                    {{ total_submissions|default:0 }}
+                </span>
+            </h1>
+            <p class="text-blue-100 mt-2 text-base md:text-lg">
+                Track how candidates are progressing from claim to interview, offer, or rejection.
+            </p>
+        </div>
+        <div class="flex items-center gap-3">
+            {% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}
+            <a href="{% url 'email-event-list' %}"
+                class="px-4 py-2.5 bg-white/15 border border-white/30 rounded-xl text-sm font-medium text-white hover:bg-white/25 transition backdrop-blur-sm flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 4h16v4H4zm0 6h10v6H4z" />
+                </svg>
+                Email Ingestion Log
+            </a>
+            {% endif %}
+            <a href="{% url 'submission-export-csv' %}?{{ request.GET.urlencode }}"
+                class="px-4 py-2.5 bg-white/15 border border-white/30 rounded-xl text-sm font-medium text-white hover:bg-white/25 transition backdrop-blur-sm flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Export CSV
+            </a>
+        </div>
+    </div>
 </div>
 
-<form method="get" class="bg-white p-4 rounded-md shadow mb-6 flex flex-wrap gap-3 items-end">
-    <div>
+<!-- STATUS SUMMARY (IN PROGRESS / APPLIED / INTERVIEW / OFFER / REJECTED) -->
+{% if status_summary %}
+<div class="mb-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+    <div class="bg-white rounded-xl px-4 py-3 border border-gray-100 shadow-sm">
+        <div class="flex items-center justify-between">
+            <div>
+                <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">In Progress</span>
+                <p class="mt-0.5 text-xl font-extrabold text-gray-900">{{ status_summary.IN_PROGRESS }}</p>
+            </div>
+            <div class="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center">
+                <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+            </div>
+        </div>
+    </div>
+    <div class="bg-white rounded-xl px-4 py-3 border border-gray-100 shadow-sm">
+        <div class="flex items-center justify-between">
+            <div>
+                <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">Applied</span>
+                <p class="mt-0.5 text-xl font-extrabold text-gray-900">{{ status_summary.APPLIED }}</p>
+            </div>
+            <div class="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center">
+                <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M3 7h18M5 11h14M7 15h10M9 19h6" />
+                </svg>
+            </div>
+        </div>
+    </div>
+    <div class="bg-white rounded-xl px-4 py-3 border border-gray-100 shadow-sm">
+        <div class="flex items-center justify-between">
+            <div>
+                <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">Interview</span>
+                <p class="mt-0.5 text-xl font-extrabold text-gray-900">{{ status_summary.INTERVIEW }}</p>
+            </div>
+            <div class="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center">
+                <svg class="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M8 10h.01M12 10h.01M16 10h.01M21 16v1a3 3 0 01-3 3H6a3 3 0 01-3-3v-1m18 0a9 9 0 10-18 0" />
+                </svg>
+            </div>
+        </div>
+    </div>
+    <div class="bg-white rounded-xl px-4 py-3 border border-gray-100 shadow-sm">
+        <div class="flex items-center justify-between">
+            <div>
+                <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">Offer</span>
+                <p class="mt-0.5 text-xl font-extrabold text-gray-900">{{ status_summary.OFFER }}</p>
+            </div>
+            <div class="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center">
+                <svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M5 13l4 4L19 7" />
+                </svg>
+            </div>
+        </div>
+    </div>
+    <div class="bg-white rounded-xl px-4 py-3 border border-gray-100 shadow-sm">
+        <div class="flex items-center justify-between">
+            <div>
+                <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">Rejected</span>
+                <p class="mt-0.5 text-xl font-extrabold text-gray-900">{{ status_summary.REJECTED }}</p>
+            </div>
+            <div class="w-9 h-9 rounded-full bg-red-100 flex items-center justify-center">
+                <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636" />
+                </svg>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{# Status filter tabs (All / by status) #}
+<div class="mb-3 flex flex-wrap items-center gap-2 text-xs font-medium">
+    {% with current_status=request.GET.status %}
+    <a href="{% if request.GET.search %}?search={{ request.GET.search|urlencode }}{% else %}?{% endif %}"
+        class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full border
+        {% if not current_status %} bg-blue-600 text-white border-blue-600
+        {% else %} bg-white text-gray-700 border-gray-200 hover:border-blue-300 hover:text-blue-700 {% endif %}">
+        <span>All</span>
+        <span class="font-mono text-[11px] opacity-80">{{ total_submissions }}</span>
+    </a>
+    <a href="?status=IN_PROGRESS{% if request.GET.search %}&search={{ request.GET.search|urlencode }}{% endif %}"
+        class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full border
+        {% if current_status == 'IN_PROGRESS' %} bg-blue-50 text-blue-700 border-blue-300
+        {% else %} bg-white text-gray-700 border-gray-200 hover:border-blue-300 hover:text-blue-700 {% endif %}">
+        <span>In progress</span>
+        <span class="font-mono text-[11px] opacity-80">
+            {{ status_summary.IN_PROGRESS|default:0 }}
+        </span>
+    </a>
+    <a href="?status=APPLIED{% if request.GET.search %}&search={{ request.GET.search|urlencode }}{% endif %}"
+        class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full border
+        {% if current_status == 'APPLIED' %} bg-blue-50 text-blue-700 border-blue-300
+        {% else %} bg-white text-gray-700 border-gray-200 hover:border-blue-300 hover:text-blue-700 {% endif %}">
+        <span>Applied</span>
+        <span class="font-mono text-[11px] opacity-80">
+            {{ status_summary.APPLIED|default:0 }}
+        </span>
+    </a>
+    <a href="?status=INTERVIEW{% if request.GET.search %}&search={{ request.GET.search|urlencode }}{% endif %}"
+        class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full border
+        {% if current_status == 'INTERVIEW' %} bg-blue-50 text-blue-700 border-blue-300
+        {% else %} bg-white text-gray-700 border-gray-200 hover:border-blue-300 hover:text-blue-700 {% endif %}">
+        <span>Interview</span>
+        <span class="font-mono text-[11px] opacity-80">
+            {{ status_summary.INTERVIEW|default:0 }}
+        </span>
+    </a>
+    <a href="?status=OFFER{% if request.GET.search %}&search={{ request.GET.search|urlencode }}{% endif %}"
+        class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full border
+        {% if current_status == 'OFFER' %} bg-blue-50 text-blue-700 border-blue-300
+        {% else %} bg-white text-gray-700 border-gray-200 hover:border-blue-300 hover:text-blue-700 {% endif %}">
+        <span>Offer</span>
+        <span class="font-mono text-[11px] opacity-80">
+            {{ status_summary.OFFER|default:0 }}
+        </span>
+    </a>
+    <a href="?status=REJECTED{% if request.GET.search %}&search={{ request.GET.search|urlencode }}{% endif %}"
+        class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full border
+        {% if current_status == 'REJECTED' %} bg-blue-50 text-blue-700 border-blue-300
+        {% else %} bg-white text-gray-700 border-gray-200 hover:border-blue-300 hover:text-blue-700 {% endif %}">
+        <span>Rejected</span>
+        <span class="font-mono text-[11px] opacity-80">
+            {{ status_summary.REJECTED|default:0 }}
+        </span>
+    </a>
+    <a href="?status=WITHDRAWN{% if request.GET.search %}&search={{ request.GET.search|urlencode }}{% endif %}"
+        class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full border
+        {% if current_status == 'WITHDRAWN' %} bg-blue-50 text-blue-700 border-blue-300
+        {% else %} bg-white text-gray-700 border-gray-200 hover:border-blue-300 hover:text-blue-700 {% endif %}">
+        <span>Withdrawn</span>
+        <span class="font-mono text-[11px] opacity-80">
+            {{ status_summary.WITHDRAWN|default:0 }}
+        </span>
+    </a>
+    {% endwith %}
+</div>
+
+<!-- FILTER BAR -->
+<form method="get" class="glass rounded-2xl px-5 py-3 mb-4 flex flex-wrap gap-3 items-end">
+    <div class="flex-1 min-w-[200px]">
         <label class="block text-xs text-gray-500 mb-1">Search</label>
-        <input type="text" name="search" value="{{ request.GET.search }}" class="border rounded px-3 py-2" placeholder="Job or company">
+        <input type="text" name="search" value="{{ request.GET.search }}" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm" placeholder="Job or company">
     </div>
     <div>
         <label class="block text-xs text-gray-500 mb-1">Status</label>
-        <select name="status" class="border rounded px-3 py-2">
+        <select name="status" class="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm">
             <option value="">All</option>
             {% for key, label in status_choices %}
             <option value="{{ key }}" {% if request.GET.status == key %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
         </select>
     </div>
-    <button class="px-4 py-2 rounded bg-blue-600 text-white">Apply</button>
+    <button class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition">Apply</button>
+    <a href="{% url 'submission-export-csv' %}?{{ request.GET.urlencode }}"
+        class="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 text-sm font-medium">
+        Export CSV
+    </a>
 </form>
 
-<div class="bg-white shadow overflow-hidden sm:rounded-md">
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    {% if user.role == 'EMPLOYEE' or user.is_superuser or user.role == 'ADMIN' %}
+    <form method="post" action="{% url 'submission-bulk-status' %}" id="bulk-form">
+        {% csrf_token %}
+        <input type="hidden" name="next_query" value="{{ request.GET.urlencode }}">
+        <div id="bulk-floating-bar"
+            class="hidden fixed inset-x-0 bottom-4 z-40 flex justify-center px-4 pointer-events-none opacity-0 translate-y-3 transition duration-200 ease-out">
+            <div
+                class="pointer-events-auto max-w-3xl w-full bg-white border border-gray-200 shadow-lg rounded-xl px-5 py-3">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="flex flex-wrap items-center gap-3">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-semibold uppercase tracking-wider text-gray-600">Bulk actions</span>
+                            <span class="text-xs text-gray-400">•</span>
+                            <span class="text-xs text-gray-600">
+                                Selected: <span id="bulk-selected-count" class="font-semibold text-gray-900">0</span>
+                            </span>
+                        </div>
+
+                        <div class="hidden sm:block h-5 w-px bg-gray-200" aria-hidden="true"></div>
+
+                        <div class="inline-flex items-center rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+                            <button type="button" id="bulk-select-all"
+                                class="px-3 py-1.5 rounded-md text-sm font-medium text-gray-700 hover:bg-white hover:shadow-sm transition">
+                                Select page
+                            </button>
+                            <button type="button" id="bulk-clear"
+                                class="px-3 py-1.5 rounded-md text-sm font-medium text-gray-600 hover:bg-white hover:shadow-sm transition">
+                                Clear
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                        <div class="relative w-full sm:w-64">
+                            <select name="new_status" id="bulk-new-status"
+                                class="w-full pl-3 pr-9 py-2 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-800 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition appearance-none cursor-pointer"
+                                required aria-label="New status for selected applications">
+                                <option value="">Change status to…</option>
+                                {% for key, label in status_choices %}
+                                <option value="{{ key }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                            <div
+                                class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2 text-gray-400">
+                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </div>
+                        </div>
+
+                        <button type="submit" id="bulk-apply" disabled
+                            class="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                            Apply
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+    <div class="hidden sm:flex items-center justify-between px-4 py-2 border-b border-gray-100 bg-gray-50 text-[11px] font-semibold text-gray-500 tracking-wide">
+        <div class="flex items-center gap-2">
+            {% if user.role == 'EMPLOYEE' or user.is_superuser or user.role == 'ADMIN' %}
+            <input type="checkbox" id="bulk-master"
+                class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+            <span>Select</span>
+            {% else %}
+            <span>Applications</span>
+            {% endif %}
+        </div>
+        <div class="hidden md:flex items-center gap-8 pr-4">
+            <span>Job / Company</span>
+            <span>Status</span>
+            <span>Proof</span>
+        </div>
+    </div>
+
     <ul class="divide-y divide-gray-200">
         {% for submission in submissions %}
-        <li>
-            <div class="px-4 py-4 sm:px-6">
+        <li class="submission-row">
+            <div class="px-4 py-4 sm:px-6 flex items-start gap-3">
+                {% if user.role == 'EMPLOYEE' or user.is_superuser or user.role == 'ADMIN' %}
+                <input type="checkbox" name="submission_ids" value="{{ submission.pk }}" form="bulk-form"
+                    class="mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                {% endif %}
+                <div class="flex-1 min-w-0">
                 <div class="flex items-center justify-between">
                     <div class="flex flex-col">
                         <p class="text-sm font-medium text-indigo-600 truncate">
@@ -39,6 +315,17 @@
                         </p>
                     </div>
                     <div class="ml-2 flex-shrink-0 flex">
+                        {% if user.role == 'EMPLOYEE' or user.is_superuser or user.role == 'ADMIN' %}
+                        <select
+                            class="submission-status-select text-xs font-mono px-2 py-1 rounded-md border border-gray-300 bg-white text-gray-800 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
+                            data-url="{% url 'submission-inline-status' submission.pk %}">
+                            {% for key, label in status_choices %}
+                            <option value="{{ key }}" {% if submission.status == key %}selected{% endif %}>
+                                {{ label }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        {% else %}
                         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
                                 {% if submission.status == 'IN_PROGRESS' %}bg-yellow-100 text-yellow-800{% endif %}
                                 {% if submission.status == 'APPLIED' %}bg-blue-100 text-blue-800{% endif %}
@@ -48,6 +335,7 @@
                                 {% if submission.status == 'WITHDRAWN' %}bg-gray-100 text-gray-800{% endif %}">
                             {{ submission.get_status_display }}
                         </span>
+                        {% endif %}
                     </div>
                 </div>
                 <div class="mt-2 sm:flex sm:justify-between">
@@ -60,22 +348,23 @@
                             {% endif %}
                         </p>
                         {% if submission.proof_file %}
+                        <span
+                            class="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 text-xs font-semibold">
+                            ✓ PROOF ATTACHED
+                        </span>
                         <a href="{{ submission.proof_file.url }}" target="_blank"
-                            class="text-sm text-indigo-600 hover:text-indigo-900">
-                            View Proof
+                            class="ml-2 text-xs text-indigo-600 hover:text-indigo-900 font-medium">
+                            View
                         </a>
                         {% else %}
-                        <span class="text-sm text-gray-400">No proof attached</span>
+                        <span
+                            class="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 text-xs font-semibold">
+                            NO PROOF
+                        </span>
                         {% endif %}
                     </div>
-                    {% if user.role == 'EMPLOYEE' or user.is_superuser %}
-                    <div class="mt-2 flex items-center text-sm text-gray-500 sm:mt-0">
-                        <a href="{% url 'submission-update' submission.pk %}"
-                            class="font-medium text-indigo-600 hover:text-indigo-500">
-                            Update Status
-                        </a>
-                    </div>
-                    {% endif %}
+                    {# Inline status select replaces separate 'Update Status' link for employees #}
+                </div>
                 </div>
             </div>
         </li>
@@ -83,22 +372,174 @@
         <li class="px-4 py-4 text-center text-gray-500">No applications found.</li>
         {% endfor %}
     </ul>
+    {% if user.role == 'EMPLOYEE' or user.is_superuser or user.role == 'ADMIN' %}
+    </form>
+    {% endif %}
 </div>
+
+{% if user.role == 'EMPLOYEE' or user.is_superuser or user.role == 'ADMIN' %}
+<script>
+    (function () {
+        const form = document.getElementById('bulk-form');
+        if (!form) return;
+
+        const checkboxes = Array.from(form.querySelectorAll('input[name="submission_ids"]'));
+        const countEl = document.getElementById('bulk-selected-count');
+        const selectAllBtn = document.getElementById('bulk-select-all');
+        const clearBtn = document.getElementById('bulk-clear');
+        const statusSelect = document.getElementById('bulk-new-status');
+        const applyBtn = document.getElementById('bulk-apply');
+        const bar = document.getElementById('bulk-floating-bar');
+        const master = document.getElementById('bulk-master');
+        const statusSelects = Array.from(document.querySelectorAll('.submission-status-select'));
+
+        function selectedCount() {
+            return checkboxes.filter(c => c.checked).length;
+        }
+
+        function syncRowAccents() {
+            checkboxes.forEach(c => {
+                const row = c.closest('.submission-row');
+                if (!row) return;
+                if (c.checked) {
+                    row.classList.add('border-l-4', 'border-blue-500', 'bg-blue-50/40');
+                } else {
+                    row.classList.remove('border-l-4', 'border-blue-500', 'bg-blue-50/40');
+                }
+            });
+        }
+
+        function refresh() {
+            const count = selectedCount();
+            if (countEl) countEl.textContent = String(count);
+            const statusOk = !!(statusSelect && statusSelect.value);
+            if (applyBtn) applyBtn.disabled = !(count > 0 && statusOk);
+
+            if (bar) {
+                if (count > 0) {
+                    bar.classList.remove('hidden');
+                    // trigger reflow for transition
+                    // eslint-disable-next-line no-unused-expressions
+                    bar.offsetHeight;
+                    bar.classList.remove('opacity-0', 'translate-y-3');
+                } else {
+                    bar.classList.add('opacity-0', 'translate-y-3');
+                    setTimeout(() => bar.classList.add('hidden'), 180);
+                }
+            }
+
+            syncRowAccents();
+        }
+
+        if (selectAllBtn) {
+            selectAllBtn.addEventListener('click', () => {
+                checkboxes.forEach(c => { c.checked = true; });
+                refresh();
+            });
+        }
+
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => {
+                checkboxes.forEach(c => { c.checked = false; });
+                refresh();
+            });
+        }
+
+        if (master) {
+            master.addEventListener('change', () => {
+                const checked = master.checked;
+                checkboxes.forEach(c => { c.checked = checked; });
+                refresh();
+            });
+        }
+
+        checkboxes.forEach(c => c.addEventListener('change', refresh));
+        if (statusSelect) statusSelect.addEventListener('change', refresh);
+
+        // Toast helper for inline actions (mirrors global toast style)
+        function showInlineToast(message, level) {
+            const host = document.querySelector('[aria-live="polite"][aria-atomic="true"]') || document.body;
+            const wrapper = document.createElement('div');
+            wrapper.className = 'fixed inset-x-0 bottom-4 z-50 flex justify-center px-4 pointer-events-none';
+            const toast = document.createElement('div');
+            toast.className =
+                'pointer-events-auto max-w-md w-full rounded-xl px-4 py-3 flex items-start gap-3 toast-enter shadow-lg ring-1 ' +
+                (level === 'error'
+                    ? 'bg-red-600 text-white ring-red-300/60'
+                    : 'bg-emerald-600 text-white ring-emerald-300/60');
+            toast.innerHTML =
+                '<div class="mt-0.5">' +
+                '<svg class="h-5 w-5 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
+                '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="' +
+                (level === 'error'
+                    ? 'M12 9v4m0 4h.01M10 4h4l1 4h4l-7 12-7-12h4l1-4z'
+                    : 'M5 13l4 4L19 7') +
+                '"></path></svg></div>' +
+                '<div class="flex-1 text-sm leading-snug">' +
+                message +
+                '</div>';
+            wrapper.appendChild(toast);
+            host.appendChild(wrapper);
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                toast.style.transition = 'opacity 200ms ease, transform 200ms ease';
+                setTimeout(() => wrapper.remove(), 250);
+            }, 3200);
+        }
+
+        // Inline status dropdowns (instant save)
+        function getCsrfToken() {
+            const input = document.querySelector('input[name="csrfmiddlewaretoken"]');
+            return input ? input.value : '';
+        }
+
+        statusSelects.forEach(sel => {
+            sel.addEventListener('change', () => {
+                const url = sel.dataset.url;
+                if (!url) return;
+                const value = sel.value;
+                const csrf = getCsrfToken();
+                const formData = new FormData();
+                formData.append('status', value);
+
+                fetch(url, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest' },
+                    body: formData,
+                })
+                    .then(resp => resp.json().then(data => {
+                        if (!resp.ok || !data.ok) {
+                            showInlineToast('Could not update status.', 'error');
+                            return;
+                        }
+                        if (data && data.label) {
+                            showInlineToast('Status updated to ' + data.label + '.', 'success');
+                        }
+                    }).catch(() => {
+                        showInlineToast('Status updated.', 'success');
+                    }))
+                    .catch(() => {
+                        showInlineToast('Could not update status.', 'error');
+                    });
+            });
+        });
+
+        refresh();
+    })();
+</script>
+{% endif %}
 
 {% if is_paginated %}
 <div class="mt-8 flex justify-center">
-    <!-- Pagination logic same as job_list (omitted for brevity) -->
     <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
         {% if page_obj.has_previous %}
-        <a href="?page={{ page_obj.previous_page_number }}"
+        <a href="?{% if pagination_query %}{{ pagination_query }}&{% endif %}page={{ page_obj.previous_page_number }}"
             class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">Previous</a>
         {% endif %}
-        <span
-            class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
-            Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
-        </span>
+        <span class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
         {% if page_obj.has_next %}
-        <a href="?page={{ page_obj.next_page_number }}"
+        <a href="?{% if pagination_query %}{{ pagination_query }}&{% endif %}page={{ page_obj.next_page_number }}"
             class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">Next</a>
         {% endif %}
     </nav>

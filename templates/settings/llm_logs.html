@@ -3,15 +3,18 @@
 
 {% block content %}
 <div class="max-w-6xl mx-auto px-4 py-8">
-    <div class="mb-6">
-        <h1 class="text-3xl font-bold text-gray-800">LLM Input Logs</h1>
-        <p class="text-gray-600">Every request sent to the model, including system and user prompts.</p>
+    <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-800">LLM Usage Logs</h1>
+            <p class="text-gray-600">Every request sent to the model, including system and user prompts.</p>
+        </div>
+        <a href="{% url 'settings-dashboard' %}" class="text-blue-600 hover:text-blue-800 font-medium">← Back to Settings</a>
     </div>
 
-    <div class="bg-white rounded-lg shadow p-4 mb-6">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
         <form method="get" class="flex flex-col md:flex-row gap-3">
             <input type="text" name="q" value="{{ request.GET.q }}" placeholder="Search by job, company, consultant, model..."
-                   class="w-full border rounded px-3 py-2" />
+                   class="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
             <div class="flex gap-2">
                 <button class="px-4 py-2 rounded bg-gray-800 text-white">Search</button>
                 <a href="{% url 'llm-logs' %}" class="px-4 py-2 rounded border">Clear</a>
@@ -19,32 +22,32 @@
         </form>
     </div>
 
-    <div class="bg-white rounded-lg shadow">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200">
         <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
-                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Time</th>
-                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Job</th>
-                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Consultant</th>
-                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Model</th>
-                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Tokens</th>
-                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Status</th>
-                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Action</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Time</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Job</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Consultant</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Model</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Tokens</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Status</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Action</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-200">
                     {% for log in logs %}
                     <tr>
-                        <td class="px-4 py-2 text-sm text-gray-600">{{ log.created_at|date:"Y-m-d H:i" }}</td>
-                        <td class="px-4 py-2 text-sm text-gray-600">
+                        <td class="px-4 py-2 text-sm text-gray-800">{{ log.created_at|date:"Y-m-d H:i" }}</td>
+                        <td class="px-4 py-2 text-sm text-gray-800">
                             {% if log.job %}{{ log.job.title }}{% else %}—{% endif %}
                         </td>
-                        <td class="px-4 py-2 text-sm text-gray-600">
+                        <td class="px-4 py-2 text-sm text-gray-800">
                             {% if log.consultant %}{{ log.consultant.user.get_full_name|default:log.consultant.user.username }}{% else %}—{% endif %}
                         </td>
-                        <td class="px-4 py-2 text-sm text-gray-600">{{ log.model_name }}</td>
-                        <td class="px-4 py-2 text-sm text-gray-600">{{ log.total_tokens }}</td>
+                        <td class="px-4 py-2 text-sm text-gray-800">{{ log.model_name }}</td>
+                        <td class="px-4 py-2 text-sm text-gray-800">{{ log.total_tokens }}</td>
                         <td class="px-4 py-2 text-sm">
                             {% if log.success %}
                             <span class="text-green-700">OK</span>
@@ -57,7 +60,7 @@
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="7" class="px-4 py-4 text-center text-gray-500">No logs found.</td></tr>
+                    <tr><td colspan="7" class="px-4 py-4 text-center text-gray-600">No logs found.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

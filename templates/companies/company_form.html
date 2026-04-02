@@ -1,0 +1,201 @@
+{% extends 'base.html' %}
+{% load widget_tweaks %}
+
+{% block content %}
+<style>
+    .form-input {
+        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        appearance: none;
+        border: 1px solid #e5e7eb;
+        border-radius: 0.375rem;
+        width: 100%;
+        padding: 0.75rem 1rem;
+        color: #1f2937;
+        line-height: 1.5;
+        background-color: #fff;
+        transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+    }
+
+    .form-input:focus {
+        outline: none;
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+    .form-textarea {
+        min-height: 8rem;
+    }
+</style>
+
+<div class="min-h-screen bg-gray-50 py-12">
+    <div class="container mx-auto px-4 max-w-5xl">
+        <div class="w-full bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="px-8 py-6 border-b border-gray-100 flex justify-between items-center bg-white">
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-900">{% if object %}Edit company{% else %}Add company{% endif %}</h1>
+                    <p class="text-sm text-gray-500 mt-1">
+                        {% if object %}Update profile, contact details, links and relationship flags for this company.{% else %}Create a new company profile. Name, website and career site URL are required.{% endif %}
+                    </p>
+                </div>
+                {% if object %}
+                <a href="{% url 'company-detail' pk=object.pk %}" class="text-blue-600 hover:text-blue-800 text-sm font-medium">&larr; Back to company</a>
+                {% else %}
+                <a href="{% url 'company-list' %}" class="text-blue-600 hover:text-blue-800 text-sm font-medium">&larr; Back to Companies</a>
+                {% endif %}
+            </div>
+
+            <form method="post" class="p-8 space-y-6">
+                {% csrf_token %}
+
+                {% if potential_duplicates %}
+                <div class="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    <p class="font-semibold mb-1">Possible duplicate companies detected.</p>
+                    <p class="mb-2">Before creating a new company, review these similar existing records:</p>
+                    <ul class="list-disc pl-5 space-y-1">
+                        {% for dup, score in potential_duplicates %}
+                        <li>
+                            <a href="{% url 'company-detail' pk=dup.pk %}" target="_blank" class="text-blue-700 hover:underline">
+                                {{ dup.name }}
+                            </a>
+                            {% if dup.website %}<span class="text-gray-500 text-xs ml-1">({{ dup.website }})</span>{% endif %}
+                            <span class="text-xs text-gray-400 ml-1">score {{ score|floatformat:2 }}</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    <p class="mt-3 text-xs text-amber-900">
+                        Choose <span class="font-semibold">\"Use existing\"</span> below if one of these is the same company, or
+                        <span class="font-semibold">\"Create anyway\"</span> to add a separate record.
+                    </p>
+                </div>
+                {% endif %}
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label class="block font-bold text-gray-700 mb-2">Name <span class="text-red-500">*</span></label>
+                        {{ form.name|add_class:"form-input"|attr:"placeholder:E.g. Verisk" }}
+                    </div>
+                    <div>
+                        <label class="block font-bold text-gray-700 mb-2">Alias</label>
+                        {{ form.alias|add_class:"form-input"|attr:"placeholder:Short name shown in UI (e.g. Verisk)" }}
+                    </div>
+                    <div>
+                        <label class="block font-bold text-gray-700 mb-2">Industry</label>
+                        {{ form.industry|add_class:"form-input"|attr:"placeholder:E.g. Insurance, Healthcare, FinTech" }}
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 md:col-span-2">
+                        <div>
+                            <label class="block font-bold text-gray-700 mb-2">Size band</label>
+                            {{ form.size_band|add_class:"form-input"|attr:"placeholder:Startup, SMB, Mid‑market, Enterprise" }}
+                        </div>
+                        <div>
+                            <label class="block font-bold text-gray-700 mb-2">Headcount range</label>
+                            {{ form.headcount_range|add_class:"form-input"|attr:"placeholder:E.g. 201–500" }}
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block font-bold text-gray-700 mb-2">HQ location</label>
+                        {{ form.hq_location|add_class:"form-input"|attr:"placeholder:E.g. New York, NY (HQ)" }}
+                    </div>
+                    <div>
+                        <label class="block font-bold text-gray-700 mb-2">Relationship status</label>
+                        {{ form.relationship_status|add_class:"form-input"|attr:"placeholder:E.g. Hot, Warm, Cold" }}
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block font-bold text-gray-700 mb-2">Other locations</label>
+                    {{ form.locations|add_class:"form-input form-textarea"|attr:"placeholder:E.g. Remote teams in India, delivery center in Hyderabad" }}
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label class="block font-bold text-gray-700 mb-2">Website <span class="text-red-500">*</span></label>
+                        {{ form.website|add_class:"form-input"|attr:"placeholder:https://www.example.com" }}
+                    </div>
+                    <div>
+                        <label class="block font-bold text-gray-700 mb-2">LinkedIn URL</label>
+                        {{ form.linkedin_url|add_class:"form-input"|attr:"placeholder:https://www.linkedin.com/company/…" }}
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block font-bold text-gray-700 mb-2">Career site URL <span class="text-red-500">*</span></label>
+                    {{ form.career_site_url|add_class:"form-input"|attr:"placeholder:https://www.example.com/careers" }}
+                    <p class="mt-1 text-xs text-gray-400">
+                        Main careers / jobs page. In future this will be used to discover open roles automatically.
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label class="block font-bold text-gray-700 mb-2">Primary contact name</label>
+                        {{ form.primary_contact_name|add_class:"form-input"|attr:"placeholder:E.g. John Doe (Hiring Manager)" }}
+                    </div>
+                    <div>
+                        <label class="block font-bold text-gray-700 mb-2">Primary contact email</label>
+                        {{ form.primary_contact_email|add_class:"form-input"|attr:"placeholder:hiring@example.com" }}
+                    </div>
+                    <div>
+                        <label class="block font-bold text-gray-700 mb-2">Primary contact phone</label>
+                        {{ form.primary_contact_phone|add_class:"form-input"|attr:"placeholder:+1 555‑123‑4567" }}
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block font-bold text-gray-700 mb-2">Internal notes</label>
+                    {{ form.notes|add_class:"form-input form-textarea"|attr:"placeholder:E.g. prefers DevOps roles, fast interview turnaround, Net‑30 payment terms" }}
+                    <p class="mt-1 text-xs text-gray-400">
+                        Only your internal team can see these notes. They never appear on consultant-facing pages.
+                    </p>
+                </div>
+
+                <div class="border-t border-gray-200 pt-4 space-y-3">
+                    <label class="inline-flex items-start gap-2">
+                        {{ form.is_blacklisted }}
+                        <span class="text-sm text-gray-700">
+                            Mark this company as blacklisted
+                            <span class="block text-xs text-gray-500">
+                                When enabled, new submissions to this company will be blocked.
+                            </span>
+                        </span>
+                    </label>
+                    <div>
+                        <label class="block font-bold text-gray-700 mb-2">Blacklist reason</label>
+                        {{ form.blacklist_reason|add_class:"form-input form-textarea"|attr:"placeholder:E.g. late payments, poor candidate experience, legal restriction" }}
+                    </div>
+                </div>
+
+                <div class="mt-6 flex items-center justify-between gap-4 border-t pt-6">
+                    <div class="text-xs text-gray-400">
+                        {% if potential_duplicates %}Duplicate check complete.{% endif %}
+                    </div>
+                    <div class="flex items-center gap-3">
+                        {% if object %}
+                        <a href="{% url 'company-detail' pk=object.pk %}" class="text-gray-600 font-medium hover:underline">Cancel</a>
+                        {% else %}
+                        <a href="{% url 'company-list' %}" class="text-gray-600 font-medium hover:underline">Cancel</a>
+                        {% endif %}
+                        {% if potential_duplicates %}
+                        <input type="hidden" name="existing_company_id" value="{{ potential_duplicates.0.0.pk }}">
+                        <button type="submit" name="duplicate_action" value="use_existing"
+                            class="px-4 py-2 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                            Use existing (top match)
+                        </button>
+                        <button type="submit" name="duplicate_action" value="create_anyway"
+                            class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded shadow transition transform hover:-translate-y-0.5">
+                            Create anyway
+                        </button>
+                        {% else %}
+                        <button type="submit"
+                            class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded shadow transition transform hover:-translate-y-0.5">
+                            {% if object %}Save changes{% else %}Create company{% endif %}
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

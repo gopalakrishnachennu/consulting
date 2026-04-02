@@ -23,17 +23,17 @@
                             {% if message.sender == user %}bg-blue-500 text-white{% else %}bg-white text-gray-800{% endif %}">
                 <p class="text-sm">{{ message.content }}</p>
                 <p
-                    class="text-xs {% if message.sender == user %}text-blue-200{% else %}text-gray-500{% endif %} mt-1 text-right">
+                    class="text-xs {% if message.sender == user %}text-blue-100{% else %}text-gray-600{% endif %} mt-1 text-right">
                     {{ message.created_at|date:"M d, P" }}
                 </p>
             </div>
         </div>
         {% empty %}
-        <p class="text-center text-gray-400">No messages yet. Start the conversation!</p>
+        <p class="text-center text-gray-600">No messages yet. Start the conversation!</p>
         {% endfor %}
     </div>
 
-    <div class="bg-white p-4 rounded-lg shadow-lg">
+    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
         <form method="post">
             {% csrf_token %}
             <div class="flex space-x-4">

@@ -1,25 +1,12 @@
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
     {% for employee in employees %}
     <div
-        class="bg-white rounded-lg shadow-md hover:shadow-lg transition p-6 flex flex-col justify-between h-full border border-gray-100">
+        class="bg-white rounded-lg shadow-sm hover:shadow-sm transition p-6 flex flex-col justify-between h-full border border-gray-100">
         <div>
-            <div class="flex items-center space-x-4 mb-4">
-                <div class="flex-shrink-0">
-                    {% if employee.avatar %}
-                    <img class="h-12 w-12 rounded-full object-cover" src="{{ employee.avatar.url }}"
-                        alt="{{ employee.username }}">
-                    {% else %}
-                    <div
-                        class="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-500 font-bold text-xl">
-                        {{ employee.username|first|upper }}
-                    </div>
-                    {% endif %}
-                </div>
-                <div>
-                    <h3 class="text-lg font-bold text-gray-800">{{ employee.get_full_name|default:employee.username }}
-                    </h3>
-                    <p class="text-sm text-gray-500">{{ employee.email }}</p>
-                </div>
+            <div class="mb-4">
+                <h3 class="text-lg font-bold text-gray-800">{{ employee.get_full_name|default:employee.username }}
+                </h3>
+                <p class="text-sm text-gray-500">{{ employee.email }}</p>
             </div>
 
             <div class="mb-4 text-sm text-gray-600 space-y-1">
@@ -42,7 +29,7 @@
             </div>
         </div>
 
-        <div class="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center">
+        <div class="mt-4 pt-4 border-t border-gray-100 flex justify-end items-center gap-3">
             <a href="{% url 'employee-detail' employee.pk %}"
                 class="text-blue-600 hover:text-blue-800 text-sm font-medium">View Profile</a>
 

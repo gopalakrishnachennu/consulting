@@ -4,41 +4,87 @@
 {% block content %}
 <div class="max-w-6xl mx-auto px-4 py-8">
     <div class="mb-6">
-        <a href="{% url 'submission-list' %}" class="text-blue-600 hover:underline">Submissions</a>
-        <h1 class="text-2xl font-bold text-gray-800">Submission {{ submission.pk }}</h1>
-        <p class="text-gray-500">{{ submission.consultant.user.get_full_name|default:submission.consultant.user.username }} → {{ submission.job.title }}</p>
+        <a href="{% url 'submission-list' %}" class="text-blue-600 hover:text-blue-800 text-sm font-medium">← Applications</a>
+        <h1 class="text-2xl font-bold text-gray-800 mt-1">Submission {{ submission.pk }}</h1>
+        <p class="text-gray-600">{{ submission.consultant.user.get_full_name|default:submission.consultant.user.username }} → {{ submission.job.title }}</p>
     </div>
 
-    <div class="bg-white rounded-lg shadow p-6 mb-6">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-                <div class="text-sm text-gray-500">Consultant</div>
-                <div class="font-semibold">{{ submission.consultant.user.get_full_name|default:submission.consultant.user.username }}</div>
+                <div class="text-xs text-gray-500 uppercase tracking-wide">Consultant</div>
+                <div class="font-semibold text-gray-800 mt-0.5">{{ submission.consultant.user.get_full_name|default:submission.consultant.user.username }}</div>
             </div>
             <div>
-                <div class="text-sm text-gray-500">Status</div>
-                <div class="font-semibold">{{ submission.get_status_display }}</div>
+                <div class="text-xs text-gray-500 uppercase tracking-wide">Status</div>
+                <div>
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold
+                        {% if submission.status == 'IN_PROGRESS' %}bg-yellow-100 text-yellow-800
+                        {% elif submission.status == 'APPLIED' %}bg-blue-100 text-blue-800
+                        {% elif submission.status == 'INTERVIEW' %}bg-purple-100 text-purple-800
+                        {% elif submission.status == 'OFFER' %}bg-green-100 text-green-800
+                        {% elif submission.status == 'REJECTED' %}bg-red-100 text-red-800
+                        {% elif submission.status == 'WITHDRAWN' %}bg-gray-100 text-gray-800
+                        {% endif %}">
+                        {{ submission.get_status_display }}
+                    </span>
+                </div>
+                <div class="mt-3 flex flex-wrap gap-2">
+                    {% if can_mark_rejected %}
+                    <form method="post" action="{% url 'submission-mark-rejected' submission.pk %}">
+                        {% csrf_token %}
+                        <button type="submit" class="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold">
+                            Mark Rejected (from email)
+                        </button>
+                    </form>
+                    {% endif %}
+                    {% if submission.status == 'REJECTED' %}
+                    <a href="{% url 'submission-rejection-analysis' submission.pk %}" class="px-3 py-2 rounded-lg border border-gray-300 hover:bg-gray-50 text-xs font-semibold text-gray-700">
+                        Analyze rejection →
+                    </a>
+                    {% endif %}
+                </div>
             </div>
             <div>
-                <div class="text-sm text-gray-500">Job</div>
-                <div class="font-semibold">{{ submission.job.title }}</div>
+                <div class="text-xs text-gray-500 uppercase tracking-wide">Job</div>
+                <div class="font-semibold text-gray-800 mt-0.5">{{ submission.job.title }}</div>
             </div>
             <div>
-                <div class="text-sm text-gray-500">Company</div>
-                <div class="font-semibold">{{ submission.job.company }}</div>
+                <div class="text-xs text-gray-500 uppercase tracking-wide">Company</div>
+                <div class="font-semibold text-gray-800 mt-0.5">{{ submission.job.company }}</div>
             </div>
             <div>
-                <div class="text-sm text-gray-500">Created</div>
-                <div class="font-semibold">{{ submission.created_at|date:"Y-m-d H:i" }}</div>
+                <div class="text-xs text-gray-500 uppercase tracking-wide">Created</div>
+                <div class="font-semibold text-gray-800 mt-0.5">{{ submission.created_at|date:"Y-m-d H:i" }}</div>
             </div>
             <div>
-                <div class="text-sm text-gray-500">Submitted</div>
-                <div class="font-semibold">{{ submission.submitted_at|default:submission.updated_at|date:"Y-m-d H:i" }}</div>
+                <div class="text-xs text-gray-500 uppercase tracking-wide">Submitted</div>
+                <div class="font-semibold text-gray-800 mt-0.5">{{ submission.submitted_at|default:submission.updated_at|date:"Y-m-d H:i" }}</div>
             </div>
         </div>
     </div>
 
-    <div class="bg-white rounded-lg shadow p-6 mb-6">
+    <!-- Application Timeline View -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+        <h2 class="text-lg font-semibold text-gray-800 mb-4">Application Timeline</h2>
+        <p class="text-sm text-gray-500 mb-4">Visual journey of this application with timestamps at every stage.</p>
+        <div class="relative pl-6 border-l-2 border-gray-200 ml-1">
+            {% for event in timeline_events %}
+            <div class="relative -left-8 flex gap-3 pb-6 last:pb-0">
+                <div class="shrink-0 w-3 h-3 rounded-full mt-1.5 border-2 border-white shadow {% if forloop.first %}bg-blue-600{% elif forloop.last %}bg-emerald-500{% else %}bg-gray-400{% endif %}"></div>
+                <div class="min-w-0 pt-0.5">
+                    <p class="text-sm font-medium text-gray-900">{{ event.1 }}</p>
+                    <p class="text-xs text-gray-500">{{ event.0|date:"M d, Y H:i" }}</p>
+                    {% if event.2 %}<p class="text-sm text-gray-600 mt-0.5">{{ event.2 }}</p>{% endif %}
+                </div>
+            </div>
+            {% empty %}
+            <p class="text-gray-500 text-sm">No timeline events yet.</p>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
         <div class="flex gap-4 text-sm font-semibold text-gray-600 mb-4">
             <span class="border-b-2 border-blue-600 text-blue-700">Details</span>
             <span>Resumes & Attachments</span>
@@ -49,31 +95,31 @@
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-                <div class="text-sm text-gray-500">Original Posting</div>
+                <div class="text-xs text-gray-500 uppercase tracking-wide">Original Posting</div>
                 <a href="{{ submission.job.original_link }}" target="_blank" class="text-blue-600 hover:underline">View Posting</a>
             </div>
             <div>
-                <div class="text-sm text-gray-500">Resume</div>
+                <div class="text-xs text-gray-500 uppercase tracking-wide">Resume</div>
                 {% if submission.resume %}
                 <a href="{% url 'draft-detail' submission.resume.pk %}" class="text-blue-600 hover:underline">View Draft</a>
                 {% else %}
-                <span class="text-gray-400">No resume linked</span>
+                <span class="text-gray-500">No resume linked</span>
                 {% endif %}
             </div>
             <div>
-                <div class="text-sm text-gray-500">Proof</div>
+                <div class="text-xs text-gray-500 uppercase tracking-wide">Proof</div>
                 {% if submission.proof_file %}
                 <a href="{{ submission.proof_file.url }}" target="_blank" class="text-blue-600 hover:underline">View Proof</a>
                 {% else %}
-                <span class="text-gray-400">No proof uploaded</span>
+                <span class="text-gray-500">No proof uploaded</span>
                 {% endif %}
             </div>
         </div>
     </div>
 
-    <div class="bg-white rounded-lg shadow p-6">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div class="flex justify-between items-center mb-4">
-            <h2 class="text-lg font-bold text-gray-800">Responses</h2>
+            <h2 class="text-lg font-semibold text-gray-800">Responses</h2>
         </div>
         <div class="mb-6">
             <form method="post">
@@ -81,8 +127,8 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {% for field in response_form.visible_fields %}
                     <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-1">{{ field.label }}</label>
-                        {% render_field field class="w-full border rounded px-3 py-2" %}
+                        <label class="block text-sm font-medium text-gray-700 mb-1">{{ field.label }}</label>
+                        {% render_field field class="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" %}
                         {% if field.errors %}
                         <p class="text-xs text-red-600 mt-1">{{ field.errors }}</p>
                         {% endif %}
@@ -90,42 +136,134 @@
                     {% endfor %}
                 </div>
                 <div class="mt-4">
-                    <button class="px-4 py-2 rounded bg-blue-600 text-white">Add Response</button>
+                    <button type="submit" class="px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition">Add Response</button>
                 </div>
             </form>
         </div>
 
-        <div class="divide-y">
+        <div class="divide-y divide-gray-100">
             {% for response in submission.responses.all %}
-            <div class="py-3">
+            <div class="py-3 first:pt-0">
                 <div class="text-sm font-semibold text-gray-800">{{ response.get_response_type_display }} · {{ response.get_status_display }}</div>
-                <div class="text-xs text-gray-500">{{ response.responded_at|date:"Y-m-d H:i" }}</div>
+                <div class="text-xs text-gray-600 mt-0.5">{{ response.responded_at|date:"Y-m-d H:i" }}</div>
                 {% if response.notes %}
-                <div class="text-sm text-gray-700 mt-1">{{ response.notes }}</div>
+                <div class="text-sm text-gray-800 mt-1">{{ response.notes }}</div>
                 {% endif %}
             </div>
             {% empty %}
-            <p class="text-gray-500">No responses yet.</p>
+            <p class="text-gray-600 text-sm py-2">No responses yet.</p>
             {% endfor %}
         </div>
     </div>
 
-    <div class="bg-white rounded-lg shadow p-6 mt-6">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mt-6">
         <div class="flex justify-between items-center mb-4">
-            <h2 class="text-lg font-bold text-gray-800">Interviews</h2>
-            <a href="{% url 'interview-add' %}" class="text-blue-600 hover:underline">Add Interview</a>
+            <h2 class="text-lg font-semibold text-gray-800">Interviews</h2>
+            <a href="{% url 'interview-add' %}" class="text-blue-600 hover:underline text-sm font-medium">Add Interview</a>
         </div>
-        <div class="divide-y">
+        <div class="divide-y divide-gray-100">
             {% for interview in submission.interviews.all %}
-            <div class="py-3">
+            <div class="py-3 first:pt-0">
                 <div class="text-sm font-semibold text-gray-800">{{ interview.job_title }} · {{ interview.company }}</div>
-                <div class="text-xs text-gray-500">{{ interview.scheduled_at|date:"Y-m-d H:i" }} · {{ interview.get_round_display }} · {{ interview.get_status_display }}</div>
-                {% if interview.notes %}<div class="text-sm text-gray-700 mt-1">{{ interview.notes }}</div>{% endif %}
+                <div class="text-xs text-gray-600 mt-0.5">{{ interview.scheduled_at|date:"Y-m-d H:i" }} · {{ interview.get_round_display }} · {{ interview.get_status_display }}</div>
+                {% if interview.notes %}<div class="text-sm text-gray-800 mt-1">{{ interview.notes }}</div>{% endif %}
             </div>
             {% empty %}
-            <p class="text-gray-500">No interviews linked yet.</p>
+            <p class="text-gray-600 text-sm py-2">No interviews linked yet.</p>
             {% endfor %}
         </div>
     </div>
+
+    {% if offer %}
+    <!-- Offer Negotiation Tracker -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mt-6">
+        <h2 class="text-lg font-semibold text-gray-800 mb-4">Offer Negotiation Tracker</h2>
+        <p class="text-sm text-gray-500 mb-4">Track offer details, negotiation rounds, and final accepted terms.</p>
+
+        <div class="mb-6 p-4 rounded-lg bg-gray-50 border border-gray-100">
+            <h3 class="text-sm font-semibold text-gray-700 mb-2">Initial offer</h3>
+            {% if offer.initial_salary or offer.initial_notes %}
+            {% if offer.initial_salary %}<p class="text-gray-800">{{ offer.initial_currency }} {{ offer.initial_salary }}</p>{% endif %}
+            {% if offer.initial_notes %}<p class="text-sm text-gray-600 mt-1">{{ offer.initial_notes }}</p>{% endif %}
+            {% elif request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="set_initial">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {% for field in offer_initial_form.visible_fields %}
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">{{ field.label }}</label>
+                        {{ field }}
+                        {% if field.errors %}<p class="text-xs text-red-600">{{ field.errors.0 }}</p>{% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                <button type="submit" class="mt-3 px-4 py-2 rounded-lg bg-gray-600 text-white text-sm font-medium hover:bg-gray-700">Save initial offer</button>
+            </form>
+            {% else %}
+            <p class="text-gray-500 text-sm">Not recorded yet.</p>
+            {% endif %}
+        </div>
+
+        <h3 class="text-sm font-semibold text-gray-700 mb-2">Negotiation rounds</h3>
+        <div class="divide-y divide-gray-100 mb-6">
+            {% for r in offer_rounds %}
+            <div class="py-3 first:pt-0">
+                <p class="text-sm font-medium text-gray-900">Round {{ r.round_number }} · {{ r.proposed_at|date:"M d, Y H:i" }}</p>
+                {% if r.salary %}<p class="text-gray-700">{{ r.currency }} {{ r.salary }}</p>{% endif %}
+                {% if r.bonus_notes %}<p class="text-sm text-gray-600">{{ r.bonus_notes }}</p>{% endif %}
+                {% if r.notes %}<p class="text-sm text-gray-600 mt-1">{{ r.notes }}</p>{% endif %}
+            </div>
+            {% empty %}
+            <p class="text-gray-500 text-sm py-2">No rounds recorded yet.</p>
+            {% endfor %}
+        </div>
+
+        {% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}
+        <form method="post" class="mb-6 p-4 rounded-lg border border-gray-200 bg-blue-50/30">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add_round">
+            <h3 class="text-sm font-semibold text-gray-700 mb-3">Add negotiation round</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {% for field in offer_round_form.visible_fields %}
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.errors %}<p class="text-xs text-red-600">{{ field.errors.0 }}</p>{% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            <button type="submit" class="mt-3 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700">Add round</button>
+        </form>
+        {% endif %}
+
+        <div class="p-4 rounded-lg bg-emerald-50/50 border border-emerald-100">
+            <h3 class="text-sm font-semibold text-gray-800 mb-2">Final accepted terms</h3>
+            {% if offer.final_salary or offer.final_terms or offer.accepted_at %}
+            {% if offer.final_salary %}<p class="text-gray-800 font-medium">{{ offer.final_currency }} {{ offer.final_salary }}</p>{% endif %}
+            {% if offer.final_terms %}<p class="text-sm text-gray-700 mt-1">{{ offer.final_terms|linebreaks }}</p>{% endif %}
+            {% if offer.accepted_at %}<p class="text-xs text-gray-500 mt-1">Accepted {{ offer.accepted_at|date:"M d, Y H:i" }}</p>{% endif %}
+            {% else %}
+            <p class="text-gray-500 text-sm">Not set yet.</p>
+            {% endif %}
+            {% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}
+            <form method="post" class="mt-4">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="set_final">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {% for field in offer_final_form.visible_fields %}
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">{{ field.label }}</label>
+                        {{ field }}
+                        {% if field.errors %}<p class="text-xs text-red-600">{{ field.errors.0 }}</p>{% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                <button type="submit" class="mt-3 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">Save final terms</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

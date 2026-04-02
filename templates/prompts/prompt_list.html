@@ -8,7 +8,10 @@
             <h1 class="template-title">Prompt Service</h1>
             <p class="template-subtitle">Create and manage system prompts.</p>
         </div>
-        <a href="{% url 'prompt-add' %}" class="btn-primary">New Prompt</a>
+        <div class="flex items-center gap-3">
+            <a href="{% url 'settings-dashboard' %}" class="btn-ghost">← Back to Settings</a>
+            <a href="{% url 'prompt-add' %}" class="btn-primary">New Prompt</a>
+        </div>
     </div>
 
     <div class="template-card">

@@ -1,0 +1,312 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">Companies</h1>
+            <p class="text-sm text-gray-600">Client organisations aggregated from all jobs and submissions.</p>
+        </div>
+        <div class="flex items-center gap-3 flex-wrap justify-end">
+            {% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}
+            <a href="{% url 'company-duplicate-review' %}"
+                class="px-4 py-2 rounded-lg border border-amber-200 bg-amber-50 text-sm font-medium text-amber-800 hover:bg-amber-100">
+                Possible duplicates
+            </a>
+            <a href="{% url 'company-import-csv' %}"
+                class="px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Import CSV
+            </a>
+            <a href="{% url 'company-import-domains' %}"
+                class="px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Import domains
+            </a>
+            <a href="{% url 'company-import-linkedin' %}"
+                class="px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Import LinkedIn
+            </a>
+            <a href="{% url 'company-export-csv' %}?{{ pagination_query }}"
+                class="px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Export CSV
+            </a>
+            <a href="{% url 'company-create' %}"
+                class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700">
+                + Add Company
+            </a>
+            {% endif %}
+            <a href="{% url 'admin-dashboard' %}" class="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                &larr; Back to Admin Dashboard
+            </a>
+        </div>
+    </div>
+
+    <!-- Search & Filters -->
+    <form method="get" class="mb-4 space-y-3">
+        <div class="flex flex-wrap items-end gap-3">
+            <div class="flex-1 min-w-[180px]">
+                <label class="block text-xs text-gray-500 mb-1">Search</label>
+                <input type="text" name="q" value="{{ request.GET.q }}" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" placeholder="Name or alias">
+            </div>
+            <div class="w-40">
+                <label class="block text-xs text-gray-500 mb-1">Relationship status</label>
+                <select name="status" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                    <option value="">All</option>
+                    {% for s in relationship_statuses %}
+                    <option value="{{ s }}" {% if selected_status == s %}selected{% endif %}>{{ s }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="w-32">
+                <label class="block text-xs text-gray-500 mb-1">Blacklisted</label>
+                <select name="blacklisted" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                    <option value="">All</option>
+                    <option value="1" {% if selected_blacklisted == '1' %}selected{% endif %}>Yes</option>
+                    <option value="0" {% if selected_blacklisted == '0' %}selected{% endif %}>No</option>
+                </select>
+            </div>
+            <div class="w-44">
+                <label class="block text-xs text-gray-500 mb-1">Industry</label>
+                <select name="industry" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                    <option value="">All industries</option>
+                    {% for ind in industries %}
+                    <option value="{{ ind }}" {% if selected_industry == ind %}selected{% endif %}>{{ ind }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="w-40">
+                <label class="block text-xs text-gray-500 mb-1">Website valid</label>
+                <select name="website_valid" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                    <option value="">All</option>
+                    <option value="1" {% if selected_website_valid == '1' %}selected{% endif %}>Valid</option>
+                    <option value="0" {% if selected_website_valid == '0' %}selected{% endif %}>Invalid</option>
+                </select>
+            </div>
+            <button type="submit" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700">Search</button>
+        </div>
+        <input type="hidden" name="sort" value="{{ selected_sort }}">
+    </form>
+
+    <!-- Results summary -->
+    {% if page_obj %}
+    <p class="mb-3 text-sm text-gray-600">
+        Showing <span class="font-medium">{{ results_start|default:1 }}</span>–<span class="font-medium">{{ results_end }}</span> of <span class="font-medium">{{ results_total }}</span> companies
+    </p>
+    {% endif %}
+
+    <!-- Bulk actions / Export -->
+    {% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}
+    <div class="mb-3 flex items-center gap-3 flex-wrap">
+        <a href="{% url 'company-export-csv' %}?{{ pagination_query }}" class="text-sm text-gray-600 hover:text-gray-800 font-medium">
+            Export all
+        </a>
+        <button type="button" id="btnExportSelected" class="text-sm text-blue-600 hover:text-blue-800 font-medium disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+            Export selected (<span id="exportSelectedCount">0</span>)
+        </button>
+    </div>
+    {% endif %}
+
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    {% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}
+                    <th class="px-4 py-3 w-10">
+                        <input type="checkbox" id="selectAll" class="rounded border-gray-300">
+                    </th>
+                    {% endif %}
+                    <th class="px-4 py-3">
+                        <a href="?{{ pagination_query }}&sort={% if selected_sort == 'name' %}name_desc{% else %}name{% endif %}" class="hover:text-blue-600 inline-flex items-center gap-1">Company {% if selected_sort == 'name' %}<span class="text-blue-600">↑</span>{% elif selected_sort == 'name_desc' %}<span class="text-blue-600">↓</span>{% endif %}</a>
+                    </th>
+                    <th class="px-4 py-3 hidden md:table-cell">Industry</th>
+                    <th class="px-4 py-3 hidden lg:table-cell">Website</th>
+                    <th class="px-4 py-3 text-right font-mono">
+                        <a href="?{{ pagination_query }}&sort=submissions" class="hover:text-blue-600 inline-flex items-center justify-end gap-1">Submissions {% if selected_sort == 'submissions' %}<span class="text-blue-600">↓</span>{% endif %}</a>
+                    </th>
+                    <th class="px-4 py-3 text-right font-mono">
+                        <a href="?{{ pagination_query }}&sort=interviews" class="hover:text-blue-600 inline-flex items-center justify-end gap-1">Interviews {% if selected_sort == 'interviews' %}<span class="text-blue-600">↓</span>{% endif %}</a>
+                    </th>
+                    <th class="px-4 py-3 text-right font-mono">
+                        <a href="?{{ pagination_query }}&sort=placements" class="hover:text-blue-600 inline-flex items-center justify-end gap-1">Placements {% if selected_sort == 'placements' %}<span class="text-blue-600">↓</span>{% endif %}</a>
+                    </th>
+                    <th class="px-4 py-3 hidden sm:table-cell text-center">Status</th>
+                    <th class="px-4 py-3 hidden md:table-cell text-center">Links</th>
+                    <th class="px-4 py-3 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for company in companies %}
+                <tr class="border-b border-gray-100 hover:bg-gray-50/50">
+                    {% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}
+                    <td class="px-4 py-3">
+                        <input type="checkbox" class="company-checkbox rounded border-gray-300" value="{{ company.pk }}">
+                    </td>
+                    {% endif %}
+                    <td class="px-4 py-3">
+                        <span class="inline-flex items-center gap-2 flex-wrap">
+                            {% if company.is_blacklisted %}
+                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-red-100 text-red-800 border border-red-200" title="Blacklisted">BL</span>
+                            {% endif %}
+                            <a href="{% url 'company-detail' company.pk %}" class="font-medium text-gray-900 hover:underline">
+                                {{ company.name }}
+                            </a>
+                        </span>
+                        {% if company.alias %}
+                        <div class="text-xs text-gray-500">Alias: {{ company.alias }}</div>
+                        {% endif %}
+                        <div class="mt-1 flex items-center gap-2">
+                            <button type="button" class="company-preview-trigger text-xs text-gray-500 hover:text-blue-600" data-company-name="{{ company.name }}" data-company-industry="{{ company.industry|default:'—' }}" data-company-website="{{ company.website|default:'—' }}" data-company-status="{{ company.relationship_status|default:'—' }}" data-company-contact="{{ company.primary_contact_name|default:'—' }}" title="Quick preview">Preview</button>
+                        </div>
+                    </td>
+                    <td class="px-4 py-3 hidden md:table-cell text-gray-600">{{ company.industry|default:"—" }}</td>
+                    <td class="px-4 py-3 hidden lg:table-cell">
+                        {% if company.website %}
+                        <a href="{{ company.website }}" target="_blank" rel="noopener" class="text-blue-600 hover:underline text-xs break-all">
+                            {{ company.website|truncatechars:50 }}
+                        </a>
+                        {% else %}
+                        <span class="text-gray-400 text-xs">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-right font-mono">{{ company.total_submissions }}</td>
+                    <td class="px-4 py-3 text-right font-mono">{{ company.total_interviews }}</td>
+                    <td class="px-4 py-3 text-right font-mono">{{ company.total_placements }}</td>
+                    <td class="px-4 py-3 hidden sm:table-cell">
+                        <div class="flex flex-wrap gap-1 justify-center">
+                            {% if company.is_blacklisted %}
+                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800">Blacklisted</span>
+                            {% endif %}
+                            {% if company.relationship_status %}
+                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-800">
+                                {{ company.relationship_status }}
+                            </span>
+                            {% endif %}
+                            {% if not company.is_blacklisted and not company.relationship_status %}
+                            <span class="text-gray-400 text-xs">—</span>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td class="px-4 py-3 hidden md:table-cell text-center">
+                        {% if company.website or company.career_site_url %}
+                            {% if company.website_is_valid %}
+                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-emerald-50 text-emerald-700" title="Website OK">OK</span>
+                            {% elif company.website %}
+                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700" title="Website unchecked">—</span>
+                            {% endif %}
+                        {% else %}
+                        <span class="text-gray-400 text-xs">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-right">
+                        <div class="flex items-center justify-end gap-4">
+                            {% if request.user.is_superuser or request.user.role == 'ADMIN' %}
+                            <a href="{% url 'company-edit' pk=company.pk %}" class="text-blue-600 hover:text-blue-800 text-xs font-medium">Edit</a>
+                            {% endif %}
+                            {% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}
+                            <a href="{% url 'job-create' %}?company_id={{ company.pk }}" class="text-blue-600 hover:text-blue-800 text-xs font-medium">Create job</a>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="10" class="px-4 py-6 text-center text-sm text-gray-500">
+                        No companies yet. <a href="{% url 'company-create' %}" class="text-blue-600 hover:underline">Add a company</a> or post jobs to create them.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if page_obj %}
+    <div class="mt-4 flex items-center justify-between flex-wrap gap-2">
+        <p class="text-sm text-gray-500">
+            Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }} ({{ page_obj.paginator.count }} total)
+        </p>
+        <div class="flex gap-2">
+            {% if page_obj.has_previous %}
+            <a href="?{{ pagination_query }}&page={{ page_obj.previous_page_number }}" class="px-3 py-1.5 rounded border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">Previous</a>
+            {% endif %}
+            {% if page_obj.has_next %}
+            <a href="?{{ pagination_query }}&page={{ page_obj.next_page_number }}" class="px-3 py-1.5 rounded border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">Next</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}
+<div id="company-export-base" data-url="{% url 'company-export-csv' %}" data-query="{{ pagination_query }}"></div>
+<script>
+(function() {
+    var base = document.getElementById('company-export-base');
+    var exportBase = base ? base.getAttribute('data-url') + '?' + (base.getAttribute('data-query') || '') : '';
+    var selectAll = document.getElementById('selectAll');
+    var checkboxes = document.querySelectorAll('.company-checkbox');
+    var btnExport = document.getElementById('btnExportSelected');
+    function updateExportBtn() {
+        var checked = document.querySelectorAll('.company-checkbox:checked');
+        var countEl = document.getElementById('exportSelectedCount');
+        if (countEl) countEl.textContent = checked.length;
+        if (btnExport) {
+            btnExport.disabled = checked.length === 0;
+            if (checked.length > 0) {
+                var ids = Array.prototype.map.call(checked, function(c) { return c.value; }).join(',');
+                btnExport.onclick = function() {
+                    window.location.href = exportBase + (exportBase.indexOf('?') >= 0 ? '&' : '') + 'ids=' + ids;
+                };
+            }
+        }
+    }
+    if (selectAll && checkboxes.length) {
+        selectAll.addEventListener('change', function() {
+            for (var i = 0; i < checkboxes.length; i++) checkboxes[i].checked = selectAll.checked;
+            updateExportBtn();
+        });
+    }
+    for (var i = 0; i < checkboxes.length; i++) {
+        checkboxes[i].addEventListener('change', updateExportBtn);
+    }
+    updateExportBtn();
+})();
+</script>
+{% endif %}
+
+<!-- Quick preview popover -->
+<div id="company-preview-popover" class="fixed z-50 hidden bg-white border border-gray-200 rounded-lg shadow-lg p-4 text-sm max-w-xs" style="min-width: 220px;">
+    <div class="font-semibold text-gray-900 mb-2" id="preview-name"></div>
+    <dl class="space-y-1 text-gray-600">
+        <div><dt class="inline font-medium">Industry:</dt> <dd class="inline" id="preview-industry"></dd></div>
+        <div><dt class="inline font-medium">Website:</dt> <dd class="inline truncate block" id="preview-website"></dd></div>
+        <div><dt class="inline font-medium">Status:</dt> <dd class="inline" id="preview-status"></dd></div>
+        <div><dt class="inline font-medium">Contact:</dt> <dd class="inline" id="preview-contact"></dd></div>
+    </dl>
+</div>
+<script>
+(function() {
+    var popover = document.getElementById('company-preview-popover');
+    var triggers = document.querySelectorAll('.company-preview-trigger');
+    var close = function() {
+        if (popover) popover.classList.add('hidden');
+    };
+    triggers.forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            if (!popover) return;
+            document.getElementById('preview-name').textContent = btn.getAttribute('data-company-name') || '';
+            document.getElementById('preview-industry').textContent = btn.getAttribute('data-company-industry') || '—';
+            document.getElementById('preview-website').textContent = btn.getAttribute('data-company-website') || '—';
+            document.getElementById('preview-status').textContent = btn.getAttribute('data-company-status') || '—';
+            document.getElementById('preview-contact').textContent = btn.getAttribute('data-company-contact') || '—';
+            popover.classList.remove('hidden');
+            var rect = btn.getBoundingClientRect();
+            popover.style.left = (rect.left + window.scrollX) + 'px';
+            popover.style.top = (rect.bottom + 4 + window.scrollY) + 'px';
+        });
+    });
+    document.addEventListener('click', function(e) {
+        if (popover && !popover.contains(e.target) && !e.target.classList.contains('company-preview-trigger')) close();
+    });
+})();
+</script>
+{% endblock %}

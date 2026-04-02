@@ -3,26 +3,64 @@
 
 {% block content %}
 <div class="max-w-3xl mx-auto px-4 py-8">
-    <div class="bg-white rounded-lg shadow p-6">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <h1 class="text-2xl font-bold text-gray-800 mb-4">
             {% if form.instance.pk %}Edit Interview{% else %}Add Interview{% endif %}
         </h1>
         <form method="post">
             {% csrf_token %}
+            {% if form.non_field_errors %}
+            <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                {% for error in form.non_field_errors %}
+                <p class="text-sm text-red-700">{{ error }}</p>
+                {% endfor %}
+            </div>
+            {% endif %}
             {% for field in form.visible_fields %}
             <div class="mb-4">
-                <label class="block text-sm font-semibold text-gray-700 mb-1">{{ field.label }}</label>
-                {% render_field field class="w-full border rounded px-3 py-2" %}
+                <label class="block text-sm font-medium text-gray-600 mb-2">{{ field.label }}</label>
+                {% if field.name == 'scheduled_at' %}
+                <div class="relative">
+                    {% render_field field class="w-full border border-gray-300 rounded-lg px-3 py-2.5 pr-10 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white" %}
+                    <span class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                    </span>
+                </div>
+                {% else %}
+                {% render_field field class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" %}
+                {% endif %}
                 {% if field.errors %}
                 <p class="text-xs text-red-600 mt-1">{{ field.errors }}</p>
                 {% endif %}
             </div>
             {% endfor %}
-            <div class="flex justify-end gap-2">
-                <a href="{% url 'interview-list' %}" class="px-4 py-2 rounded border">Cancel</a>
-                <button type="submit" class="px-4 py-2 rounded bg-blue-600 text-white">Save</button>
+            <div class="flex justify-end gap-3 pt-2">
+                <a href="{% url 'interview-list' %}" class="px-4 py-2.5 rounded-lg border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition">Cancel</a>
+                <button type="submit" class="px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition">Save</button>
             </div>
         </form>
     </div>
 </div>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/airbnb.css" />
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script>
+(function() {
+    var el = document.getElementById('id_scheduled_at');
+    if (!el) return;
+    flatpickr(el, {
+        enableTime: true,
+        time_24hr: false,
+        dateFormat: 'Y-m-d H:i',
+        altInput: true,
+        altFormat: 'M j, Y h:i K',
+        altInputClass: 'w-full border border-gray-300 rounded-lg px-3 py-2.5 pr-10 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white cursor-pointer',
+        allowInput: false,
+        minuteIncrement: 15,
+        minDate: 'today',
+        maxDate: new Date().fp_incr(180)
+    });
+})();
+</script>
 {% endblock %}

@@ -4,7 +4,7 @@
 <div class="bg-gray-50 min-h-screen pb-12">
 
     <!-- Blue Header Section -->
-    <div class="bg-blue-600 text-white shadow-lg">
+    <div class="bg-blue-600 text-white shadow-sm">
         <div class="container mx-auto px-4 py-8 max-w-6xl">
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
@@ -54,11 +54,14 @@
                             </svg>
                             <span class="font-medium">Type:</span> {{ object.get_job_type_display }}
                         </div>
+                        <div class="flex items-center gap-2">
+                            <span class="font-medium">Applications:</span> {{ application_count|default:0 }}
+                        </div>
                     </div>
                 </div>
 
                 <div class="flex gap-3">
-                    {% if user.is_authenticated and object.posted_by == user %}
+                    {% if user.is_authenticated and object.posted_by == user or user.is_superuser or user.role == 'ADMIN' %}
                     <a href="{% url 'job-update' object.pk %}"
                         class="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 backdrop-blur-sm">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
@@ -78,20 +81,29 @@
                     </a>
                     {% endif %}
 
-                    {% if user.is_authenticated and object.posted_by == user or user.is_superuser %}
-                    <form action="{% url 'job-duplicate' object.pk %}" method="post" class="inline">
+                    {% if user.is_authenticated and object.posted_by == user or user.is_superuser or user.role == 'ADMIN' %}
+                    <form action="{% url 'job-parse-jd' object.pk %}" method="post" class="inline">
                         {% csrf_token %}
                         <button type="submit"
-                            class="bg-blue-500/80 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 backdrop-blur-sm"
-                            onclick="return confirm('Duplicate this job?');">
+                            class="bg-indigo-500/80 hover:bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 backdrop-blur-sm">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20"
                                 fill="currentColor">
-                                <path d="M7 9a2 2 0 012-2h6a2 2 0 012 2v6a2 2 0 01-2 2H9a2 2 0 01-2-2V9z" />
-                                <path d="M5 3a2 2 0 00-2 2v6a2 2 0 002 2V5h8a2 2 0 00-2-2H5z" />
+                                <path d="M4 4h8l4 4v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2z" />
+                                <path d="M8 10h6M8 14h6M8 6h2" />
                             </svg>
-                            Duplicate
+                            Parse JD
                         </button>
                     </form>
+                    <button type="button" id="copy-jd"
+                        class="bg-blue-500/80 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 backdrop-blur-sm">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20"
+                            fill="currentColor">
+                            <path
+                                d="M8 2a2 2 0 00-2 2v10a2 2 0 002 2h6a2 2 0 002-2V8l-4-4H8z" />
+                            <path d="M6 6h6M6 10h6M6 14h4" />
+                        </svg>
+                        Copy JD
+                    </button>
                     {% endif %}
                 </div>
             </div>
@@ -104,7 +116,7 @@
 
             <!-- Left Column: Details -->
             <div class="w-full lg:w-3/4">
-                <div class="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
 
                     <!-- Metadata Bar -->
                     <div
@@ -117,6 +129,12 @@
                                 {% else %}bg-yellow-100 text-yellow-800{% endif %}">
                                 {{ object.get_status_display }}
                             </span>
+                            {% if object.possibly_filled %}
+                            <span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200"
+                                  title="The original job URL appears to be unavailable. This role may be already filled or closed on the client side.">
+                                Possibly filled
+                            </span>
+                            {% endif %}
                         </div>
                         <div class="flex items-center gap-2">
                             <span class="font-bold text-gray-800">Posted:</span> {{ object.created_at|date:"M d, Y" }}
@@ -153,8 +171,8 @@
                                 </span>
                                 Description
                             </h3>
-                            <div class="prose max-w-none text-gray-700 leading-relaxed whitespace-pre-wrap font-sans">
-                                {{ object.description|linebreaksbr }}
+                            <div id="job-description" class="prose max-w-none text-gray-700 leading-relaxed whitespace-pre-wrap font-sans">
+                                {{ description_collapsed|linebreaksbr }}
                             </div>
                         </section>
 
@@ -181,6 +199,25 @@
                                 <span class="text-gray-900 font-medium">{{ object.posted_by.email }}</span>
                             </div>
                         </div>
+                        {% if object.last_edited_by and object.last_edited_by != object.posted_by %}
+                        <div>
+                            <span class="block text-gray-500 mb-1">Edited By</span>
+                            <div class="flex items-center gap-2">
+                                <div
+                                    class="bg-indigo-100 text-indigo-600 rounded-full w-8 h-8 flex items-center justify-center font-bold">
+                                    {{ object.last_edited_by.email|first|upper }}
+                                </div>
+                                <div class="text-gray-900 font-medium">
+                                    {{ object.last_edited_by.email }}
+                                    {% if object.last_edited_at %}
+                                    <div class="text-xs text-gray-500">
+                                        {{ object.last_edited_at|date:"M d, Y" }} at {{ object.last_edited_at|date:"H:i" }}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
 
                         {% if object.marketing_roles.exists %}
                         <div>
@@ -211,13 +248,194 @@
                                 {{ object.id }}
                             </span>
                         </div>
+                        {% if consultant_submission_for_job %}
+                        <div>
+                            <a href="{% url 'interview-add' %}?job={{ object.pk }}"
+                                class="inline-flex items-center gap-2 w-full justify-center bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-lg text-sm transition">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                </svg>
+                                Schedule interview
+                            </a>
+                            <p class="text-xs text-gray-500 mt-1.5">You applied for this job. Add it to your calendar.</p>
+                        </div>
+                        {% endif %}
+                        <div>
+                            <span class="block text-gray-500 mb-1">JD Parse</span>
+                            <div class="flex items-center gap-2">
+                                {% if object.parsed_jd_status == 'OK' %}
+                                <span class="px-2 py-0.5 rounded text-xs font-bold bg-green-100 text-green-800">OK</span>
+                                {% elif object.parsed_jd_status == 'ERROR' %}
+                                <span class="px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-800">ERROR</span>
+                                {% else %}
+                                <span class="px-2 py-0.5 rounded text-xs font-bold bg-gray-100 text-gray-600">N/A</span>
+                                {% endif %}
+                                {% if object.parsed_jd_updated_at %}
+                                <span class="text-xs text-gray-500">
+                                    {{ object.parsed_jd_updated_at|date:"M d, Y" }} at {{ object.parsed_jd_updated_at|date:"H:i" }}
+                                </span>
+                                {% endif %}
+                            </div>
+                            {% if object.parsed_jd_error %}
+                            <div class="text-xs text-red-600 mt-1">{{ object.parsed_jd_error }}</div>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
+
+                {% if parsed_jd_json %}
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-4">
+                    <div class="flex items-center justify-between">
+                        <h4 class="font-bold text-gray-800">Parsed JD Summary</h4>
+                        <span class="text-xs text-gray-500">Auto‑extracted</span>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                        <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                            <div class="text-xs text-gray-500 mb-1">Role Domain</div>
+                            <div class="font-semibold text-gray-900">{{ object.parsed_jd.role_domain|default:"—" }}</div>
+                        </div>
+                        <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                            <div class="text-xs text-gray-500 mb-1">Seniority</div>
+                            <div class="font-semibold text-gray-900">{{ object.parsed_jd.seniority_level|default:"—" }}</div>
+                        </div>
+                        <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                            <div class="text-xs text-gray-500 mb-1">Parsed Job Title</div>
+                            <div class="font-semibold text-gray-900">{{ object.parsed_jd.job_title|default:"—" }}</div>
+                        </div>
+                        <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                            <div class="text-xs text-gray-500 mb-1">Parsed Company</div>
+                            <div class="font-semibold text-gray-900">{{ object.parsed_jd.company|default:"—" }}</div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-4 text-sm">
+                        <div>
+                            <div class="text-xs text-gray-500 mb-2">Required Skills</div>
+                            <div class="flex flex-wrap gap-2">
+                                {% for item in object.parsed_jd.required_skills %}
+                                <span class="px-2 py-1 rounded bg-indigo-50 text-indigo-700 text-xs font-medium">{{ item }}</span>
+                                {% empty %}
+                                <span class="text-gray-500">—</span>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500 mb-2">Preferred Skills</div>
+                            <div class="flex flex-wrap gap-2">
+                                {% for item in object.parsed_jd.preferred_skills %}
+                                <span class="px-2 py-1 rounded bg-blue-50 text-blue-700 text-xs font-medium">{{ item }}</span>
+                                {% empty %}
+                                <span class="text-gray-500">—</span>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500 mb-2">Tools & Technologies</div>
+                            <div class="flex flex-wrap gap-2">
+                                {% for item in object.parsed_jd.tools_and_technologies %}
+                                <span class="px-2 py-1 rounded bg-gray-100 text-gray-800 text-xs font-medium">{{ item }}</span>
+                                {% empty %}
+                                <span class="text-gray-500">—</span>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500 mb-2">Platforms & Services</div>
+                            <div class="flex flex-wrap gap-2">
+                                {% for item in object.parsed_jd.platforms_and_services %}
+                                <span class="px-2 py-1 rounded bg-green-50 text-green-700 text-xs font-medium">{{ item }}</span>
+                                {% empty %}
+                                <span class="text-gray-500">—</span>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500 mb-2">Domain Terms</div>
+                            <div class="flex flex-wrap gap-2">
+                                {% for item in object.parsed_jd.domain_specific_terms %}
+                                <span class="px-2 py-1 rounded bg-yellow-50 text-yellow-800 text-xs font-medium">{{ item }}</span>
+                                {% empty %}
+                                <span class="text-gray-500">—</span>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500 mb-2">Certifications Preferred</div>
+                            <div class="flex flex-wrap gap-2">
+                                {% for item in object.parsed_jd.certifications_preferred %}
+                                <span class="px-2 py-1 rounded bg-purple-50 text-purple-700 text-xs font-medium">{{ item }}</span>
+                                {% empty %}
+                                <span class="text-gray-500">—</span>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500 mb-2">ATS Keywords</div>
+                            <div class="flex flex-wrap gap-2">
+                                {% for item in object.parsed_jd.keywords_for_ats %}
+                                <span class="px-2 py-1 rounded bg-gray-50 text-gray-700 text-xs font-medium">{{ item }}</span>
+                                {% empty %}
+                                <span class="text-gray-500">—</span>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <details>
+                        <summary class="cursor-pointer font-semibold text-gray-800">Parsed JD (JSON)</summary>
+                        <pre class="mt-3 text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg p-3 whitespace-pre-wrap">{{ parsed_jd_json }}</pre>
+                    </details>
+                </div>
+                {% endif %}
+
+                {% if matched_consultants %}
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <h4 class="font-bold text-gray-800 mb-4 flex items-center justify-between">
+                        <span class="uppercase tracking-wide text-xs">Top Matching Consultants</span>
+                        <span class="text-xs text-gray-500">{{ matched_consultants|length }} match{{ matched_consultants|length|pluralize }}</span>
+                    </h4>
+                    <div class="space-y-3 text-sm">
+                        {% for c in matched_consultants %}
+                        <div class="border border-gray-100 rounded-lg p-3 hover:bg-blue-50/40 transition">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <div class="font-semibold text-gray-900">
+                                        <a href="{% url 'consultant-detail' c.user.pk %}" class="hover:text-blue-600">
+                                            {{ c.user.get_full_name|default:c.user.username }}
+                                        </a>
+                                    </div>
+                                    <div class="text-xs text-gray-500">
+                                        {% if c.hourly_rate %}
+                                        ${{ c.hourly_rate }}/hr ·
+                                        {% endif %}
+                                        {{ c.get_status_display }}
+                                    </div>
+                                </div>
+                                <div
+                                    class="bg-gray-100 text-gray-700 rounded-full w-8 h-8 flex items-center justify-center font-bold text-xs">
+                                    {{ c.user.username|first|upper }}
+                                </div>
+                            </div>
+                            {% if c.skills %}
+                            <div class="mt-2 flex flex-wrap gap-1">
+                                {% for s in c.skills|slice:":4" %}
+                                <span class="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-medium">
+                                    {{ s }}
+                                </span>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
 
                 <!-- Apply (Placeholder) -->
                 {% if object.status == 'OPEN' %}
                 <button
-                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow-lg hover:shadow-xl transition transform hover:-translate-y-0.5"
+                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-lg shadow-sm hover:shadow transition"
                     onclick="alert('Apply Logic Coming Soon!')">
                     Apply Now
                 </button>
@@ -231,4 +449,23 @@
         </div>
     </div>
 </div>
+<textarea id="job-description-raw" class="hidden">{{ object.description }}</textarea>
+<script>
+    (function () {
+        const btn = document.getElementById('copy-jd');
+        const raw = document.getElementById('job-description-raw');
+        if (!btn || !raw) return;
+        btn.addEventListener('click', async () => {
+            const text = raw.value || '';
+            try {
+                await navigator.clipboard.writeText(text);
+                const original = btn.textContent.trim();
+                btn.textContent = 'JD Copied';
+                setTimeout(() => { btn.textContent = original; }, 1500);
+            } catch (e) {
+                alert('Copy failed. Select the description text manually.');
+            }
+        });
+    })();
+</script>
 {% endblock %}

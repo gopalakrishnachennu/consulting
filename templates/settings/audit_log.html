@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex items-center justify-between mb-8">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-800">Audit Log</h1>
+            <p class="text-gray-600">Recent actions for compliance and tracking.</p>
+        </div>
+        <a href="{% url 'settings-dashboard' %}" class="text-blue-600 hover:text-blue-800 font-medium">
+            &larr; Back to Settings
+        </a>
+    </div>
+
+    <form method="get" class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-6 flex flex-wrap gap-3 items-end">
+        <div>
+            <label class="block text-xs text-gray-500 mb-1">Action</label>
+            <input type="text" name="action" value="{{ request.GET.action }}" class="border border-gray-300 rounded-lg px-3 py-2 text-gray-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" placeholder="Filter by action">
+        </div>
+        <div>
+            <label class="block text-xs text-gray-500 mb-1">Target model</label>
+            <input type="text" name="target_model" value="{{ request.GET.target_model }}" class="border border-gray-300 rounded-lg px-3 py-2 text-gray-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" placeholder="e.g. Job, User">
+        </div>
+        <button type="submit" class="px-4 py-2 rounded bg-blue-600 text-white">Apply</button>
+        <a href="{% url 'audit-log' %}" class="px-4 py-2 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">Clear</a>
+    </form>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Time</th>
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Actor</th>
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Action</th>
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Target</th>
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Details</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for log in audit_logs %}
+                    <tr>
+                        <td class="px-4 py-3 text-sm text-gray-800 whitespace-nowrap">{{ log.timestamp|date:"Y-m-d H:i" }}</td>
+                        <td class="px-4 py-3 text-sm text-gray-800">{% if log.actor %}{{ log.actor.get_full_name|default:log.actor.username }}{% else %}—{% endif %}</td>
+                        <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ log.action }}</td>
+                        <td class="px-4 py-3 text-sm text-gray-800">{% if log.target_model %}{{ log.target_model }} #{{ log.target_id }}{% else %}—{% endif %}</td>
+                        <td class="px-4 py-3 text-sm text-gray-600 max-w-xs truncate">{% if log.details %}{{ log.details|length }} key(s){% else %}—{% endif %}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="px-4 py-8 text-center text-gray-600">No audit entries found.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if is_paginated %}
+        <div class="px-4 py-3 border-t border-gray-200 flex justify-between items-center">
+            <span class="text-sm text-gray-700">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+            <nav class="inline-flex gap-2">
+                {% if page_obj.has_previous %}
+                <a href="?{% if request.GET.action %}action={{ request.GET.action }}&{% endif %}{% if request.GET.target_model %}target_model={{ request.GET.target_model }}&{% endif %}page={{ page_obj.previous_page_number }}" class="px-3 py-1 rounded border bg-white text-gray-700 hover:bg-gray-50">Previous</a>
+                {% endif %}
+                {% if page_obj.has_next %}
+                <a href="?{% if request.GET.action %}action={{ request.GET.action }}&{% endif %}{% if request.GET.target_model %}target_model={{ request.GET.target_model }}&{% endif %}page={{ page_obj.next_page_number }}" class="px-3 py-1 rounded border bg-white text-gray-700 hover:bg-gray-50">Next</a>
+                {% endif %}
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

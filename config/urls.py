@@ -1,11 +1,16 @@
 from django.contrib import admin
 from django.urls import path, include
+from django.views.generic import RedirectView
 
 from core.views import home, AdminDashboardView, EmployeeDashboardView
 from config.impersonate_views import start_impersonate, stop_impersonate
+from users.views import PublicConsultantProfileView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('c/<slug:slug>/', PublicConsultantProfileView.as_view(), name='consultant-public-profile'),
+    path('consultants/consultants/', RedirectView.as_view(url='/consultants/', permanent=True)),
+    path('consultants/consultants', RedirectView.as_view(url='/consultants/', permanent=True)),
     path("__reload__/", include("django_browser_reload.urls")),
     path("accounts/", include("django.contrib.auth.urls")),
     path("jobs/", include("jobs.urls")),
@@ -16,6 +21,7 @@ urlpatterns = [
     path("consultants/", include("users.urls")),
     path("employees/", include("users.urls_employees")),
     path("analytics/", include("analytics.urls")),
+    path("companies/", include("companies.urls")),
     path("core/", include("core.urls")),
     path("prompts/", include("prompts_app.urls")),
     path("admin-dashboard/", AdminDashboardView.as_view(), name="admin-dashboard"),

@@ -31,6 +31,11 @@ class ConsultantCreateForm(forms.Form):
         help_text="Comma-separated list, e.g. Python, Django, AWS",
     )
     hourly_rate = forms.DecimalField(max_digits=10, decimal_places=2, required=False)
+    match_jd_title_override = forms.BooleanField(
+        required=False,
+        label="Match JD title for most recent role",
+        help_text="If checked, the most recent resume role title is replaced with the JD title.",
+    )
 
     def clean_username(self):
         username = self.cleaned_data['username']
@@ -81,6 +86,7 @@ class ConsultantCreateForm(forms.Form):
             skills=skills_list,
             hourly_rate=data.get('hourly_rate'),
             phone=data.get('phone', ''),
+            match_jd_title_override=data.get('match_jd_title_override'),
         )
         return user, password, generated
 
@@ -180,11 +186,28 @@ class CertificationForm(forms.ModelForm):
         }
 
 
+TIMEZONE_CHOICES = [
+    ("UTC", "UTC"),
+    ("Europe/London", "UK / Europe – London"),
+    ("Europe/Berlin", "Europe – Central (Berlin)"),
+    ("Asia/Kolkata", "India – IST (Kolkata)"),
+    ("Asia/Dubai", "Gulf – Dubai"),
+    ("America/New_York", "US – Eastern (New York)"),
+    ("America/Chicago", "US – Central (Chicago)"),
+    ("America/Denver", "US – Mountain (Denver)"),
+    ("America/Los_Angeles", "US – Pacific (Los Angeles)"),
+    ("Australia/Sydney", "Australia – Sydney"),
+]
+
+
 class UserProfileForm(forms.ModelForm):
-    """Edit basic user fields: first_name, last_name, email."""
+    """Edit basic user fields: name, email, and timezone."""
+
+    timezone = forms.ChoiceField(choices=TIMEZONE_CHOICES, required=True, label="Time zone")
+
     class Meta:
         model = User
-        fields = ['first_name', 'last_name', 'email']
+        fields = ['first_name', 'last_name', 'email', 'timezone']
 
 
 class EmployeeProfileForm(forms.ModelForm):
@@ -209,7 +232,7 @@ class ConsultantProfileEditForm(forms.ModelForm):
 
     class Meta:
         model = ConsultantProfile
-        fields = ['bio', 'base_resume_text', 'hourly_rate', 'phone', 'marketing_roles', 'status']
+        fields = ['bio', 'base_resume_text', 'hourly_rate', 'phone', 'match_jd_title_override', 'marketing_roles', 'status']
         widgets = {
             'bio': forms.Textarea(attrs={'rows': 3}),
             'base_resume_text': forms.Textarea(attrs={'rows': 6}),

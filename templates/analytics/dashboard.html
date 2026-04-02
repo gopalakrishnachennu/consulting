@@ -1,33 +1,132 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="flex flex-col space-y-8">
-    <h1 class="text-3xl font-bold text-gray-800">Analytics Dashboard</h1>
-
-    <!-- KPI Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div class="bg-white p-6 rounded-lg shadow-md border-l-4 border-blue-500">
-            <h3 class="text-gray-500 text-sm font-semibold uppercase">Total Jobs</h3>
-            <p class="text-3xl font-bold text-gray-800">{{ total_jobs }}</p>
-        </div>
-        <div class="bg-white p-6 rounded-lg shadow-md border-l-4 border-green-500">
-            <h3 class="text-gray-500 text-sm font-semibold uppercase">Active Jobs</h3>
-            <p class="text-3xl font-bold text-gray-800">{{ active_jobs }}</p>
-        </div>
-        <div class="bg-white p-6 rounded-lg shadow-md border-l-4 border-purple-500">
-            <h3 class="text-gray-500 text-sm font-semibold uppercase">Total Consultants</h3>
-            <p class="text-3xl font-bold text-gray-800">{{ total_consultants }}</p>
-        </div>
-        <div class="bg-white p-6 rounded-lg shadow-md border-l-4 border-indigo-500">
-            <h3 class="text-gray-500 text-sm font-semibold uppercase">Total Applications</h3>
-            <p class="text-3xl font-bold text-gray-800">{{ total_applications }}</p>
+<div class="max-w-7xl mx-auto px-4 py-6 flex flex-col gap-6">
+    <!-- HERO HEADER -->
+    <div class="hero-gradient rounded-2xl px-8 py-6 relative overflow-hidden">
+        <div class="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+            <div>
+                <div class="flex items-center gap-3 mb-2">
+                    {% if request.user.is_superuser or request.user.role == 'ADMIN' %}
+                    <a href="{% url 'admin-dashboard' %}" class="text-blue-200 hover:text-white text-sm font-medium transition">← Dashboard</a>
+                    {% else %}
+                    <a href="{% url 'employee-dashboard' %}" class="text-blue-200 hover:text-white text-sm font-medium transition">← Dashboard</a>
+                    {% endif %}
+                </div>
+                <h1 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight flex items-center gap-3">
+                    <svg class="w-8 h-8 text-blue-200 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                            d="M3 3v18h18M7 15l3 3 7-7M7 9h4m-4-4h8" />
+                    </svg>
+                    Analytics Dashboard
+                </h1>
+                <p class="text-blue-100 mt-2 text-sm md:text-base">
+                    Showing data for <strong>{{ date_range_label }}</strong>. See how jobs and applications move through your funnel.
+                </p>
+            </div>
+            <div class="flex flex-col items-end gap-2">
+                <div class="flex items-center gap-2 text-xs">
+                    <span class="text-blue-100">Period:</span>
+                    <a href="?range=7" class="px-3 py-1.5 rounded text-xs font-medium {% if date_range == '7' %}bg-white text-indigo-700{% else %}bg-white/10 text-blue-50 hover:bg-white/20{% endif %}">Last 7 days</a>
+                    <a href="?range=30" class="px-3 py-1.5 rounded text-xs font-medium {% if date_range == '30' %}bg-white text-indigo-700{% else %}bg-white/10 text-blue-50 hover:bg-white/20{% endif %}">Last 30 days</a>
+                    <a href="?range=all" class="px-3 py-1.5 rounded text-xs font-medium {% if date_range == 'all' %}bg-white text-indigo-700{% else %}bg-white/10 text-blue-50 hover:bg-white/20{% endif %}">All time</a>
+                </div>
+                <a href="{% url 'analytics-export-csv' %}?range={{ date_range }}"
+                   class="px-4 py-2 bg-white/15 border border-white/30 rounded-xl text-xs font-medium text-white hover:bg-white/25 transition backdrop-blur-sm flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Export CSV
+                </a>
+            </div>
         </div>
     </div>
 
+    <!-- KPI Cards (compact) -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+            <h3 class="text-gray-500 text-xs font-semibold uppercase tracking-wide">Total Jobs</h3>
+            <p class="text-xl font-bold text-gray-800 mt-1">{{ total_jobs }}</p>
+        </div>
+        <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+            <h3 class="text-gray-500 text-xs font-semibold uppercase tracking-wide">Active Jobs</h3>
+            <p class="text-xl font-bold text-gray-800 mt-1">{{ active_jobs }}</p>
+        </div>
+        <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+            <h3 class="text-gray-500 text-xs font-semibold uppercase tracking-wide">Total Consultants</h3>
+            <p class="text-xl font-bold text-gray-800 mt-1">{{ total_consultants }}</p>
+        </div>
+        <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+            <h3 class="text-gray-500 text-xs font-semibold uppercase tracking-wide">Total Applications</h3>
+            <p class="text-xl font-bold text-gray-800 mt-1">{{ total_applications }}</p>
+        </div>
+    </div>
+
+    <!-- Conversion Snapshot (minimalist) -->
+    <div class="bg-white border border-gray-200 rounded-lg p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+            <h2 class="text-sm font-semibold text-gray-800 uppercase tracking-wide">Conversion Snapshot</h2>
+            <p class="text-xs text-gray-500 mt-1">Share of applications that reached each key stage.</p>
+        </div>
+        <div class="flex flex-wrap gap-6 text-sm">
+            <div>
+                <p class="text-gray-500">Interview rate</p>
+                <p class="text-xl font-semibold text-gray-900">{{ interview_rate }}%</p>
+            </div>
+            <div>
+                <p class="text-gray-500">Offer rate</p>
+                <p class="text-xl font-semibold text-gray-900">{{ offer_rate }}%</p>
+            </div>
+            <div>
+                <p class="text-gray-500">Rejection rate</p>
+                <p class="text-xl font-semibold text-gray-900">{{ rejection_rate }}%</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Applications by Marketing Role -->
+    <div class="bg-white border border-gray-200 rounded-lg p-4">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-semibold text-gray-800 uppercase tracking-wide">Applications by Marketing Role</h2>
+            <p class="text-xs text-gray-500">Top roles by application volume.</p>
+        </div>
+        {% if role_funnel %}
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-sm text-gray-700">
+                <thead>
+                    <tr class="border-b border-gray-200 text-xs uppercase text-gray-500">
+                        <th class="py-1 pr-4 text-left">Role</th>
+                        <th class="py-1 px-2 text-right">Total</th>
+                        <th class="py-1 px-2 text-right">Applied</th>
+                        <th class="py-1 px-2 text-right">Interview</th>
+                        <th class="py-1 px-2 text-right">Offer</th>
+                        <th class="py-1 px-2 text-right">Rejected</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in role_funnel %}
+                    <tr class="border-b border-gray-50">
+                        <td class="py-1 pr-4">{{ row.name }}</td>
+                        <td class="py-1 px-2 text-right">{{ row.total }}</td>
+                        <td class="py-1 px-2 text-right">{{ row.applied }}</td>
+                        <td class="py-1 px-2 text-right">{{ row.interview }}</td>
+                        <td class="py-1 px-2 text-right">{{ row.offer }}</td>
+                        <td class="py-1 px-2 text-right">{{ row.rejected }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-sm text-gray-500">No applications yet for any marketing roles.</p>
+        {% endif %}
+    </div>
+
     <!-- Charts -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Applications Status Pie Chart -->
-        <div class="bg-white p-6 rounded-lg shadow-lg">
+        <div class="bg-white p-5 rounded-lg shadow-sm">
             <h3 class="text-xl font-bold text-gray-800 mb-4">Application Status</h3>
             <div class="relative h-64 w-full">
                 <canvas id="appStatusChart"></canvas>
@@ -35,11 +134,83 @@
         </div>
 
         <!-- Jobs Over Time Line Chart -->
-        <div class="bg-white p-6 rounded-lg shadow-lg">
+        <div class="bg-white p-5 rounded-lg shadow-sm">
             <h3 class="text-xl font-bold text-gray-800 mb-4">Jobs Posted Over Time</h3>
             <div class="relative h-64 w-full">
                 <canvas id="jobsTimeChart"></canvas>
             </div>
+        </div>
+
+        <!-- Applications Funnel -->
+        <div class="bg-white p-5 rounded-lg shadow-sm">
+            <h3 class="text-xl font-bold text-gray-800 mb-4">Applications Funnel</h3>
+            <div class="relative h-64 w-full">
+                <canvas id="funnelChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Applications Over Time Line Chart -->
+        <div class="bg-white p-5 rounded-lg shadow-sm lg:col-span-2">
+            <h3 class="text-xl font-bold text-gray-800 mb-4">Applications Over Time</h3>
+            <div class="relative h-64 w-full">
+                <canvas id="appsTimeChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top performers -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Top Employees by Jobs Posted -->
+        <div class="bg-white p-5 rounded-lg shadow-sm">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold text-gray-800">Top Employees by Jobs Posted</h3>
+                <span class="text-xs text-gray-500">Last all-time snapshot</span>
+            </div>
+            {% if top_employees %}
+            <div class="space-y-2">
+                {% for emp in top_employees %}
+                <div class="flex justify-between items-center p-2 rounded hover:bg-gray-50">
+                    <div>
+                        <p class="font-medium text-gray-800">{{ emp.get_full_name|default:emp.username }}</p>
+                        <p class="text-xs text-gray-500">{{ emp.email }}</p>
+                    </div>
+                    <span class="px-3 py-1 text-xs font-semibold rounded-full bg-blue-50 text-blue-700">
+                        {{ emp.job_count }} jobs
+                    </span>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-sm text-gray-500">No employee job postings yet.</p>
+            {% endif %}
+        </div>
+
+        <!-- Top Consultants by Applications -->
+        <div class="bg-white p-5 rounded-lg shadow-sm">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold text-gray-800">Top Consultants by Applications</h3>
+                <span class="text-xs text-gray-500">All-time volume</span>
+            </div>
+            {% if top_consultants %}
+            <div class="space-y-2">
+                {% for con in top_consultants %}
+                <div class="flex justify-between items-center p-2 rounded hover:bg-gray-50">
+                    <div>
+                        <p class="font-medium text-gray-800">{{ con.get_full_name|default:con.username }}</p>
+                        <p class="text-xs text-gray-500">
+                            {% if con.consultant_profile.hourly_rate %}₹{{ con.consultant_profile.hourly_rate }} / hr · {% endif %}
+                            {{ con.consultant_profile.status }}
+                        </p>
+                    </div>
+                    <span class="px-3 py-1 text-xs font-semibold rounded-full bg-purple-50 text-purple-700">
+                        {{ con.submission_count }} apps
+                    </span>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-sm text-gray-500">No consultant applications yet.</p>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -51,25 +222,25 @@
     new Chart(appCtx, {
         type: 'doughnut',
         data: {
-            labels: {{ app_status_labels| safe }},
-        datasets: [{
-            data: {{ app_status_data| safe }},
-        backgroundColor: [
-            '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#6B7280'
-        ],
-        borderWidth: 1
+            labels: {{ app_status_labels|safe }},
+            datasets: [{
+                data: {{ app_status_data|safe }},
+                backgroundColor: [
+                    '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#6B7280'
+                ],
+                borderWidth: 1
             }]
         },
         options: {
-        responsive: true,
-        maintainAspectRatio: false
-    }
+            responsive: true,
+            maintainAspectRatio: false
+        }
     });
 
     // Jobs Over Time Chart
     const jobCtx = document.getElementById('jobsTimeChart').getContext('2d');
     // Parse month labels properly if needed, but strings are fine for Chart.js
-    const jobLabels = {{ jobs_time_labels| safe }};
+    const jobLabels = {{ jobs_time_labels|safe }};
     // We might need to ensure they are parsed as strings, JSON dumps does "Jan 2024"
 
     new Chart(jobCtx, {
@@ -78,26 +249,77 @@
             labels: jobLabels,
             datasets: [{
                 label: 'Jobs Posted',
-                data: {{ jobs_time_data| safe }
-    },
-        borderColor: '#8B5CF6',
-        tension: 0.3,
-        fill: true,
-        backgroundColor: 'rgba(139, 92, 246, 0.1)'
+                data: {{ jobs_time_data|safe }},
+                borderColor: '#8B5CF6',
+                tension: 0.3,
+                fill: true,
+                backgroundColor: 'rgba(139, 92, 246, 0.1)'
             }]
         },
         options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-            y: {
-                beginAtZero: true,
-                ticks: {
-                    stepSize: 1
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    }
                 }
             }
         }
-    }
     });
+
+    // Applications Funnel Chart
+    const funnelCtx = document.getElementById('funnelChart').getContext('2d');
+    new Chart(funnelCtx, {
+        type: 'bar',
+        data: {
+            labels: {{ funnel_labels|safe }},
+            datasets: [{
+                label: 'Applications',
+                data: {{ funnel_data|safe }},
+                backgroundColor: '#3B82F6'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+
+    // Applications Over Time Line Chart
+    const appsTimeEl = document.getElementById('appsTimeChart');
+    if (appsTimeEl) {
+        new Chart(appsTimeEl.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: {{ apps_time_labels|safe }},
+                datasets: [{
+                    label: 'Applications',
+                    data: {{ apps_time_data|safe }},
+                    borderColor: '#10B981',
+                    tension: 0.3,
+                    fill: true,
+                    backgroundColor: 'rgba(16, 185, 129, 0.1)'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { stepSize: 1 }
+                    }
+                }
+            }
+        });
+    }
 </script>
 {% endblock %}

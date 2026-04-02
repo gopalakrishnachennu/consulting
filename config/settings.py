@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     'django_htmx',
     'django_extensions',
     'widget_tweaks',
+    'django_celery_beat',
     
     # Local Apps
     'users.apps.UsersConfig',
@@ -37,6 +38,7 @@ INSTALLED_APPS = [
     'submissions.apps.SubmissionsConfig',
     'messaging.apps.MessagingConfig',
     'analytics.apps.AnalyticsConfig',
+    'companies',
     'interviews_app.apps.InterviewsAppConfig',
     'prompts_app.apps.PromptsAppConfig',
 ]

@@ -1,76 +1,184 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<!-- HEADER SECTION -->
-<div class="flex flex-col md:flex-row justify-between items-end mb-8 gap-4">
-    <div>
-        <h1 class="text-3xl font-bold text-gray-900 tracking-tight">
-            Job Listings
-            <span class="bg-gray-100 text-gray-600 text-sm font-medium px-2.5 py-0.5 rounded-full ml-3 align-middle">{{ page_obj.paginator.count|default:0 }}</span>
-        </h1>
-        <p class="text-gray-500 mt-1">Manage and track your open positions.</p>
-    </div>
+<!-- HERO HEADER (match Consultants vibe) -->
+<div class="hero-gradient rounded-2xl px-8 py-6 mb-6 relative overflow-hidden">
+    <div class="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+        <div>
+            <div class="flex items-center gap-3 mb-2">
+                {% if request.user.is_superuser or request.user.role == 'ADMIN' %}
+                <a href="{% url 'admin-dashboard' %}" class="text-blue-200 hover:text-white text-sm font-medium transition">← Dashboard</a>
+                {% elif request.user.role == 'EMPLOYEE' %}
+                <a href="{% url 'employee-dashboard' %}" class="text-blue-200 hover:text-white text-sm font-medium transition">← Dashboard</a>
+                {% else %}
+                <a href="{% url 'consultant-dashboard' %}" class="text-blue-200 hover:text-white text-sm font-medium transition">← Dashboard</a>
+                {% endif %}
+            </div>
+            <h1 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight flex items-center gap-4">
+                <svg class="w-10 h-10 text-blue-200 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                        d="M4 7a2 2 0 012-2h3l1-2h4l1 2h3a2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V7z" />
+                </svg>
+                Job Listings
+                <span class="bg-white/20 text_white text-sm font-semibold px-3 py-1 rounded-full backdrop-blur-sm">
+                    {{ total_jobs|default:0 }}
+                </span>
+            </h1>
+            <p class="text-blue-100 mt-2 text-base md:text-lg">Manage, filter, and track all roles your team is hiring for.</p>
+        </div>
 
-    <div class="flex items-center gap-3 w-full md:w-auto">
+        <div class="flex items-center gap-3">
+            <a href="{% url 'job-export-csv' %}?{{ request.GET.urlencode }}"
+                class="px-4 py-2.5 bg-white/15 border border-white/30 rounded-xl text-sm font-medium text-white hover:bg-white/25 transition backdrop-blur-sm flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Export CSV
+            </a>
+            {% if user.role == 'EMPLOYEE' or user.is_superuser %}
+            <a href="{% url 'job-bulk-upload' %}"
+                class="px-4 py-2.5 bg-white/15 border border-white/30 rounded-xl text-sm font-medium text-white hover:bg-white/25 transition backdrop-blur-sm flex items-center gap-2"
+                title="Bulk Upload">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Bulk Upload
+            </a>
+            <a href="{% url 'job-create' %}"
+                class="bg-white text-indigo-700 font-bold py-2.5 px-6 rounded-xl shadow-lg hover:shadow-xl transition flex items-center gap-2 btn-glow">
+                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+                Post Job
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- STATUS SUMMARY CHIPS (very compact) -->
+{% if status_summary %}
+<div class="mb-3 flex flex-wrap items-center gap-2 text-xs text-gray-600">
+    <span class="font-semibold mr-1">Summary:</span>
+    <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
+        <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+        Open {{ status_summary.OPEN }}
+    </span>
+    <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-100">
+        <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+        Draft {{ status_summary.DRAFT }}
+    </span>
+    <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-gray-50 text-gray-700 border border-gray-200">
+        <span class="w-1.5 h-1.5 rounded-full bg-gray-500"></span>
+        Closed {{ status_summary.CLOSED }}
+    </span>
+</div>
+{% endif %}
+
+<!-- FILTER BAR -->
+<div class="glass rounded-2xl px-5 py-2 mb-3">
+    <div class="flex flex-col md:flex-row items-center justify-between gap-4">
+        <div class="flex flex-wrap items-center gap-3 flex-1 w-full md:w-auto">
         <!-- Role Filter -->
-        <div class="relative">
-            <select onchange="window.location.href='{% url 'job-list' %}?role='+this.value"
-                class="pl-4 pr-10 py-2.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition appearance-none cursor-pointer">
+        <div class="relative w-full md:w-auto">
+            <select onchange="var p=new URLSearchParams(window.location.search);p.set('role',this.value);window.location.search=p.toString();"
+                class="w-full md:w-48 pl-4 pr-10 py-3 bg-white/80 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition appearance-none cursor-pointer">
                 <option value="">All Roles</option>
                 {% for role in marketing_roles %}
-                <option value="{{ role.slug }}" {% if selected_role == role.slug %}selected{% endif %}>{{ role.name }}
-                </option>
+                <option value="{{ role.slug }}" {% if selected_role == role.slug %}selected{% endif %}>{{ role.name }}</option>
                 {% endfor %}
             </select>
-            <!-- Custom Arrow Icon -->
-            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
+            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
                 <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
                 </svg>
             </div>
         </div>
 
-        <!-- Search Input -->
-        <div class="relative flex-grow md:flex-grow-0 md:w-64">
-            <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
+        <!-- Status Filter -->
+        <div class="relative w-full md:w-auto">
+            <select onchange="var p=new URLSearchParams(window.location.search);p.set('status',this.value);window.location.search=p.toString();"
+                class="w-full md:w-40 pl-4 pr-10 py-3 bg-white/80 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition appearance-none cursor-pointer">
+                <option value="">All Statuses</option>
+                <option value="OPEN" {% if selected_status == 'OPEN' %}selected{% endif %}>Open</option>
+                <option value="CLOSED" {% if selected_status == 'CLOSED' %}selected{% endif %}>Closed</option>
+                <option value="DRAFT" {% if selected_status == 'DRAFT' %}selected{% endif %}>Draft</option>
+            </select>
+            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+            </div>
+        </div>
+
+        <!-- Possibly Filled Filter -->
+        <div class="relative w-full md:w-auto">
+            <select onchange="var p=new URLSearchParams(window.location.search);p.set('possibly_filled',this.value);window.location.search=p.toString();"
+                class="w-full md:w-44 pl-4 pr-10 py-3 bg-white/80 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition appearance-none cursor-pointer">
+                <option value="">All Jobs</option>
+                <option value="1" {% if selected_possibly_filled == '1' %}selected{% endif %}>Possibly filled</option>
+                <option value="0" {% if selected_possibly_filled == '0' %}selected{% endif %}>Not flagged</option>
+            </select>
+            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+            </div>
+        </div>
+
+        <!-- Job Type Filter -->
+        <div class="relative w-full md:w-auto">
+            <select onchange="var p=new URLSearchParams(window.location.search);p.set('job_type',this.value);window.location.search=p.toString();"
+                class="w-full md:w-44 pl-4 pr-10 py-3 bg-white/80 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition appearance-none cursor-pointer">
+                <option value="">All Types</option>
+                <option value="FULL_TIME" {% if selected_job_type == 'FULL_TIME' %}selected{% endif %}>Full Time</option>
+                <option value="PART_TIME" {% if selected_job_type == 'PART_TIME' %}selected{% endif %}>Part Time</option>
+                <option value="CONTRACT" {% if selected_job_type == 'CONTRACT' %}selected{% endif %}>Contract</option>
+                <option value="INTERNSHIP" {% if selected_job_type == 'INTERNSHIP' %}selected{% endif %}>Internship</option>
+            </select>
+            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+            </div>
+        </div>
+
+        <!-- Search -->
+        <div class="relative flex-grow w-full md:w-auto">
+            <span class="absolute inset-y-0 left-0 pl-4 flex items-center text-gray-400">
                 <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                         d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
             </span>
             <input type="text" name="search"
-                class="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition"
-                placeholder="Search jobs..." hx-get="{% url 'job-list' %}" hx-trigger="keyup changed delay:500ms"
-                hx-target="#job-list-results" hx-indicator="#loading-indicator">
+                class="w-full pl-11 pr-4 py-3 bg-white/80 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition"
+                placeholder="Search title, company, description…"
+                value="{{ request.GET.search }}"
+                hx-get="{% url 'job-list' %}"
+                hx-include="[name='location'], [name='role'], [name='status'], [name='job_type'], [name='possibly_filled']"
+                hx-push-url="true"
+                hx-trigger="keyup changed delay:500ms"
+                hx-target="#job-list-results"
+                hx-indicator="#loading-indicator">
         </div>
 
-        {% if user.role == 'EMPLOYEE' or user.is_superuser %}
-        <div class="flex items-center gap-2 pl-2 border-l border-gray-200 ml-2">
-            <a href="{% url 'job-bulk-upload' %}"
-                class="p-2.5 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition"
-                title="Bulk Upload">
-                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                </svg>
-            </a>
-
-            <a href="{% url 'job-create' %}"
-                class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-5 rounded-lg shadow-sm hover:shadow transition flex items-center gap-2">
-                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                </svg>
-                Post Job
-            </a>
+        <!-- Location -->
+        <div class="w-full md:w-48">
+            <input type="text" name="location"
+                class="w-full px-4 py-3 bg-white/80 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition"
+                placeholder="Location"
+                value="{{ selected_location }}">
         </div>
-        {% endif %}
+        </div>
     </div>
 </div>
 
-<div id="loading-indicator" class="htmx-indicator flex justify-center py-4">
-    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-</div>
 
+
+<!-- RESULTS -->
 <div id="job-list-results">
     {% include 'jobs/_job_list_partial.html' %}
 </div>

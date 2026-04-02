@@ -1,293 +1,393 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="container mx-auto mt-8">
-    <!-- Consultant Profile Header -->
-    <div class="bg-white rounded-lg shadow-lg overflow-hidden mb-8">
-        <div class="md:flex">
-            <div class="md:flex-shrink-0 bg-gray-200">
-                {% if consultant.avatar %}
-                <img class="h-48 w-full object-cover md:w-48" src="{{ consultant.avatar.url }}"
-                    alt="{{ consultant.username }}">
-                {% else %}
+<div class="max-w-6xl mx-auto animate-fade-in-up">
+    <!-- Breadcrumb -->
+    <div class="mb-4 flex items-center gap-2 text-sm">
+        {% if request.user.is_superuser or request.user.role == 'ADMIN' %}
+        <a href="{% url 'admin-dashboard' %}"
+            class="text-indigo-600 hover:text-indigo-800 font-medium transition">Dashboard</a>
+        <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+        </svg>
+        {% elif request.user.role == 'EMPLOYEE' %}
+        <a href="{% url 'employee-dashboard' %}"
+            class="text-indigo-600 hover:text-indigo-800 font-medium transition">Dashboard</a>
+        <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+        </svg>
+        {% endif %}
+        <a href="{% url 'consultant-list' %}"
+            class="text-indigo-600 hover:text-indigo-800 font-medium transition">Consultants</a>
+        <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+        </svg>
+        <span class="text-gray-500">{{ consultant.get_full_name|default:consultant.username }}</span>
+    </div>
+
+    <!-- ═══════ PROFILE HEADER CARD (minimal) ═══════ -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 mb-8">
+        <div class="px-8 py-6">
+            <!-- Header: name left, meta right -->
+            <div class="mb-3 flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                <h1 class="text-3xl font-extrabold text-gray-900 truncate">
+                    {{ consultant.get_full_name|default:consultant.username }}
+                </h1>
+                <div class="flex flex-wrap items-center gap-2 md:justify-end md:text-right">
+                    <!-- Rate chip -->
+                    <span
+                        class="inline-flex items-center gap-1 px-3 py-1 rounded-full border border-gray-200 bg-white text-xs font-semibold text-gray-700">
+                        <span class="text-gray-500">Rate</span>
+                        <span class="text-gray-900">
+                            ${{ consultant.consultant_profile.hourly_rate|default:"N/A" }}
+                        </span>
+                        <span class="text-gray-400">/hr</span>
+                    </span>
+                    <!-- Status pill -->
+                    {% with status=consultant.consultant_profile.status %}
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold
+                        {% if status == 'ACTIVE' %}bg-emerald-50 text-emerald-700 border border-emerald-200
+                        {% elif status == 'BENCH' %}bg-amber-50 text-amber-700 border border-amber-200
+                        {% elif status == 'PLACED' %}bg-blue-50 text-blue-700 border border-blue-200
+                        {% else %}bg-gray-50 text-gray-600 border border-gray-200{% endif %}">
+                        {% if status == 'ACTIVE' %}<span class="pulse-dot bg-emerald-500"></span>{% endif %}
+                        {{ consultant.consultant_profile.get_status_display }}
+                    </span>
+                    {% endwith %}
+                </div>
+            </div>
+
+            <!-- Shareable public profile link -->
+            <div class="mb-3 flex flex-wrap items-center gap-2">
+                <span class="text-xs text-gray-500">Shareable link:</span>
+                <a href="{% url 'consultant-public-profile' slug=consultant.consultant_profile.profile_slug %}" target="_blank" rel="noopener" class="text-sm font-medium text-blue-600 hover:underline">
+                    /c/{{ consultant.consultant_profile.profile_slug }}/
+                </a>
+                <span class="text-xs text-gray-400">(public profile)</span>
+            </div>
+
+            <!-- Marketing Roles -->
+            <div class="mt-1 flex flex-wrap gap-2">
+                {% for role in consultant.consultant_profile.marketing_roles.all %}
+                <span
+                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                    {{ role.name }}
+                </span>
+                {% endfor %}
+            </div>
+
+            <!-- Bio -->
+            {% if consultant.consultant_profile.bio %}
+            <div class="mb-6">
+                <p class="text-gray-600 leading-relaxed">{{ consultant.consultant_profile.bio|linebreaks }}</p>
+            </div>
+            {% endif %}
+
+            <!-- Contact Info Row -->
+            <div class="flex flex-wrap items-center gap-6 mb-6 text-sm">
+                <a href="mailto:{{ consultant.email }}"
+                    class="inline-flex items-center gap-2 text-indigo-600 hover:text-indigo-800 font-medium transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                    {{ consultant.email }}
+                </a>
+                {% if consultant.consultant_profile.phone %}
+                <span class="inline-flex items-center gap-2 text-gray-600">
+                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                    </svg>
+                    {{ consultant.consultant_profile.phone }}
+                </span>
+                {% endif %}
+            </div>
+
+            <!-- Base Resume (collapsible) -->
+            {% if consultant.consultant_profile.base_resume_text %}
+            <div class="mb-6" x-data="{ open: false }">
+                <button @click="open = !open"
+                    class="flex items-center gap-2 text-sm font-semibold text-gray-700 hover:text-indigo-600 transition">
+                    <svg class="w-4 h-4 transition-transform" :class="{ 'rotate-90': open }" fill="none"
+                        stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                    </svg>
+                    Base Resume
+                </button>
+                <div x-show="open" x-transition
+                    class="mt-2 text-sm text-gray-600 whitespace-pre-wrap bg-gray-50 border border-gray-200 rounded-xl p-4">
+                    {{ consultant.consultant_profile.base_resume_text }}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Action Buttons with top divider -->
+            <div class="mt-6 pt-4 border-t border-gray-100 flex flex-wrap gap-3">
+                {% if user != consultant %}
+                <a href="{% url 'start-thread' consultant.id %}"
+                    class="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                    <span>Message</span>
+                </a>
+                {% endif %}
+
+                {% if is_own_profile %}
+                <a href="{% url 'consultant-dashboard' %}"
+                    class="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                    </svg>
+                    <span>My Dashboard</span>
+                </a>
+                {% endif %}
+
+                {% if is_admin or is_own_profile or user.role == 'EMPLOYEE' and user.employee_profile.can_manage_consultants %}
+                <a href="{% url 'consultant-edit' consultant.pk %}"
+                    class="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-700 transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    <span>Edit Profile</span>
+                </a>
+                {% endif %}
+
+                {% if user.is_superuser or user.role == 'ADMIN' %}
+                {% if not is_own_profile %}
+                <a href="{% url 'start-impersonate' consultant.pk %}"
+                    class="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                    <span>Impersonate</span>
+                </a>
+                {% endif %}
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════ CONTENT SECTIONS GRID ═══════ -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+
+        <!-- Experience Section -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-slide-up"
+            style="animation-delay:.1s">
+            <div class="px-6 py-4 flex justify-between items-center border-b border-gray-100">
+                <h2 class="text-sm font-semibold text-gray-700 tracking-wide uppercase">Experience</h2>
+                {% if is_own_profile %}
+                <a href="{% url 'experience-add' %}"
+                    class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition">+ Add</a>
+                {% elif is_admin %}
+                <a href="{% url 'admin-experience-add' consultant_pk=consultant_pk %}"
+                    class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition">+ Add</a>
+                {% endif %}
+            </div>
+            <div class="p-6 space-y-4">
+                {% for exp in experiences %}
                 <div
-                    class="h-48 w-full md:w-48 flex items-center justify-center text-4xl font-bold text-gray-400 bg-gray-300">
-                    {{ consultant.username|first|upper }}
-                </div>
-                {% endif %}
-            </div>
-            <div class="p-8 w-full">
-                <div class="flex justify-between items-start">
-                    <div>
-                        <div class="flex items-center gap-3">
-                            <div class="uppercase tracking-wide text-sm text-indigo-500 font-semibold">Consultant</div>
-                            {% with status=consultant.consultant_profile.status %}
-                            <span
-                                class="px-2 py-0.5 rounded text-xs font-semibold {% if status == 'ACTIVE' %}bg-green-100 text-green-800{% elif status == 'BENCH' %}bg-yellow-100 text-yellow-800{% elif status == 'PLACED' %}bg-blue-100 text-blue-800{% else %}bg-gray-100 text-gray-800{% endif %}">
-                                {{ consultant.consultant_profile.get_status_display }}
-                            </span>
-                            {% endwith %}
+                    class="group/exp rounded-xl border border-gray-100 bg-white hover:border-indigo-200 hover:bg-indigo-50/30 transition px-4 py-3">
+                    <div class="flex justify-between items-start gap-4">
+                        <div>
+                            <h3 class="text-sm font-semibold text-gray-900">{{ exp.title }}</h3>
+                            <p class="text-sm text-gray-600 font-medium">{{ exp.company }}</p>
+                            <p class="text-xs text-gray-400 mt-0.5">
+                                {{ exp.start_date|date:"M Y" }} –
+                                {% if exp.is_current or not exp.end_date %}Present{% else %}{{ exp.end_date|date:"M Y" }}{% endif %}
+                            </p>
+                            {% if exp.description %}
+                            <p class="text-gray-500 mt-2 text-sm leading-relaxed">
+                                {{ exp.description }}
+                            </p>
+                            {% endif %}
                         </div>
-                        <h1 class="block mt-1 text-3xl leading-tight font-bold text-gray-900">
-                            {{ consultant.get_full_name|default:consultant.username }}
-                        </h1>
-
-                        <!-- Marketing Roles -->
-                        <div class="mt-2 flex flex-wrap gap-2">
-                            {% for role in consultant.consultant_profile.marketing_roles.all %}
-                            <span
-                                class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                {{ role.name }}
-                            </span>
-                            {% endfor %}
+                        {% if is_own_profile %}
+                        <div class="flex gap-2 opacity-0 group-hover/exp:opacity-100 transition">
+                            <a href="{% url 'experience-edit' pk=exp.pk %}"
+                                class="text-indigo-500 hover:text-indigo-700 text-xs font-semibold">Edit</a>
+                            <a href="{% url 'experience-delete' pk=exp.pk %}"
+                                class="text-red-400 hover:text-red-600 text-xs font-semibold">Delete</a>
                         </div>
-                        <p class="mt-2 text-gray-600">{{ consultant.consultant_profile.bio|linebreaks }}</p>
-                        {% if consultant.consultant_profile.base_resume_text %}
-                        <div class="mt-4">
-                            <h3 class="text-sm font-semibold text-gray-700">Base Resume</h3>
-                            <div class="mt-1 text-sm text-gray-600 whitespace-pre-wrap bg-gray-50 border border-gray-200 rounded p-3">
-                                {{ consultant.consultant_profile.base_resume_text }}
-                            </div>
+                        {% elif is_admin %}
+                        <div class="flex gap-2 opacity-0 group-hover/exp:opacity-100 transition">
+                            <a href="{% url 'admin-experience-edit' consultant_pk=consultant_pk pk=exp.pk %}"
+                                class="text-indigo-500 hover:text-indigo-700 text-xs font-semibold">Edit</a>
+                            <a href="{% url 'admin-experience-delete' consultant_pk=consultant_pk pk=exp.pk %}"
+                                class="text-red-400 hover:text-red-600 text-xs font-semibold">Delete</a>
                         </div>
                         {% endif %}
-                        {% if consultant.consultant_profile.phone %}
-                        <p class="mt-1 text-gray-500 text-sm">
-                            <svg class="inline w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z">
-                                </path>
-                            </svg>
-                            {{ consultant.consultant_profile.phone }}
-                        </p>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="flex flex-col items-center py-8">
+                    <div class="empty-state-icon mb-3">
+                        <svg class="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                    </div>
+                    <p class="text-gray-400 text-sm font-medium">No experience listed.</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Education Section -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-slide-up"
+            style="animation-delay:.15s">
+            <div class="px-6 py-4 flex justify-between items-center border-b border-gray-100">
+                <h2 class="text-sm font-semibold text-gray-700 tracking-wide uppercase">Education</h2>
+                {% if is_own_profile %}
+                <a href="{% url 'education-add' %}"
+                    class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition">+ Add</a>
+                {% elif is_admin %}
+                <a href="{% url 'admin-education-add' consultant_pk=consultant_pk %}"
+                    class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition">+ Add</a>
+                {% endif %}
+            </div>
+            <div class="p-6 space-y-4">
+                {% for edu in educations %}
+                <div
+                    class="group/edu rounded-xl border border-gray-100 bg-white hover:border-emerald-200 hover:bg-emerald-50/30 transition px-4 py-3">
+                    <div class="flex justify-between items-start gap-4">
+                        <div>
+                            <h3 class="text-sm font-semibold text-gray-900">
+                                {{ edu.degree }} in {{ edu.field_of_study }}
+                            </h3>
+                            <p class="text-sm text-gray-600 font-medium">{{ edu.institution }}</p>
+                            <p class="text-xs text-gray-400 mt-0.5">
+                                {{ edu.start_date|date:"Y" }} – {{ edu.end_date|date:"Y"|default:"Present" }}
+                            </p>
+                        </div>
+                        {% if is_own_profile %}
+                        <div class="flex gap-2 opacity-0 group-hover/edu:opacity-100 transition">
+                            <a href="{% url 'education-edit' pk=edu.pk %}"
+                                class="text-indigo-500 hover:text-indigo-700 text-xs font-semibold">Edit</a>
+                            <a href="{% url 'education-delete' pk=edu.pk %}"
+                                class="text-red-400 hover:text-red-600 text-xs font-semibold">Delete</a>
+                        </div>
+                        {% elif is_admin %}
+                        <div class="flex gap-2 opacity-0 group-hover/edu:opacity-100 transition">
+                            <a href="{% url 'admin-education-edit' consultant_pk=consultant_pk pk=edu.pk %}"
+                                class="text-indigo-500 hover:text-indigo-700 text-xs font-semibold">Edit</a>
+                            <a href="{% url 'admin-education-delete' consultant_pk=consultant_pk pk=edu.pk %}"
+                                class="text-red-400 hover:text-red-600 text-xs font-semibold">Delete</a>
+                        </div>
                         {% endif %}
                     </div>
-                    <div class="text-right">
-                        <div class="text-2xl font-bold text-gray-800">
-                            ${{ consultant.consultant_profile.hourly_rate|default:"N/A" }}/hr
-                        </div>
-
+                </div>
+                {% empty %}
+                <div class="flex flex-col items-center py-8">
+                    <div class="empty-state-icon mb-3">
+                        <svg class="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                d="M12 14l9-5-9-5-9 5 9 5z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
+                        </svg>
                     </div>
+                    <p class="text-gray-400 text-sm font-medium">No education listed.</p>
                 </div>
-
-                <div class="mt-4">
-                    <h3 class="font-bold text-gray-700 mb-2">Email</h3>
-                    <p class="text-gray-600">
-                        <a href="mailto:{{ consultant.email }}" class="text-indigo-600 hover:text-indigo-800">
-                            {{ consultant.email }}
-                        </a>
-                    </p>
-                </div>
-
-                <div class="mt-6 flex space-x-4">
-                    {% if user != consultant %}
-                    <a href="{% url 'start-thread' consultant.id %}"
-                        class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-6 rounded shadow">Message</a>
-                    {% endif %}
-                    {% if is_own_profile %}
-                    <a href="{% url 'consultant-dashboard' %}"
-                        class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded shadow">My
-                        Dashboard</a>
-                    {% endif %}
-                    {% if is_admin or is_own_profile %}
-                    <a href="{% url 'consultant-edit' consultant.pk %}"
-                        class="bg-blue-100 text-blue-700 hover:bg-blue-200 font-bold py-2 px-6 rounded shadow flex items-center gap-2">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                        Edit Profile
-                    </a>
-                    {% elif user.role == 'EMPLOYEE' and user.employee_profile.can_manage_consultants %}
-                    <a href="{% url 'consultant-edit' consultant.pk %}"
-                        class="bg-blue-100 text-blue-700 hover:bg-blue-200 font-bold py-2 px-6 rounded shadow flex items-center gap-2">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                        Edit Profile
-                    </a>
-                    {% endif %}
-
-                    {# Impersonate: Only true Admins #}
-                    {% if user.is_superuser or user.role == 'ADMIN' %}
-                    {% if not is_own_profile %}
-                    <a href="{% url 'start-impersonate' consultant.pk %}"
-                        class="bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-6 rounded shadow flex items-center gap-2">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                        </svg>
-                        Impersonate
-                    </a>
-                    {% endif %}
-                    {% endif %}
-                </div>
+                {% endfor %}
             </div>
         </div>
     </div>
 
-    <!-- Experience Section -->
-    <div class="bg-white rounded-lg shadow-lg p-8 mb-8">
-        <div class="flex justify-between items-center mb-4">
-            <h2 class="text-2xl font-bold text-gray-800">Experience</h2>
-            {% if is_own_profile %}
-            <a href="{% url 'experience-add' %}"
-                class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-lg">+ Add</a>
-            {% elif is_admin %}
-            <a href="{% url 'admin-experience-add' consultant_pk=consultant_pk %}"
-                class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-lg">+ Add</a>
-            {% endif %}
-        </div>
-        {% for exp in experiences %}
-        <div
-            class="border-l-4 border-blue-500 pl-4 mb-4 {% if not forloop.last %}pb-4 border-b border-gray-100{% endif %}">
-            <div class="flex justify-between items-start">
-                <div>
-                    <h3 class="text-lg font-semibold text-gray-800">{{ exp.title }}</h3>
-                    <p class="text-gray-600">{{ exp.company }}</p>
-                    <p class="text-sm text-gray-400">
-                        {{ exp.start_date|date:"M Y" }} –
-                        {% if exp.is_current or not exp.end_date %}Present{% else %}{{ exp.end_date|date:"M Y" }}{% endif %}
-                    </p>
-                    {% if exp.description %}<p class="text-gray-600 mt-2 text-sm">{{ exp.description }}</p>{% endif %}
-                </div>
-                {% if is_own_profile %}
-                <div class="flex space-x-2">
-                    <a href="{% url 'experience-edit' pk=exp.pk %}"
-                        class="text-blue-500 hover:underline text-sm">Edit</a>
-                    <a href="{% url 'experience-delete' pk=exp.pk %}"
-                        class="text-red-500 hover:underline text-sm">Delete</a>
-                </div>
-                {% elif is_admin %}
-                <div class="flex space-x-2">
-                    <a href="{% url 'admin-experience-edit' consultant_pk=consultant_pk pk=exp.pk %}"
-                        class="text-blue-500 hover:underline text-sm">Edit</a>
-                    <a href="{% url 'admin-experience-delete' consultant_pk=consultant_pk pk=exp.pk %}"
-                        class="text-red-500 hover:underline text-sm">Delete</a>
-                </div>
-                {% endif %}
-            </div>
-        </div>
-        {% empty %}
-        <p class="text-gray-500 italic">No experience listed.</p>
-        {% endfor %}
-    </div>
-
-    <!-- Education Section -->
-    <div class="bg-white rounded-lg shadow-lg p-8 mb-8">
-        <div class="flex justify-between items-center mb-4">
-            <h2 class="text-2xl font-bold text-gray-800">Education</h2>
-            {% if is_own_profile %}
-            <a href="{% url 'education-add' %}"
-                class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-lg">+ Add</a>
-            {% elif is_admin %}
-            <a href="{% url 'admin-education-add' consultant_pk=consultant_pk %}"
-                class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-lg">+ Add</a>
-            {% endif %}
-        </div>
-        {% for edu in educations %}
-        <div class="border-l-4 border-green-500 pl-4 mb-4">
-            <div class="flex justify-between items-start">
-                <div>
-                    <h3 class="text-lg font-semibold text-gray-800">{{ edu.degree }} in {{ edu.field_of_study }}</h3>
-                    <p class="text-gray-600">{{ edu.institution }}</p>
-                    <p class="text-sm text-gray-400">
-                        {{ edu.start_date|date:"Y" }} – {{ edu.end_date|date:"Y"|default:"Present" }}
-                    </p>
-                </div>
-                {% if is_own_profile %}
-                <div class="flex space-x-2">
-                    <a href="{% url 'education-edit' pk=edu.pk %}"
-                        class="text-blue-500 hover:underline text-sm">Edit</a>
-                    <a href="{% url 'education-delete' pk=edu.pk %}"
-                        class="text-red-500 hover:underline text-sm">Delete</a>
-                </div>
-                {% elif is_admin %}
-                <div class="flex space-x-2">
-                    <a href="{% url 'admin-education-edit' consultant_pk=consultant_pk pk=edu.pk %}"
-                        class="text-blue-500 hover:underline text-sm">Edit</a>
-                    <a href="{% url 'admin-education-delete' consultant_pk=consultant_pk pk=edu.pk %}"
-                        class="text-red-500 hover:underline text-sm">Delete</a>
-                </div>
-                {% endif %}
-            </div>
-        </div>
-        {% empty %}
-        <p class="text-gray-500 italic">No education listed.</p>
-        {% endfor %}
-    </div>
-
-    <!-- Certifications Section -->
-    <div class="bg-white rounded-lg shadow-lg p-8 mb-8">
-        <div class="flex justify-between items-center mb-4">
-            <h2 class="text-2xl font-bold text-gray-800">Certifications</h2>
+    <!-- Certifications Section (full width) -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-8 animate-slide-up"
+        style="animation-delay:.2s">
+        <div class="px-6 py-4 flex justify-between items-center border-b border-gray-100">
+            <h2 class="text-sm font-semibold text-gray-700 tracking-wide uppercase">Certifications</h2>
             {% if is_own_profile %}
             <a href="{% url 'certification-add' %}"
-                class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-lg">+ Add</a>
+                class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition">+ Add</a>
             {% elif is_admin %}
             <a href="{% url 'admin-certification-add' consultant_pk=consultant_pk %}"
-                class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-lg">+ Add</a>
+                class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition">+ Add</a>
             {% endif %}
         </div>
-        {% for cert in certifications %}
-        <div class="border-l-4 border-purple-500 pl-4 mb-4">
-            <div class="flex justify-between items-start">
-                <div>
-                    <h3 class="text-lg font-semibold text-gray-800">{{ cert.name }}</h3>
-                    <p class="text-gray-600">{{ cert.issuing_organization }}</p>
-                    <p class="text-sm text-gray-400">
-                        Issued {{ cert.issue_date|date:"M Y" }}
-                        {% if cert.expiration_date %} · Expires {{ cert.expiration_date|date:"M Y" }}{% endif %}
-                    </p>
+        <div class="p-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {% for cert in certifications %}
+                <div
+                    class="p-4 bg-purple-50/50 rounded-xl border border-purple-100 group/cert hover:bg-purple-50 transition">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="text-sm font-bold text-gray-900">{{ cert.name }}</h3>
+                            <p class="text-xs text-gray-600 mt-0.5">{{ cert.issuing_organization }}</p>
+                            <p class="text-xs text-gray-400 mt-1">
+                                Issued {{ cert.issue_date|date:"M Y" }}
+                                {% if cert.expiration_date %} · Expires {{ cert.expiration_date|date:"M Y" }}{% endif %}
+                            </p>
+                        </div>
+                        {% if is_own_profile %}
+                        <div class="flex gap-2 opacity-0 group-hover/cert:opacity-100 transition">
+                            <a href="{% url 'certification-edit' pk=cert.pk %}"
+                                class="text-indigo-500 hover:text-indigo-700 text-xs font-semibold">Edit</a>
+                            <a href="{% url 'certification-delete' pk=cert.pk %}"
+                                class="text-red-400 hover:text-red-600 text-xs font-semibold">Delete</a>
+                        </div>
+                        {% elif is_admin %}
+                        <div class="flex gap-2 opacity-0 group-hover/cert:opacity-100 transition">
+                            <a href="{% url 'admin-certification-edit' consultant_pk=consultant_pk pk=cert.pk %}"
+                                class="text-indigo-500 hover:text-indigo-700 text-xs font-semibold">Edit</a>
+                            <a href="{% url 'admin-certification-delete' consultant_pk=consultant_pk pk=cert.pk %}"
+                                class="text-red-400 hover:text-red-600 text-xs font-semibold">Delete</a>
+                        </div>
+                        {% endif %}
+                    </div>
                 </div>
-                {% if is_own_profile %}
-                <div class="flex space-x-2">
-                    <a href="{% url 'certification-edit' pk=cert.pk %}"
-                        class="text-blue-500 hover:underline text-sm">Edit</a>
-                    <a href="{% url 'certification-delete' pk=cert.pk %}"
-                        class="text-red-500 hover:underline text-sm">Delete</a>
+                {% empty %}
+                <div class="flex flex-col items-center py-8 col-span-full">
+                    <div class="empty-state-icon mb-3">
+                        <svg class="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                        </svg>
+                    </div>
+                    <p class="text-gray-400 text-sm font-medium">No certifications listed.</p>
                 </div>
-                {% elif is_admin %}
-                <div class="flex space-x-2">
-                    <a href="{% url 'admin-certification-edit' consultant_pk=consultant_pk pk=cert.pk %}"
-                        class="text-blue-500 hover:underline text-sm">Edit</a>
-                    <a href="{% url 'admin-certification-delete' consultant_pk=consultant_pk pk=cert.pk %}"
-                        class="text-red-500 hover:underline text-sm">Delete</a>
-                </div>
-                {% endif %}
+                {% endfor %}
             </div>
         </div>
-        {% empty %}
-        <p class="text-gray-500 italic">No certifications listed.</p>
-        {% endfor %}
     </div>
 
     {% if is_admin or is_employee %}
-    <!-- AI Resume Drafts Section (Admin/Employee Only) -->
-    <div class="bg-white rounded-lg shadow-lg p-8 mb-8">
-        <div class="flex justify-between items-center mb-6">
-            <h2 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                </svg>
-                AI Resume Drafts
-            </h2>
+    <!-- ═══════ AI RESUME DRAFTS ═══════ -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-8 animate-slide-up"
+        style="animation-delay:.25s">
+        <div class="px-6 py-5 border-b border-gray-100 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div
+                    class="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center">
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                </div>
+                <h2 class="text-xl font-bold text-gray-900">AI Resume Drafts</h2>
+            </div>
         </div>
 
         <!-- Generate New Draft -->
-        <div class="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-6">
+        <div class="p-6 border-b border-gray-100 bg-white">
             <div class="flex flex-col lg:flex-row lg:items-end gap-4">
                 <form method="post" action="{% url 'draft-generate' consultant.pk %}"
                     class="flex-1 flex items-end gap-4">
                     {% csrf_token %}
                     <div class="flex-1">
-                        <label class="block text-sm font-bold text-purple-800 mb-1">Generate Draft for Job</label>
-                        <select id="draft-job-select" name="job" data-preview-url="{% url 'draft-preview-llm' consultant.pk %}"
-                            class="w-full border border-purple-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Generate draft for job</label>
+                        <select id="draft-job-select" name="job"
+                            data-preview-url="{% url 'draft-preview-llm' consultant.pk %}"
+                            class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white transition">
                             <option value="">— Choose an open job —</option>
                             {% for choice in draft_form.job.field.queryset %}
                             <option value="{{ choice.pk }}">{{ choice.title }} @ {{ choice.company }}</option>
@@ -295,7 +395,7 @@
                         </select>
                     </div>
                     <button type="submit" id="generate-draft-btn"
-                        class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-lg shadow flex items-center gap-2 whitespace-nowrap">
+                        class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm whitespace-nowrap transition">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -306,129 +406,147 @@
                 <div id="generate-progress" class="hidden mt-4">
                     <div class="text-xs font-semibold text-purple-700 mb-2">Generating draft…</div>
                     <div class="w-full h-2 rounded-full bg-purple-100 overflow-hidden">
-                        <div id="generate-progress-bar" class="h-2 bg-purple-600 w-0 transition-all duration-300"></div>
+                        <div id="generate-progress-bar"
+                            class="h-2 bg-gradient-to-r from-purple-600 to-indigo-600 w-0 transition-all duration-300">
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- Existing Drafts Table -->
-        {% if resume_drafts %}
-        <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Job
-                        </th>
-                        <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Version
-                        </th>
-                        <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Status
-                        </th>
-                        <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Tokens
-                        </th>
-                        <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Created
-                        </th>
-                        <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Actions
-                        </th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                    {% for draft in resume_drafts %}
-                    <tr class="hover:bg-gray-50">
-                        <td class="px-4 py-3 text-sm">
-                            <div class="font-medium text-gray-900">{{ draft.job.title }}</div>
-                            <div class="text-xs text-gray-500">{{ draft.job.company }}</div>
-                        </td>
-                        <td class="px-4 py-3 text-sm font-mono font-bold text-gray-700">v{{ draft.version }}</td>
-                        <td class="px-4 py-3 text-sm">
-                            {% if draft.status == 'FINAL' %}
-                            <span class="px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">✅
-                                Final</span>
-                            {% elif draft.status == 'REVIEW' %}
-                            <span class="px-2 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">🕵️
-                                Review</span>
-                            {% elif draft.status == 'DRAFT' %}
-                            <span class="px-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">📝
-                                Draft</span>
-                            {% elif draft.status == 'ERROR' %}
-                            <span class="px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800"
-                                title="{{ draft.error_message }}">❌ Error</span>
-                            {% else %}
-                            <span class="px-2 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800">⏳
-                                Processing</span>
-                            {% endif %}
-                        </td>
-                        <td class="px-4 py-3 text-sm text-gray-500">{{ draft.tokens_used|default:"—" }}</td>
-                        <td class="px-4 py-3 text-sm text-gray-500">{{ draft.created_at|date:"M d, H:i" }}</td>
-                        <td class="px-4 py-3 text-sm">
-                            <div class="flex items-center gap-2">
-                                {% if draft.status == 'DRAFT' or draft.status == 'FINAL' or draft.status == 'REVIEW' %}
-                                <a href="{% url 'draft-detail' draft.pk %}"
-                                    class="text-blue-600 hover:underline text-xs font-semibold">View</a>
-                                {% if draft.content %}
-                                <a href="{% url 'draft-download' draft.pk %}"
-                                    class="text-green-600 hover:underline text-xs font-semibold">Download</a>
-                                {% endif %}
-                                <a href="{% url 'draft-detail' draft.pk %}#llm-builder"
-                                    class="text-gray-600 hover:underline text-xs font-semibold">LLM Builder</a>
-                                <a href="{% url 'draft-detail' draft.pk %}#llm-debug"
-                                    class="text-indigo-600 hover:underline text-xs font-semibold">Prompt + Payload</a>
-                                {% endif %}
-                                {% if is_admin or is_employee %}
-                                {% if claimed_job_ids and draft.job.id in claimed_job_ids %}
-                                <span class="text-xs font-semibold text-gray-500">Claimed</span>
+        <div class="p-6">
+            {% if resume_drafts %}
+            <div class="overflow-x-auto">
+                <table class="min-w-full">
+                    <thead>
+                        <tr class="border-b border-gray-100">
+                            <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Job
+                            </th>
+                            <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                Version</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                Status</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                Tokens</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                Created</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for draft in resume_drafts %}
+                        <tr class="border-b border-gray-50 hover:bg-gray-50/50 transition">
+                            <td class="px-4 py-3 text-sm">
+                                <div class="font-semibold text-gray-900">{{ draft.job.title }}</div>
+                                <div class="text-xs text-gray-500">{{ draft.job.company }}</div>
+                            </td>
+                            <td class="px-4 py-3 text-sm font-mono font-bold text-gray-700">v{{ draft.version }}</td>
+                            <td class="px-4 py-3 text-sm">
+                                {% if draft.status == 'FINAL' %}
+                                <span
+                                    class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">✅
+                                    Final</span>
+                                {% elif draft.status == 'REVIEW' %}
+                                <span
+                                    class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">🕵️
+                                    Review</span>
+                                {% elif draft.status == 'DRAFT' %}
+                                <span
+                                    class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">📝
+                                    Draft</span>
+                                {% elif draft.status == 'ERROR' %}
+                                <span
+                                    class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200"
+                                    title="{{ draft.error_message }}">❌ Error</span>
                                 {% else %}
-                                <form method="post" action="{% url 'submission-claim' draft.pk %}" class="inline">
-                                    {% csrf_token %}
-                                    <button type="submit"
-                                        class="text-indigo-600 hover:underline text-xs font-semibold">Claim</button>
-                                </form>
+                                <span
+                                    class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-yellow-50 text-yellow-700 border border-yellow-200">⏳
+                                    Processing</span>
                                 {% endif %}
-                                {% endif %}
-                                {% if is_admin and draft.status == 'DRAFT' %}
-                                <form method="post" action="{% url 'draft-promote' draft.pk %}" class="inline">
-                                    {% csrf_token %}
-                                    <button type="submit"
-                                        class="text-purple-600 hover:underline text-xs font-semibold">Promote</button>
-                                </form>
-                                {% elif is_admin and draft.status == 'REVIEW' %}
-                                <form method="post" action="{% url 'draft-promote' draft.pk %}" class="inline">
-                                    {% csrf_token %}
-                                    <button type="submit"
-                                        class="text-purple-600 hover:underline text-xs font-semibold">Promote</button>
-                                </form>
-                                {% endif %}
-                                {% if is_admin %}
-                                <form method="post" action="{% url 'draft-delete' draft.pk %}" class="inline"
-                                    onsubmit="return confirm('Delete this draft?')">
-                                    {% csrf_token %}
-                                    <button type="submit"
-                                        class="text-red-500 hover:underline text-xs font-semibold">Delete</button>
-                                </form>
-                                {% endif %}
-                            </div>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                            </td>
+                            <td class="px-4 py-3 text-sm text-gray-600">{{ draft.tokens_used|default:"—" }}</td>
+                            <td class="px-4 py-3 text-sm text-gray-600">{{ draft.created_at|date:"M d, H:i" }}</td>
+                            <td class="px-4 py-3 text-sm">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    {% if draft.status == 'DRAFT' or draft.status == 'FINAL' or draft.status == 'REVIEW' %}
+                                    <a href="{% url 'draft-detail' draft.pk %}"
+                                        class="text-indigo-600 hover:text-indigo-800 text-xs font-semibold transition">View</a>
+                                    {% if draft.content %}
+                                    <a href="{% url 'draft-download' draft.pk %}"
+                                        class="text-emerald-600 hover:text-emerald-800 text-xs font-semibold transition">Download</a>
+                                    {% endif %}
+                                    <a href="{% url 'draft-detail' draft.pk %}#llm-builder"
+                                        class="text-gray-500 hover:text-gray-700 text-xs font-semibold transition">LLM
+                                        Builder</a>
+                                    <a href="{% url 'draft-detail' draft.pk %}#llm-debug"
+                                        class="text-indigo-500 hover:text-indigo-700 text-xs font-semibold transition">Prompt</a>
+                                    {% endif %}
+                                    {% if is_admin or is_employee %}
+                                    {% if claimed_job_ids and draft.job.id in claimed_job_ids %}
+                                    <span class="text-xs font-semibold text-gray-400">Claimed</span>
+                                    {% else %}
+                                    <form method="post" action="{% url 'submission-claim' draft.pk %}" class="inline">
+                                        {% csrf_token %}
+                                        <button type="submit"
+                                            class="text-indigo-600 hover:text-indigo-800 text-xs font-semibold transition">Claim</button>
+                                    </form>
+                                    {% endif %}
+                                    {% endif %}
+                                    {% if is_admin and draft.status == 'DRAFT' %}
+                                    <form method="post" action="{% url 'draft-promote' draft.pk %}" class="inline">
+                                        {% csrf_token %}
+                                        <button type="submit"
+                                            class="text-purple-600 hover:text-purple-800 text-xs font-semibold transition">Promote</button>
+                                    </form>
+                                    {% elif is_admin and draft.status == 'REVIEW' %}
+                                    <form method="post" action="{% url 'draft-promote' draft.pk %}" class="inline">
+                                        {% csrf_token %}
+                                        <button type="submit"
+                                            class="text-purple-600 hover:text-purple-800 text-xs font-semibold transition">Promote</button>
+                                    </form>
+                                    {% endif %}
+                                    {% if is_admin %}
+                                    <form method="post" action="{% url 'draft-delete' draft.pk %}" class="inline"
+                                        onsubmit="return confirm('Delete this draft?')">
+                                        {% csrf_token %}
+                                        <button type="submit"
+                                            class="text-red-400 hover:text-red-600 text-xs font-semibold transition">Delete</button>
+                                    </form>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-8">
+                <div class="w-14 h-14 rounded-full bg-purple-50 flex items-center justify-center mx-auto mb-3">
+                    <svg class="w-7 h-7 text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                </div>
+                <p class="text-gray-500 text-sm">No resume drafts generated yet. Select a job above to create one.</p>
+            </div>
+            {% endif %}
         </div>
-        {% else %}
-        <p class="text-gray-500 italic text-center py-4">No resume drafts generated yet. Select a job above to create
-            one.</p>
-        {% endif %}
     </div>
     {% endif %}
 
     {% if latest_draft %}
-    <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8 animate-slide-up"
+        style="animation-delay:.3s">
         <div class="flex items-center justify-between">
             <div>
-                <h2 class="text-xl font-bold text-gray-800">Configure LLM Inputs</h2>
-                <p class="text-sm text-gray-600">Use the draft page to build inputs and regenerate.</p>
+                <h2 class="text-xl font-bold text-gray-900">Configure LLM Inputs</h2>
+                <p class="text-sm text-gray-500 mt-0.5">Use the draft page to build inputs and regenerate.</p>
             </div>
             <a href="{% url 'draft-detail' latest_draft.pk %}#llm-builder"
-                class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg text-sm">
+                class="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-2.5 px-5 rounded-xl text-sm shadow-lg transition">
                 Go to LLM Builder
             </a>
         </div>
@@ -455,7 +573,6 @@
                 bar.style.width = `${Math.floor(width)}%`;
             }, 300);
             form.dataset.progressTimer = timer;
-        });
-    })();
+     );
 </script>
 {% endblock %}

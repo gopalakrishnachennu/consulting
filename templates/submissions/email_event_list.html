@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">Email Ingestion Log</h1>
+            <p class="text-gray-600 text-sm">
+                Inbound emails processed from the IMAP inbox. High-confidence matches are auto-updated,
+                others are flagged for manual review.
+            </p>
+        </div>
+        <a href="{% url 'settings-dashboard' %}" class="text-blue-600 hover:text-blue-800 text-sm font-medium">
+            &larr; Back to Settings
+        </a>
+    </div>
+
+    <div class="bg-white shadow-sm border border-gray-200 rounded-xl overflow-hidden">
+        <div class="px-4 py-3 bg-gray-50 border-b flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-2 text-sm">
+                <span class="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 border border-blue-100">
+                    Auto-updated: {{ stats.auto_updated }} · Needs review: {{ stats.needs_review }}
+                </span>
+            </div>
+            <form method="post" action="{% url 'email-event-poll-now' %}" class="flex items-center gap-2">
+                {% csrf_token %}
+                <button type="submit"
+                    class="inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1">
+                    Run IMAP poll now
+                </button>
+            </form>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Received</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">From</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Subject</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Detected</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Confidence</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Submission</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Action</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for event in events %}
+                    <tr class="{% if event.applied_action == 'needs_review' %}bg-yellow-50{% endif %}">
+                        <td class="px-4 py-2 whitespace-nowrap text-xs text-gray-500">
+                            {{ event.received_at|date:"Y-m-d H:i" }}
+                        </td>
+                        <td class="px-4 py-2 whitespace-nowrap">
+                            <div class="text-gray-900">{{ event.from_address }}</div>
+                            <div class="text-xs text-gray-500">{{ event.to_address }}</div>
+                        </td>
+                        <td class="px-4 py-2">
+                            <div class="text-gray-900 font-medium truncate max-w-xs" title="{{ event.subject }}">
+                                {{ event.subject }}
+                            </div>
+                            <div class="text-xs text-gray-500 line-clamp-2">
+                                {{ event.body_snippet }}
+                            </div>
+                        </td>
+                        <td class="px-4 py-2 whitespace-nowrap">
+                            <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
+                                {% if event.detected_status == 'INTERVIEW' %}bg-blue-50 text-blue-700
+                                {% elif event.detected_status == 'OFFER' %}bg-green-50 text-green-700
+                                {% elif event.detected_status == 'REJECTED' %}bg-red-50 text-red-700
+                                {% else %}bg-gray-50 text-gray-600{% endif %}">
+                                {{ event.get_detected_status_display }}
+                            </span>
+                        </td>
+                        <td class="px-4 py-2 whitespace-nowrap text-xs text-gray-700">
+                            {{ event.confidence }}%
+                        </td>
+                        <td class="px-4 py-2 whitespace-nowrap text-xs">
+                            {% if event.matched_submission %}
+                                <a href="{% url 'submission-detail' event.matched_submission.pk %}" class="text-blue-600 hover:underline">
+                                    #{{ event.matched_submission.id }} – {{ event.matched_submission.consultant.user.get_full_name|default:event.matched_submission.consultant.user.username }}
+                                </a>
+                            {% else %}
+                                <span class="text-gray-400">Not matched</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-2 whitespace-nowrap text-xs">
+                            {% if event.applied_action == 'auto_updated' %}
+                                <span class="text-green-700 bg-green-50 border border-green-100 rounded-full px-2 py-0.5">
+                                    Auto-updated
+                                </span>
+                            {% elif event.applied_action == 'manual_updated' %}
+                                <span class="text-blue-700 bg-blue-50 border border-blue-100 rounded-full px-2 py-0.5">
+                                    Manually updated
+                                </span>
+                            {% elif event.applied_action == 'needs_review' %}
+                                <a href="{% url 'email-event-detail' event.pk %}"
+                                   class="text-yellow-900 bg-yellow-50 border border-yellow-200 rounded-full px-2 py-0.5 hover:bg-yellow-100">
+                                    Needs review · open
+                                </a>
+                            {% else %}
+                                <span class="text-gray-400">Logged only</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="px-4 py-6 text-center text-sm text-gray-500">
+                            No email events found yet. Once the IMAP inbox starts receiving replies from employers,
+                            they will appear here.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

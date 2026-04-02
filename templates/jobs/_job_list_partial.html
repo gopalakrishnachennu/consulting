@@ -28,7 +28,13 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                         </svg>
-                        {{ job.company }}
+                        {% if job.company_obj_id %}
+                            <a href="{% url 'company-detail' job.company_obj_id %}" class="text-blue-600 hover:underline">
+                                {{ job.company_obj.name }}
+                            </a>
+                        {% else %}
+                            {{ job.company }}
+                        {% endif %}
                     </span>
 
                     <span class="flex items-center gap-1.5 hidden sm:flex">
@@ -45,6 +51,9 @@
 
             <!-- MIDDLE: Metadata Pills -->
             <div class="flex items-center gap-3 shrink-0">
+                <span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200" title="Applications">
+                    {{ job.application_count|default:0 }} application{{ job.application_count|default:0|pluralize }}
+                </span>
                 <span
                     class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200">
                     {{ job.get_job_type_display|default:"Full Time" }}
@@ -61,7 +70,7 @@
 
             <!-- RIGHT: Actions & Date -->
             <div class="flex items-center gap-6 shrink-0 md:w-48 justify-end text-sm">
-                <span class="text-gray-400 text-xs hidden lg:block">Posted {{ job.created_at|date:"M d" }}</span>
+                <span class="text-gray-500 text-xs hidden lg:block">Posted {{ job.created_at|date:"M d" }}</span>
 
                 <div class="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity relative z-10">
                     <a href="{% url 'job-detail' job.pk %}"
@@ -73,7 +82,7 @@
                                 d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                         </svg>
                     </a>
-                    {% if user.role == 'EMPLOYEE' or user.is_superuser %}
+                    {% if user.role == 'EMPLOYEE' or user.role == 'ADMIN' or user.is_superuser %}
                     <a href="{% url 'job-update' job.pk %}"
                         class="text-gray-400 hover:text-indigo-600 p-1 rounded hover:bg-indigo-50 transition"
                         title="Edit">
@@ -82,17 +91,6 @@
                                 d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                         </svg>
                     </a>
-                    <form action="{% url 'job-duplicate' job.pk %}" method="post" class="inline">
-                        {% csrf_token %}
-                        <button type="submit"
-                            class="text-gray-400 hover:text-green-600 p-1 rounded hover:bg-green-50 transition"
-                            title="Duplicate" onclick="return confirm('Duplicate this job?');">
-                            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
-                            </svg>
-                        </button>
-                    </form>
                     {% endif %}
                 </div>
 
@@ -123,13 +121,13 @@
 <div class="mt-6 flex items-center justify-between border-t border-gray-200 pt-4 px-1">
     <div class="flex-1 flex justify-between sm:hidden">
         {% if page_obj.has_previous %}
-        <a href="?page={{ page_obj.previous_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}"
+        <a href="?{% if pagination_query %}{{ pagination_query }}&{% endif %}page={{ page_obj.previous_page_number }}"
             class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
             Previous
         </a>
         {% endif %}
         {% if page_obj.has_next %}
-        <a href="?page={{ page_obj.next_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}"
+        <a href="?{% if pagination_query %}{{ pagination_query }}&{% endif %}page={{ page_obj.next_page_number }}"
             class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
             Next
         </a>
@@ -150,7 +148,7 @@
         <div>
             <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
                 {% if page_obj.has_previous %}
-                <a href="?page={{ page_obj.previous_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}"
+                <a href="?{% if pagination_query %}{{ pagination_query }}&{% endif %}page={{ page_obj.previous_page_number }}"
                     class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
                     title="Previous">
                     <span class="sr-only">Previous</span>
@@ -166,7 +164,7 @@
                 </span>
 
                 {% if page_obj.has_next %}
-                <a href="?page={{ page_obj.next_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}"
+                <a href="?{% if pagination_query %}{{ pagination_query }}&{% endif %}page={{ page_obj.next_page_number }}"
                     class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
                     title="Next">
                     <span class="sr-only">Next</span>

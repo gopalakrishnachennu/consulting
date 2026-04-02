@@ -1,0 +1,384 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-3">
+                {{ company.name }}
+                {% if company.is_blacklisted %}
+                <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold bg-red-100 text-red-800 border border-red-200">
+                    Blacklisted
+                </span>
+                {% endif %}
+            </h1>
+            {% if company.website %}
+            <a href="{{ company.website }}" target="_blank" rel="noopener" class="text-sm text-blue-600 hover:underline">
+                {{ company.website }}
+            </a>
+            {% endif %}
+        </div>
+        <div class="flex items-center gap-3">
+            {% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}
+            <form method="post" action="{% url 'company-re-enrich' pk=company.pk %}" class="inline">
+                {% csrf_token %}
+                <button type="submit" class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200 hover:bg-amber-200">
+                    Re-enrich
+                </button>
+            </form>
+            {% endif %}
+            {% if request.user.is_superuser or request.user.role == 'ADMIN' %}
+            <a href="{% url 'company-edit' pk=company.pk %}"
+                class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium bg-white text-blue-700 border border-blue-200 hover:bg-blue-50">
+                Edit company
+            </a>
+            {% endif %}
+            <a href="{% url 'company-list' %}" class="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                &larr; Back to Companies
+            </a>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="space-y-4 lg:col-span-2">
+            <div class="bg-white rounded-xl border border-gray-200 p-5">
+                <h2 class="text-sm font-semibold text-gray-800 mb-3">Profile</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-700">
+                    <div>
+                        <p class="text-xs text-gray-500">Alias</p>
+                        <p>{{ company.alias|default:"—" }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-500">Industry</p>
+                        <p>{{ company.industry|default:"—" }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-500">Size band</p>
+                        <p>{{ company.size_band|default:"—" }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-500">Headcount</p>
+                        <p>{{ company.headcount_range|default:"—" }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-500">HQ</p>
+                        <p>{{ company.hq_location|default:"—" }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-500">Relationship status</p>
+                        <p>{{ company.relationship_status|default:"—" }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-500">Enrichment</p>
+                        <p>
+                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+                                {% if company.enrichment_status == 'enriched' %}bg-green-100 text-green-800
+                                {% elif company.enrichment_status == 'failed' %}bg-red-100 text-red-800
+                                {% elif company.enrichment_status == 'stale' %}bg-amber-100 text-amber-800
+                                {% else %}bg-gray-100 text-gray-800{% endif %}">
+                                {{ company.get_enrichment_status_display }}
+                            </span>
+                            {% if company.enriched_at %}({{ company.enriched_at|date:"Y-m-d" }}){% endif %}
+                            {% if company.data_quality_score %} · {{ company.data_quality_score }}% quality{% endif %}
+                        </p>
+                    </div>
+                </div>
+                {% if company.description %}
+                <div class="mt-4">
+                    <p class="text-xs text-gray-500 mb-1">Description</p>
+                    <p class="text-sm text-gray-700">{{ company.description|truncatewords:50 }}</p>
+                </div>
+                {% endif %}
+                {% if company.locations %}
+                <div class="mt-4">
+                    <p class="text-xs text-gray-500 mb-1">Other locations</p>
+                    <p class="text-sm text-gray-700 whitespace-pre-wrap">{{ company.locations }}</p>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Interaction timeline -->
+            <div class="bg-white rounded-xl border border-gray-200 p-5">
+                <h2 class="text-sm font-semibold text-gray-800 mb-3">Interaction timeline</h2>
+                {% if company_timeline %}
+                <ul class="space-y-2 text-sm text-gray-700">
+                    {% for ts, kind, label in company_timeline %}
+                    <li class="flex items-start gap-3">
+                        <span class="mt-0.5 h-2 w-2 rounded-full
+                            {% if kind == 'offer' %}bg-emerald-500
+                            {% elif kind == 'interview' %}bg-blue-500
+                            {% elif kind == 'email' %}bg-indigo-500
+                            {% elif kind == 'status_change' %}bg-amber-500
+                            {% else %}bg-gray-400{% endif %}"></span>
+                        <div>
+                            <div class="text-xs text-gray-500">
+                                {{ ts|date:"Y-m-d H:i" }} ·
+                                {% if kind == 'offer' %}Offer
+                                {% elif kind == 'interview' %}Interview
+                                {% elif kind == 'email' %}Email
+                                {% elif kind == 'status_change' %}Status
+                                {% else %}Submission{% endif %}
+                            </div>
+                            <div>{{ label }}</div>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-sm text-gray-500">No interactions recorded yet for this company.</p>
+                {% endif %}
+            </div>
+
+            <div class="bg-white rounded-xl border border-gray-200 p-5">
+                <h2 class="text-sm font-semibold text-gray-800 mb-3">Contact & Notes</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-700">
+                    <div>
+                        <p class="text-xs text-gray-500">Primary contact</p>
+                        <p>{{ company.primary_contact_name|default:"—" }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-500">Contact email</p>
+                        {% if company.primary_contact_email %}
+                        <a href="mailto:{{ company.primary_contact_email }}" class="text-blue-600 hover:underline">
+                            {{ company.primary_contact_email }}
+                        </a>
+                        {% else %}
+                        <span>—</span>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-500">Contact phone</p>
+                        <p>{{ company.primary_contact_phone|default:"—" }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-500">LinkedIn</p>
+                        {% if company.linkedin_url %}
+                        <a href="{{ company.linkedin_url }}" target="_blank" rel="noopener" class="text-blue-600 hover:underline">
+                            {{ company.linkedin_url }}
+                        </a>
+                        {% else %}
+                        <span>—</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% if company.notes %}
+                <div class="mt-4">
+                    <p class="text-xs text-gray-500 mb-1">Internal notes</p>
+                    <p class="text-sm text-gray-700 whitespace-pre-wrap">{{ company.notes }}</p>
+                </div>
+                {% endif %}
+                {% if company.is_blacklisted and company.blacklist_reason %}
+                <div class="mt-4">
+                    <p class="text-xs text-red-500 mb-1 font-semibold">Blacklist reason</p>
+                    <p class="text-sm text-red-700 whitespace-pre-wrap">{{ company.blacklist_reason }}</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <aside class="space-y-4">
+            <div class="bg-white rounded-xl border border-gray-200 p-5 text-sm">
+                <h3 class="text-sm font-semibold text-gray-800 mb-3">Relationship summary</h3>
+                <dl class="space-y-2">
+                    <div class="flex justify-between">
+                        <dt class="text-gray-500">Total submissions</dt>
+                        <dd class="font-mono text-gray-900">{{ company_funnel.total_submissions }}</dd>
+                    </div>
+                    <div class="flex justify-between">
+                        <dt class="text-gray-500">Interviews</dt>
+                        <dd class="font-mono text-gray-900">{{ company_funnel.interviews }}</dd>
+                    </div>
+                    <div class="flex justify-between">
+                        <dt class="text-gray-500">Offers</dt>
+                        <dd class="font-mono text-gray-900">{{ company_funnel.offers }}</dd>
+                    </div>
+                    <div class="flex justify-between">
+                        <dt class="text-gray-500">Rejections</dt>
+                        <dd class="font-mono text-gray-900">{{ company_funnel.rejections }}</dd>
+                    </div>
+                    <div class="flex justify-between">
+                        <dt class="text-gray-500">Interview rate</dt>
+                        <dd class="text-gray-900">
+                            {% if company_funnel.interview_rate_pct is not None %}
+                                {{ company_funnel.interview_rate_pct }}%
+                            {% else %}—{% endif %}
+                        </dd>
+                    </div>
+                    <div class="flex justify-between">
+                        <dt class="text-gray-500">Offer rate</dt>
+                        <dd class="text-gray-900">
+                            {% if company_funnel.offer_rate_pct is not None %}
+                                {{ company_funnel.offer_rate_pct }}%
+                            {% else %}—{% endif %}
+                        </dd>
+                    </div>
+                    <div class="flex justify-between">
+                        <dt class="text-gray-500">Rejection rate</dt>
+                        <dd class="text-gray-900">
+                            {% if company_funnel.rejection_rate_pct is not None %}
+                                {{ company_funnel.rejection_rate_pct }}%
+                            {% else %}—{% endif %}
+                        </dd>
+                    </div>
+                    <div class="flex justify-between">
+                        <dt class="text-gray-500">Last activity</dt>
+                        <dd class="text-gray-900">
+                            {% if company.last_activity_at %}{{ company.last_activity_at|date:"Y-m-d" }}{% else %}—{% endif %}
+                        </dd>
+                    </div>
+                </dl>
+            </div>
+
+            <div class="bg-white rounded-xl border border-gray-200 p-5 text-sm">
+                <h3 class="text-sm font-semibold text-gray-800 mb-3">Link health</h3>
+                <dl class="space-y-2">
+                    <div class="flex justify-between items-center">
+                        <dt class="text-gray-500">Website</dt>
+                        <dd class="text-gray-900 flex items-center gap-2">
+                            {% if company.website %}
+                                {% if company.website_is_valid %}
+                                <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">
+                                    OK
+                                </span>
+                                {% else %}
+                                <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-red-50 text-red-700 border border-red-100">
+                                    Unreachable
+                                </span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-gray-400 text-xs">No URL</span>
+                            {% endif %}
+                        </dd>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <dt class="text-gray-500">LinkedIn</dt>
+                        <dd class="text-gray-900 flex items-center gap-2">
+                            {% if company.linkedin_url %}
+                                {% if company.linkedin_is_valid %}
+                                <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">
+                                    OK
+                                </span>
+                                {% else %}
+                                <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-red-50 text-red-700 border border-red-100">
+                                    Invalid
+                                </span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-gray-400 text-xs">No URL</span>
+                            {% endif %}
+                        </dd>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <dt class="text-gray-500">Career site</dt>
+                        <dd class="text-gray-900 flex items-center gap-2">
+                            {% if company.career_site_url %}
+                                <a href="{{ company.career_site_url }}" target="_blank" rel="noopener"
+                                   class="text-blue-600 hover:underline text-xs truncate max-w-[200px]">
+                                    {{ company.career_site_url }}
+                                </a>
+                            {% else %}
+                                <span class="text-gray-400 text-xs">No URL</span>
+                            {% endif %}
+                        </dd>
+                    </div>
+                    <div class="flex justify-between">
+                        <dt class="text-gray-500">Last checked</dt>
+                        <dd class="text-gray-900">
+                            {% if company.website_last_checked_at %}
+                                {{ company.website_last_checked_at|date:"Y-m-d H:i" }}
+                            {% elif company.linkedin_last_checked_at %}
+                                {{ company.linkedin_last_checked_at|date:"Y-m-d H:i" }}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </dd>
+                    </div>
+                </dl>
+            </div>
+
+            <div class="bg-white rounded-xl border border-gray-200 p-5 text-sm">
+                <h3 class="text-sm font-semibold text-gray-800 mb-3">Top employees for this company</h3>
+                <ul class="space-y-1.5">
+                    {% for row in company_top_employees %}
+                    <li class="flex justify-between">
+                        <span class="text-gray-800">{{ row.user.get_full_name|default:row.user.username }}</span>
+                        <span class="text-xs text-gray-600">
+                            {{ row.submissions }} sub · {{ row.interviews }} int ·
+                            {% if row.quality_pct is not None %}{{ row.quality_pct }}%{% else %}—{% endif %}
+                        </span>
+                    </li>
+                    {% empty %}
+                    <li class="text-xs text-gray-500">No submissions yet.</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Jobs for this company -->
+    <div class="mt-10 bg-white rounded-xl border border-gray-200 p-5">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-semibold text-gray-800">Jobs from this company</h2>
+            {% if request.user.is_authenticated and request.user.is_superuser or request.user.is_authenticated and request.user.role == 'ADMIN' or request.user.is_authenticated and request.user.role == 'EMPLOYEE' %}
+            <a href="{% url 'job-create' %}?company_id={{ company.id }}"
+                class="inline-flex items-center px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium shadow-sm hover:bg-blue-700">
+                + Create job for this company
+            </a>
+            {% endif %}
+        </div>
+        {% if company_jobs %}
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead class="bg-gray-50 text-gray-500">
+                    <tr>
+                        <th class="px-3 py-2 text-left font-medium">Title</th>
+                        <th class="px-3 py-2 text-left font-medium">Status</th>
+                        <th class="px-3 py-2 text-left font-medium">Created</th>
+                        <th class="px-3 py-2 text-left font-medium">Owner</th>
+                        <th class="px-3 py-2 text-left font-medium">Applications</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for job in company_jobs %}
+                    <tr>
+                        <td class="px-3 py-2">
+                            <a href="{% url 'job-detail' pk=job.pk %}"
+                                class="text-blue-600 hover:text-blue-800 font-medium">
+                                {{ job.title }}
+                            </a>
+                        </td>
+                        <td class="px-3 py-2">
+                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+                                {% if job.status == 'OPEN' %}bg-emerald-50 text-emerald-700 border border-emerald-100
+                                {% elif job.status == 'DRAFT' %}bg-yellow-50 text-yellow-700 border border-yellow-100
+                                {% else %}bg-gray-50 text-gray-700 border border-gray-100{% endif %}">
+                                {{ job.get_status_display }}
+                            </span>
+                            {% if job.possibly_filled %}
+                            <span
+                                class="ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-100">
+                                Possibly filled
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td class="px-3 py-2 text-gray-600">
+                            {{ job.created_at|date:"Y-m-d" }}
+                        </td>
+                        <td class="px-3 py-2 text-gray-600">
+                            {{ job.posted_by.get_full_name|default:job.posted_by.username }}
+                        </td>
+                        <td class="px-3 py-2 text-gray-600">
+                            {{ job.submissions.count }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-sm text-gray-500">No jobs have been posted for this company yet.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+

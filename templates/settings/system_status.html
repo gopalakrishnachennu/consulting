@@ -8,8 +8,11 @@
             <p class="text-gray-600">Real-time status of critical infrastructure and pages.</p>
         </div>
         <div class="flex items-center gap-4">
-            <a href="" class="bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold py-2 px-4 rounded transition">
+            <a href="{% url 'system-status' %}" class="bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold py-2 px-4 rounded transition">
                 ↻ Refresh Status
+            </a>
+            <a href="{% url 'health-json' %}" class="bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold py-2 px-4 rounded border border-blue-200 transition">
+                JSON API
             </a>
             <a href="{% url 'settings-dashboard' %}" class="text-blue-600 hover:text-blue-800 font-medium">
                 &larr; Back to Settings
@@ -18,7 +21,7 @@
     </div>
 
     <!-- Infrastructure Check -->
-    <div class="bg-white rounded-lg shadow-md mb-8 overflow-hidden">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 mb-8 overflow-hidden">
         <div class="bg-gray-50 px-6 py-4 border-b">
             <h2 class="text-lg font-bold text-gray-700">Infrastructure</h2>
         </div>
@@ -34,7 +37,7 @@
                     </div>
                     <div>
                         <h3 class="font-bold text-gray-800">{{ health_check.database.name }}</h3>
-                        <p class="text-sm text-gray-500">Latency: {{ health_check.database.duration_ms }}ms</p>
+                        <p class="text-sm text-gray-600">Latency: {{ health_check.database.duration_ms }}ms</p>
                     </div>
                 </div>
                 <div>
@@ -56,7 +59,7 @@
     </div>
 
     <!-- Page Health Checks -->
-    <div class="bg-white rounded-lg shadow-md overflow-hidden">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div class="bg-gray-50 px-6 py-4 border-b">
             <h2 class="text-lg font-bold text-gray-700">Webpage Status</h2>
         </div>
@@ -64,18 +67,18 @@
             <table class="min-w-full text-left text-sm whitespace-nowrap">
                 <thead class="uppercase tracking-wider border-b bg-gray-50">
                     <tr>
-                        <th scope="col" class="px-6 py-4 text-gray-500 font-semibold">Checks</th>
-                        <th scope="col" class="px-6 py-4 text-gray-500 font-semibold">URL</th>
-                        <th scope="col" class="px-6 py-4 text-gray-500 font-semibold">Response</th>
-                        <th scope="col" class="px-6 py-4 text-gray-500 font-semibold">Status</th>
+                        <th scope="col" class="px-6 py-4 text-gray-600 font-semibold uppercase tracking-wide">Checks</th>
+                        <th scope="col" class="px-6 py-4 text-gray-600 font-semibold uppercase tracking-wide">URL</th>
+                        <th scope="col" class="px-6 py-4 text-gray-600 font-semibold uppercase tracking-wide">Response</th>
+                        <th scope="col" class="px-6 py-4 text-gray-600 font-semibold uppercase tracking-wide">Status</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-200">
                     {% for page in health_check.pages %}
                     <tr class="hover:bg-gray-50 transition">
                         <td class="px-6 py-4 font-medium text-gray-900">{{ page.name }}</td>
-                        <td class="px-6 py-4 text-gray-500 font-mono text-xs">{{ page.url }}</td>
-                        <td class="px-6 py-4 text-gray-500">{{ page.duration_ms }}ms</td>
+                        <td class="px-6 py-4 text-gray-700 font-mono text-xs">{{ page.url }}</td>
+                        <td class="px-6 py-4 text-gray-700">{{ page.duration_ms }}ms</td>
                         <td class="px-6 py-4">
                             {% if page.status == 'Operational' %}
                             <span

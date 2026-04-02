@@ -4,7 +4,7 @@
 <div class="max-w-2xl mx-auto px-4 py-8">
     <h1 class="text-3xl font-bold text-gray-800 mb-6">{% if object %}Edit{% else %}Add{% endif %} Marketing Role</h1>
 
-    <form method="post" class="bg-white rounded-xl shadow-md p-6 space-y-4">
+    <form method="post" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-4">
         {% csrf_token %}
         {% for field in form %}
         <div>

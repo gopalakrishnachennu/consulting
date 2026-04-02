@@ -71,19 +71,52 @@
                             </div>
 
                             <!-- COMPANY & LOCATION -->
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div>
-                                    <label class="block font-bold text-gray-700 mb-2"
-                                        for="{{ form.company.id_for_label }}">Company <span
-                                            class="text-red-500">*</span></label>
-                                    {{ form.company|add_class:"form-input" }}
-                                    {{ form.company.errors }}
+                            <div class="space-y-4">
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div>
+                                        <label class="block font-bold text-gray-700 mb-2"
+                                            for="{{ form.company.id_for_label }}">Company name <span
+                                                class="text-red-500">*</span></label>
+                                        {{ form.company|add_class:"form-input" }}
+                                        <p class="text-xs text-gray-500 mt-1">
+                                            Free-text label shown on the job. It will be auto-filled from the company
+                                            profile when linked.
+                                        </p>
+                                        <p id="company-match-status" class="text-xs text-gray-400 mt-1"></p>
+                                        {{ form.company.errors }}
+                                    </div>
+                                    <div>
+                                        <label class="block font-bold text-gray-700 mb-2"
+                                            for="{{ form.location.id_for_label }}">Location</label>
+                                        {{ form.location|add_class:"form-input" }}
+                                        {{ form.location.errors }}
+                                    </div>
                                 </div>
-                                <div>
-                                    <label class="block font-bold text-gray-700 mb-2"
-                                        for="{{ form.location.id_for_label }}">Location</label>
-                                    {{ form.location|add_class:"form-input" }}
-                                    {{ form.location.errors }}
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
+                                    <div>
+                                        <label class="block font-bold text-gray-700 mb-2"
+                                            for="{{ form.company_obj.id_for_label }}">Company profile (optional)</label>
+                                        <div class="relative" id="company-typeahead-wrap">
+                                            <input type="text" id="company-typeahead-input" autocomplete="off"
+                                                class="form-input w-full"
+                                                placeholder="Type to search and link to a company profile…">
+                                            <div id="company-typeahead-dropdown" class="hidden absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto"></div>
+                                        </div>
+                                        <p class="text-xs text-gray-500 mt-1">
+                                            Pick a suggestion below, or
+                                            <a href="{% url 'company-create' %}?next={{ request.build_absolute_uri|urlencode }}" class="text-blue-600 hover:underline">add new company</a>
+                                            and return here.
+                                        </p>
+                                        <div id="company-profile-current" class="text-xs text-green-600 mt-1 hidden"></div>
+                                        <div class="hidden">{{ form.company_obj }}</div>
+                                        {{ form.company_obj.errors }}
+                                    </div>
+                                    <div class="md:text-right">
+                                        <a href="{% url 'company-list' %}" target="_blank"
+                                            class="inline-flex items-center px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                                            Manage companies
+                                        </a>
+                                    </div>
                                 </div>
                             </div>
 
@@ -213,6 +246,111 @@
 
 <script>
     document.addEventListener('DOMContentLoaded', function () {
+        // --- Company typeahead (search-as-you-type) + Add new return flow ---
+        const companyInput = document.getElementById('id_company');
+        const companySelect = document.getElementById('id_company_obj');
+        const companyStatus = document.getElementById('company-match-status');
+        const typeaheadInput = document.getElementById('company-typeahead-input');
+        const typeaheadDropdown = document.getElementById('company-typeahead-dropdown');
+        const companyProfileCurrent = document.getElementById('company-profile-current');
+        let typeaheadDebounce = null;
+
+        function setLinkedCompany(id, name) {
+            if (companySelect) companySelect.value = id || '';
+            if (companyInput) companyInput.value = name || companyInput.value;
+            if (companyProfileCurrent) {
+                if (id && name) {
+                    companyProfileCurrent.textContent = 'Linked to: ' + name;
+                    companyProfileCurrent.classList.remove('hidden');
+                } else {
+                    companyProfileCurrent.textContent = '';
+                    companyProfileCurrent.classList.add('hidden');
+                }
+            }
+            if (typeaheadInput) typeaheadInput.value = '';
+            if (typeaheadDropdown) { typeaheadDropdown.classList.add('hidden'); typeaheadDropdown.innerHTML = ''; }
+        }
+
+        function applyReturnParams() {
+            const params = new URLSearchParams(window.location.search);
+            const companyId = params.get('company_id');
+            const companyName = params.get('company_name');
+            if (companyId && companyName && companySelect) {
+                const opt = document.querySelector('#id_company_obj option[value="' + companyId + '"]');
+                if (opt) {
+                    setLinkedCompany(companyId, companyName);
+                    params.delete('company_id');
+                    params.delete('company_name');
+                    const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+                    window.history.replaceState({}, '', newUrl);
+                }
+            }
+        }
+        applyReturnParams();
+        if (companySelect && companySelect.value) {
+            const opt = companySelect.options[companySelect.selectedIndex];
+            if (opt && opt.text) {
+                if (companyProfileCurrent) {
+                    companyProfileCurrent.textContent = 'Linked to: ' + opt.text;
+                    companyProfileCurrent.classList.remove('hidden');
+                }
+            }
+        }
+
+        async function fetchSuggestions(q) {
+            if (!q || q.length < 1) return [];
+            const resp = await fetch('/companies/search/?q=' + encodeURIComponent(q));
+            if (!resp.ok) return [];
+            const data = await resp.json();
+            return data.results || [];
+        }
+
+        function showSuggestions(results) {
+            typeaheadDropdown.innerHTML = '';
+            if (!results.length) {
+                typeaheadDropdown.classList.add('hidden');
+                return;
+            }
+            results.forEach(function (r) {
+                const div = document.createElement('div');
+                div.className = 'px-4 py-2.5 cursor-pointer hover:bg-blue-50 border-b border-gray-100 last:border-0 text-sm';
+                div.textContent = r.name + (r.domain ? ' (' + r.domain + ')' : '');
+                div.dataset.id = r.id;
+                div.dataset.name = r.name;
+                div.addEventListener('click', function () {
+                    setLinkedCompany(r.id, r.name);
+                });
+                typeaheadDropdown.appendChild(div);
+            });
+            typeaheadDropdown.classList.remove('hidden');
+        }
+
+        if (typeaheadInput) {
+            typeaheadInput.addEventListener('input', function () {
+                clearTimeout(typeaheadDebounce);
+                const q = typeaheadInput.value.trim();
+                if (!q) {
+                    typeaheadDropdown.classList.add('hidden');
+                    typeaheadDropdown.innerHTML = '';
+                    return;
+                }
+                typeaheadDebounce = setTimeout(async function () {
+                    const results = await fetchSuggestions(q);
+                    showSuggestions(results);
+                }, 300);
+            });
+            typeaheadInput.addEventListener('blur', function () {
+                setTimeout(function () {
+                    typeaheadDropdown.classList.add('hidden');
+                }, 200);
+            });
+        }
+        document.addEventListener('click', function (e) {
+            if (typeaheadDropdown && !document.getElementById('company-typeahead-wrap').contains(e.target)) {
+                typeaheadDropdown.classList.add('hidden');
+            }
+        });
+
         // --- Smart Import Modal Logic ---
         const btnOpenImportModal = document.getElementById('btnOpenImportModal');
         const importModal = document.getElementById('importModal');
@@ -287,7 +425,7 @@
                 pill.type = 'button';
                 pill.className = 'px-3 py-1.5 rounded-full text-sm font-medium transition border ' +
                     (checkbox.checked
-                        ? 'bg-blue-600 border-blue-600 text-white shadow-md'
+                        ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
                         : 'bg-white border-gray-300 text-gray-700 hover:border-blue-400 hover:text-blue-600');
                 pill.textContent = label;
 
@@ -303,7 +441,7 @@
 
         function updatePillStyle(pill, isChecked) {
             if (isChecked) {
-                pill.className = 'px-3 py-1.5 rounded-full text-sm font-medium transition border bg-blue-600 border-blue-600 text-white shadow-md transform scale-105';
+                pill.className = 'px-3 py-1.5 rounded-full text-sm font-medium transition border bg-blue-600 border-blue-600 text-white shadow-sm';
             } else {
                 pill.className = 'px-3 py-1.5 rounded-full text-sm font-medium transition border bg-white border-gray-300 text-gray-700 hover:border-blue-400 hover:text-blue-600';
             }

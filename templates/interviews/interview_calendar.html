@@ -1,42 +1,143 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="max-w-6xl mx-auto px-4 py-8">
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold text-gray-800">Interview Calendar — {{ month_name }} {{ year }}</h1>
-        <a href="{% url 'interview-list' %}" class="px-4 py-2 rounded border">Back to Interviews</a>
+<div class="max-w-5xl mx-auto px-4 py-6" x-data="{ preview: null }">
+    <!-- Header: title + back -->
+    <div class="flex items-center justify-between mb-6">
+        <div class="flex items-center gap-3">
+            <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-gray-100 text-gray-600">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+            </span>
+            <div>
+                <h1 class="text-xl font-semibold text-gray-900">Interview Calendar</h1>
+                <p class="text-sm text-gray-500">{{ month_name }} {{ year }}</p>
+            </div>
+        </div>
+        <a href="{% url 'interview-list' %}" class="text-sm font-medium text-gray-600 hover:text-gray-900">← Back to Interviews</a>
     </div>
 
-    <form method="get" class="flex gap-3 items-center mb-6">
-        <input type="number" name="month" value="{{ month }}" class="border rounded px-3 py-2 w-24" min="1" max="12" />
-        <input type="number" name="year" value="{{ year }}" class="border rounded px-3 py-2 w-28" min="2000" max="2100" />
-        <button class="px-4 py-2 rounded bg-blue-600 text-white">Apply</button>
+    <!-- Filters + legend -->
+    <form method="get" class="flex flex-wrap items-center gap-3 mb-4">
+        <select name="month" class="border border-gray-300 rounded-md px-3 py-1.5 text-sm bg-white text-gray-700 focus:ring-1 focus:ring-gray-400 focus:border-gray-400">
+            <option value="1" {% if month == 1 %}selected{% endif %}>January</option>
+            <option value="2" {% if month == 2 %}selected{% endif %}>February</option>
+            <option value="3" {% if month == 3 %}selected{% endif %}>March</option>
+            <option value="4" {% if month == 4 %}selected{% endif %}>April</option>
+            <option value="5" {% if month == 5 %}selected{% endif %}>May</option>
+            <option value="6" {% if month == 6 %}selected{% endif %}>June</option>
+            <option value="7" {% if month == 7 %}selected{% endif %}>July</option>
+            <option value="8" {% if month == 8 %}selected{% endif %}>August</option>
+            <option value="9" {% if month == 9 %}selected{% endif %}>September</option>
+            <option value="10" {% if month == 10 %}selected{% endif %}>October</option>
+            <option value="11" {% if month == 11 %}selected{% endif %}>November</option>
+            <option value="12" {% if month == 12 %}selected{% endif %}>December</option>
+        </select>
+        <select name="year" class="border border-gray-300 rounded-md px-3 py-1.5 text-sm bg-white text-gray-700 focus:ring-1 focus:ring-gray-400 focus:border-gray-400">
+            {% for y in year_range %}
+            <option value="{{ y }}" {% if year == y %}selected{% endif %}>{{ y }}</option>
+            {% endfor %}
+        </select>
+        <select name="company" class="border border-gray-300 rounded-md px-3 py-1.5 text-sm bg-white text-gray-700 focus:ring-1 focus:ring-gray-400 focus:border-gray-400 min-w-[140px]">
+            <option value="">All companies</option>
+            {% for c in companies %}
+            <option value="{{ c }}" {% if selected_company == c %}selected{% endif %}>{{ c }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="px-4 py-1.5 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700">Apply</button>
+        <div class="flex items-center gap-4 ml-auto text-xs text-gray-500">
+            <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-blue-500"></span> Scheduled</span>
+            <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-amber-500"></span> Rescheduled</span>
+            <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-500"></span> Completed</span>
+            <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-red-500"></span> Cancelled</span>
+        </div>
     </form>
 
-    <div class="grid grid-cols-7 gap-2 text-sm">
-        <div class="font-semibold text-center">Mon</div>
-        <div class="font-semibold text-center">Tue</div>
-        <div class="font-semibold text-center">Wed</div>
-        <div class="font-semibold text-center">Thu</div>
-        <div class="font-semibold text-center">Fri</div>
-        <div class="font-semibold text-center">Sat</div>
-        <div class="font-semibold text-center">Sun</div>
-
-        {% for week in weeks %}
-            {% for day in week %}
-            <div class="border rounded min-h-[120px] p-2 {% if day.date.month != month %}bg-gray-50 text-gray-400{% endif %}">
-                <div class="text-xs font-semibold mb-1">{{ day.date.day }}</div>
-                <div class="space-y-1">
-                    {% for item in day.items %}
-                    <div class="text-xs bg-blue-50 border border-blue-200 rounded px-2 py-1">
-                        <div class="font-semibold">{{ item.job_title }}</div>
-                        <div>{{ item.scheduled_at|date:"H:i" }} · {{ item.get_status_display }}</div>
-                    </div>
-                    {% endfor %}
+    <!-- Hover preview -->
+    <div x-show="preview"
+         x-transition
+         x-cloak
+         class="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 max-w-xs w-[calc(100%-2rem)] pointer-events-none">
+        <div class="bg-gray-900 text-white rounded-lg shadow-lg px-3 py-2.5 text-xs">
+            <div class="flex items-center justify-between gap-2">
+                <div class="font-semibold" x-text="(preview?.time || '') + (preview?.round ? ' · ' + preview.round : '')"></div>
+                <div class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-white/10">
+                    <span class="w-1.5 h-1.5 rounded-full bg-green-400" x-show="preview?.status === 'Scheduled'"></span>
+                    <span class="w-1.5 h-1.5 rounded-full bg-amber-400" x-show="preview?.status === 'Rescheduled'"></span>
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400" x-show="preview?.status === 'Completed'"></span>
+                    <span class="w-1.5 h-1.5 rounded-full bg-red-400" x-show="preview?.status === 'Cancelled'"></span>
+                    <span x-text="preview?.status"></span>
                 </div>
             </div>
-            {% endfor %}
-        {% endfor %}
+            <div class="mt-1 text-gray-100" x-text="preview?.job_title"></div>
+            <div class="text-gray-400 mt-0.5" x-text="preview?.company"></div>
+            <div class="mt-1 text-indigo-300" x-show="preview?.candidate" x-text="preview?.candidate"></div>
+            <a :href="preview?.url" class="inline-block mt-2 text-blue-300 hover:text-white font-medium pointer-events-auto">View →</a>
+        </div>
     </div>
+
+    <!-- Calendar -->
+    <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div class="grid grid-cols-7 border-b border-gray-200 bg-gray-50">
+            <div class="py-2 text-center text-xs font-medium text-gray-500">Mon</div>
+            <div class="py-2 text-center text-xs font-medium text-gray-500">Tue</div>
+            <div class="py-2 text-center text-xs font-medium text-gray-500">Wed</div>
+            <div class="py-2 text-center text-xs font-medium text-gray-500">Thu</div>
+            <div class="py-2 text-center text-xs font-medium text-gray-500">Fri</div>
+            <div class="py-2 text-center text-xs font-medium text-gray-500">Sat</div>
+            <div class="py-2 text-center text-xs font-medium text-gray-500">Sun</div>
+        </div>
+        <div class="grid grid-cols-7 auto-rows-fr" style="min-height: 420px;">
+            {% for week in weeks %}
+                {% for day in week %}
+                <div class="min-h-[80px] flex flex-col border-gray-100 {% if not forloop.last %}border-r{% endif %} {% if not forloop.parentloop.last %}border-b{% endif %} {% if day.date.month != month %}bg-gray-50/60{% endif %} {% if day.date == today %}bg-blue-50/50 ring-inset ring-1 ring-blue-200{% endif %}">
+                    <div class="p-1 text-right flex-shrink-0">
+                        <span class="text-xs font-medium {% if day.date.month != month %}text-gray-400{% elif day.date == today %}text-blue-700{% else %}text-gray-600{% endif %}">{{ day.date.day }}</span>
+                    </div>
+                    <div class="relative flex-1 p-1 overflow-y-auto min-h-0 space-y-0.5">
+                        {% if day.date == today and now_percent %}
+                        <div class="absolute left-1 right-1 h-px bg-blue-500/80" style="top: {{ now_percent }}%;"></div>
+                        {% endif %}
+                        {% for item in day.items %}
+                        <a href="{% url 'interview-detail' item.pk %}"
+                           class="block rounded px-1.5 py-1 text-left transition truncate border
+                                  {% if item.status == 'CANCELLED' %}bg-red-50 border-red-200 text-red-900 hover:bg-red-100
+                                  {% elif item.status == 'COMPLETED' %}bg-emerald-50 border-emerald-200 text-emerald-900 hover:bg-emerald-100
+                                  {% elif item.status == 'RESCHEDULED' %}bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100
+                                  {% else %}bg-blue-50 border-blue-200 text-blue-900 hover:bg-blue-100{% endif %}
+                                  {% if request.user.role == 'CONSULTANT' and item.consultant.user_id != request.user.id %}opacity-80 border-dashed{% endif %}"
+                           @mouseenter="preview = {
+                             job_title: '{{ item.job_title|escapejs }}',
+                             company: '{{ item.company|escapejs }}',
+                             time: '{{ item.scheduled_at|date:'h:i A' }}',
+                             status: '{{ item.get_status_display|escapejs }}',
+                             round: '{{ item.get_round_display|escapejs }}',
+                             candidate: '{% if show_candidate %}{% if request.user.role == 'CONSULTANT' and item.consultant.user_id == request.user.id %}You{% else %}{{ item.consultant.user.get_full_name|default:item.consultant.user.username|escapejs }}{% endif %}{% endif %}',
+                             url: '{% url 'interview-detail' item.pk %}'
+                           }"
+                           @mouseleave="preview = null">
+                            <span class="text-[11px] font-semibold">{{ item.scheduled_at|date:"h:i A" }}</span>
+                            <span class="text-[11px]">
+                                ·
+                                {% if show_candidate %}
+                                    {% if request.user.role == 'CONSULTANT' and item.consultant.user_id == request.user.id %}
+                                        You
+                                    {% else %}
+                                        {{ item.consultant.user.get_full_name|default:item.consultant.user.username }}
+                                    {% endif %}
+                                {% else %}
+                                    {{ item.job_title }}
+                                {% endif %}
+                            </span>
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            {% endfor %}
+        </div>
+    </div>
+    <p class="mt-3 text-xs text-gray-400">Hover an event for details.</p>
 </div>
+
+<style>[x-cloak] { display: none !important; }</style>
 {% endblock %}

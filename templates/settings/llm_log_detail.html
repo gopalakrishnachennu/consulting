@@ -10,8 +10,8 @@
         <a href="{% url 'llm-logs' %}" class="text-sm text-blue-600 hover:underline">Back to logs</a>
     </div>
 
-    <div class="bg-white rounded-lg shadow p-4 mb-6">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-700">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-800">
             <div><strong>Time:</strong> {{ log.created_at|date:"Y-m-d H:i:s" }}</div>
             <div><strong>Model:</strong> {{ log.model_name }}</div>
             <div><strong>Status:</strong> {% if log.success %}OK{% else %}Fail{% endif %}</div>
@@ -27,17 +27,17 @@
         {% endif %}
     </div>
 
-    <div class="bg-white rounded-lg shadow p-4 mb-6">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
         <h2 class="text-lg font-semibold text-gray-800 mb-2">System Prompt</h2>
-        <pre class="whitespace-pre-wrap text-xs bg-gray-50 p-3 rounded border">{{ log.system_prompt }}</pre>
+        <pre class="whitespace-pre-wrap text-xs text-gray-800 bg-gray-50 p-3 rounded border border-gray-200">{{ log.system_prompt }}</pre>
     </div>
 
-    <div class="bg-white rounded-lg shadow p-4 mb-6">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
         <h2 class="text-lg font-semibold text-gray-800 mb-2">User Prompt</h2>
-        <pre class="whitespace-pre-wrap text-xs bg-gray-50 p-3 rounded border">{{ log.user_prompt }}</pre>
+        <pre class="whitespace-pre-wrap text-xs text-gray-800 bg-gray-50 p-3 rounded border border-gray-200">{{ log.user_prompt }}</pre>
     </div>
 
-    <div class="bg-white rounded-lg shadow p-4 mb-6">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
         <div class="flex items-center justify-between mb-2">
             <h2 class="text-lg font-semibold text-gray-800">Request Payload</h2>
             <button id="copy-llm-payload"
@@ -45,12 +45,12 @@
                 Copy Payload
             </button>
         </div>
-        <pre id="llm-payload" class="whitespace-pre-wrap text-xs bg-gray-50 p-3 rounded border">{{ log.request_payload }}</pre>
+        <pre id="llm-payload" class="whitespace-pre-wrap text-xs text-gray-800 bg-gray-50 p-3 rounded border border-gray-200">{{ log.request_payload }}</pre>
     </div>
 
-    <div class="bg-white rounded-lg shadow p-4">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
         <h2 class="text-lg font-semibold text-gray-800 mb-2">Response</h2>
-        <pre class="whitespace-pre-wrap text-xs bg-gray-50 p-3 rounded border">{{ log.response_text }}</pre>
+        <pre class="whitespace-pre-wrap text-xs text-gray-800 bg-gray-50 p-3 rounded border border-gray-200">{{ log.response_text }}</pre>
     </div>
 </div>
 

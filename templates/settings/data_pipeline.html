@@ -1,0 +1,163 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex items-center justify-between mb-6">
+        <h1 class="text-2xl font-bold text-gray-900">Data Pipeline</h1>
+        <a href="{% url 'settings-dashboard' %}" class="text-blue-600 hover:text-blue-800 text-sm font-medium">← Settings</a>
+    </div>
+
+    <p class="text-gray-600 mb-6">Single place to operate and monitor the company data pipeline: ingestion, enrichment, duplicates, URL validation.</p>
+
+    <div class="border-b px-4 pb-3 bg-gray-50 rounded-t-lg">
+        <nav class="flex flex-wrap gap-2 text-sm font-medium" aria-label="Tabs">
+            <button type="button" class="dp-tab px-3 py-2 rounded-md bg-white text-blue-700 shadow-sm border border-blue-100" data-target="#tab-ingestion">Ingestion</button>
+            <button type="button" class="dp-tab px-3 py-2 rounded-md text-gray-600 hover:text-gray-800" data-target="#tab-enrichment">Enrichment</button>
+            <button type="button" class="dp-tab px-3 py-2 rounded-md text-gray-600 hover:text-gray-800" data-target="#tab-duplicates">Duplicates</button>
+            <button type="button" class="dp-tab px-3 py-2 rounded-md text-gray-600 hover:text-gray-800" data-target="#tab-validation">URL Validation</button>
+            <button type="button" class="dp-tab px-3 py-2 rounded-md text-gray-600 hover:text-gray-800" data-target="#tab-logs">Pipeline Logs</button>
+        </nav>
+    </div>
+
+    <div class="bg-white rounded-b-lg border border-t-0 border-gray-200 p-6">
+        <!-- Tab 1: Company ingestion -->
+        <div id="tab-ingestion" class="dp-panel">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">Company ingestion</h2>
+            <p class="text-sm text-gray-500 mb-4">Import companies via CSV, domain list, or LinkedIn URLs. Configure auto-enrich and API keys in <a href="{% url 'platform-config' %}" class="text-blue-600 hover:underline">Platform Config → Data Pipeline</a>.</p>
+            <div class="flex flex-wrap gap-3 mb-4">
+                <a href="{% url 'company-import-csv' %}" class="px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">Import CSV</a>
+                <a href="{% url 'company-import-domains' %}" class="px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">Import domains</a>
+                <a href="{% url 'company-import-linkedin' %}" class="px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">Import LinkedIn</a>
+            </div>
+            <p class="text-xs text-gray-500">Auto-enrich on create: <strong>{% if auto_enrich_on_create %}Enabled{% else %}Disabled{% endif %}</strong></p>
+        </div>
+
+        <!-- Tab 2: Enrichment status -->
+        <div id="tab-enrichment" class="dp-panel hidden">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">Enrichment status</h2>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                <div class="bg-gray-50 rounded-lg p-3 text-center">
+                    <div class="text-xl font-bold text-gray-900">{{ company_total }}</div>
+                    <div class="text-xs text-gray-500">Total</div>
+                </div>
+                <div class="bg-amber-50 rounded-lg p-3 text-center">
+                    <div class="text-xl font-bold text-amber-700">{{ company_pending }}</div>
+                    <div class="text-xs text-gray-500">Pending</div>
+                </div>
+                <div class="bg-green-50 rounded-lg p-3 text-center">
+                    <div class="text-xl font-bold text-green-700">{{ company_enriched }}</div>
+                    <div class="text-xs text-gray-500">Enriched</div>
+                </div>
+                <div class="bg-orange-50 rounded-lg p-3 text-center">
+                    <div class="text-xl font-bold text-orange-700">{{ company_stale }}</div>
+                    <div class="text-xs text-gray-500">Stale ({{ stale_cutoff_days }}d+)</div>
+                </div>
+                <div class="bg-red-50 rounded-lg p-3 text-center">
+                    <div class="text-xl font-bold text-red-700">{{ company_failed }}</div>
+                    <div class="text-xs text-gray-500">Failed</div>
+                </div>
+            </div>
+            <form method="post" action="{% url 'data-pipeline' %}" class="inline">
+                {% csrf_token %}
+                <button type="submit" class="px-4 py-2 rounded-lg text-sm font-medium bg-amber-100 text-amber-800 border border-amber-200 hover:bg-amber-200">Re-enrich stale ({{ company_stale }} companies)</button>
+            </form>
+            <p class="mt-2 text-xs text-gray-500">Queues enrichment for companies enriched more than {{ stale_cutoff_days }} days ago.</p>
+        </div>
+
+        <!-- Tab 3: Duplicate review -->
+        <div id="tab-duplicates" class="dp-panel hidden">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">Duplicate review</h2>
+            <p class="text-sm text-gray-500 mb-4">Review and merge potential duplicate companies.</p>
+            <a href="{% url 'company-duplicate-review' %}" class="inline-flex px-4 py-2 rounded-lg text-sm font-medium bg-amber-100 text-amber-800 border border-amber-200 hover:bg-amber-200">View duplicate queue</a>
+        </div>
+
+        <!-- Tab 4: URL validation -->
+        <div id="tab-validation" class="dp-panel hidden">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">URL validation</h2>
+            <p class="text-sm text-gray-500 mb-4">Last run of company link validator and job URL validator. Links to filtered lists.</p>
+            <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <dt class="text-gray-500 text-sm">Company links</dt>
+                    {% with log=pipeline_run_logs.validate_company_links %}
+                    <dd class="font-medium">{% if log %}{{ log.last_run_at|date:"Y-m-d H:i" }}{% else %}—{% endif %}</dd>
+                    {% if log and log.last_run_result.processed is not None %}<dd class="text-xs text-gray-500">{{ log.last_run_result.processed }} processed</dd>{% endif %}
+                    {% endwith %}
+                </div>
+                <div>
+                    <dt class="text-gray-500 text-sm">Job URLs</dt>
+                    {% with log=pipeline_run_logs.validate_job_urls %}
+                    <dd class="font-medium">{% if log %}{{ log.last_run_at|date:"Y-m-d H:i" }}{% else %}—{% endif %}</dd>
+                    {% if log and log.last_run_result.processed is not None %}<dd class="text-xs text-gray-500">{{ log.last_run_result.processed }} processed</dd>{% endif %}
+                    {% endwith %}
+                </div>
+            </dl>
+            <div class="flex flex-wrap gap-3">
+                <a href="{% url 'company-list' %}?website_valid=0" class="px-4 py-2 rounded-lg border border-red-200 bg-red-50 text-sm font-medium text-red-800 hover:bg-red-100">
+                    Invalid company websites ({{ invalid_website_count }})
+                </a>
+                <a href="{% url 'job-list' %}?possibly_filled=1" class="px-4 py-2 rounded-lg border border-amber-200 bg-amber-50 text-sm font-medium text-amber-800 hover:bg-amber-100">
+                    Possibly filled jobs ({{ possibly_filled_count }})
+                </a>
+            </div>
+        </div>
+
+        <!-- Tab 5: Pipeline logs -->
+        <div id="tab-logs" class="dp-panel hidden">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">Pipeline run logs</h2>
+            <p class="text-sm text-gray-500 mb-4">
+                Last 50 pipeline task runs.
+                <a href="{% url 'company-enrichment-logs' %}" class="text-blue-600 hover:underline ml-1">Enrichment log (per-company) →</a>
+            </p>
+            {% if pipeline_logs %}
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-gray-200">
+                            <th class="text-left py-2 font-medium text-gray-700">Task</th>
+                            <th class="text-left py-2 font-medium text-gray-700">Last run</th>
+                            <th class="text-left py-2 font-medium text-gray-700">Result</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in pipeline_logs %}
+                        <tr class="border-b border-gray-100">
+                            <td class="py-2">{{ log.task_name }}</td>
+                            <td class="py-2">{{ log.last_run_at|date:"Y-m-d H:i"|default:"—" }}</td>
+                            <td class="py-2 text-gray-500">{{ log.last_run_result|default:"" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-gray-500">No pipeline runs recorded yet.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const tabs = document.querySelectorAll('.dp-tab');
+    const panels = document.querySelectorAll('.dp-panel');
+    function activate(targetId) {
+        panels.forEach(p => {
+            p.classList.toggle('hidden', '#' + p.id !== targetId);
+        });
+        tabs.forEach(t => {
+            const active = t.dataset.target === targetId;
+            t.classList.toggle('bg-white', active);
+            t.classList.toggle('text-blue-700', active);
+            t.classList.toggle('shadow-sm', active);
+            t.classList.toggle('border', active);
+            t.classList.toggle('border-blue-100', active);
+            t.classList.toggle('text-gray-600', !active);
+        });
+    }
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => activate(tab.dataset.target));
+    });
+    activate('#tab-ingestion');
+})();
+</script>
+{% endblock %}

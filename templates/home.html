@@ -1,16 +1,15 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="text-center">
-    <h1 class="text-4xl font-bold mb-4">{{ MSG_HOME_WELCOME }}</h1>
-    <p class="mb-4">{{ SITE_TAGLINE }}</p>
-
+<div class="max-w-2xl mx-auto text-center">
+    <h1 class="text-3xl font-bold text-gray-800 mb-4">{{ MSG_HOME_WELCOME }}</h1>
+    <p class="text-gray-600 mb-6">{{ SITE_TAGLINE }}</p>
     {% if not user.is_authenticated %}
-    <a href="{% url 'login' %}" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+    <a href="{% url 'login' %}" class="inline-block bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-6 rounded-lg transition">
         {{ MSG_HOME_CTA }}
     </a>
     {% else %}
-    <p class="text-lg">You are logged in as <span class="font-bold">{{ user.username }}</span> ({{ user.get_role_display }})</p>
+    <p class="text-gray-600">You are logged in as <span class="font-semibold text-gray-800">{{ user.username }}</span> ({{ user.get_role_display }})</p>
     {% endif %}
 </div>
 {% endblock %}

@@ -3,7 +3,7 @@
 
 {% block content %}
 <div class="max-w-2xl mx-auto px-4 py-8">
-    <div class="bg-white rounded-xl shadow-lg p-8">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
         <h1 class="text-2xl font-bold text-gray-800 mb-2">Add New Consultant</h1>
         <p class="text-gray-500 mb-6">Create a new consultant account and profile.</p>
 
@@ -67,7 +67,7 @@
                             </svg>
                         </button>
                     </div>
-                    <p class="text-gray-400 text-xs mt-1">Leave blank to auto-generate from Name + Email (e.g.
+                    <p class="text-gray-600 text-xs mt-1">Leave blank to auto-generate from Name + Email (e.g.
                         John.Doe@example)</p>
                     {% if form.password.errors %}<p class="text-red-500 text-sm mt-1">{{ form.password.errors.0 }}</p>{% endif %}
                 </div>
@@ -88,13 +88,13 @@
                     <div>
                         <label for="id_base_resume_text" class="block text-sm font-medium text-gray-700 mb-1">Base Resume</label>
                         {% render_field form.base_resume_text class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" %}
-                        <p class="text-gray-400 text-xs mt-1">Paste the consultant's base resume here for tailoring.</p>
+                        <p class="text-gray-600 text-xs mt-1">Paste the consultant's base resume here for tailoring.</p>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label for="id_skills" class="block text-sm font-medium text-gray-700 mb-1">Skills</label>
                             {% render_field form.skills class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Python, Django, AWS" %}
-                            <p class="text-gray-400 text-xs mt-1">Comma-separated list</p>
+                            <p class="text-gray-600 text-xs mt-1">Comma-separated list</p>
                         </div>
                         <div>
                             <label for="id_hourly_rate" class="block text-sm font-medium text-gray-700 mb-1">Hourly Rate

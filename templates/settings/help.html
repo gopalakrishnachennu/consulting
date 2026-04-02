@@ -1,0 +1,193 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900">Help Center</h1>
+            <p class="text-gray-600 text-sm mt-1">
+                Practical, step-by-step guides for configuring core services in CHENN.
+            </p>
+        </div>
+        <a href="{% url 'settings-dashboard' %}" class="text-blue-600 hover:text-blue-800 text-sm font-medium">
+            &larr; Back to Settings
+        </a>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="lg:col-span-2 space-y-6">
+            <!-- IMAP Email Ingestion -->
+            <section class="bg-white border border-blue-100 rounded-xl shadow-sm p-5">
+                <h2 class="text-xl font-bold text-gray-900 mb-2">1. IMAP Email Ingestion (Gmail)</h2>
+                <p class="text-sm text-gray-600 mb-4">
+                    This feature reads employer replies from a dedicated inbox and updates submission statuses automatically.
+                    Use it with a dedicated Gmail account and an App Password.
+                </p>
+
+                <h3 class="text-sm font-semibold text-gray-900 mb-1">1.1 Create / prepare the Gmail inbox</h3>
+                <ol class="list-decimal list-inside text-sm text-gray-700 space-y-1 mb-4">
+                    <li>Create or choose a Gmail account, e.g. <code>yourplatform.updates@gmail.com</code>.</li>
+                    <li>Sign in to that account and open <span class="font-mono text-xs">https://myaccount.google.com/security</span>.</li>
+                    <li>Turn <strong>2‑Step Verification</strong> ON (if not already).</li>
+                    <li>On the 2‑Step Verification page, scroll down and open <strong>App passwords</strong> (or visit <span class="font-mono text-xs">https://myaccount.google.com/apppasswords</span>).</li>
+                    <li>Create an App Password:
+                        <ul class="list-disc list-inside ml-4">
+                            <li>App: <strong>Mail</strong> (or “Other (Custom)” → type <strong>CHENN IMAP</strong>).</li>
+                            <li>Generate and copy the 16‑character password (e.g. <code>abcd efgh ijkl mnop</code>).</li>
+                        </ul>
+                    </li>
+                    <li>In Gmail settings → <strong>See all settings</strong> → <strong>Forwarding and POP/IMAP</strong>:
+                        <ul class="list-disc list-inside ml-4">
+                            <li>Enable <strong>IMAP access</strong>.</li>
+                            <li>Save changes.</li>
+                        </ul>
+                    </li>
+                </ol>
+
+                <h3 class="text-sm font-semibold text-gray-900 mb-1">1.2 Configure CHENN IMAP settings</h3>
+                <ol class="list-decimal list-inside text-sm text-gray-700 space-y-1 mb-4">
+                    <li>Go to <strong>Settings → Platform Config → Email Ingestion (IMAP)</strong>.</li>
+                    <li>Turn ON <strong>Enable IMAP email ingestion</strong>.</li>
+                    <li>Fill the fields:
+                        <ul class="list-disc list-inside ml-4">
+                            <li><strong>IMAP Host</strong>: <code>imap.gmail.com</code></li>
+                            <li><strong>IMAP Port</strong>: <code>993</code></li>
+                            <li><strong>Use SSL/TLS</strong>: checked</li>
+                            <li><strong>IMAP Username</strong>: the same Gmail address that generated the App Password</li>
+                            <li><strong>IMAP Password / App Password</strong>: paste the 16‑character App Password from Google</li>
+                            <li><strong>Poll Interval</strong>: keep <code>60</code> seconds for most setups.</li>
+                        </ul>
+                    </li>
+                    <li>Optionally enable:
+                        <ul class="list-disc list-inside ml-4">
+                            <li><strong>Background polling (Celery Beat)</strong> – for automatic, periodic polling.</li>
+                            <li><strong>AI fallback</strong> – uses your existing LLM config when rules are unsure.</li>
+                            <li><strong>Email notifications</strong> – notify employees / consultants on auto-updates.</li>
+                        </ul>
+                    </li>
+                    <li>Click <strong>Save Configuration</strong>.</li>
+                </ol>
+
+                <h3 class="text-sm font-semibold text-gray-900 mb-1">1.3 Test the connection</h3>
+                <ol class="list-decimal list-inside text-sm text-gray-700 space-y-1 mb-4">
+                    <li>Go to <strong>Applications → Job Applications</strong> and click <strong>Email Ingestion Log</strong> in the top-right.</li>
+                    <li>Click <strong>Run IMAP poll now</strong>.</li>
+                    <li>Interpret the banner:
+                        <ul class="list-disc list-inside ml-4">
+                            <li><strong>Success banner</strong>: processed <em>n</em> messages → setup is correct.</li>
+                            <li><strong>“auth_failed: Application-specific password required”</strong>:
+                                use a Gmail App Password (normal passwords will fail).</li>
+                            <li><strong>“auth_failed: Invalid credentials”</strong>:
+                                check that IMAP Username matches the account that generated the App Password.</li>
+                            <li><strong>“connect_failed”</strong>: check host/port, local network, or firewall.</li>
+                        </ul>
+                    </li>
+                </ol>
+
+                <h3 class="text-sm font-semibold text-gray-900 mb-1">1.4 How employees should use it</h3>
+                <ol class="list-decimal list-inside text-sm text-gray-700 space-y-1">
+                    <li>Employer replies to an application (e.g. “We’d like to interview John”).</li>
+                    <li>Employee forwards that email to the dedicated inbox (e.g. <code>yourplatform.updates@gmail.com</code>).</li>
+                    <li>Within ~60 seconds, CHENN:
+                        <ul class="list-disc list-inside ml-4">
+                            <li>Reads the email via IMAP.</li>
+                            <li>Uses rules (and optional AI) to detect status.</li>
+                            <li>Matches the correct submission when safe.</li>
+                            <li>Auto-updates the status and logs it in the timeline.</li>
+                        </ul>
+                    </li>
+                    <li>Employees/admins can review everything in the <strong>Email Ingestion Log</strong>.</li>
+                </ol>
+            </section>
+
+            <!-- LLM Configuration -->
+            <section class="bg-white border border-indigo-100 rounded-xl shadow-sm p-5">
+                <h2 class="text-xl font-bold text-gray-900 mb-2">2. LLM Configuration (OpenAI)</h2>
+                <p class="text-sm text-gray-600 mb-4">
+                    CHENN uses OpenAI for resume generation and some analytics features. All usage is tracked and capped.
+                </p>
+
+                <h3 class="text-sm font-semibold text-gray-900 mb-1">2.1 Add / rotate the API key</h3>
+                <ol class="list-decimal list-inside text-sm text-gray-700 space-y-1 mb-4">
+                    <li>Go to <strong>Settings → System Settings → LLM Settings</strong>.</li>
+                    <li>Paste your OpenAI API key in the API key field.</li>
+                    <li>Click <strong>Save</strong>. The key is stored encrypted using the same mechanism as IMAP.</li>
+                    <li>Optionally click <strong>Test key</strong> to verify that the key is valid and list available models.</li>
+                </ol>
+
+                <h3 class="text-sm font-semibold text-gray-900 mb-1">2.2 Control cost and safety</h3>
+                <ul class="list-disc list-inside text-sm text-gray-700 space-y-1 mb-4">
+                    <li><strong>Temperature</strong> – higher = more creative, lower = more deterministic.</li>
+                    <li><strong>Max output tokens</strong> – upper bound on response length.</li>
+                    <li><strong>Monthly token cap</strong> – hard cap; when reached, generation can auto-disable.</li>
+                    <li><strong>Generation enabled</strong> – master toggle to quickly pause all LLM calls.</li>
+                </ul>
+
+                <p class="text-xs text-gray-500">
+                    All LLM usage is logged in <strong>LLM Logs</strong> with token counts and cost estimates so you can
+                    audit and tune usage over time.
+                </p>
+            </section>
+
+            <!-- Background workers -->
+            <section class="bg-white border border-gray-100 rounded-xl shadow-sm p-5">
+                <h2 class="text-xl font-bold text-gray-900 mb-2">3. Background Workers (Celery)</h2>
+                <p class="text-sm text-gray-600 mb-4">
+                    Celery workers let CHENN run tasks like IMAP polling in the background.
+                </p>
+
+                <h3 class="text-sm font-semibold text-gray-900 mb-1">3.1 Services you should run</h3>
+                <ul class="list-disc list-inside text-sm text-gray-700 space-y-1 mb-4">
+                    <li><strong>Redis</strong> – message broker / result backend.</li>
+                    <li><strong>Celery worker</strong> – executes tasks such as <code>poll_email_ingest_task</code>.</li>
+                    <li><strong>Celery Beat</strong> – scheduler that triggers periodic tasks.</li>
+                </ul>
+
+                <h3 class="text-sm font-semibold text-gray-900 mb-1">3.2 How IMAP polling uses Celery Beat</h3>
+                <ul class="list-disc list-inside text-sm text-gray-700 space-y-1 mb-4">
+                    <li>When you save <strong>PlatformConfig</strong> with:
+                        <ul class="list-disc list-inside ml-4">
+                            <li><strong>Enable IMAP email ingestion</strong> = ON</li>
+                            <li><strong>Enable background polling</strong> = ON</li>
+                        </ul>
+                    </li>
+                    <li>CHENN creates or updates a periodic task:
+                        <ul class="list-disc list-inside ml-4">
+                            <li>Name: <code>CHENN: IMAP email ingestion poller</code></li>
+                            <li>Task: <code>core.tasks.poll_email_ingest_task</code></li>
+                            <li>Interval: <code>email_poll_interval_seconds</code> (minimum 30s).</li>
+                        </ul>
+                    </li>
+                    <li>As long as Celery Beat and a worker are running, IMAP will be polled automatically at that interval.</li>
+                    <li>You can still run manual polls from the <strong>Email Ingestion Log</strong> at any time.</li>
+                </ul>
+            </section>
+        </div>
+
+        <!-- Quick reference column -->
+        <aside class="space-y-4">
+            <section class="bg-white border border-gray-200 rounded-xl shadow-sm p-4 text-sm text-gray-700">
+                <h3 class="text-sm font-semibold text-gray-900 mb-2">Quick IMAP checklist</h3>
+                <ul class="list-disc list-inside space-y-1">
+                    <li>2‑Step Verification turned ON.</li>
+                    <li>App Password generated for <strong>Mail</strong>.</li>
+                    <li>IMAP enabled in Gmail settings.</li>
+                    <li><code>imap.gmail.com:993</code> with SSL.</li>
+                    <li>Username matches the account that created the App Password.</li>
+                </ul>
+            </section>
+
+            <section class="bg-white border border-gray-200 rounded-xl shadow-sm p-4 text-sm text-gray-700">
+                <h3 class="text-sm font-semibold text-gray-900 mb-2">Troubleshooting banners</h3>
+                <ul class="list-disc list-inside space-y-1">
+                    <li><strong>auth_failed: Application-specific password required</strong> – use a Gmail App Password, not your normal password.</li>
+                    <li><strong>auth_failed: Invalid credentials</strong> – username and App Password do not belong to the same account.</li>
+                    <li><strong>connect_failed</strong> – check IMAP host / port 993 / local firewall.</li>
+                    <li><strong>search_failed</strong> – IMAP search failed; try again or check inbox via Gmail UI.</li>
+                </ul>
+            </section>
+        </aside>
+    </div>
+</div>
+{% endblock %}
+

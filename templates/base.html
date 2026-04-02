@@ -11,19 +11,326 @@
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/alpinejs@3.13.3/dist/cdn.min.js" defer></script>
     <meta name="description" content="{{ PLATFORM_CONFIG.meta_description }}">
+    <style>
+        .nav-open .nav-menu {
+            display: flex !important;
+        }
+
+        /* ── Micro-animation keyframes ── */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(24px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes pulse-dot {
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: .5;
+                transform: scale(1.6);
+            }
+        }
+
+        @keyframes shimmer {
+            0% {
+                background-position: -200% 0;
+            }
+
+            100% {
+                background-position: 200% 0;
+            }
+        }
+
+        @keyframes float {
+
+            0%,
+            100% {
+                transform: translateY(0);
+            }
+
+            50% {
+                transform: translateY(-4px);
+            }
+        }
+
+        .animate-fade-in-up {
+            animation: fadeInUp .5s ease-out both;
+        }
+
+        .animate-slide-up {
+            animation: slideUp .35s ease-out both;
+        }
+
+        /* Staggered card entrance delays */
+        .stagger-1 {
+            animation-delay: .05s;
+        }
+
+        .stagger-2 {
+            animation-delay: .10s;
+        }
+
+        .stagger-3 {
+            animation-delay: .15s;
+        }
+
+        .stagger-4 {
+            animation-delay: .20s;
+        }
+
+        .stagger-5 {
+            animation-delay: .25s;
+        }
+
+        .stagger-6 {
+            animation-delay: .30s;
+        }
+
+        .stagger-7 {
+            animation-delay: .35s;
+        }
+
+        .stagger-8 {
+            animation-delay: .40s;
+        }
+
+        /* ── Card hover lift ── */
+        .card-hover {
+            transition: transform .25s ease, box-shadow .25s ease;
+        }
+
+        .card-hover:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 20px 40px -12px rgba(0, 0, 0, .12), 0 8px 20px -6px rgba(0, 0, 0, .08);
+        }
+
+        /* ── Glassmorphism ── */
+        .glass {
+            background: rgba(255, 255, 255, .72);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, .3);
+        }
+
+        /* ── Gradient text ── */
+        .gradient-text {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* ── Status pulse dot ── */
+        .pulse-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            animation: pulse-dot 2s ease-in-out infinite;
+        }
+
+        /* ── Gradient hero ── */
+        .hero-gradient {
+            background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 50%, #06b6d4 100%);
+        }
+
+        /* ── Skill tag colors ── */
+        .skill-tag-1 {
+            background: #ede9fe;
+            color: #6d28d9;
+        }
+
+        .skill-tag-2 {
+            background: #dbeafe;
+            color: #1d4ed8;
+        }
+
+        .skill-tag-3 {
+            background: #d1fae5;
+            color: #047857;
+        }
+
+        .skill-tag-4 {
+            background: #fce7f3;
+            color: #be185d;
+        }
+
+        .skill-tag-5 {
+            background: #ffedd5;
+            color: #c2410c;
+        }
+
+        .skill-tag-6 {
+            background: #e0e7ff;
+            color: #4338ca;
+        }
+
+        /* ── Summary stat cards ── */
+        .stat-card {
+            position: relative;
+            overflow: hidden;
+            transition: transform .2s ease, box-shadow .2s ease;
+            border-left: 4px solid transparent;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 32px -8px rgba(0, 0, 0, .1);
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            opacity: .06;
+            transform: translate(20px, -20px);
+        }
+
+        .stat-active {
+            border-left-color: #10b981;
+        }
+
+        .stat-active::before {
+            background: #10b981;
+        }
+
+        .stat-bench {
+            border-left-color: #f59e0b;
+        }
+
+        .stat-bench::before {
+            background: #f59e0b;
+        }
+
+        .stat-placed {
+            border-left-color: #3b82f6;
+        }
+
+        .stat-placed::before {
+            background: #3b82f6;
+        }
+
+        .stat-inactive {
+            border-left-color: #9ca3af;
+        }
+
+        .stat-inactive::before {
+            background: #6b7280;
+        }
+
+        /* Premium button glow */
+        .btn-glow {
+            box-shadow: 0 4px 14px 0 rgba(79, 70, 229, .4);
+            transition: all .25s ease;
+        }
+
+        .btn-glow:hover {
+            box-shadow: 0 6px 20px 0 rgba(79, 70, 229, .6);
+            transform: translateY(-1px);
+        }
+
+        /* Avatar ring (no longer used – kept for backward compatibility) */
+        .avatar-ring {
+            box-shadow: none;
+        }
+
+        /* ── Section cards for detail page ── */
+        .section-card {
+            background: white;
+            border-radius: 1rem;
+            border: 1px solid #f3f4f6;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, .04);
+            transition: box-shadow .25s ease;
+        }
+
+        .section-card:hover {
+            box-shadow: 0 8px 24px -6px rgba(0, 0, 0, .08);
+        }
+
+        /* ── Empty state illustration ── */
+        .empty-state-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #eef2ff, #e0e7ff);
+        }
+
+        /* ── Action link pill ── */
+        .action-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-size: .75rem;
+            font-weight: 600;
+            transition: all .15s ease;
+        }
+
+        .action-pill:hover {
+            transform: translateY(-1px);
+        }
+
+        /* ── Generate button gradient ── */
+        .btn-generate {
+            background: linear-gradient(135deg, #7c3aed, #6366f1);
+            color: white;
+            font-weight: 700;
+            padding: 10px 24px;
+            border-radius: 12px;
+            transition: all .25s ease;
+            box-shadow: 0 4px 14px rgba(99, 102, 241, .3);
+        }
+
+        .btn-generate:hover {
+            box-shadow: 0 6px 20px rgba(99, 102, 241, .5);
+            transform: translateY(-1px);
+        }
+    </style>
 </head>
 
-<body class="bg-gray-100 font-sans leading-normal tracking-normal">
+<body class="min-h-screen bg-gray-100 font-sans leading-normal tracking-normal text-gray-800">
 
     {% if PLATFORM_CONFIG.maintenance_mode and not user.is_staff %}
-    <div class="bg-red-600 text-white text-center py-2 px-4 shadow-md z-50 relative">
+    <div class="bg-red-600 text-white text-center py-2 px-4 shadow-sm z-50 relative">
         <p class="font-bold text-sm">{{ PLATFORM_CONFIG.maintenance_message }}</p>
     </div>
     {% endif %}
 
     {% if is_impersonating %}
     <div id="impersonate-banner"
-        class="bg-amber-500 text-white px-4 py-3 flex items-center justify-between shadow-lg z-50"
+        class="bg-amber-500 text-white px-4 py-3 flex items-center justify-between shadow-sm z-50"
         style="position:sticky;top:0;">
         <div class="flex items-center gap-3">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -45,147 +352,210 @@
     </div>
     {% endif %}
 
-    <nav class="flex items-center justify-between flex-wrap bg-blue-600 p-6">
-        <div class="flex items-center flex-shrink-0 text-white mr-6">
-            <span class="font-semibold text-xl tracking-tight">
+    <nav class="flex items-center gap-4 flex-wrap bg-blue-600 px-6 py-4 shadow-lg" x-data="{ open: false }"
+        :class="{ 'nav-open': open }">
+        <div class="flex items-center flex-shrink-0">
+            <a href="{% if user.is_authenticated %}{% if user.is_superuser or user.role == 'ADMIN' %}{% url 'admin-dashboard' %}{% elif user.role == 'EMPLOYEE' %}{% url 'employee-dashboard' %}{% else %}{% url 'consultant-dashboard' %}{% endif %}{% else %}{% url 'login' %}{% endif %}"
+                class="font-semibold text-xl tracking-tight text-white hover:text-blue-100 transition">
                 {% if PLATFORM_CONFIG.logo_url %}
                 <img src="{{ PLATFORM_CONFIG.logo_url }}" alt="Logo" class="h-8 inline-block mr-2 rounded bg-white p-1">
                 {% endif %}
                 {{ PLATFORM_CONFIG.site_name|default:"EduConsult" }}
-            </span>
+            </a>
         </div>
         <div class="block lg:hidden">
-            <button
-                class="flex items-center px-3 py-2 border rounded text-blue-200 border-blue-400 hover:text-white hover:border-white">
-                <svg class="fill-current h-3 w-3" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+            <button type="button" @click="open = !open"
+                class="flex items-center px-3 py-2 rounded-lg text-blue-200 hover:text-white hover:bg-white/20 transition"
+                aria-expanded="false" :aria-expanded="open">
+                <svg class="fill-current h-5 w-5" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
                     <title>Menu</title>
                     <path d="M0 3h20v2H0V3zm0 6h20v2H0V9zm0 6h20v2H0v-2z" />
                 </svg>
             </button>
         </div>
-        <div class="w-full block flex-grow lg:flex lg:items-center lg:w-auto">
-            <div class="text-sm lg:flex-grow">
+        <div class="nav-menu hidden lg:flex flex-1 lg:items-center flex-col lg:flex-row pt-4 lg:pt-0 lg:gap-6 min-w-0 lg:order-2">
+            <div class="flex flex-wrap items-center gap-1 lg:gap-2">
                 {% if user.is_authenticated %}
+                {% with url_name=request.resolver_match.url_name %}
 
                 {% if user.is_superuser or user.role == 'ADMIN' %}
                 {# --- ADMIN NAV --- #}
                 <a href="{% url 'admin-dashboard' %}"
-                    class="block mt-4 lg:inline-block lg:mt-0 text-blue-200 hover:text-white mr-4">
-                    Dashboard
-                </a>
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'admin-dashboard' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Dashboard</a>
                 <a href="{% url 'job-list' %}"
-                    class="block mt-4 lg:inline-block lg:mt-0 text-blue-200 hover:text-white mr-4">
-                    Jobs
-                </a>
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'job-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Jobs</a>
+                <a href="{% url 'company-list' %}"
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'company-list' or url_name == 'company-detail' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Companies</a>
                 <a href="{% url 'submission-list' %}"
-                    class="block mt-4 lg:inline-block lg:mt-0 text-blue-200 hover:text-white mr-4">
-                    Applications
-                </a>
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'submission-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Applications</a>
                 <a href="{% url 'interview-list' %}"
-                    class="block mt-4 lg:inline-block lg:mt-0 text-blue-200 hover:text-white mr-4">
-                    Interviews
-                </a>
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'interview-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Interviews</a>
+                <a href="{% url 'interview-calendar' %}"
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'interview-calendar' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Calendar</a>
+                <a href="{% url 'analytics-dashboard' %}"
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'analytics-dashboard' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Analytics</a>
                 <a href="{% url 'inbox' %}"
-                    class="block mt-4 lg:inline-block lg:mt-0 text-blue-200 hover:text-white mr-4">
-                    Messages
-                </a>
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'inbox' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Messages</a>
                 <a href="{% url 'consultant-list' %}"
-                    class="block mt-4 lg:inline-block lg:mt-0 text-blue-200 hover:text-white mr-4">
-                    Consultants
-                </a>
-                <a href="{% url 'settings-dashboard' %}"
-                    class="block mt-4 lg:inline-block lg:mt-0 text-blue-200 hover:text-white mr-4 font-bold">
-                    ⚙️ Settings
-                </a>
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'consultant-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Consultants</a>
+                <a href="{% url 'employee-list' %}"
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'employee-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Employees</a>
 
                 {% elif user.role == 'EMPLOYEE' %}
                 {# --- EMPLOYEE NAV --- #}
                 <a href="{% url 'employee-dashboard' %}"
-                    class="block mt-4 lg:inline-block lg:mt-0 text-blue-200 hover:text-white mr-4">
-                    Dashboard
-                </a>
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'employee-dashboard' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Dashboard</a>
                 <a href="{% url 'job-list' %}"
-                    class="block mt-4 lg:inline-block lg:mt-0 text-blue-200 hover:text-white mr-4">
-                    Jobs
-                </a>
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'job-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Jobs</a>
                 <a href="{% url 'submission-list' %}"
-                    class="block mt-4 lg:inline-block lg:mt-0 text-blue-200 hover:text-white mr-4">
-                    Applications
-                </a>
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'submission-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Applications</a>
+                <a href="{% url 'interview-list' %}"
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'interview-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Interviews</a>
+                <a href="{% url 'interview-calendar' %}"
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'interview-calendar' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Calendar</a>
                 <a href="{% url 'inbox' %}"
-                    class="block mt-4 lg:inline-block lg:mt-0 text-blue-200 hover:text-white mr-4">
-                    Messages
-                </a>
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'inbox' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Messages</a>
                 <a href="{% url 'consultant-list' %}"
-                    class="block mt-4 lg:inline-block lg:mt-0 text-blue-200 hover:text-white mr-4">
-                    Consultants
-                </a>
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'consultant-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Consultants</a>
                 <a href="{% url 'analytics-dashboard' %}"
-                    class="block mt-4 lg:inline-block lg:mt-0 text-blue-200 hover:text-white mr-4">
-                    Analytics
-                </a>
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'analytics-dashboard' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Analytics</a>
 
                 {% elif user.role == 'CONSULTANT' %}
                 {# --- CONSULTANT NAV --- #}
                 <a href="{% url 'consultant-dashboard' %}"
-                    class="block mt-4 lg:inline-block lg:mt-0 text-blue-200 hover:text-white mr-4">
-                    Dashboard
-                </a>
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'consultant-dashboard' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Dashboard</a>
                 <a href="{% url 'job-list' %}"
-                    class="block mt-4 lg:inline-block lg:mt-0 text-blue-200 hover:text-white mr-4">
-                    Jobs
-                </a>
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'job-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Jobs</a>
                 <a href="{% url 'submission-list' %}"
-                    class="block mt-4 lg:inline-block lg:mt-0 text-blue-200 hover:text-white mr-4">
-                    Applications
-                </a>
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'submission-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Applications</a>
+                <a href="{% url 'interview-list' %}"
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'interview-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Interviews</a>
                 <a href="{% url 'inbox' %}"
-                    class="block mt-4 lg:inline-block lg:mt-0 text-blue-200 hover:text-white mr-4">
-                    Messages
-                </a>
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'inbox' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Messages</a>
                 <a href="{% url 'consultant-list' %}"
-                    class="block mt-4 lg:inline-block lg:mt-0 text-blue-200 hover:text-white mr-4">
-                    Consultants
-                </a>
-                <a href="{% url 'saved-jobs' %}"
-                    class="block mt-4 lg:inline-block lg:mt-0 text-blue-200 hover:text-white mr-4">
-                    Saved Jobs
-                </a>
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'consultant-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Consultants</a>
 
                 {% endif %}
+                {% endwith %}
                 {% endif %}
             </div>
-            <div>
+            <div class="flex lg:hidden items-center gap-4 mt-4 pt-4 border-t border-blue-500/50 w-full">
                 {% if user.is_authenticated %}
-                <span class="text-blue-200 mr-4">Welcome, {{ user.username }}</span>
-                <a href="{% url 'password_change' %}" class="text-blue-200 hover:text-white mr-4 text-sm">Change
-                    Password</a>
+                <a href="{% url 'password_change' %}" class="text-blue-100 hover:text-white text-sm">Change password</a>
                 <form action="{% url 'logout' %}" method="post" class="inline">
                     {% csrf_token %}
-                    <button type="submit"
-                        class="inline-block text-sm px-4 py-2 leading-none border rounded text-white border-white hover:border-transparent hover:text-blue-500 hover:bg-white mt-4 lg:mt-0">Logout</button>
+                    <button type="submit" class="text-blue-100 hover:text-white text-sm">Logout</button>
                 </form>
                 {% else %}
-                <a href="{% url 'login' %}"
-                    class="inline-block text-sm px-4 py-2 leading-none border rounded text-white border-white hover:border-transparent hover:text-blue-500 hover:bg-white mt-4 lg:mt-0">Login</a>
+                <a href="{% url 'login' %}" class="text-blue-100 hover:text-white text-sm">Login</a>
                 {% endif %}
             </div>
+        </div>
+        <div class="hidden lg:flex items-center ml-auto flex-shrink-0">
+            {% if user.is_authenticated %}
+            <div class="relative" x-data="{ profileOpen: false }" @keydown.escape.window="profileOpen = false">
+                <button type="button"
+                    @click="profileOpen = !profileOpen"
+                    class="inline-flex items-center justify-center h-10 w-10 rounded-full bg-blue-700 text-white font-bold shadow-sm border border-blue-500 hover:bg-blue-800 transition"
+                    aria-label="Open profile menu"
+                    :aria-expanded="profileOpen">
+                    {{ user.username|slice:":1"|upper }}
+                </button>
+
+                <div x-show="profileOpen" x-transition.origin.top.right @click.outside="profileOpen = false"
+                    class="absolute right-0 mt-3 w-56 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-50">
+                    <div class="px-4 py-3 border-b border-gray-100">
+                        <div class="text-sm font-semibold text-gray-900 truncate">
+                            {{ user.get_full_name|default:user.username }}
+                        </div>
+                        <div class="text-xs text-gray-500 truncate">{{ user.email|default:"" }}</div>
+                    </div>
+
+                    <div class="py-1">
+                        {% if user.role == 'CONSULTANT' %}
+                        <a href="{% url 'consultant-detail' pk=user.pk %}"
+                            class="block px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
+                            Profile settings
+                        </a>
+                        {% elif user.is_superuser or user.role == 'ADMIN' %}
+                        <a href="{% url 'settings-dashboard' %}"
+                            class="block px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
+                            Platform settings
+                        </a>
+                        {% endif %}
+
+                        <a href="{% url 'password_change' %}"
+                            class="block px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
+                            Change password
+                        </a>
+                    </div>
+
+                    <div class="border-t border-gray-100">
+                        <form action="{% url 'logout' %}" method="post">
+                            {% csrf_token %}
+                            <button type="submit"
+                                class="w-full text-left px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50">
+                                Logout
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <a href="{% url 'login' %}"
+                class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-blue-600 hover:bg-blue-50 transition">
+                Login
+            </a>
+            {% endif %}
         </div>
     </nav>
 
-    <div class="container mx-auto mt-8 p-4">
-        {% if messages %}
+    {% if messages %}
+    <div aria-live="polite" aria-atomic="true"
+        class="fixed inset-x-0 bottom-4 z-50 flex flex-col items-center space-y-2 px-4 pointer-events-none">
         {% for message in messages %}
-        <div class="bg-blue-100 border-t border-b border-blue-500 text-blue-700 px-4 py-3" role="alert">
-            <p class="font-bold">Message</p>
-            <p class="text-sm">{{ message }}</p>
+        <div
+            class="pointer-events-auto max-w-md w-full rounded-xl px-4 py-3 flex items-start gap-3 toast-enter shadow-lg ring-1
+            {% if message.tags == 'error' %} bg-red-600 text-white ring-red-300/60
+            {% elif message.tags == 'warning' %} bg-amber-500 text-white ring-amber-300/60
+            {% elif message.tags == 'success' %} bg-emerald-600 text-white ring-emerald-300/60
+            {% else %} bg-slate-700 text-white ring-slate-400/60 {% endif %}">
+            <div class="mt-0.5">
+                <svg class="h-5 w-5 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="{% if message.tags == 'error' %}M12 9v4m0 4h.01M10 4h4l1 4h4l-7 12-7-12h4l1-4z{% elif message.tags == 'warning' %}M12 9v4m0 4h.01M10.29 3.86L1.82 18a1 1 0 00.86 1.5h18.64a1 1 0 00.86-1.5L13.71 3.86a1 1 0 00-1.72 0z{% elif message.tags == 'success' %}M5 13l4 4L19 7{% else %}M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 110 20 10 10 0 010-20z{% endif %}">
+                    </path>
+                </svg>
+            </div>
+            <div class="flex-1 text-sm leading-snug">
+                {{ message }}
+            </div>
         </div>
         {% endfor %}
-        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="container mx-auto mt-8 p-4">
 
         {% block content %}
         {% endblock %}
     </div>
+
+<script>
+    // Auto-dismiss toast messages with a subtle fade/slide
+    (function () {
+        const toasts = document.querySelectorAll('.toast-enter');
+        if (!toasts.length) return;
+        toasts.forEach((toast, index) => {
+            const delay = 3500 + index * 300;
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                toast.style.transition = 'opacity 200ms ease, transform 200ms ease';
+                setTimeout(() => toast.remove(), 250);
+            }, delay);
+        });
+    })();
+</script>
 
 </body>
 

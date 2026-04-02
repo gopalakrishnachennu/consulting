@@ -9,7 +9,7 @@
 
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <!-- Employee Management -->
-        <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-blue-500 hover:shadow-lg transition">
+        <div class="bg-white rounded-lg shadow-sm p-6 border-l-4 border-blue-500 hover:shadow-sm transition">
             <div class="flex items-center justify-between mb-4">
                 <h2 class="text-xl font-bold text-gray-800">Employees</h2>
                 <span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded">Access
@@ -24,7 +24,7 @@
         </div>
 
         <!-- Marketing Roles -->
-        <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-purple-500 hover:shadow-lg transition">
+        <div class="bg-white rounded-lg shadow-sm p-6 border-l-4 border-purple-500 hover:shadow-sm transition">
             <div class="flex items-center justify-between mb-4">
                 <h2 class="text-xl font-bold text-gray-800">Marketing Roles</h2>
                 <span
@@ -38,12 +38,26 @@
         </div>
 
         <!-- Platform Config -->
-        <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-green-500 hover:shadow-lg transition">
+        <div class="bg-white rounded-lg shadow-sm p-6 border-l-4 border-green-500 hover:shadow-sm transition">
             <div class="flex items-center justify-between mb-4">
                 <h2 class="text-xl font-bold text-gray-800">Platform Config</h2>
-                <span class="bg-green-100 text-green-800 text-xs font-semibold px-2.5 py-0.5 rounded">Active</span>
+                <span class="bg-green-100 text-green-800 text-xs font-semibold px-2.5 py-0.5 rounded">
+                    {% if maintenance_mode %}Maintenance On{% else %}Active{% endif %}
+                </span>
             </div>
             <p class="text-gray-600 mb-4 h-12">Manage global settings, branding, features, and system controls.</p>
+            <div class="flex items-center justify-between mb-3 text-xs text-gray-500">
+                <span>Consultant Signups:</span>
+                <span class="{% if enable_consultant_registration %}text-green-600{% else %}text-red-600{% endif %}">
+                    {% if enable_consultant_registration %}Enabled{% else %}Disabled{% endif %}
+                </span>
+            </div>
+            <div class="flex items-center justify-between mb-4 text-xs text-gray-500">
+                <span>Job Applications:</span>
+                <span class="{% if enable_job_applications %}text-green-600{% else %}text-red-600{% endif %}">
+                    {% if enable_job_applications %}Enabled{% else %}Disabled{% endif %}
+                </span>
+            </div>
             <a href="{% url 'platform-config' %}"
                 class="block text-center bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition">
                 Configure
@@ -51,20 +65,38 @@
         </div>
 
         <!-- LLM Settings -->
-        <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-indigo-500 hover:shadow-lg transition">
+        <div class="bg-white rounded-lg shadow-sm p-6 border-l-4 border-indigo-500 hover:shadow-sm transition">
             <div class="flex items-center justify-between mb-4">
                 <h2 class="text-xl font-bold text-gray-800">LLM Settings</h2>
                 <span class="bg-indigo-100 text-indigo-800 text-xs font-semibold px-2.5 py-0.5 rounded">AI</span>
             </div>
             <p class="text-gray-600 mb-4 h-12">Configure models, API key, and token limits.</p>
-            <a href="{% url 'llm-config' %}"
-                class="block text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded transition">
-                Edit LLMs
-            </a>
+            <div class="mb-2 text-xs text-gray-500 flex justify-between">
+                <span>Total Calls:</span>
+                <span class="font-semibold text-gray-800">{{ llm_total_calls }}</span>
+            </div>
+            <div class="mb-2 text-xs text-gray-500 flex justify-between">
+                <span>Success:</span>
+                <span class="font-semibold text-green-700">{{ llm_success_calls }}</span>
+            </div>
+            <div class="mb-4 text-xs text-gray-500 flex justify-between">
+                <span>Failed:</span>
+                <span class="font-semibold text-red-700">{{ llm_failed_calls }}</span>
+            </div>
+            <div class="flex gap-2 mb-4">
+                <a href="{% url 'llm-config' %}"
+                    class="flex-1 block text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded transition">
+                    Edit LLMs
+                </a>
+                <a href="{% url 'llm-logs' %}"
+                    class="flex-1 block text-center bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded transition">
+                    View Logs
+                </a>
+            </div>
         </div>
 
         <!-- Prompt Service -->
-        <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-teal-500 hover:shadow-lg transition" style="min-height:220px;display:flex;flex-direction:column;">
+        <div class="bg-white rounded-lg shadow-sm p-6 border-l-4 border-teal-500 hover:shadow-sm transition" style="min-height:220px;display:flex;flex-direction:column;">
             <div class="flex items-center justify-between mb-4">
                 <h2 class="text-xl font-bold text-gray-800">Prompt Service</h2>
                 <span class="bg-teal-100 text-teal-800 text-xs font-semibold px-2.5 py-0.5 rounded">AI</span>
@@ -76,32 +108,8 @@
                 Manage Prompts
             </a>
         </div>
-        <!-- Resume Templates -->
-        <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-indigo-500 hover:shadow-lg transition" style="min-height:220px;display:flex;flex-direction:column;">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-xl font-bold text-gray-800">Resume Templates</h2>
-                <span class="bg-indigo-100 text-indigo-800 text-xs font-semibold px-2.5 py-0.5 rounded">AI</span>
-            </div>
-            <p class="text-gray-600 mb-4 h-12">Define fixed layouts and AI injection rules.</p>
-            <a href="{% url 'resume-template-list' %}"
-                class="mt-auto block text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded transition">
-                Manage Templates
-            </a>
-        </div>
-        <!-- Template Packs -->
-        <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-indigo-500 hover:shadow-lg transition" style="min-height:220px;display:flex;flex-direction:column;">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-xl font-bold text-gray-800">Template Packs</h2>
-                <span class="bg-indigo-100 text-indigo-800 text-xs font-semibold px-2.5 py-0.5 rounded">AI</span>
-            </div>
-            <p class="text-gray-600 mb-4 h-12">Group templates by marketing role.</p>
-            <a href="{% url 'resume-template-pack-list' %}"
-                class="mt-auto block text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded transition">
-                Manage Packs
-            </a>
-        </div>
         <!-- System Health -->
-        <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-red-500 hover:shadow-lg transition">
+        <div class="bg-white rounded-lg shadow-sm p-6 border-l-4 border-red-500 hover:shadow-sm transition">
             <div class="flex items-center justify-between mb-4">
                 <h2 class="text-xl font-bold text-gray-800">System Health</h2>
                 <span class="bg-red-100 text-red-800 text-xs font-semibold px-2.5 py-0.5 rounded">Monitor</span>
@@ -110,6 +118,47 @@
             <a href="{% url 'system-status' %}"
                 class="block text-center bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded transition">
                 Check Status
+            </a>
+        </div>
+
+        <!-- Audit Log -->
+        <div class="bg-white rounded-lg shadow-sm p-6 border-l-4 border-amber-500 hover:shadow-sm transition">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-bold text-gray-800">Audit Log</h2>
+                <span class="bg-amber-100 text-amber-800 text-xs font-semibold px-2.5 py-0.5 rounded">Recent actions</span>
+            </div>
+            <p class="text-gray-600 mb-4 h-12">View recent actions for compliance and tracking.</p>
+            <a href="{% url 'audit-log' %}"
+                class="block text-center bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-4 rounded transition">
+                View Audit Log
+            </a>
+        </div>
+
+        <!-- Data pipeline / Company enrichment -->
+        <div class="bg-white rounded-lg shadow-sm p-6 border-l-4 border-sky-500 hover:shadow-sm transition">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-bold text-gray-800">Data pipeline</h2>
+                <span class="bg-sky-100 text-sky-800 text-xs font-semibold px-2.5 py-0.5 rounded">Enrichment</span>
+            </div>
+            <p class="text-gray-600 mb-4 h-12">Company enrichment status: Clearbit logos and OG scraping. Pending, enriched, stale, failed counts and re-enrich actions.</p>
+            <a href="{% url 'data-pipeline' %}"
+                class="block text-center bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-4 rounded transition">
+                Enrichment status
+            </a>
+        </div>
+
+        <!-- Help & Guides -->
+        <div class="bg-white rounded-lg shadow-sm p-6 border-l-4 border-gray-500 hover:shadow-sm transition">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-bold text-gray-800">Help &amp; Guides</h2>
+                <span class="bg-gray-100 text-gray-800 text-xs font-semibold px-2.5 py-0.5 rounded">Docs</span>
+            </div>
+            <p class="text-gray-600 mb-4 h-12">
+                Step-by-step setup help for IMAP email ingestion, LLM keys, Celery workers, and dashboards.
+            </p>
+            <a href="{% url 'settings-help' %}"
+               class="block text-center bg-gray-800 hover:bg-gray-900 text-white font-bold py-2 px-4 rounded transition">
+                Open Help Center
             </a>
         </div>
     </div>

@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex items-center justify-between mb-6">
+        <h1 class="text-2xl font-bold text-gray-900">Company enrichment status</h1>
+        <a href="{% url 'settings-dashboard' %}" class="text-blue-600 hover:text-blue-800 text-sm font-medium">← Settings</a>
+    </div>
+
+    <p class="text-gray-600 mb-6">
+        Data pipeline: logo (Clearbit) and description/OG from company websites. Counts by enrichment status.
+    </p>
+
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+        <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+            <div class="text-2xl font-bold text-gray-900">{{ total }}</div>
+            <div class="text-xs text-gray-500 uppercase tracking-wide">Total</div>
+        </div>
+        <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+            <div class="text-2xl font-bold text-amber-600">{{ pending }}</div>
+            <div class="text-xs text-gray-500 uppercase tracking-wide">Pending</div>
+        </div>
+        <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+            <div class="text-2xl font-bold text-green-600">{{ enriched }}</div>
+            <div class="text-xs text-gray-500 uppercase tracking-wide">Enriched</div>
+        </div>
+        <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+            <div class="text-2xl font-bold text-orange-600">{{ stale }}</div>
+            <div class="text-xs text-gray-500 uppercase tracking-wide">Stale ({{ stale_cutoff_days }}d+)</div>
+        </div>
+        <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+            <div class="text-2xl font-bold text-red-600">{{ failed }}</div>
+            <div class="text-xs text-gray-500 uppercase tracking-wide">Failed</div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl border border-gray-200 p-5">
+        <h2 class="text-sm font-semibold text-gray-800 mb-3">Actions</h2>
+        <form method="post" action="{% url 'company-enrichment-status' %}" class="inline">
+            {% csrf_token %}
+            <button type="submit" class="inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium bg-amber-100 text-amber-800 border border-amber-200 hover:bg-amber-200">
+                Re-enrich stale ({{ stale }} companies)
+            </button>
+        </form>
+        <p class="mt-2 text-xs text-gray-500">
+            Queues enrichment for companies that were enriched more than {{ stale_cutoff_days }} days ago (or marked stale).
+        </p>
+    </div>
+
+    <div class="mt-6">
+        <a href="{% url 'company-list' %}" class="text-blue-600 hover:text-blue-800 text-sm font-medium">View all companies →</a>
+    </div>
+</div>
+{% endblock %}

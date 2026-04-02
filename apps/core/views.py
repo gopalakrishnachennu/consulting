@@ -3,13 +3,18 @@ from django.views.generic import TemplateView, UpdateView, View, ListView, Detai
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db.models import Count, Q, Sum
 from django.urls import reverse_lazy
-from django.contrib import messages
 from django.utils import timezone
 from datetime import timedelta
-from users.models import User
+from django.contrib import messages
+from django.http import JsonResponse
+from django.core.serializers.json import DjangoJSONEncoder
+import json
+
+from users.models import User, ConsultantProfile
 from jobs.models import Job
 from submissions.models import ApplicationSubmission
-from .models import PlatformConfig, LLMConfig, LLMUsageLog
+from resumes.models import ResumeDraft
+from .models import PlatformConfig, LLMConfig, LLMUsageLog, AuditLog, PipelineRunLog
 from .forms import PlatformConfigForm, LLMConfigForm
 from .monitor import SystemMonitor
 from .security import decrypt_value
@@ -20,6 +25,7 @@ class AdminRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
         return self.request.user.is_superuser or self.request.user.role == 'ADMIN'
 
+
 class SystemStatusView(AdminRequiredMixin, TemplateView):
     template_name = 'settings/system_status.html'
 
@@ -28,6 +34,33 @@ class SystemStatusView(AdminRequiredMixin, TemplateView):
         monitor = SystemMonitor()
         context['health_check'] = monitor.check_all()
         return context
+
+
+class HealthcheckJSONView(View):
+    """
+    Lightweight JSON health endpoint for uptime checks.
+
+    Always returns HTTP 200 with a JSON payload containing:
+    - overall: 'ok' or 'degraded'
+    - database: status block
+    - pages: list of page status blocks
+    """
+
+    def get(self, request, *args, **kwargs):
+        monitor = SystemMonitor()
+        health = monitor.check_all()
+
+        db_ok = health["database"]["status"] == "Operational"
+        pages_ok = all(p["status"] == "Operational" for p in health["pages"])
+        overall = "ok" if (db_ok and pages_ok) else "degraded"
+
+        return JsonResponse(
+            {
+                "overall": overall,
+                "database": health["database"],
+                "pages": health["pages"],
+            }
+        )
 
 class PlatformConfigView(AdminRequiredMixin, UpdateView):
     model = PlatformConfig
@@ -38,9 +71,102 @@ class PlatformConfigView(AdminRequiredMixin, UpdateView):
     def get_object(self, queryset=None):
         return PlatformConfig.load()
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        logs = {"validate_company_links": None, "validate_job_urls": None, "re_enrich_stale": None, "full_re_enrich": None}
+        for log in PipelineRunLog.objects.all():
+            logs[log.task_name] = log
+        context["pipeline_run_logs"] = logs
+        return context
+
     def form_valid(self, form):
         messages.success(self.request, "Platform configuration updated successfully.")
         return super().form_valid(form)
+
+
+class DataPipelineDashboardView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
+    """
+    Phase 5: Single place to operate and monitor the company data pipeline.
+    Tabs: Ingestion, Enrichment status, Duplicate review, URL validation, Pipeline logs.
+    """
+    template_name = 'settings/data_pipeline.html'
+
+    def test_func(self):
+        u = self.request.user
+        return u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE)
+
+    def get_context_data(self, **kwargs):
+        from companies.models import Company
+        from companies.tasks import enrich_company_task
+
+        context = super().get_context_data(**kwargs)
+        config = PlatformConfig.load()
+
+        # Tab 1: Ingestion
+        context['auto_enrich_on_create'] = getattr(config, 'auto_enrich_on_create', True)
+
+        # Tab 2: Enrichment status
+        now = timezone.now()
+        stale_cutoff = now - timezone.timedelta(days=90)
+        context['company_total'] = Company.objects.count()
+        context['company_pending'] = Company.objects.filter(enrichment_status=Company.EnrichmentStatus.PENDING).count()
+        context['company_enriched'] = Company.objects.filter(enrichment_status=Company.EnrichmentStatus.ENRICHED).count()
+        context['company_failed'] = Company.objects.filter(enrichment_status=Company.EnrichmentStatus.FAILED).count()
+        context['company_stale'] = Company.objects.filter(
+            Q(enrichment_status=Company.EnrichmentStatus.ENRICHED, enriched_at__lt=stale_cutoff)
+            | Q(enrichment_status=Company.EnrichmentStatus.STALE)
+        ).count()
+        context['stale_cutoff_days'] = 90
+
+        # Tab 4: URL validation
+        logs = {"validate_company_links": None, "validate_job_urls": None, "re_enrich_stale": None, "full_re_enrich": None}
+        for log in PipelineRunLog.objects.all():
+            logs[log.task_name] = log
+        context['pipeline_run_logs'] = logs
+        context['invalid_website_count'] = Company.objects.filter(
+            website__isnull=False
+        ).exclude(website="").filter(website_is_valid=False).count()
+        context['possibly_filled_count'] = Job.objects.filter(possibly_filled=True).count()
+
+        # Tab 5: Pipeline logs
+        context['pipeline_logs'] = PipelineRunLog.objects.order_by('-last_run_at')[:50]
+
+        return context
+
+    def post(self, request, *args, **kwargs):
+        """Handle Re-enrich stale action."""
+        from companies.models import Company
+        from companies.tasks import enrich_company_task
+
+        now = timezone.now()
+        stale_cutoff = now - timezone.timedelta(days=90)
+        stale_ids = list(
+            Company.objects.filter(
+                Q(enrichment_status=Company.EnrichmentStatus.ENRICHED, enriched_at__lt=stale_cutoff)
+                | Q(enrichment_status=Company.EnrichmentStatus.STALE)
+            ).values_list("pk", flat=True)
+        )
+        for pk in stale_ids:
+            enrich_company_task.delay(pk)
+        messages.success(request, f"Re-enrichment queued for {len(stale_ids)} stale companies.")
+        return redirect("data-pipeline")
+
+
+class AuditLogListView(AdminRequiredMixin, ListView):
+    model = AuditLog
+    template_name = 'settings/audit_log.html'
+    context_object_name = 'audit_logs'
+    paginate_by = 50
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related('actor')
+        action = self.request.GET.get('action')
+        target = self.request.GET.get('target_model')
+        if action:
+            qs = qs.filter(action__icontains=action)
+        if target:
+            qs = qs.filter(target_model__icontains=target)
+        return qs
 
 
 class LLMConfigView(AdminRequiredMixin, View):
@@ -175,6 +301,15 @@ class LLMLogDetailView(AdminRequiredMixin, DetailView):
     context_object_name = 'log'
 
 
+class HelpCenterView(AdminRequiredMixin, TemplateView):
+    """
+    Admin-only Help Center that explains how to configure critical services
+    like IMAP email ingestion, LLMs, and background workers.
+    """
+
+    template_name = 'settings/help.html'
+
+
 def home(request):
     """Smart redirect: send each role to their own dashboard."""
     if not request.user.is_authenticated:
@@ -198,14 +333,880 @@ class AdminDashboardView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        # Top-level KPIs
         context['total_jobs'] = Job.objects.count()
-        context['active_jobs'] = Job.objects.filter(status='OPEN').count()
+        context['active_jobs'] = Job.objects.filter(status=Job.Status.OPEN).count()
         context['total_consultants'] = User.objects.filter(role=User.Role.CONSULTANT).count()
         context['total_employees'] = User.objects.filter(role=User.Role.EMPLOYEE).count()
         context['total_applications'] = ApplicationSubmission.objects.count()
-        context['recent_jobs'] = Job.objects.order_by('-created_at')[:5]
-        context['recent_applications'] = ApplicationSubmission.objects.select_related('job', 'consultant').order_by('-created_at')[:5]
+        context['pending_applications_count'] = ApplicationSubmission.objects.filter(
+            status=ApplicationSubmission.Status.APPLIED
+        ).count()
+
+        # Recent activity (Overview tab)
+        context['recent_jobs'] = Job.objects.select_related('posted_by').order_by('-created_at')[:5]
+        context['recent_applications'] = ApplicationSubmission.objects.select_related(
+            'job', 'consultant__user'
+        ).order_by('-created_at')[:5]
+
+        # Employee lens: per-employee micro stats (jobs posted, open, apps received, pending)
+        employees = User.objects.filter(role=User.Role.EMPLOYEE).select_related(
+            'employee_profile', 'employee_profile__department'
+        ).annotate(
+            jobs_posted=Count('posted_jobs'),
+            open_jobs=Count('posted_jobs', filter=Q(posted_jobs__status=Job.Status.OPEN)),
+        ).order_by('first_name', 'last_name')
+        app_counts = ApplicationSubmission.objects.filter(
+            job__posted_by__role=User.Role.EMPLOYEE
+        ).values('job__posted_by').annotate(
+            apps_received=Count('id'),
+            pending=Count('id', filter=Q(status=ApplicationSubmission.Status.APPLIED)),
+        )
+        app_by_employee = {r['job__posted_by']: r for r in app_counts}
+        context['employee_stats'] = [
+            {
+                'user': e,
+                'jobs_posted': e.jobs_posted,
+                'open_jobs': e.open_jobs,
+                'apps_received': app_by_employee.get(e.pk, {}).get('apps_received', 0),
+                'pending': app_by_employee.get(e.pk, {}).get('pending', 0),
+            }
+            for e in employees
+        ]
+
+        # Consultant lens: per-consultant micro stats (applications by stage)
+        consultants = ConsultantProfile.objects.select_related('user').annotate(
+            total_apps=Count('submissions'),
+            in_progress=Count('submissions', filter=Q(submissions__status=ApplicationSubmission.Status.IN_PROGRESS)),
+            applied=Count('submissions', filter=Q(submissions__status=ApplicationSubmission.Status.APPLIED)),
+            interview=Count('submissions', filter=Q(submissions__status=ApplicationSubmission.Status.INTERVIEW)),
+            offer=Count('submissions', filter=Q(submissions__status=ApplicationSubmission.Status.OFFER)),
+            rejected=Count('submissions', filter=Q(submissions__status=ApplicationSubmission.Status.REJECTED)),
+        ).order_by('user__first_name', 'user__last_name')
+        context['consultant_stats'] = list(consultants)
+
+        # --- Analytics That Matter (admin-only) ---
+        context.update(self._get_submission_funnel_data())
+        context.update(self._get_consultant_performance_data())
+        context.update(self._get_time_to_hire_data())
+        context.update(self._get_employee_leaderboard_data())
+        context.update(self._get_market_intelligence_data())
+        context.update(self._get_consultant_roi_data())
+        context.update(self._get_submission_quality_data())
+
         return context
+
+    def _get_submission_funnel_data(self):
+        """Submission Funnel: Resumes → Submitted → Interview → Hired, with drop-off per employee."""
+        AS = ApplicationSubmission
+        resumes_generated = ResumeDraft.objects.count()
+        submitted = AS.objects.filter(
+            status__in=[
+                AS.Status.APPLIED,
+                AS.Status.INTERVIEW,
+                AS.Status.OFFER,
+                AS.Status.REJECTED,
+                AS.Status.WITHDRAWN,
+            ]
+        ).count()
+        interview_stage = AS.objects.filter(status__in=[AS.Status.INTERVIEW, AS.Status.OFFER]).count()
+        hired = AS.objects.filter(status=AS.Status.OFFER).count()
+        rejected = AS.objects.filter(status=AS.Status.REJECTED).count()
+
+        def pct(prev, curr):
+            if not prev:
+                return None
+            return round((curr / prev) * 100)
+
+        funnel_global = {
+            'resumes': resumes_generated,
+            'submitted': submitted,
+            'interview': interview_stage,
+            'hired': hired,
+            'rejected': rejected,
+            'drop_off_resumes_to_submitted': (resumes_generated - submitted) if resumes_generated else 0,
+            'drop_off_submitted_to_interview': (submitted - interview_stage) if submitted else 0,
+            'drop_off_interview_to_hired': (interview_stage - hired) if interview_stage else 0,
+            'conv_resumes_to_submitted_pct': pct(resumes_generated, submitted),
+            'conv_submitted_to_interview_pct': pct(submitted, interview_stage),
+            'conv_interview_to_hired_pct': pct(interview_stage, hired),
+            'rejection_rate_submitted_pct': pct(submitted, rejected),
+        }
+
+        employees = User.objects.filter(role=User.Role.EMPLOYEE).select_related('employee_profile')
+        employee_funnels = []
+        for emp in employees:
+            job_ids = Job.objects.filter(posted_by=emp).values_list('id', flat=True)
+            if not job_ids:
+                employee_funnels.append(
+                    {
+                        'user': emp,
+                        'resumes': 0,
+                        'submitted': 0,
+                        'interview': 0,
+                        'hired': 0,
+                        'rejected': 0,
+                        'drop_off_resumes_to_submitted': 0,
+                        'drop_off_submitted_to_interview': 0,
+                        'drop_off_interview_to_hired': 0,
+                        'conv_resumes_to_submitted_pct': None,
+                        'conv_submitted_to_interview_pct': None,
+                        'conv_interview_to_hired_pct': None,
+                        'rejection_rate_submitted_pct': None,
+                    }
+                )
+                continue
+            r = ResumeDraft.objects.filter(job_id__in=job_ids).count()
+            sub = AS.objects.filter(
+                job_id__in=job_ids,
+                status__in=[
+                    AS.Status.APPLIED,
+                    AS.Status.INTERVIEW,
+                    AS.Status.OFFER,
+                    AS.Status.REJECTED,
+                    AS.Status.WITHDRAWN,
+                ],
+            ).count()
+            intr = AS.objects.filter(job_id__in=job_ids, status__in=[AS.Status.INTERVIEW, AS.Status.OFFER]).count()
+            h = AS.objects.filter(job_id__in=job_ids, status=AS.Status.OFFER).count()
+            rej = AS.objects.filter(job_id__in=job_ids, status=AS.Status.REJECTED).count()
+            employee_funnels.append(
+                {
+                    'user': emp,
+                    'resumes': r,
+                    'submitted': sub,
+                    'interview': intr,
+                    'hired': h,
+                    'rejected': rej,
+                    'drop_off_resumes_to_submitted': (r - sub) if r else 0,
+                    'drop_off_submitted_to_interview': (sub - intr) if sub else 0,
+                    'drop_off_interview_to_hired': (intr - h) if intr else 0,
+                    'conv_resumes_to_submitted_pct': pct(r, sub),
+                    'conv_submitted_to_interview_pct': pct(sub, intr),
+                    'conv_interview_to_hired_pct': pct(intr, h),
+                    'rejection_rate_submitted_pct': pct(sub, rej),
+                }
+            )
+
+        return {'funnel_global': funnel_global, 'funnel_by_employee': employee_funnels}
+
+    def _get_consultant_performance_data(self):
+        """Consultant Performance Score: interview rate, hire rate, response time (avg days to outcome)."""
+        AS = ApplicationSubmission
+        consultants = ConsultantProfile.objects.select_related('user').annotate(
+            total_sub=Count('submissions'),
+            interview_count=Count(
+                'submissions',
+                filter=Q(submissions__status__in=[AS.Status.INTERVIEW, AS.Status.OFFER]),
+            ),
+            offer_count=Count('submissions', filter=Q(submissions__status=AS.Status.OFFER)),
+            rejected_count=Count('submissions', filter=Q(submissions__status=AS.Status.REJECTED)),
+        )
+        consultant_perf = []
+        for c in consultants:
+            total = c.total_sub
+            if total == 0:
+                consultant_perf.append(
+                    {
+                        'consultant': c,
+                        'total_submissions': 0,
+                        'interview_rate_pct': None,
+                        'hire_rate_pct': None,
+                        'rejected_count': c.rejected_count,
+                        'rejection_rate_pct': None,
+                        'avg_response_days': None,
+                        'performance_score': None,
+                    }
+                )
+                continue
+            interview_rate = round((c.interview_count / total) * 100)
+            hire_rate = round((c.offer_count / total) * 100)
+            rejection_rate = round((c.rejected_count / total) * 100) if total else None
+            subs_with_response = list(
+                AS.objects.filter(
+                    consultant=c,
+                    submitted_at__isnull=False,
+                    status__in=[
+                        AS.Status.INTERVIEW,
+                        AS.Status.OFFER,
+                        AS.Status.REJECTED,
+                    ],
+                ).values_list('submitted_at', 'updated_at')
+            )
+            if subs_with_response:
+                days_list = [(u - s).total_seconds() / 86400 for s, u in subs_with_response if u and s]
+                avg_days = sum(days_list) / len(days_list) if days_list else None
+            else:
+                avg_days = None
+            score = min(interview_rate * 0.4, 40) + min(hire_rate * 0.5, 50)
+            if avg_days is not None and avg_days <= 14:
+                score += 10
+            performance_score = min(100, round(score))
+            consultant_perf.append(
+                {
+                    'consultant': c,
+                    'total_submissions': total,
+                    'interview_rate_pct': interview_rate,
+                    'hire_rate_pct': hire_rate,
+                    'rejected_count': c.rejected_count,
+                    'rejection_rate_pct': rejection_rate,
+                    'avg_response_days': round(avg_days, 1) if avg_days is not None else None,
+                    'performance_score': performance_score,
+                }
+            )
+        consultant_perf.sort(key=lambda x: (x['performance_score'] is None, -(x['performance_score'] or 0)))
+        return {'consultant_performance': consultant_perf}
+
+    def _get_time_to_hire_data(self):
+        """Time-to-Hire: average days per stage (Resume→Submit, Submit→Interview, Submit→Offer) and bottlenecks."""
+        AS = ApplicationSubmission
+        try:
+            from interviews_app.models import Interview
+        except ImportError:
+            Interview = None
+
+        submissions_with_submit = AS.objects.filter(submitted_at__isnull=False).select_related(
+            'consultant', 'job'
+        )
+        stage1_days_list = []
+        for sub in submissions_with_submit:
+            first_draft = (
+                ResumeDraft.objects.filter(consultant=sub.consultant, job=sub.job)
+                .order_by('created_at')
+                .first()
+            )
+            if first_draft and sub.submitted_at:
+                delta = sub.submitted_at - first_draft.created_at
+                if delta.total_seconds() >= 0:
+                    stage1_days_list.append(delta.total_seconds() / 86400)
+        avg_draft_to_submit = round(sum(stage1_days_list) / len(stage1_days_list), 1) if stage1_days_list else None
+
+        stage2_days_list = []
+        if Interview is not None:
+            for sub in AS.objects.filter(
+                status__in=[AS.Status.INTERVIEW, AS.Status.OFFER],
+                submitted_at__isnull=False,
+            ):
+                first_int = Interview.objects.filter(submission=sub).order_by('scheduled_at').first()
+                if first_int and sub.submitted_at:
+                    delta = first_int.scheduled_at - sub.submitted_at
+                    secs = getattr(
+                        delta, 'total_seconds', lambda: delta.days * 86400 + delta.seconds
+                    )()
+                    if secs >= 0:
+                        stage2_days_list.append(secs / 86400)
+            avg_submit_to_interview = (
+                round(sum(stage2_days_list) / len(stage2_days_list), 1) if stage2_days_list else None
+            )
+        else:
+            avg_submit_to_interview = None
+
+        offer_subs = AS.objects.filter(status=AS.Status.OFFER, submitted_at__isnull=False)
+        stage3_days_list = []
+        for sub in offer_subs:
+            delta = sub.updated_at - sub.submitted_at
+            if delta.total_seconds() >= 0:
+                stage3_days_list.append(delta.total_seconds() / 86400)
+        avg_submit_to_offer = round(sum(stage3_days_list) / len(stage3_days_list), 1) if stage3_days_list else None
+
+        stages = [
+            ('Draft → Submit', avg_draft_to_submit),
+            ('Submit → Interview', avg_submit_to_interview),
+            ('Submit → Offer', avg_submit_to_offer),
+        ]
+        valid_stages = [(n, d) for n, d in stages if d is not None]
+        bottleneck = max(valid_stages, key=lambda x: x[1])[0] if valid_stages else None
+
+        return {
+            'time_to_hire_avg_draft_to_submit': avg_draft_to_submit,
+            'time_to_hire_avg_submit_to_interview': avg_submit_to_interview,
+            'time_to_hire_avg_submit_to_offer': avg_submit_to_offer,
+            'time_to_hire_stages': stages,
+            'time_to_hire_bottleneck': bottleneck,
+        }
+
+    def _get_employee_leaderboard_data(self):
+        """Employee Leaderboard: rank by submission-to-interview rate and hire count."""
+        AS = ApplicationSubmission
+        employees = User.objects.filter(role=User.Role.EMPLOYEE).select_related('employee_profile')
+        rows = []
+        for emp in employees:
+            job_ids = list(Job.objects.filter(posted_by=emp).values_list('id', flat=True))
+            if not job_ids:
+                rows.append(
+                    {
+                        'user': emp,
+                        'submissions': 0,
+                        'interviews': 0,
+                        'hires': 0,
+                        'sub_to_interview_rate_pct': None,
+                        'rejections': 0,
+                        'rejection_rate_pct': None,
+                    }
+                )
+                continue
+            sub = AS.objects.filter(
+                job_id__in=job_ids,
+                status__in=[
+                    AS.Status.APPLIED,
+                    AS.Status.INTERVIEW,
+                    AS.Status.OFFER,
+                    AS.Status.REJECTED,
+                    AS.Status.WITHDRAWN,
+                ],
+            ).count()
+            intr = AS.objects.filter(job_id__in=job_ids, status__in=[AS.Status.INTERVIEW, AS.Status.OFFER]).count()
+            h = AS.objects.filter(job_id__in=job_ids, status=AS.Status.OFFER).count()
+            rej = AS.objects.filter(job_id__in=job_ids, status=AS.Status.REJECTED).count()
+            rate = round((intr / sub) * 100) if sub else None
+            rej_rate = round((rej / sub) * 100) if sub else None
+            rows.append(
+                {
+                    'user': emp,
+                    'submissions': sub,
+                    'interviews': intr,
+                    'hires': h,
+                    'rejections': rej,
+                    'sub_to_interview_rate_pct': rate,
+                    'rejection_rate_pct': rej_rate,
+                }
+            )
+        rows.sort(
+            key=lambda x: (
+                x['sub_to_interview_rate_pct'] is None,
+                -(x['sub_to_interview_rate_pct'] or 0),
+                -x['hires'],
+                -x['interviews'],
+            )
+        )
+        for i, r in enumerate(rows, 1):
+            r['rank'] = i
+        return {'employee_leaderboard': rows}
+
+    def _get_market_intelligence_data(self):
+        """Market Intelligence: skills/roles in demand, top companies, salary by role."""
+        from users.models import MarketingRole
+        jobs = Job.objects.filter(status=Job.Status.OPEN).prefetch_related('marketing_roles')
+        role_counts = {}
+        for job in jobs:
+            for role in job.marketing_roles.all():
+                role_counts[role.name] = role_counts.get(role.name, 0) + 1
+        top_roles = sorted(
+            [{'name': k, 'job_count': v} for k, v in role_counts.items()],
+            key=lambda x: -x['job_count'],
+        )[:15]
+        company_counts = list(
+            Job.objects.filter(status=Job.Status.OPEN)
+            .values('company')
+            .annotate(job_count=Count('id'))
+            .order_by('-job_count')[:15]
+        )
+        salary_by_role = {}
+        for job in Job.objects.filter(status=Job.Status.OPEN).prefetch_related('marketing_roles'):
+            for role in job.marketing_roles.all():
+                name = role.name
+                if name not in salary_by_role:
+                    salary_by_role[name] = []
+                if job.salary_range and job.salary_range.strip():
+                    salary_by_role[name].append(job.salary_range.strip())
+        for k in salary_by_role:
+            salary_by_role[k] = list(dict.fromkeys(salary_by_role[k]))[:5]
+        job_type_qs = Job.objects.filter(status=Job.Status.OPEN).values('job_type').annotate(c=Count('id'))
+        job_type_labels = dict(Job.JobType.choices)
+        job_type_counts = [
+            (row['job_type'], job_type_labels.get(row['job_type'], row['job_type']), row['c']) for row in job_type_qs
+        ]
+        return {
+            'market_top_roles': top_roles,
+            'market_top_companies': company_counts,
+            'market_salary_by_role': salary_by_role,
+            'market_job_type_breakdown': job_type_counts,
+        }
+
+    def _get_consultant_roi_data(self):
+        """Consultant ROI Score: submissions, interviews, placements, revenue proxy."""
+        AS = ApplicationSubmission
+        consultants = ConsultantProfile.objects.select_related('user').annotate(
+            total_sub=Count('submissions'),
+            interview_count=Count(
+                'submissions',
+                filter=Q(submissions__status__in=[AS.Status.INTERVIEW, AS.Status.OFFER]),
+            ),
+            placements=Count('submissions', filter=Q(submissions__status=AS.Status.OFFER)),
+            rejected_count=Count('submissions', filter=Q(submissions__status=AS.Status.REJECTED)),
+        )
+        roi_list = []
+        for c in consultants:
+            revenue_proxy = None
+            if c.placements and c.hourly_rate:
+                try:
+                    revenue_proxy = float(c.placements) * float(c.hourly_rate) * 40
+                except (TypeError, ValueError):
+                    pass
+            total = c.total_sub
+            place = c.placements or 0
+            intr = c.interview_count or 0
+            interview_rate = (intr / total * 100) if total else 0
+            score = min(place * 25, 50)
+            score += min(interview_rate * 0.3, 25)
+            score += min(total * 0.5, 25)
+            roi_score = min(100, round(score))
+            roi_list.append(
+                {
+                    'consultant': c,
+                    'total_submissions': total,
+                    'interviews': intr,
+                    'placements': place,
+                    'rejections': c.rejected_count,
+                    'revenue_generated': round(revenue_proxy, 0) if revenue_proxy is not None else None,
+                    'roi_score': roi_score,
+                }
+            )
+        roi_list.sort(key=lambda x: (-x['roi_score'], -x['placements'], -x['total_submissions']))
+        return {'consultant_roi': roi_list}
+
+    def _get_submission_quality_data(self):
+        """
+        Submission Quality Score per employee:
+        quality = interviews / submissions * 100 (INTERVIEW or OFFER).
+        """
+        AS = ApplicationSubmission
+        employees = User.objects.filter(role=User.Role.EMPLOYEE, is_active=True)
+        by_id = {u.pk: u for u in employees}
+
+        agg = (
+            AS.objects.filter(submitted_by__in=employees)
+            .values('submitted_by')
+            .annotate(
+                submissions=Count('id'),
+                interviews=Count('id', filter=Q(status__in=[AS.Status.INTERVIEW, AS.Status.OFFER])),
+            )
+        )
+        rows = []
+        for row in agg:
+            user = by_id.get(row['submitted_by'])
+            if not user:
+                continue
+            subs = row['submissions'] or 0
+            intr = row['interviews'] or 0
+            quality = round((intr / subs) * 100) if subs else None
+            rows.append(
+                {
+                    'user': user,
+                    'submissions': subs,
+                    'interviews': intr,
+                    'quality_pct': quality,
+                }
+            )
+        rows.sort(key=lambda r: (r['quality_pct'] is None, -(r['quality_pct'] or 0)))
+        return {'submission_quality': rows}
+
+
+class WarRoomDashboardView(AdminRequiredMixin, TemplateView):
+    """
+    Real-time style 'War Room' overview for admins during hiring pushes.
+    Focused on today's activity plus currently active submissions.
+    """
+    template_name = 'core/war_room.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        now = timezone.now()
+        start_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        # Active submissions (not terminal)
+        active_statuses = [
+            ApplicationSubmission.Status.IN_PROGRESS,
+            ApplicationSubmission.Status.APPLIED,
+            ApplicationSubmission.Status.INTERVIEW,
+            ApplicationSubmission.Status.OFFER,
+        ]
+        active_subs = (
+            ApplicationSubmission.objects.select_related(
+                'job', 'consultant__user', 'job__posted_by'
+            )
+            .filter(status__in=active_statuses)
+            .order_by('-updated_at')[:50]
+        )
+
+        # Final rounds: interview / offer
+        final_rounds = (
+            ApplicationSubmission.objects.select_related(
+                'job', 'consultant__user', 'job__posted_by'
+            )
+            .filter(status__in=[ApplicationSubmission.Status.INTERVIEW, ApplicationSubmission.Status.OFFER])
+            .order_by('-updated_at')[:50]
+        )
+
+        # Employees most active today (jobs + submissions touching today)
+        employees = (
+            User.objects.filter(role=User.Role.EMPLOYEE)
+            .annotate(
+                submissions_today=Count(
+                    'submitted_applications',
+                    filter=Q(submitted_applications__updated_at__gte=start_day),
+                ),
+                jobs_today=Count(
+                    'posted_jobs',
+                    filter=Q(posted_jobs__created_at__gte=start_day),
+                ),
+            )
+        )
+        employee_activity = []
+        for e in employees:
+            total_actions = (e.submissions_today or 0) + (e.jobs_today or 0)
+            if total_actions == 0:
+                continue
+            employee_activity.append(
+                {
+                    'user': e,
+                    'submissions_today': e.submissions_today or 0,
+                    'jobs_today': e.jobs_today or 0,
+                    'total_actions': total_actions,
+                }
+            )
+        employee_activity.sort(key=lambda x: -x['total_actions'])
+
+        # Alerts: stale applications needing attention
+        three_days_ago = now - timedelta(days=3)
+        two_days_ago = now - timedelta(days=2)
+        stale_applied = (
+            ApplicationSubmission.objects.select_related('job', 'consultant__user', 'job__posted_by')
+            .filter(
+                status=ApplicationSubmission.Status.APPLIED,
+                updated_at__lte=three_days_ago,
+            )
+            .order_by('updated_at')[:25]
+        )
+        stale_in_progress = (
+            ApplicationSubmission.objects.select_related('job', 'consultant__user', 'job__posted_by')
+            .filter(
+                status=ApplicationSubmission.Status.IN_PROGRESS,
+                updated_at__lte=two_days_ago,
+            )
+            .order_by('updated_at')[:25]
+        )
+        alerts = {
+            'stale_applied': stale_applied,
+            'stale_in_progress': stale_in_progress,
+        }
+
+        context.update(
+            {
+                'now': now,
+                'start_day': start_day,
+                'active_submissions': active_subs,
+                'final_round_submissions': final_rounds,
+                'employee_activity_today': employee_activity,
+                'alerts': alerts,
+            }
+        )
+        return context
+
+    def _get_submission_funnel_data(self):
+        """Submission Funnel: Resumes → Submitted → Interview → Hired, with drop-off per employee."""
+        AS = ApplicationSubmission
+        # Global funnel: resumes generated, then submissions by stage
+        resumes_generated = ResumeDraft.objects.count()
+        # "Submitted" = application sent to employer (not just in progress)
+        submitted = AS.objects.filter(
+            status__in=[AS.Status.APPLIED, AS.Status.INTERVIEW, AS.Status.OFFER, AS.Status.REJECTED, AS.Status.WITHDRAWN]
+        ).count()
+        interview_stage = AS.objects.filter(status__in=[AS.Status.INTERVIEW, AS.Status.OFFER]).count()
+        hired = AS.objects.filter(status=AS.Status.OFFER).count()
+        rejected = AS.objects.filter(status=AS.Status.REJECTED).count()
+
+        # Drop-off rates (from previous stage)
+        def pct(prev, curr):
+            if prev is None or prev == 0:
+                return None
+            return round((curr / prev) * 100)
+
+        funnel_global = {
+            'resumes': resumes_generated,
+            'submitted': submitted,
+            'interview': interview_stage,
+            'hired': hired,
+            'rejected': rejected,
+            'drop_off_resumes_to_submitted': (resumes_generated - submitted) if resumes_generated else 0,
+            'drop_off_submitted_to_interview': (submitted - interview_stage) if submitted else 0,
+            'drop_off_interview_to_hired': (interview_stage - hired) if interview_stage else 0,
+            'conv_resumes_to_submitted_pct': pct(resumes_generated, submitted),
+            'conv_submitted_to_interview_pct': pct(submitted, interview_stage),
+            'conv_interview_to_hired_pct': pct(interview_stage, hired),
+            'rejection_rate_submitted_pct': pct(submitted, rejected),
+        }
+
+        # Per-employee funnel (jobs posted by employee → resumes for those jobs → submissions for those jobs)
+        employees = User.objects.filter(role=User.Role.EMPLOYEE).select_related('employee_profile')
+        employee_funnels = []
+        for emp in employees:
+            job_ids = Job.objects.filter(posted_by=emp).values_list('id', flat=True)
+            if not job_ids:
+                employee_funnels.append({
+                    'user': emp,
+                    'resumes': 0, 'submitted': 0, 'interview': 0, 'hired': 0,
+                    'drop_off_resumes_to_submitted': 0, 'drop_off_submitted_to_interview': 0, 'drop_off_interview_to_hired': 0,
+                    'conv_resumes_to_submitted_pct': None, 'conv_submitted_to_interview_pct': None, 'conv_interview_to_hired_pct': None,
+                })
+                continue
+            r = ResumeDraft.objects.filter(job_id__in=job_ids).count()
+            sub = AS.objects.filter(job_id__in=job_ids, status__in=[AS.Status.APPLIED, AS.Status.INTERVIEW, AS.Status.OFFER, AS.Status.REJECTED, AS.Status.WITHDRAWN]).count()
+            intr = AS.objects.filter(job_id__in=job_ids, status__in=[AS.Status.INTERVIEW, AS.Status.OFFER]).count()
+            h = AS.objects.filter(job_id__in=job_ids, status=AS.Status.OFFER).count()
+            rej = AS.objects.filter(job_id__in=job_ids, status=AS.Status.REJECTED).count()
+            employee_funnels.append({
+                'user': emp,
+                'resumes': r, 'submitted': sub, 'interview': intr, 'hired': h, 'rejected': rej,
+                'drop_off_resumes_to_submitted': (r - sub) if r else 0,
+                'drop_off_submitted_to_interview': (sub - intr) if sub else 0,
+                'drop_off_interview_to_hired': (intr - h) if intr else 0,
+                'conv_resumes_to_submitted_pct': pct(r, sub),
+                'conv_submitted_to_interview_pct': pct(sub, intr),
+                'conv_interview_to_hired_pct': pct(intr, h),
+                'rejection_rate_submitted_pct': pct(sub, rej),
+            })
+        return {
+            'funnel_global': funnel_global,
+            'funnel_by_employee': employee_funnels,
+        }
+
+    def _get_consultant_performance_data(self):
+        """Consultant Performance Score: interview rate, hire rate, response time (avg days to outcome)."""
+        AS = ApplicationSubmission
+        consultants = ConsultantProfile.objects.select_related('user').annotate(
+            total_sub=Count('submissions'),
+            interview_count=Count('submissions', filter=Q(submissions__status__in=[AS.Status.INTERVIEW, AS.Status.OFFER])),
+            offer_count=Count('submissions', filter=Q(submissions__status=AS.Status.OFFER)),
+            rejected_count=Count('submissions', filter=Q(submissions__status=AS.Status.REJECTED)),
+        )
+        consultant_perf = []
+        for c in consultants:
+            total = c.total_sub
+            if total == 0:
+                consultant_perf.append({
+                    'consultant': c,
+                    'total_submissions': 0,
+                    'interview_rate_pct': None,
+                    'hire_rate_pct': None,
+                    'avg_response_days': None,
+                    'performance_score': None,
+                })
+                continue
+            interview_rate = round((c.interview_count / total) * 100)
+            hire_rate = round((c.offer_count / total) * 100)
+            rejection_rate = round((c.rejected_count / total) * 100) if total else None
+            # Avg response time (days): submissions with submitted_at and terminal status
+            subs_with_response = list(AS.objects.filter(
+                consultant=c,
+                submitted_at__isnull=False,
+                status__in=[AS.Status.INTERVIEW, AS.Status.OFFER, AS.Status.REJECTED],
+            ).values_list('submitted_at', 'updated_at'))
+            if subs_with_response:
+                days_list = [(u - s).total_seconds() / 86400 for s, u in subs_with_response if u and s]
+                avg_days = sum(days_list) / len(days_list) if days_list else None
+            else:
+                avg_days = None
+            # Performance score 0–100: interview rate + hire rate + bonus for fast response
+            score = min(interview_rate * 0.4, 40) + min(hire_rate * 0.5, 50)
+            if avg_days is not None and avg_days <= 14:
+                score += 10
+            performance_score = min(100, round(score))
+            consultant_perf.append({
+                'consultant': c,
+                'total_submissions': total,
+                'interview_rate_pct': interview_rate,
+                'hire_rate_pct': hire_rate,
+                'rejected_count': c.rejected_count,
+                'rejection_rate_pct': rejection_rate,
+                'avg_response_days': round(avg_days, 1) if avg_days is not None else None,
+                'performance_score': performance_score,
+            })
+        consultant_perf.sort(key=lambda x: (x['performance_score'] is None, -(x['performance_score'] or 0)))
+        return {'consultant_performance': consultant_perf}
+
+    def _get_time_to_hire_data(self):
+        """Time-to-Hire: average days per stage (Resume→Submit, Submit→Interview, Submit→Offer) and bottlenecks."""
+        AS = ApplicationSubmission
+        try:
+            from interviews_app.models import Interview
+        except ImportError:
+            Interview = None
+
+        # Stage 1: Resume created → Submission submitted (for submissions that have a draft and submitted_at)
+        submissions_with_submit = AS.objects.filter(submitted_at__isnull=False).select_related('consultant', 'job')
+        stage1_days_list = []
+        for sub in submissions_with_submit:
+            first_draft = ResumeDraft.objects.filter(consultant=sub.consultant, job=sub.job).order_by('created_at').first()
+            if first_draft and sub.submitted_at:
+                delta = sub.submitted_at - first_draft.created_at
+                if delta.total_seconds() >= 0:
+                    stage1_days_list.append(delta.total_seconds() / 86400)
+        avg_draft_to_submit = round(sum(stage1_days_list) / len(stage1_days_list), 1) if stage1_days_list else None
+
+        # Stage 2: Submit → Interview (first interview scheduled_at - submitted_at)
+        stage2_days_list = []
+        if Interview is not None:
+            for sub in AS.objects.filter(status__in=[AS.Status.INTERVIEW, AS.Status.OFFER], submitted_at__isnull=False):
+                first_int = Interview.objects.filter(submission=sub).order_by('scheduled_at').first()
+                if first_int and sub.submitted_at:
+                    delta = first_int.scheduled_at - sub.submitted_at
+                    secs = getattr(delta, 'total_seconds', lambda: delta.days * 86400 + delta.seconds)()
+                    if secs >= 0:
+                        stage2_days_list.append(secs / 86400)
+            avg_submit_to_interview = round(sum(stage2_days_list) / len(stage2_days_list), 1) if stage2_days_list else None
+        else:
+            avg_submit_to_interview = None
+
+        # Stage 3: Submit → Offer (updated_at - submitted_at for OFFER)
+        offer_subs = AS.objects.filter(status=AS.Status.OFFER, submitted_at__isnull=False)
+        stage3_days_list = []
+        for sub in offer_subs:
+            delta = sub.updated_at - sub.submitted_at
+            if delta.total_seconds() >= 0:
+                stage3_days_list.append(delta.total_seconds() / 86400)
+        avg_submit_to_offer = round(sum(stage3_days_list) / len(stage3_days_list), 1) if stage3_days_list else None
+
+        # Bottleneck: which stage has the longest average
+        stages = [
+            ('Draft → Submit', avg_draft_to_submit),
+            ('Submit → Interview', avg_submit_to_interview),
+            ('Submit → Offer', avg_submit_to_offer),
+        ]
+        valid_stages = [(n, d) for n, d in stages if d is not None]
+        bottleneck = max(valid_stages, key=lambda x: x[1])[0] if valid_stages else None
+
+        return {
+            'time_to_hire_avg_draft_to_submit': avg_draft_to_submit,
+            'time_to_hire_avg_submit_to_interview': avg_submit_to_interview,
+            'time_to_hire_avg_submit_to_offer': avg_submit_to_offer,
+            'time_to_hire_stages': stages,
+            'time_to_hire_bottleneck': bottleneck,
+        }
+
+    def _get_employee_leaderboard_data(self):
+        """Employee Leaderboard: rank by submission-to-interview rate and hire count."""
+        AS = ApplicationSubmission
+        employees = User.objects.filter(role=User.Role.EMPLOYEE).select_related('employee_profile')
+        rows = []
+        for emp in employees:
+            job_ids = list(Job.objects.filter(posted_by=emp).values_list('id', flat=True))
+            if not job_ids:
+                rows.append({
+                    'user': emp,
+                    'submissions': 0,
+                    'interviews': 0,
+                    'hires': 0,
+                    'sub_to_interview_rate_pct': None,
+                })
+                continue
+            sub = AS.objects.filter(job_id__in=job_ids, status__in=[AS.Status.APPLIED, AS.Status.INTERVIEW, AS.Status.OFFER, AS.Status.REJECTED, AS.Status.WITHDRAWN]).count()
+            intr = AS.objects.filter(job_id__in=job_ids, status__in=[AS.Status.INTERVIEW, AS.Status.OFFER]).count()
+            h = AS.objects.filter(job_id__in=job_ids, status=AS.Status.OFFER).count()
+            rej = AS.objects.filter(job_id__in=job_ids, status=AS.Status.REJECTED).count()
+            rate = round((intr / sub) * 100) if sub else None
+            rej_rate = round((rej / sub) * 100) if sub else None
+            rows.append({
+                'user': emp,
+                'submissions': sub,
+                'interviews': intr,
+                'hires': h,
+                'rejections': rej,
+                'sub_to_interview_rate_pct': rate,
+                'rejection_rate_pct': rej_rate,
+            })
+        # Sort: highest sub-to-interview rate first, then by hires
+        rows.sort(key=lambda x: (
+            x['sub_to_interview_rate_pct'] is None,
+            -(x['sub_to_interview_rate_pct'] or 0),
+            -x['hires'],
+            -x['interviews'],
+        ))
+        for i, r in enumerate(rows, 1):
+            r['rank'] = i
+        return {'employee_leaderboard': rows}
+
+    def _get_market_intelligence_data(self):
+        """Market Intelligence: skills/roles in demand, top companies, salary by role."""
+        from users.models import MarketingRole
+        jobs = Job.objects.filter(status=Job.Status.OPEN).prefetch_related('marketing_roles')
+        # Most in-demand roles (by OPEN job count)
+        role_counts = {}
+        for job in jobs:
+            for role in job.marketing_roles.all():
+                role_counts[role.name] = role_counts.get(role.name, 0) + 1
+        top_roles = sorted(
+            [{'name': k, 'job_count': v} for k, v in role_counts.items()],
+            key=lambda x: -x['job_count'],
+        )[:15]
+        # Companies hiring most (OPEN jobs)
+        company_counts = list(
+            Job.objects.filter(status=Job.Status.OPEN)
+            .values('company')
+            .annotate(job_count=Count('id'))
+            .order_by('-job_count')[:15]
+        )
+        # Salary by role: collect salary_range per role (we don't parse; show distribution)
+        salary_by_role = {}
+        for job in Job.objects.filter(status=Job.Status.OPEN).prefetch_related('marketing_roles'):
+            for role in job.marketing_roles.all():
+                name = role.name
+                if name not in salary_by_role:
+                    salary_by_role[name] = []
+                if job.salary_range and job.salary_range.strip():
+                    salary_by_role[name].append(job.salary_range.strip())
+        # Dedupe and take top 5 per role
+        for k in salary_by_role:
+            salary_by_role[k] = list(dict.fromkeys(salary_by_role[k]))[:5]
+        # Job type breakdown (with labels for display)
+        job_type_qs = Job.objects.filter(status=Job.Status.OPEN).values('job_type').annotate(c=Count('id'))
+        job_type_labels = dict(Job.JobType.choices)
+        job_type_counts = [(row['job_type'], job_type_labels.get(row['job_type'], row['job_type']), row['c']) for row in job_type_qs]
+        return {
+            'market_top_roles': top_roles,
+            'market_top_companies': company_counts,
+            'market_salary_by_role': salary_by_role,
+            'market_job_type_breakdown': job_type_counts,
+        }
+
+    def _get_consultant_roi_data(self):
+        """Consultant ROI Score: submissions, interviews, placements, revenue proxy."""
+        AS = ApplicationSubmission
+        consultants = ConsultantProfile.objects.select_related('user').annotate(
+            total_sub=Count('submissions'),
+            interview_count=Count('submissions', filter=Q(submissions__status__in=[AS.Status.INTERVIEW, AS.Status.OFFER])),
+            placements=Count('submissions', filter=Q(submissions__status=AS.Status.OFFER)),
+            rejected_count=Count('submissions', filter=Q(submissions__status=AS.Status.REJECTED)),
+        )
+        roi_list = []
+        for c in consultants:
+            # Revenue: no revenue field; use placements * hourly_rate * 40 as proxy (40 hrs/month per placement)
+            revenue_proxy = None
+            if c.placements and c.hourly_rate:
+                try:
+                    revenue_proxy = float(c.placements) * float(c.hourly_rate) * 40
+                except (TypeError, ValueError):
+                    pass
+            # ROI score 0–100: weight placements heavily, then interview rate, then volume
+            total = c.total_sub
+            place = c.placements or 0
+            intr = c.interview_count or 0
+            interview_rate = (intr / total * 100) if total else 0
+            score = min(place * 25, 50)  # 2 placements = 50 pts
+            score += min(interview_rate * 0.3, 25)  # interview rate cap 25
+            score += min(total * 0.5, 25)  # volume cap 25
+            roi_score = min(100, round(score))
+            roi_list.append({
+                'consultant': c,
+                'total_submissions': total,
+                'interviews': intr,
+                'placements': place,
+                'rejections': c.rejected_count,
+                'revenue_generated': round(revenue_proxy, 0) if revenue_proxy is not None else None,
+                'roi_score': roi_score,
+            })
+        roi_list.sort(key=lambda x: (-x['roi_score'], -x['placements'], -x['total_submissions']))
+        return {'consultant_roi': roi_list}
 
 
 class EmployeeDashboardView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
@@ -228,4 +1229,28 @@ class EmployeeDashboardView(LoginRequiredMixin, UserPassesTestMixin, TemplateVie
         context['recent_my_jobs'] = my_jobs.order_by('-created_at')[:5]
         context['recent_apps'] = apps_for_my_jobs.select_related('job', 'consultant').order_by('-created_at')[:5]
         context['all_open_jobs'] = Job.objects.filter(status='OPEN').count()
+
+        # Per-employee job status breakdown
+        my_job_status_qs = my_jobs.values('status').annotate(count=Count('status'))
+        job_status_map = dict(Job.Status.choices)
+        context['my_job_status_labels'] = json.dumps(
+            [job_status_map.get(row['status'], row['status']) for row in my_job_status_qs],
+            cls=DjangoJSONEncoder,
+        )
+        context['my_job_status_data'] = json.dumps(
+            [row['count'] for row in my_job_status_qs],
+            cls=DjangoJSONEncoder,
+        )
+
+        # Per-employee application status breakdown
+        my_app_status_qs = apps_for_my_jobs.values('status').annotate(count=Count('status'))
+        app_status_map = dict(ApplicationSubmission.Status.choices)
+        context['my_app_status_labels'] = json.dumps(
+            [app_status_map.get(row['status'], row['status']) for row in my_app_status_qs],
+            cls=DjangoJSONEncoder,
+        )
+        context['my_app_status_data'] = json.dumps(
+            [row['count'] for row in my_app_status_qs],
+            cls=DjangoJSONEncoder,
+        )
         return context
