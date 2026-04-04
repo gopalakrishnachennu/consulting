@@ -83,6 +83,30 @@
         </div>
     </div>
 
+    <!-- Phase 1: Placement & Revenue KPIs -->
+    <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
+        <a href="{% url 'placement-list' %}" class="bg-white rounded-xl border border-emerald-200 px-4 py-3 hover:shadow-md transition">
+            <p class="text-xs text-emerald-600 uppercase tracking-wide">Active Placements</p>
+            <p class="mt-1 text-xl font-bold text-emerald-700">{{ active_placements }}</p>
+        </a>
+        <a href="{% url 'submission-list' %}?status=PLACED" class="bg-white rounded-xl border border-gray-200 px-4 py-3 hover:shadow-md transition">
+            <p class="text-xs text-gray-500 uppercase tracking-wide">Total Placed</p>
+            <p class="mt-1 text-xl font-bold text-gray-900">{{ placed_count }}</p>
+        </a>
+        <a href="{% url 'placement-list' %}" class="bg-white rounded-xl border border-gray-200 px-4 py-3 hover:shadow-md transition">
+            <p class="text-xs text-gray-500 uppercase tracking-wide">Total Placements</p>
+            <p class="mt-1 text-xl font-bold text-gray-900">{{ total_placements }}</p>
+        </a>
+        <a href="{% url 'timesheet-list' %}?status=SUBMITTED" class="bg-white rounded-xl border border-amber-200 px-4 py-3 hover:shadow-md transition">
+            <p class="text-xs text-amber-600 uppercase tracking-wide">Pending Timesheets</p>
+            <p class="mt-1 text-xl font-bold text-amber-700">{{ pending_timesheets }}</p>
+        </a>
+        <a href="{% url 'commission-list' %}?status=PENDING" class="bg-white rounded-xl border border-blue-200 px-4 py-3 hover:shadow-md transition">
+            <p class="text-xs text-blue-600 uppercase tracking-wide">Pending Commissions</p>
+            <p class="mt-1 text-xl font-bold text-blue-700">${{ pending_commissions_amount }}</p>
+        </a>
+    </div>
+
     {% if pending_applications_count and pending_applications_count > 0 %}
     <div class="mb-5 py-3 px-4 rounded-lg bg-blue-50 border border-blue-100 flex flex-wrap items-center justify-between gap-4">
         <div class="flex items-center gap-3">
@@ -172,6 +196,9 @@
                 <a href="{% url 'consultant-add' %}" class="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700">Add Consultant</a>
                 <a href="{% url 'submission-list' %}" class="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700">Applications</a>
                 <a href="{% url 'submission-list' %}?status=OFFER" class="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700">Offers</a>
+                <a href="{% url 'placement-list' %}" class="inline-flex items-center gap-2 px-4 py-2.5 border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-sm font-medium text-emerald-800 rounded-lg">Placements</a>
+                <a href="{% url 'timesheet-list' %}" class="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700">Timesheets</a>
+                <a href="{% url 'commission-list' %}" class="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700">Commissions</a>
                 <a href="{% url 'war-room' %}" class="inline-flex items-center gap-2 px-4 py-2.5 border border-amber-300 bg-amber-50 hover:bg-amber-100 text-sm font-medium text-amber-800">War Room</a>
                 <a href="{% url 'employee-list' %}" class="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700">Employees</a>
                 <a href="{% url 'job-list' %}" class="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700">Jobs</a>

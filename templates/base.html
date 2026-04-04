@@ -400,6 +400,8 @@
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'consultant-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Consultants</a>
                 <a href="{% url 'employee-list' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'employee-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Employees</a>
+                <a href="{% url 'placement-list' %}"
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'placement-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Placements</a>
 
                 {% elif user.role == 'EMPLOYEE' %}
                 {# --- EMPLOYEE NAV --- #}
@@ -419,6 +421,8 @@
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'consultant-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Consultants</a>
                 <a href="{% url 'analytics-dashboard' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'analytics-dashboard' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Analytics</a>
+                <a href="{% url 'placement-list' %}"
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'placement-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Placements</a>
 
                 {% elif user.role == 'CONSULTANT' %}
                 {# --- CONSULTANT NAV --- #}

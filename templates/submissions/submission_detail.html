@@ -24,12 +24,23 @@
                         {% elif submission.status == 'INTERVIEW' %}bg-purple-100 text-purple-800
                         {% elif submission.status == 'OFFER' %}bg-green-100 text-green-800
                         {% elif submission.status == 'REJECTED' %}bg-red-100 text-red-800
+                        {% elif submission.status == 'PLACED' %}bg-emerald-100 text-emerald-800
                         {% elif submission.status == 'WITHDRAWN' %}bg-gray-100 text-gray-800
                         {% endif %}">
                         {{ submission.get_status_display }}
                     </span>
                 </div>
                 <div class="mt-3 flex flex-wrap gap-2">
+                    {% if submission.status == 'OFFER' and can_place %}
+                    <a href="{% url 'placement-create' submission.pk %}" class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold">
+                        Create Placement
+                    </a>
+                    {% endif %}
+                    {% if submission.status == 'PLACED' and submission.placement %}
+                    <a href="{% url 'placement-detail' submission.placement.pk %}" class="px-3 py-2 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold">
+                        View Placement &rarr;
+                    </a>
+                    {% endif %}
                     {% if can_mark_rejected %}
                     <form method="post" action="{% url 'submission-mark-rejected' submission.pk %}">
                         {% csrf_token %}

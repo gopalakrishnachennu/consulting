@@ -9,7 +9,10 @@ from django.urls import reverse_lazy, reverse
 from django.contrib import messages
 from django.utils import timezone
 from django.http import HttpResponse, JsonResponse
-from .models import ApplicationSubmission, Offer, OfferRound, record_submission_status_change, EmailEvent
+from .models import (
+    ApplicationSubmission, Offer, OfferRound, record_submission_status_change, EmailEvent,
+    Placement, Timesheet, Commission,
+)
 from .forms import (
     ApplicationSubmissionForm,
     SubmissionResponseForm,
@@ -17,6 +20,10 @@ from .forms import (
     OfferFinalTermsForm,
     OfferInitialForm,
     EmailEventReviewForm,
+    PlacementForm,
+    TimesheetForm,
+    TimesheetApprovalForm,
+    CommissionForm,
 )
 from resumes.models import Resume, ResumeDraft
 from users.models import User
@@ -383,7 +390,11 @@ class SubmissionDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
             self.request.user.role == User.Role.CONSULTANT
             and hasattr(self.request.user, 'consultant_profile')
             and sub.consultant == self.request.user.consultant_profile
-            and sub.status not in (ApplicationSubmission.Status.REJECTED, ApplicationSubmission.Status.OFFER)
+            and sub.status not in (ApplicationSubmission.Status.REJECTED, ApplicationSubmission.Status.OFFER, ApplicationSubmission.Status.PLACED)
+        )
+        context['can_place'] = (
+            self.request.user.is_superuser
+            or self.request.user.role in (User.Role.ADMIN, User.Role.EMPLOYEE)
         )
         return context
 
@@ -741,3 +752,264 @@ class EmailEventDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
 
         messages.success(request, f"Applied status {dict(ApplicationSubmission.Status.choices).get(new_status, new_status)} to submission #{submission.pk}.")
         return redirect('email-event-list')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 1: Placement, Timesheet, Commission views
+# ─────────────────────────────────────────────────────────────
+
+class _StaffRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
+    """Shortcut: admin or employee only."""
+    def test_func(self):
+        u = self.request.user
+        return u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE)
+
+
+# ── Placement views ──
+
+class PlacementListView(_StaffRequiredMixin, ListView):
+    model = Placement
+    template_name = 'submissions/placement_list.html'
+    context_object_name = 'placements'
+    paginate_by = 20
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related(
+            'submission__job', 'submission__consultant__user', 'created_by'
+        )
+        status = self.request.GET.get('status')
+        ptype = self.request.GET.get('type')
+        search = self.request.GET.get('search')
+        if status:
+            qs = qs.filter(status=status)
+        if ptype:
+            qs = qs.filter(placement_type=ptype)
+        if search:
+            qs = qs.filter(
+                Q(submission__job__title__icontains=search) |
+                Q(submission__job__company__icontains=search) |
+                Q(submission__consultant__user__first_name__icontains=search) |
+                Q(submission__consultant__user__last_name__icontains=search)
+            )
+        return qs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['status_choices'] = Placement.PlacementStatus.choices
+        context['type_choices'] = Placement.PlacementType.choices
+        # Revenue summary
+        all_placements = Placement.objects.all()
+        context['total_placements'] = all_placements.count()
+        context['active_placements'] = all_placements.filter(status=Placement.PlacementStatus.ACTIVE).count()
+        return context
+
+
+class PlacementDetailView(_StaffRequiredMixin, DetailView):
+    model = Placement
+    template_name = 'submissions/placement_detail.html'
+    context_object_name = 'placement'
+
+    def get_queryset(self):
+        return super().get_queryset().select_related(
+            'submission__job__company_obj', 'submission__consultant__user', 'created_by'
+        )
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        placement = self.object
+        context['timesheets'] = placement.timesheets.all()[:20]
+        context['commissions'] = placement.commissions.select_related('employee').all()
+        context['timesheet_form'] = TimesheetForm()
+        context['commission_form'] = CommissionForm()
+        # Calculate total revenue
+        context['total_billed'] = sum(
+            (ts.bill_amount or 0) for ts in placement.timesheets.filter(status=Timesheet.TimesheetStatus.APPROVED)
+        )
+        context['total_paid'] = sum(
+            (ts.pay_amount or 0) for ts in placement.timesheets.filter(status=Timesheet.TimesheetStatus.APPROVED)
+        )
+        context['total_margin'] = context['total_billed'] - context['total_paid']
+        context['total_hours'] = sum(
+            ts.hours_worked for ts in placement.timesheets.filter(status=Timesheet.TimesheetStatus.APPROVED)
+        )
+        return context
+
+
+class PlacementCreateView(_StaffRequiredMixin, CreateView):
+    model = Placement
+    form_class = PlacementForm
+    template_name = 'submissions/placement_form.html'
+
+    def dispatch(self, request, *args, **kwargs):
+        self.submission = get_object_or_404(ApplicationSubmission, pk=kwargs['submission_pk'])
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['submission'] = self.submission
+        return context
+
+    def form_valid(self, form):
+        form.instance.submission = self.submission
+        form.instance.created_by = self.request.user
+        # Set submission status to PLACED if not already
+        if self.submission.status != ApplicationSubmission.Status.PLACED:
+            old = self.submission.status
+            self.submission.status = ApplicationSubmission.Status.PLACED
+            self.submission.save(update_fields=['status', 'updated_at'])
+            record_submission_status_change(self.submission, ApplicationSubmission.Status.PLACED, from_status=old, note='Placement created.')
+        messages.success(self.request, "Placement created successfully!")
+        response = super().form_valid(form)
+        return response
+
+    def get_success_url(self):
+        return reverse('placement-detail', kwargs={'pk': self.object.pk})
+
+
+class PlacementUpdateView(_StaffRequiredMixin, UpdateView):
+    model = Placement
+    form_class = PlacementForm
+    template_name = 'submissions/placement_form.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['submission'] = self.object.submission
+        return context
+
+    def form_valid(self, form):
+        messages.success(self.request, "Placement updated successfully!")
+        return super().form_valid(form)
+
+    def get_success_url(self):
+        return reverse('placement-detail', kwargs={'pk': self.object.pk})
+
+
+# ── Timesheet views ──
+
+class TimesheetCreateView(_StaffRequiredMixin, View):
+    """Create a timesheet for a placement (POST from placement detail)."""
+
+    def post(self, request, placement_pk):
+        placement = get_object_or_404(Placement, pk=placement_pk)
+        form = TimesheetForm(request.POST)
+        if form.is_valid():
+            ts = form.save(commit=False)
+            ts.placement = placement
+            ts.submitted_by = request.user
+            ts.save()
+            messages.success(request, f"Timesheet for week ending {ts.week_ending} added.")
+        else:
+            for err in form.errors.values():
+                messages.error(request, err[0])
+        return redirect('placement-detail', pk=placement.pk)
+
+
+class TimesheetApproveView(_StaffRequiredMixin, View):
+    """Approve or reject a timesheet."""
+
+    def post(self, request, pk):
+        ts = get_object_or_404(Timesheet, pk=pk)
+        action = request.POST.get('action')
+        if action == 'approve':
+            ts.status = Timesheet.TimesheetStatus.APPROVED
+            ts.approved_by = request.user
+            ts.approved_at = timezone.now()
+            ts.save(update_fields=['status', 'approved_by', 'approved_at', 'updated_at'])
+            messages.success(request, "Timesheet approved.")
+        elif action == 'reject':
+            ts.status = Timesheet.TimesheetStatus.REJECTED
+            ts.save(update_fields=['status', 'updated_at'])
+            messages.warning(request, "Timesheet rejected.")
+        return redirect('placement-detail', pk=ts.placement.pk)
+
+
+class TimesheetListView(_StaffRequiredMixin, ListView):
+    """All timesheets across all placements (for payroll overview)."""
+    model = Timesheet
+    template_name = 'submissions/timesheet_list.html'
+    context_object_name = 'timesheets'
+    paginate_by = 25
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related(
+            'placement__submission__consultant__user',
+            'placement__submission__job',
+            'submitted_by', 'approved_by'
+        )
+        status = self.request.GET.get('status')
+        if status:
+            qs = qs.filter(status=status)
+        return qs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['status_choices'] = Timesheet.TimesheetStatus.choices
+        pending = Timesheet.objects.filter(status=Timesheet.TimesheetStatus.SUBMITTED).count()
+        context['pending_count'] = pending
+        return context
+
+
+# ── Commission views ──
+
+class CommissionCreateView(_StaffRequiredMixin, View):
+    """Create a commission for a placement (POST from placement detail)."""
+
+    def post(self, request, placement_pk):
+        placement = get_object_or_404(Placement, pk=placement_pk)
+        form = CommissionForm(request.POST)
+        if form.is_valid():
+            comm = form.save(commit=False)
+            comm.placement = placement
+            comm.save()
+            messages.success(request, f"Commission of ${comm.commission_amount} added for {comm.employee.get_full_name()}.")
+        else:
+            for err in form.errors.values():
+                messages.error(request, err[0])
+        return redirect('placement-detail', pk=placement.pk)
+
+
+class CommissionListView(_StaffRequiredMixin, ListView):
+    """All commissions across all placements."""
+    model = Commission
+    template_name = 'submissions/commission_list.html'
+    context_object_name = 'commissions'
+    paginate_by = 25
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related(
+            'placement__submission__consultant__user',
+            'placement__submission__job',
+            'employee'
+        )
+        status = self.request.GET.get('status')
+        if status:
+            qs = qs.filter(status=status)
+        return qs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['status_choices'] = Commission.CommissionStatus.choices
+        from django.db.models import Sum
+        totals = Commission.objects.aggregate(
+            total_pending=Sum('commission_amount', filter=Q(status=Commission.CommissionStatus.PENDING)),
+            total_approved=Sum('commission_amount', filter=Q(status=Commission.CommissionStatus.APPROVED)),
+            total_paid=Sum('commission_amount', filter=Q(status=Commission.CommissionStatus.PAID)),
+        )
+        context['total_pending'] = totals['total_pending'] or 0
+        context['total_approved'] = totals['total_approved'] or 0
+        context['total_paid'] = totals['total_paid'] or 0
+        return context
+
+
+class CommissionUpdateView(_StaffRequiredMixin, UpdateView):
+    """Update commission status (approve/mark paid)."""
+    model = Commission
+    fields = ['status', 'paid_date', 'notes']
+    template_name = 'submissions/commission_form.html'
+
+    def form_valid(self, form):
+        messages.success(self.request, "Commission updated.")
+        return super().form_valid(form)
+
+    def get_success_url(self):
+        return reverse('commission-list')

@@ -14,6 +14,7 @@ class ApplicationSubmission(models.Model):
         APPLIED = 'APPLIED', _('Applied')
         INTERVIEW = 'INTERVIEW', _('Interview Scheduled')
         OFFER = 'OFFER', _('Offer Received')
+        PLACED = 'PLACED', _('Placed')
         REJECTED = 'REJECTED', _('Rejected')
         WITHDRAWN = 'WITHDRAWN', _('Withdrawn')
 
@@ -144,6 +145,247 @@ class SubmissionResponse(models.Model):
 
     class Meta:
         ordering = ['-responded_at']
+
+
+class Placement(models.Model):
+    """
+    Created when a submission reaches PLACED status.
+    Tracks placement details, billing, and revenue.
+    """
+
+    class PlacementType(models.TextChoices):
+        PERMANENT = 'PERMANENT', _('Permanent')
+        CONTRACT = 'CONTRACT', _('Contract')
+        CONTRACT_TO_HIRE = 'CONTRACT_TO_HIRE', _('Contract-to-Hire')
+        TEMPORARY = 'TEMPORARY', _('Temporary')
+
+    class PlacementStatus(models.TextChoices):
+        ACTIVE = 'ACTIVE', _('Active')
+        COMPLETED = 'COMPLETED', _('Completed')
+        TERMINATED = 'TERMINATED', _('Terminated Early')
+        ON_HOLD = 'ON_HOLD', _('On Hold')
+
+    submission = models.OneToOneField(
+        ApplicationSubmission,
+        on_delete=models.CASCADE,
+        related_name='placement',
+    )
+    placement_type = models.CharField(
+        max_length=20,
+        choices=PlacementType.choices,
+        default=PlacementType.PERMANENT,
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=PlacementStatus.choices,
+        default=PlacementStatus.ACTIVE,
+    )
+
+    start_date = models.DateField(help_text=_("Placement start date"))
+    end_date = models.DateField(null=True, blank=True, help_text=_("Placement end date (for contracts)"))
+
+    # Billing rates
+    bill_rate = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text=_("Hourly bill rate to client"),
+    )
+    pay_rate = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text=_("Hourly pay rate to consultant"),
+    )
+    currency = models.CharField(max_length=10, default='USD')
+
+    # Revenue (for permanent placements)
+    fee_percentage = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True,
+        help_text=_("Placement fee as % of annual salary (permanent placements)"),
+    )
+    fee_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text=_("Flat placement fee amount"),
+    )
+    annual_salary = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text=_("Consultant's annual salary (for permanent placements)"),
+    )
+
+    notes = models.TextField(blank=True)
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='created_placements',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Placement: {self.submission.consultant.user.get_full_name()} at {self.submission.job.company}"
+
+    @property
+    def spread(self):
+        """Hourly margin = bill_rate - pay_rate."""
+        if self.bill_rate and self.pay_rate:
+            return self.bill_rate - self.pay_rate
+        return None
+
+    @property
+    def calculated_revenue(self):
+        """
+        For permanent: fee_amount or (fee_percentage * annual_salary / 100).
+        For contract: spread * total approved timesheet hours.
+        """
+        if self.placement_type == self.PlacementType.PERMANENT:
+            if self.fee_amount:
+                return self.fee_amount
+            if self.fee_percentage and self.annual_salary:
+                return (self.fee_percentage * self.annual_salary) / 100
+        else:
+            # Contract: sum of approved timesheet revenue
+            spread = self.spread
+            if spread:
+                total_hours = sum(
+                    ts.hours_worked for ts in self.timesheets.filter(
+                        status=Timesheet.TimesheetStatus.APPROVED
+                    )
+                )
+                return spread * total_hours
+        return None
+
+
+class Timesheet(models.Model):
+    """
+    Weekly timesheet for contract placements.
+    """
+
+    class TimesheetStatus(models.TextChoices):
+        DRAFT = 'DRAFT', _('Draft')
+        SUBMITTED = 'SUBMITTED', _('Submitted')
+        APPROVED = 'APPROVED', _('Approved')
+        REJECTED = 'REJECTED', _('Rejected')
+
+    placement = models.ForeignKey(
+        Placement,
+        on_delete=models.CASCADE,
+        related_name='timesheets',
+    )
+    week_ending = models.DateField(help_text=_("Saturday of the work week"))
+    hours_worked = models.DecimalField(
+        max_digits=5, decimal_places=2,
+        help_text=_("Total hours worked this week"),
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=TimesheetStatus.choices,
+        default=TimesheetStatus.DRAFT,
+    )
+    overtime_hours = models.DecimalField(
+        max_digits=5, decimal_places=2, default=0,
+        help_text=_("Overtime hours (included in hours_worked)"),
+    )
+    notes = models.TextField(blank=True)
+
+    submitted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='submitted_timesheets',
+    )
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='approved_timesheets',
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-week_ending']
+        unique_together = ('placement', 'week_ending')
+
+    def __str__(self):
+        return f"Timesheet: {self.placement.submission.consultant.user.get_full_name()} — {self.week_ending}"
+
+    @property
+    def bill_amount(self):
+        """Amount billed to client for this week."""
+        if self.placement.bill_rate:
+            return self.hours_worked * self.placement.bill_rate
+        return None
+
+    @property
+    def pay_amount(self):
+        """Amount paid to consultant for this week."""
+        if self.placement.pay_rate:
+            return self.hours_worked * self.placement.pay_rate
+        return None
+
+    @property
+    def margin(self):
+        """Margin (profit) for this week."""
+        bill = self.bill_amount
+        pay = self.pay_amount
+        if bill is not None and pay is not None:
+            return bill - pay
+        return None
+
+
+class Commission(models.Model):
+    """
+    Commission tracking for employees who facilitated placements.
+    """
+
+    class CommissionStatus(models.TextChoices):
+        PENDING = 'PENDING', _('Pending')
+        APPROVED = 'APPROVED', _('Approved')
+        PAID = 'PAID', _('Paid')
+        CANCELLED = 'CANCELLED', _('Cancelled')
+
+    placement = models.ForeignKey(
+        Placement,
+        on_delete=models.CASCADE,
+        related_name='commissions',
+    )
+    employee = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='commissions',
+        help_text=_("Employee who earned the commission"),
+    )
+    commission_rate = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True,
+        help_text=_("Commission rate as % of placement revenue"),
+    )
+    commission_amount = models.DecimalField(
+        max_digits=12, decimal_places=2,
+        help_text=_("Calculated or overridden commission amount"),
+    )
+    currency = models.CharField(max_length=10, default='USD')
+    status = models.CharField(
+        max_length=20,
+        choices=CommissionStatus.choices,
+        default=CommissionStatus.PENDING,
+    )
+    paid_date = models.DateField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Commission: {self.employee.get_full_name()} — ${self.commission_amount}"
 
 
 class EmailEvent(models.Model):

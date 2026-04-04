@@ -1,0 +1,103 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 py-6">
+    <div class="hero-gradient rounded-2xl px-8 py-6 mb-6 relative overflow-hidden">
+        <div class="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+            <div>
+                <p class="text-blue-100 text-xs uppercase tracking-wide mb-1">Finance</p>
+                <h1 class="text-3xl font-extrabold text-white tracking-tight">Commissions</h1>
+                <p class="text-blue-100 mt-1 text-sm">Track employee commissions across all placements.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+        <div class="bg-white rounded-xl border border-amber-200 px-4 py-3 bg-amber-50/50">
+            <p class="text-xs text-amber-600 uppercase tracking-wide">Pending</p>
+            <p class="mt-1 text-xl font-bold text-amber-700 font-mono">${{ total_pending }}</p>
+        </div>
+        <div class="bg-white rounded-xl border border-blue-200 px-4 py-3 bg-blue-50/50">
+            <p class="text-xs text-blue-600 uppercase tracking-wide">Approved</p>
+            <p class="mt-1 text-xl font-bold text-blue-700 font-mono">${{ total_approved }}</p>
+        </div>
+        <div class="bg-white rounded-xl border border-emerald-200 px-4 py-3 bg-emerald-50/50">
+            <p class="text-xs text-emerald-600 uppercase tracking-wide">Paid</p>
+            <p class="mt-1 text-xl font-bold text-emerald-700 font-mono">${{ total_paid }}</p>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <form method="get" class="flex flex-wrap gap-3 mb-5">
+        <select name="status" class="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700">
+            <option value="">All Statuses</option>
+            {% for val, label in status_choices %}
+            <option value="{{ val }}" {% if request.GET.status == val %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">Filter</button>
+    </form>
+
+    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        <th class="px-4 py-3">Employee</th>
+                        <th class="px-4 py-3">Consultant Placed</th>
+                        <th class="px-4 py-3">Job / Company</th>
+                        <th class="px-4 py-3">Rate</th>
+                        <th class="px-4 py-3 text-right">Amount</th>
+                        <th class="px-4 py-3">Status</th>
+                        <th class="px-4 py-3">Paid Date</th>
+                        <th class="px-4 py-3">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in commissions %}
+                    <tr class="border-b border-gray-100 hover:bg-gray-50/50">
+                        <td class="px-4 py-3 font-medium text-gray-900">{{ c.employee.get_full_name|default:c.employee.username }}</td>
+                        <td class="px-4 py-3 text-gray-700">{{ c.placement.submission.consultant.user.get_full_name }}</td>
+                        <td class="px-4 py-3">
+                            <div class="text-gray-900">{{ c.placement.submission.job.title }}</div>
+                            <div class="text-xs text-gray-500">{{ c.placement.submission.job.company }}</div>
+                        </td>
+                        <td class="px-4 py-3 text-gray-600">{% if c.commission_rate %}{{ c.commission_rate }}%{% else %}&mdash;{% endif %}</td>
+                        <td class="px-4 py-3 text-right font-mono font-semibold text-gray-900">{{ c.currency }} {{ c.commission_amount }}</td>
+                        <td class="px-4 py-3">
+                            <span class="px-2 py-0.5 rounded-full text-xs font-medium
+                                {% if c.status == 'PAID' %}bg-emerald-50 text-emerald-700
+                                {% elif c.status == 'APPROVED' %}bg-blue-50 text-blue-700
+                                {% elif c.status == 'PENDING' %}bg-amber-50 text-amber-700
+                                {% else %}bg-red-50 text-red-700{% endif %}">
+                                {{ c.get_status_display }}
+                            </span>
+                        </td>
+                        <td class="px-4 py-3 text-gray-600">{{ c.paid_date|date:"M d, Y"|default:"&mdash;" }}</td>
+                        <td class="px-4 py-3">
+                            <a href="{% url 'commission-update' c.pk %}" class="text-blue-600 hover:underline text-xs">Edit</a>
+                            <a href="{% url 'placement-detail' c.placement.pk %}" class="text-blue-600 hover:underline text-xs ml-2">Placement</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="8" class="px-4 py-8 text-center text-gray-500">No commissions found.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {% if is_paginated %}
+    <div class="flex justify-center mt-6 gap-2">
+        {% if page_obj.has_previous %}
+        <a href="?page={{ page_obj.previous_page_number }}" class="px-3 py-2 rounded-lg border border-gray-300 text-sm hover:bg-gray-50">Prev</a>
+        {% endif %}
+        <span class="px-3 py-2 text-sm text-gray-600">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}" class="px-3 py-2 rounded-lg border border-gray-300 text-sm hover:bg-gray-50">Next</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

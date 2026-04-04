@@ -5,6 +5,10 @@ from .views import (
     SubmissionBulkStatusView, SubmissionInlineStatusView,
     SubmissionMarkRejectedView, RejectionAnalysisView,
     EmailEventListView, EmailEventPollNowView, EmailEventDetailView,
+    # Phase 1: Placements, Timesheets, Commissions
+    PlacementListView, PlacementDetailView, PlacementCreateView, PlacementUpdateView,
+    TimesheetCreateView, TimesheetApproveView, TimesheetListView,
+    CommissionCreateView, CommissionListView, CommissionUpdateView,
 )
 
 urlpatterns = [
@@ -21,4 +25,20 @@ urlpatterns = [
     path('<int:pk>/mark-rejected/', SubmissionMarkRejectedView.as_view(), name='submission-mark-rejected'),
     path('<int:pk>/rejection-analysis/', RejectionAnalysisView.as_view(), name='submission-rejection-analysis'),
     path('claim/<int:draft_id>/', SubmissionClaimView.as_view(), name='submission-claim'),
+
+    # Phase 1: Placements
+    path('placements/', PlacementListView.as_view(), name='placement-list'),
+    path('placements/<int:pk>/', PlacementDetailView.as_view(), name='placement-detail'),
+    path('placements/<int:pk>/edit/', PlacementUpdateView.as_view(), name='placement-update'),
+    path('<int:submission_pk>/place/', PlacementCreateView.as_view(), name='placement-create'),
+
+    # Phase 1: Timesheets
+    path('timesheets/', TimesheetListView.as_view(), name='timesheet-list'),
+    path('placements/<int:placement_pk>/timesheets/add/', TimesheetCreateView.as_view(), name='timesheet-create'),
+    path('timesheets/<int:pk>/approve/', TimesheetApproveView.as_view(), name='timesheet-approve'),
+
+    # Phase 1: Commissions
+    path('commissions/', CommissionListView.as_view(), name='commission-list'),
+    path('commissions/<int:pk>/edit/', CommissionUpdateView.as_view(), name='commission-update'),
+    path('placements/<int:placement_pk>/commissions/add/', CommissionCreateView.as_view(), name='commission-create'),
 ]

@@ -13,7 +13,7 @@ import json
 
 from users.models import User, ConsultantProfile
 from jobs.models import Job
-from submissions.models import ApplicationSubmission
+from submissions.models import ApplicationSubmission, Placement, Timesheet, Commission
 from resumes.models import ResumeDraft
 from .models import PlatformConfig, LLMConfig, LLMUsageLog, AuditLog, PipelineRunLog
 from .forms import PlatformConfigForm, LLMConfigForm
@@ -360,6 +360,23 @@ class AdminDashboardView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
         context['pending_applications_count'] = ApplicationSubmission.objects.filter(
             status=ApplicationSubmission.Status.APPLIED
         ).count()
+
+        # Phase 1: Placement & Revenue KPIs
+        context['total_placements'] = Placement.objects.count()
+        context['active_placements'] = Placement.objects.filter(
+            status=Placement.PlacementStatus.ACTIVE
+        ).count()
+        context['placed_count'] = ApplicationSubmission.objects.filter(
+            status=ApplicationSubmission.Status.PLACED
+        ).count()
+        pending_timesheets = Timesheet.objects.filter(
+            status=Timesheet.TimesheetStatus.SUBMITTED
+        ).count()
+        context['pending_timesheets'] = pending_timesheets
+        pending_commissions_amount = Commission.objects.filter(
+            status=Commission.CommissionStatus.PENDING
+        ).aggregate(total=Sum('commission_amount'))['total'] or 0
+        context['pending_commissions_amount'] = pending_commissions_amount
 
         # Recent activity (Overview tab)
         context['recent_jobs'] = Job.objects.select_related('posted_by').order_by('-created_at')[:5]

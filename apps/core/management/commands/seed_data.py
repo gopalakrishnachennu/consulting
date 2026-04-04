@@ -39,10 +39,11 @@ class Command(BaseCommand):
         self._seed_interviews()
         self._seed_prompts()
         self._seed_messages()
+        self._seed_placements()
         self.stdout.write(self.style.SUCCESS("\nAll seed data created successfully!"))
 
     def _flush(self):
-        from submissions.models import ApplicationSubmission
+        from submissions.models import ApplicationSubmission, Placement, Timesheet, Commission
         from jobs.models import Job
         from companies.models import Company
         from users.models import MarketingRole, ConsultantProfile, EmployeeProfile
@@ -50,6 +51,9 @@ class Command(BaseCommand):
         from messaging.models import Thread
         from prompts_app.models import Prompt
 
+        Commission.objects.all().delete()
+        Timesheet.objects.all().delete()
+        Placement.objects.all().delete()
         Interview.objects.all().delete()
         ApplicationSubmission.objects.all().delete()
         Job.objects.all().delete()
@@ -724,3 +728,119 @@ class Command(BaseCommand):
             )
 
         self.stdout.write(self.style.SUCCESS("  Created message threads"))
+
+    # ── Placements, Timesheets, Commissions ──────────────────────────
+    def _seed_placements(self):
+        from submissions.models import (
+            ApplicationSubmission, Placement, Timesheet, Commission,
+            record_submission_status_change,
+        )
+        from users.models import ConsultantProfile
+        from datetime import date
+
+        if Placement.objects.exists():
+            return
+
+        employee = User.objects.filter(role=User.Role.EMPLOYEE).first()
+        if not employee:
+            return
+
+        profiles = {
+            cp.user.username: cp
+            for cp in ConsultantProfile.objects.select_related("user").all()
+        }
+
+        # 1. Place Bob (Data Engineer) — contract placement
+        try:
+            bob_sub = ApplicationSubmission.objects.get(
+                consultant=profiles.get("bob_data"),
+                job__title="Data Engineer - Real-time Pipelines",
+            )
+            old_status = bob_sub.status
+            bob_sub.status = ApplicationSubmission.Status.PLACED
+            bob_sub.save(update_fields=["status", "updated_at"])
+            record_submission_status_change(bob_sub, "PLACED", from_status=old_status, note="Placed via seed data")
+
+            p1 = Placement.objects.create(
+                submission=bob_sub,
+                placement_type=Placement.PlacementType.CONTRACT,
+                status=Placement.PlacementStatus.ACTIVE,
+                start_date=date(2026, 3, 15),
+                end_date=date(2026, 9, 15),
+                bill_rate=Decimal("125.00"),
+                pay_rate=Decimal("90.00"),
+                currency="USD",
+                notes="6-month contract with option to extend. Data pipeline modernization project.",
+                created_by=employee,
+            )
+
+            # Add timesheets for the last 3 weeks
+            for weeks_ago in range(3):
+                week_end = date(2026, 3, 29) - timedelta(weeks=weeks_ago)
+                status = "APPROVED" if weeks_ago > 0 else "SUBMITTED"
+                ts = Timesheet.objects.create(
+                    placement=p1,
+                    week_ending=week_end,
+                    hours_worked=Decimal("40.00"),
+                    overtime_hours=Decimal("2.00") if weeks_ago == 1 else Decimal("0.00"),
+                    status=status,
+                    submitted_by=employee,
+                    approved_by=employee if status == "APPROVED" else None,
+                    approved_at=timezone.now() if status == "APPROVED" else None,
+                )
+
+            # Add commission for employee
+            Commission.objects.create(
+                placement=p1,
+                employee=employee,
+                commission_rate=Decimal("10.00"),
+                commission_amount=Decimal("4200.00"),
+                currency="USD",
+                status=Commission.CommissionStatus.PENDING,
+                notes="10% of first 12 weeks spread ($35/hr x 40hrs x 12wks = $16,800 x 25%)",
+            )
+
+            self.stdout.write(self.style.SUCCESS("  Created contract placement for Bob (Data Engineer)"))
+        except (ApplicationSubmission.DoesNotExist, KeyError):
+            self.stdout.write(self.style.WARNING("  Skipped Bob placement (submission not found)"))
+
+        # 2. Place Carol (React Native) — permanent placement
+        try:
+            carol_sub = ApplicationSubmission.objects.get(
+                consultant=profiles.get("carol_mobile"),
+                job__title="React Native Developer",
+            )
+            old_status = carol_sub.status
+            carol_sub.status = ApplicationSubmission.Status.PLACED
+            carol_sub.save(update_fields=["status", "updated_at"])
+            record_submission_status_change(carol_sub, "PLACED", from_status=old_status, note="Placed via seed data")
+
+            p2 = Placement.objects.create(
+                submission=carol_sub,
+                placement_type=Placement.PlacementType.PERMANENT,
+                status=Placement.PlacementStatus.ACTIVE,
+                start_date=date(2026, 4, 1),
+                annual_salary=Decimal("130000.00"),
+                fee_percentage=Decimal("20.00"),
+                fee_amount=Decimal("26000.00"),
+                currency="USD",
+                notes="Permanent hire. 20% placement fee on $130k salary.",
+                created_by=employee,
+            )
+
+            # Commission for the permanent placement
+            Commission.objects.create(
+                placement=p2,
+                employee=employee,
+                commission_rate=Decimal("15.00"),
+                commission_amount=Decimal("3900.00"),
+                currency="USD",
+                status=Commission.CommissionStatus.APPROVED,
+                notes="15% of $26,000 placement fee",
+            )
+
+            self.stdout.write(self.style.SUCCESS("  Created permanent placement for Carol (React Native)"))
+        except (ApplicationSubmission.DoesNotExist, KeyError):
+            self.stdout.write(self.style.WARNING("  Skipped Carol placement (submission not found)"))
+
+        self.stdout.write(self.style.SUCCESS("  Created placements, timesheets, and commissions"))
