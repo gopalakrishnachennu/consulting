@@ -13,6 +13,7 @@ from .views import (
     CompanyLinkedInImportView,
     CompanySearchView,
     CompanyReEnrichView,
+    CompanyQuickFillView,
     CompanyEnrichmentStatusView,
     CompanyCreateAPIView,
     EnrichmentLogListView,
@@ -34,6 +35,7 @@ urlpatterns = [
     path("enrichment/logs/", EnrichmentLogListView.as_view(), name="company-enrichment-logs"),
     path("<int:pk>/", CompanyDetailView.as_view(), name="company-detail"),
     path("<int:pk>/re-enrich/", CompanyReEnrichView.as_view(), name="company-re-enrich"),
+    path("<int:pk>/quick-fill/", CompanyQuickFillView.as_view(), name="company-quick-fill"),
     path("<int:pk>/edit/", CompanyUpdateView.as_view(), name="company-edit"),
 ]
 

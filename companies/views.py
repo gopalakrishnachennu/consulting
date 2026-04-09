@@ -237,6 +237,15 @@ class CompanyDetailView(AdminOrEmployeeRequiredMixin, DetailView):
         context["company_top_consultants"] = consultant_rows  # resolved lazily in template if needed
         context["company_timeline"] = timeline[:100]
         context["company_jobs"] = company.jobs.all().select_related("posted_by").order_by("-created_at")
+        if company.logo_url:
+            context["company_logo_src"] = company.logo_url
+        elif company.domain:
+            context["company_logo_src"] = f"https://logo.clearbit.com/{company.domain}"
+        else:
+            context["company_logo_src"] = ""
+        desc = (company.description or "").strip()
+        context["description_needs_toggle"] = len(desc) > 560
+        context["description_preview"] = (desc[:560] + "…") if len(desc) > 560 else desc
         return context
 
 
@@ -509,25 +518,47 @@ class CompanySearchView(LoginRequiredMixin, UserPassesTestMixin, View):
         return u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE, User.Role.CONSULTANT)
 
     def get(self, request, *args, **kwargs):
+        from difflib import SequenceMatcher
+
         q = (request.GET.get("q") or "").strip()
         if not q:
             return JsonResponse({"results": []})
-        qs = (
-            Company.objects.filter(name__icontains=q)
-            | Company.objects.filter(alias__icontains=q)
-        ).order_by("name")[:10]
-        data = []
-        for c in qs:
-            data.append(
-                {
-                    "id": c.pk,
-                    "name": c.name,
-                    "alias": c.alias,
-                    "domain": c.domain,
-                    "website": c.website,
-                    "industry": c.industry,
-                }
-            )
+
+        # 1. Substring match first (fast)
+        exact_qs = list(
+            (
+                Company.objects.filter(name__icontains=q)
+                | Company.objects.filter(alias__icontains=q)
+            ).order_by("name")[:10]
+        )
+        seen_ids = {c.pk for c in exact_qs}
+
+        # 2. Fuzzy fallback — catch typos like "brighthorizon" → "BrightHorizons"
+        fuzzy_matches = []
+        if len(exact_qs) < 5:
+            q_lower = q.lower().strip()
+            for c in Company.objects.only("pk", "name", "alias", "domain", "website", "industry"):
+                if c.pk in seen_ids:
+                    continue
+                ratio = SequenceMatcher(None, q_lower, c.name.lower()).ratio()
+                if ratio < 0.75 and c.alias:
+                    ratio = max(ratio, SequenceMatcher(None, q_lower, c.alias.lower()).ratio())
+                if ratio >= 0.75:
+                    fuzzy_matches.append((c, ratio))
+            fuzzy_matches.sort(key=lambda x: x[1], reverse=True)
+
+        combined = exact_qs + [c for c, _ in fuzzy_matches[:5]]
+        data = [
+            {
+                "id": c.pk,
+                "name": c.name,
+                "alias": c.alias,
+                "domain": c.domain,
+                "website": c.website,
+                "industry": c.industry,
+            }
+            for c in combined[:10]
+        ]
         return JsonResponse({"results": data})
 
 
@@ -605,6 +636,84 @@ class CompanyReEnrichView(LoginRequiredMixin, UserPassesTestMixin, View):
         company = get_object_or_404(Company, pk=kwargs["pk"])
         enrich_company_task.delay(company.pk)
         messages.success(request, f"Re-enrichment queued for “{company.name}”.")
+        return redirect("company-detail", pk=company.pk)
+
+
+class CompanyQuickFillView(LoginRequiredMixin, UserPassesTestMixin, View):
+    """
+    Synchronous enrichment — no Celery required.
+    Runs DDG Instant Answer + OG scrape + keyword classifiers in-request
+    and immediately saves + shows what was filled. Zero LLM cost, zero API cost.
+    """
+
+    def test_func(self):
+        u: User = self.request.user
+        return u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE)
+
+    def post(self, request, *args, **kwargs):
+        from .enrichment_helpers import apply_free_enrichment
+        from .tasks import (
+            _compute_data_quality_score,
+            _extract_domain_for_enrichment,
+            _fetch_apollo,
+            _fetch_hunter,
+            _apply_link_validation,
+        )
+
+        company = get_object_or_404(Company, pk=kwargs["pk"])
+        filled, src_tags = apply_free_enrichment(company)
+
+        # Optional APIs (Hunter, Apollo). Knowledge Graph runs inside apply_free_enrichment.
+        try:
+            config = __import__("core.models", fromlist=["PlatformConfig"]).PlatformConfig.load()
+        except Exception:
+            config = None
+        domain = _extract_domain_for_enrichment(company)
+        if config:
+            hunter_key = (getattr(config, "hunter_api_key", None) or "").strip()
+            if hunter_key and domain:
+                h_data = _fetch_hunter(hunter_key, domain)
+                if h_data.get("description") and not company.description:
+                    company.description = h_data["description"]
+                    filled.append("description (Hunter.io)")
+                if h_data.get("industry") and not company.industry:
+                    company.industry = h_data["industry"]
+                    filled.append("industry (Hunter.io)")
+                if h_data.get("headcount_range") and not company.headcount_range:
+                    company.headcount_range = str(h_data["headcount_range"])
+                    filled.append("headcount (Hunter.io)")
+                if h_data.get("hq_location") and not company.hq_location:
+                    company.hq_location = h_data["hq_location"]
+                    filled.append("HQ (Hunter.io)")
+            apollo_key = (getattr(config, "apollo_api_key", None) or "").strip()
+            if apollo_key and domain:
+                a_data = _fetch_apollo(apollo_key, domain)
+                if a_data.get("description") and not company.description:
+                    company.description = a_data["description"]
+                    filled.append("description (Apollo)")
+                if a_data.get("industry") and not company.industry:
+                    company.industry = a_data["industry"]
+                    filled.append("industry (Apollo)")
+
+        _apply_link_validation(company)
+
+        company.enrichment_status = Company.EnrichmentStatus.ENRICHED if filled else Company.EnrichmentStatus.FAILED
+        company.enriched_at = timezone.now()
+        company.enrichment_source = "quick-fill+" + "+".join(src_tags) if src_tags else "quick-fill"
+        company.data_quality_score = _compute_data_quality_score(company)
+        company.save()
+
+        if filled:
+            messages.success(
+                request,
+                f"Filled {len(filled)} field(s): {', '.join(filled[:12])}{'…' if len(filled) > 12 else ''}",
+            )
+        else:
+            messages.warning(
+                request,
+                "Could not find enough public data. Add a website or company name and try again.",
+            )
+
         return redirect("company-detail", pk=company.pk)
 
 

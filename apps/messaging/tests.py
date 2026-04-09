@@ -1,3 +1,4 @@
+from django.core.cache import cache
 from django.test import TestCase, Client
 from django.urls import reverse
 from users.models import User
@@ -60,3 +61,97 @@ class MessagingViewTests(TestCase):
         self.client.login(username="u1", password="testpass")
         resp = self.client.get(reverse("inbox"))
         self.assertEqual(resp.status_code, 200)
+
+    def test_inbox_with_thread_shows_pane(self):
+        self.client.login(username="u1", password="testpass")
+        thread = Thread.objects.create()
+        thread.participants.add(self.u1, self.u2)
+        url = f"{reverse('inbox')}?thread={thread.pk}"
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'id="thread-conversation"')
+
+    def test_thread_post_htmx_returns_messages_partial(self):
+        self.client.login(username="u1", password="testpass")
+        thread = Thread.objects.create()
+        thread.participants.add(self.u1, self.u2)
+        url = reverse("thread-detail", kwargs={"pk": thread.pk})
+        resp = self.client.post(
+            url,
+            {"content": "Hello via HTMX"},
+            HTTP_HX_REQUEST="true",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Hello via HTMX")
+        self.assertContains(resp, 'id="msg-scroll"')
+        self.assertTrue(resp.content.strip().startswith(b"<div"))
+
+    def test_messaging_search_non_htmx_redirects(self):
+        self.client.login(username="u1", password="testpass")
+        resp = self.client.get(reverse("messaging-search") + "?q=ab")
+        self.assertEqual(resp.status_code, 302)
+
+    def test_messaging_search_staff_finds_consultant(self):
+        self.client.login(username="u1", password="testpass")
+        resp = self.client.get(
+            reverse("messaging-search") + "?q=u2",
+            HTTP_HX_REQUEST="true",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "u2")
+
+    def test_messaging_search_consultant_does_not_see_other_consultant(self):
+        User.objects.create_user(username="u3", password="testpass", role=User.Role.CONSULTANT)
+        self.client.login(username="u2", password="testpass")
+        resp = self.client.get(
+            reverse("messaging-search") + "?q=u3",
+            HTTP_HX_REQUEST="true",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "No matches")
+
+    def test_messaging_search_consultant_finds_employee(self):
+        self.client.login(username="u2", password="testpass")
+        resp = self.client.get(
+            reverse("messaging-search") + "?q=u1",
+            HTTP_HX_REQUEST="true",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "u1")
+
+    def test_start_thread_blocked_consultant_to_consultant(self):
+        u3 = User.objects.create_user(username="u3", password="testpass", role=User.Role.CONSULTANT)
+        self.client.login(username="u2", password="testpass")
+        resp = self.client.post(reverse("start-thread", kwargs={"user_id": u3.pk}))
+        self.assertEqual(resp.status_code, 302)
+
+    def test_start_thread_get_redirects_to_inbox(self):
+        self.client.login(username="u1", password="testpass")
+        resp = self.client.get(reverse("start-thread", kwargs={"user_id": self.u2.pk}))
+        self.assertEqual(resp.status_code, 302)
+
+    def test_typing_ping_then_other_sees_status(self):
+        cache.clear()
+        thread = Thread.objects.create()
+        thread.participants.add(self.u1, self.u2)
+        self.client.login(username="u1", password="testpass")
+        r = self.client.post(reverse("thread-typing-ping", kwargs={"pk": thread.pk}))
+        self.assertEqual(r.status_code, 204)
+        self.client.login(username="u2", password="testpass")
+        r2 = self.client.get(
+            reverse("thread-typing-status", kwargs={"pk": thread.pk}),
+            HTTP_HX_REQUEST="true",
+        )
+        self.assertEqual(r2.status_code, 200)
+        self.assertContains(r2, "typing")
+
+    def test_seen_label_after_recipient_opens_thread(self):
+        thread = Thread.objects.create()
+        thread.participants.add(self.u1, self.u2)
+        Message.objects.create(thread=thread, sender=self.u1, content="Hi there", is_read=False)
+        self.client.login(username="u2", password="testpass")
+        self.client.get(reverse("thread-detail", kwargs={"pk": thread.pk}))
+        self.client.login(username="u1", password="testpass")
+        resp = self.client.get(reverse("thread-detail", kwargs={"pk": thread.pk}))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Seen")

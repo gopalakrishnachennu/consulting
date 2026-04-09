@@ -2,7 +2,13 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from users.models import User, ConsultantProfile
 from jobs.models import Job
-from .models import ResumeDraft, LLMInputPreference
+from .models import ResumeDraft, LLMInputPreference, MasterPrompt
+from .engine import (
+    DEFAULT_INPUT_SECTIONS,
+    build_candidate_input,
+    merge_input_sections,
+    validate_input_sections,
+)
 
 
 class ResumeDraftModelTests(TestCase):
@@ -98,3 +104,61 @@ class ResumeViewTests(TestCase):
         url = reverse("draft-detail", args=[self.draft.pk])
         resp = self.client.get(url)
         self.assertEqual(resp.status_code, 302)
+
+
+class EngineInputSectionsTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="c1", password="pass", first_name="A", last_name="B", email="a@b.com"
+        )
+        self.profile = ConsultantProfile.objects.create(
+            user=self.user, phone="555", skills=["Python"], base_resume_text="BASE"
+        )
+
+    def test_merge_defaults_without_master(self):
+        m = merge_input_sections(None, None)
+        self.assertEqual(m, DEFAULT_INPUT_SECTIONS)
+
+    def test_merge_master_overrides(self):
+        mp = MasterPrompt(
+            name="t",
+            system_prompt="x",
+            default_input_sections={"experience": False, "base_resume": False},
+        )
+        m = merge_input_sections(mp, None)
+        self.assertFalse(m["experience"])
+        self.assertFalse(m["base_resume"])
+        self.assertTrue(m["personal"])
+
+    def test_build_candidate_input_omits_sections(self):
+        text = build_candidate_input(
+            self.profile,
+            sections={
+                "personal": True,
+                "experience": False,
+                "education": False,
+                "certifications": False,
+                "skills": False,
+                "total_years": False,
+                "base_resume": False,
+            },
+            master=None,
+        )
+        self.assertIn("PERSONAL DETAILS", text)
+        self.assertNotIn("PROFESSIONAL EXPERIENCE", text)
+        self.assertNotIn("BASE RESUME TEXT", text)
+        self.assertNotIn("MASTER TECHNOLOGY POOL", text)
+
+    def test_validate_requires_content_source(self):
+        err = validate_input_sections(
+            {
+                "personal": True,
+                "experience": False,
+                "education": False,
+                "certifications": True,
+                "skills": False,
+                "total_years": True,
+                "base_resume": False,
+            }
+        )
+        self.assertIsNotNone(err)

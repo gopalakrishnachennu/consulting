@@ -66,6 +66,16 @@
                     {{ job.status|title }}
                 </span>
                 {% endif %}
+                {% if not job.original_link_is_live %}
+                <span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-red-50 text-red-800 border border-red-200" title="Daily URL check could not confirm the posting URL">
+                    Link not live
+                </span>
+                {% endif %}
+                {% if job.possibly_filled %}
+                <span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-amber-50 text-amber-900 border border-amber-200" title="Flagged when the source URL appears gone; role may be filled elsewhere">
+                    Possibly filled
+                </span>
+                {% endif %}
             </div>
 
             <!-- RIGHT: Actions & Date -->

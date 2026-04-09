@@ -1,0 +1,45 @@
+{% comment %}
+Reusable page header with breadcrumbs, title, subtitle, and action buttons.
+
+Usage:
+  {% include "partials/_page_header.html" with title="Jobs" subtitle="Manage all job postings" breadcrumbs=breadcrumbs actions=True %}
+
+  Where breadcrumbs is a list of dicts: [{"label": "Dashboard", "url": "/admin-dashboard/"}, {"label": "Jobs"}]
+  The last item has no URL and is treated as the current page.
+
+  For action buttons, use the block in the parent template:
+  {% block page_actions %}...{% endblock %}
+{% endcomment %}
+
+<div class="mb-6">
+  {% if breadcrumbs %}
+  <nav class="text-sm mb-2" aria-label="Breadcrumb">
+    <ol class="flex items-center flex-wrap">
+      {% for crumb in breadcrumbs %}
+      <li class="flex items-center">
+        {% if not forloop.first %}<span class="breadcrumb-sep"></span>{% endif %}
+        {% if crumb.url and not forloop.last %}
+        <a href="{{ crumb.url }}" class="text-gray-500 hover:text-indigo-600 transition">{{ crumb.label }}</a>
+        {% else %}
+        <span class="text-gray-800 font-medium">{{ crumb.label }}</span>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+  </nav>
+  {% endif %}
+
+  <div class="flex items-center justify-between flex-wrap gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">{{ title }}</h1>
+      {% if subtitle %}
+      <p class="text-sm text-gray-500 mt-1">{{ subtitle }}</p>
+      {% endif %}
+    </div>
+    {% if page_actions %}
+    <div class="flex items-center gap-2">
+      {{ page_actions }}
+    </div>
+    {% endif %}
+  </div>
+</div>

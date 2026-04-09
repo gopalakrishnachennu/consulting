@@ -19,6 +19,21 @@ class Company(models.Model):
     linkedin_url = models.URLField(blank=True)
     logo_url = models.URLField(blank=True)
 
+    class CompanyType(models.TextChoices):
+        PRODUCT      = "product",      "Product Company"
+        SERVICE      = "service",      "Service-Based"
+        CONSULTANCY  = "consultancy",  "Consultancy"
+        STAFFING     = "staffing",     "Staffing / Body Shop"
+        UNKNOWN      = "unknown",      "Unknown"
+
+    company_type = models.CharField(
+        max_length=20,
+        choices=CompanyType.choices,
+        default=CompanyType.UNKNOWN,
+        db_index=True,
+        help_text="Product / Service-Based / Consultancy / Staffing — auto-detected by enrichment.",
+    )
+
     industry = models.CharField(max_length=255, blank=True)
     size_band = models.CharField(
         max_length=50,

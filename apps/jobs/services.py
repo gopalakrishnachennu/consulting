@@ -270,6 +270,137 @@ def _score_job_for_consultant(job: Job, consultant: ConsultantProfile) -> int:
     return score
 
 
+def validate_job_quality(job: Job) -> dict:
+    """
+    Score a job 0–100 across 9 quality checks.
+    Returns:
+      {
+        "score": int,
+        "issues": [{"code": str, "severity": str, "message": str}],
+        "passed": [str],
+        "auto_approved": bool,
+      }
+    """
+    score = 0
+    issues = []
+    passed = []
+
+    # 1. Title meaningful (10 pts)
+    title = (job.title or "").strip()
+    generic_titles = {"job", "position", "role", "opportunity", "opening", "vacancy"}
+    if len(title) > 5 and title.lower() not in generic_titles:
+        score += 10
+        passed.append("TITLE_OK")
+    else:
+        issues.append({"code": "TITLE_WEAK", "severity": "high", "message": "Title is missing or too generic."})
+
+    # 2. Description length (15 pts — partial credit)
+    desc_words = len((job.description or "").split())
+    if desc_words >= 150:
+        score += 15
+        passed.append("DESCRIPTION_FULL")
+    elif desc_words >= 60:
+        score += 8
+        issues.append({"code": "DESCRIPTION_SHORT", "severity": "low", "message": f"Description is short ({desc_words} words). 150+ words recommended."})
+    else:
+        issues.append({"code": "DESCRIPTION_MISSING", "severity": "high", "message": f"Description is very short ({desc_words} words). Add a full job description."})
+
+    # 3. Job URL present (10 pts)
+    if (job.original_link or "").strip():
+        score += 10
+        passed.append("URL_PRESENT")
+    else:
+        issues.append({"code": "NO_URL", "severity": "medium", "message": "No original job posting URL. Link is required for tracking."})
+
+    # 4. URL live check (10 pts — use stored flag; background task sets this)
+    if (job.original_link or "").strip():
+        if job.original_link_is_live:
+            score += 10
+            passed.append("URL_LIVE")
+        elif job.original_link_last_checked_at is None:
+            # Not yet checked — give benefit of the doubt
+            score += 5
+            issues.append({"code": "URL_UNCHECKED", "severity": "low", "message": "URL has not been validated yet. Will be checked by background task."})
+        else:
+            issues.append({"code": "URL_DEAD", "severity": "high", "message": "Original posting URL appears to be unavailable."})
+    else:
+        # Already flagged above (no URL)
+        pass
+
+    # 5. Company not blacklisted (15 pts)
+    if job.company_obj_id and job.company_obj:
+        if not getattr(job.company_obj, 'is_blacklisted', False):
+            score += 15
+            passed.append("COMPANY_OK")
+        else:
+            issues.append({"code": "COMPANY_BLACKLISTED", "severity": "critical", "message": f"Company '{job.company}' is on the blacklist. This job must not be submitted."})
+    else:
+        # No structured company — give partial credit (can't check blacklist)
+        score += 8
+        issues.append({"code": "NO_COMPANY_PROFILE", "severity": "low", "message": "No structured company profile linked. Link a company to enable blacklist checking."})
+
+    # 6. Duplicate check (15 pts)
+    dups = find_potential_duplicate_jobs(
+        title=job.title or "",
+        company=job.company or "",
+        description=job.description or "",
+        exclude_job_id=job.pk,
+        limit=1,
+    )
+    if not dups:
+        score += 15
+        passed.append("NO_DUPLICATE")
+    else:
+        top = dups[0]
+        issues.append({
+            "code": "DUPLICATE_RISK",
+            "severity": "high",
+            "message": f"Similar job exists: '{top['job'].title}' at {top['job'].company} (match score {top['overall_score']:.0%}, Job #{top['job'].id}).",
+        })
+
+    # 7. Skills parsed from JD (10 pts)
+    parsed_skills = (job.parsed_jd or {}).get("required_skills", [])
+    if parsed_skills:
+        score += 10
+        passed.append("SKILLS_PARSED")
+    else:
+        issues.append({"code": "NO_SKILLS", "severity": "medium", "message": "No required skills extracted from the JD. Run JD parse or add more detail to the description."})
+
+    # 8. Marketing roles tagged (10 pts)
+    try:
+        roles_count = job.marketing_roles.count()
+    except Exception:
+        roles_count = 0
+    if roles_count > 0:
+        score += 10
+        passed.append("ROLES_TAGGED")
+    else:
+        issues.append({"code": "NO_ROLES", "severity": "medium", "message": "No marketing roles tagged. Add roles so consultants are matched correctly."})
+
+    # 9. Salary range present (5 pts)
+    if (job.salary_range or "").strip():
+        score += 5
+        passed.append("SALARY_OK")
+    else:
+        issues.append({"code": "NO_SALARY", "severity": "low", "message": "No salary range provided. Adding it improves consultant matching."})
+
+    # Auto-approve threshold
+    from core.models import PlatformConfig
+    try:
+        cfg = PlatformConfig.load()
+        threshold = getattr(cfg, 'auto_approve_pool_threshold', 0) or 0
+    except Exception:
+        threshold = 0
+    auto_approved = bool(threshold > 0 and score >= threshold)
+
+    return {
+        "score": score,
+        "issues": issues,
+        "passed": passed,
+        "auto_approved": auto_approved,
+    }
+
+
 def match_jobs_for_consultant(
     consultant: ConsultantProfile, limit: int = 10
 ):

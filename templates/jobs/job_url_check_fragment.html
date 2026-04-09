@@ -1,0 +1,70 @@
+{% if state == 'empty' %}
+{# nothing — field is blank #}
+{% elif state == 'ok' %}
+<div class="flex items-center gap-2 text-xs text-green-700 mt-1.5" id="url-check-ok">
+    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+    </svg>
+    URL is unique — not found in the system.
+</div>
+{% elif state == 'duplicate' %}
+<div class="mt-2 rounded-lg border-2 border-red-400 bg-red-50 px-4 py-3 text-sm"
+     id="url-check-duplicate"
+     data-url-duplicate="true">
+    <div class="flex items-start gap-3">
+        <span class="flex-shrink-0 mt-0.5">
+            <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+        </span>
+        <div class="flex-1">
+            <p class="font-bold text-red-800 text-base">
+                URL already exists in the system — this is a duplicate
+            </p>
+            <div class="mt-2 bg-white border border-red-200 rounded-lg p-3 space-y-1.5">
+                <div class="flex items-center gap-2 flex-wrap">
+                    <span class="font-mono text-xs font-bold bg-red-100 text-red-800 px-2 py-0.5 rounded">
+                        JOB-{{ existing.pk }}
+                    </span>
+                    <a href="{% url 'job-detail' existing.pk %}" target="_blank"
+                        class="font-semibold text-red-700 hover:underline">
+                        {{ existing.title }}
+                    </a>
+                </div>
+                <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
+                    <span><span class="font-semibold">Company:</span> {{ existing.company|default:"—" }}</span>
+                    <span><span class="font-semibold">Status:</span>
+                        <span class="px-1.5 py-0.5 rounded font-bold
+                            {% if existing.status == 'OPEN' %}bg-green-100 text-green-800
+                            {% elif existing.status == 'POOL' %}bg-yellow-100 text-yellow-800
+                            {% elif existing.status == 'CLOSED' %}bg-gray-200 text-gray-700
+                            {% else %}bg-blue-100 text-blue-800{% endif %}">
+                            {{ existing.get_status_display }}
+                        </span>
+                    </span>
+                    {% if existing.salary_range %}
+                    <span><span class="font-semibold">Salary:</span> {{ existing.salary_range }}</span>
+                    {% endif %}
+                    <span><span class="font-semibold">Added:</span> {{ existing.created_at|date:"M d, Y" }}</span>
+                </div>
+                {% if existing.location %}
+                <div class="text-xs text-gray-500">
+                    <span class="font-semibold">Location:</span> {{ existing.location }}
+                </div>
+                {% endif %}
+            </div>
+            <p class="mt-2 text-xs text-red-700 font-medium">
+                You cannot submit this job — the URL is already registered.
+                {% if existing.status == 'CLOSED' or existing.is_archived %}
+                To re-open this role, go to
+                <a href="{% url 'job-detail' existing.pk %}" class="underline font-bold" target="_blank">Job #{{ existing.pk }}</a>
+                and restore or re-open it instead.
+                {% else %}
+                <a href="{% url 'job-detail' existing.pk %}" class="underline font-bold" target="_blank">View existing job →</a>
+                {% endif %}
+            </p>
+        </div>
+    </div>
+</div>
+{% endif %}

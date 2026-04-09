@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.test import TestCase, Client
@@ -499,3 +499,258 @@ class KanbanPipelineSmokeTests(TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, 'kanban-root')
+
+
+# ─────────────────────────────────────────────────────────────
+# Phase 4+5 Tests
+# ─────────────────────────────────────────────────────────────
+
+class _Phase45TestBase(TestCase):
+    """Shared setUp for Phase 4+5 tests."""
+
+    def setUp(self):
+        self.client = Client()
+        self.admin = User.objects.create_user(
+            username='admin45', password='testpass', role=User.Role.ADMIN
+        )
+        self.employee = User.objects.create_user(
+            username='emp45', password='testpass', role=User.Role.EMPLOYEE
+        )
+        self.consultant_user = User.objects.create_user(
+            username='con45', password='testpass', role=User.Role.CONSULTANT
+        )
+        self.profile = ConsultantProfile.objects.create(
+            user=self.consultant_user, bio='Test consultant', skills=['Python', 'Django']
+        )
+        self.job = Job.objects.create(
+            title='Senior Dev', company='TestCo', posted_by=self.employee,
+            status=Job.Status.OPEN, description='Build things',
+            original_link='https://example.com/j',
+        )
+        self.sub = ApplicationSubmission.objects.create(
+            job=self.job, consultant=self.profile,
+            status=ApplicationSubmission.Status.APPLIED,
+            submitted_by=self.employee,
+        )
+
+
+class FollowUpReminderTests(_Phase45TestBase):
+
+    def test_create_reminder(self):
+        from .models import FollowUpReminder
+        self.client.login(username='emp45', password='testpass')
+        resp = self.client.post(
+            reverse('followup-reminder-create', args=[self.sub.pk]),
+            {'remind_at': '2026-04-10T09:00', 'message': 'Follow up with client'},
+            follow=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(FollowUpReminder.objects.filter(submission=self.sub).count(), 1)
+
+    def test_dismiss_reminder(self):
+        from .models import FollowUpReminder
+        from django.utils import timezone
+        reminder = FollowUpReminder.objects.create(
+            submission=self.sub, remind_at=timezone.now(), created_by=self.employee,
+        )
+        self.client.login(username='emp45', password='testpass')
+        resp = self.client.post(
+            reverse('followup-reminder-dismiss', args=[reminder.pk]),
+            follow=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        reminder.refresh_from_db()
+        self.assertEqual(reminder.status, FollowUpReminder.ReminderStatus.DISMISSED)
+
+
+class StaleSubmissionsTests(_Phase45TestBase):
+
+    def test_stale_page_loads(self):
+        self.client.login(username='emp45', password='testpass')
+        resp = self.client.get(reverse('stale-submissions'))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_stale_shows_old_submissions(self):
+        from django.utils import timezone
+        from datetime import timedelta
+        # Make submission old
+        ApplicationSubmission.objects.filter(pk=self.sub.pk).update(
+            updated_at=timezone.now() - timedelta(days=20)
+        )
+        self.client.login(username='emp45', password='testpass')
+        resp = self.client.get(reverse('stale-submissions'))
+        self.assertContains(resp, 'Senior Dev')
+
+
+class SoftDeleteTests(_Phase45TestBase):
+
+    def test_archive_submission(self):
+        self.client.login(username='emp45', password='testpass')
+        resp = self.client.post(reverse('submission-archive', args=[self.sub.pk]), follow=True)
+        self.assertEqual(resp.status_code, 200)
+        self.sub.refresh_from_db()
+        self.assertTrue(self.sub.is_archived)
+
+    def test_restore_submission(self):
+        self.sub.is_archived = True
+        self.sub.save()
+        self.client.login(username='emp45', password='testpass')
+        resp = self.client.post(reverse('submission-restore', args=[self.sub.pk]), follow=True)
+        self.assertEqual(resp.status_code, 200)
+        self.sub.refresh_from_db()
+        self.assertFalse(self.sub.is_archived)
+
+    def test_archived_list_page(self):
+        self.sub.is_archived = True
+        self.sub.save()
+        self.client.login(username='emp45', password='testpass')
+        resp = self.client.get(reverse('submission-archived'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Senior Dev')
+
+    def test_archive_job(self):
+        self.client.login(username='emp45', password='testpass')
+        resp = self.client.post(reverse('job-archive', args=[self.job.pk]), follow=True)
+        self.assertEqual(resp.status_code, 200)
+        self.job.refresh_from_db()
+        self.assertTrue(self.job.is_archived)
+
+    def test_restore_job(self):
+        from django.utils import timezone
+        self.job.is_archived = True
+        self.job.archived_at = timezone.now()
+        self.job.save()
+        self.client.login(username='emp45', password='testpass')
+        resp = self.client.post(reverse('job-restore', args=[self.job.pk]), follow=True)
+        self.assertEqual(resp.status_code, 200)
+        self.job.refresh_from_db()
+        self.assertFalse(self.job.is_archived)
+
+    def test_archived_jobs_page(self):
+        from django.utils import timezone
+        self.job.is_archived = True
+        self.job.archived_at = timezone.now()
+        self.job.save()
+        self.client.login(username='emp45', password='testpass')
+        resp = self.client.get(reverse('job-archived'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Senior Dev')
+
+
+class GDPRExportTests(_Phase45TestBase):
+
+    def test_gdpr_export_admin(self):
+        self.client.login(username='admin45', password='testpass')
+        resp = self.client.get(reverse('gdpr-export', args=[self.consultant_user.pk]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp['Content-Type'], 'application/json')
+        import json
+        data = json.loads(resp.content)
+        self.assertEqual(data['user']['username'], 'con45')
+        self.assertIn('submissions', data)
+
+    def test_gdpr_export_consultant_self(self):
+        self.client.login(username='con45', password='testpass')
+        resp = self.client.get(reverse('gdpr-export', args=[self.consultant_user.pk]))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_gdpr_export_other_consultant_denied(self):
+        other = User.objects.create_user(
+            username='other_con', password='testpass', role=User.Role.CONSULTANT
+        )
+        self.client.login(username='con45', password='testpass')
+        resp = self.client.get(reverse('gdpr-export', args=[other.pk]), follow=True)
+        # Should redirect (denied)
+        self.assertEqual(resp.status_code, 200)
+
+
+class WinLossAnalysisTests(_Phase45TestBase):
+
+    def test_win_loss_page_loads(self):
+        self.client.login(username='emp45', password='testpass')
+        resp = self.client.get(reverse('win-loss-analysis'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Win/Loss Analysis')
+
+    def test_win_loss_counts(self):
+        # Add a placed submission
+        con2 = User.objects.create_user(username='con2_45', password='testpass', role=User.Role.CONSULTANT)
+        p2 = ConsultantProfile.objects.create(user=con2, bio='Test2')
+        j2 = Job.objects.create(
+            title='Job2', company='Co2', posted_by=self.employee,
+            status=Job.Status.OPEN, description='d', original_link='https://x.com/2',
+        )
+        ApplicationSubmission.objects.create(
+            job=j2, consultant=p2, status=ApplicationSubmission.Status.PLACED,
+            submitted_by=self.employee,
+        )
+        self.client.login(username='emp45', password='testpass')
+        resp = self.client.get(reverse('win-loss-analysis'))
+        self.assertContains(resp, 'Placed (Wins)')
+
+
+class CoverLetterModelTests(_Phase45TestBase):
+
+    def test_cover_letter_auto_version(self):
+        from resumes.models import CoverLetter
+        cl1 = CoverLetter.objects.create(
+            consultant=self.profile, job=self.job, content='test', created_by=self.employee,
+        )
+        self.assertEqual(cl1.version, 1)
+        cl2 = CoverLetter.objects.create(
+            consultant=self.profile, job=self.job, content='test v2', created_by=self.employee,
+        )
+        self.assertEqual(cl2.version, 2)
+
+
+class FollowUpTaskTests(_Phase45TestBase):
+
+    def test_send_followup_reminders_task(self):
+        from .models import FollowUpReminder
+        from django.utils import timezone
+        reminder = FollowUpReminder.objects.create(
+            submission=self.sub,
+            remind_at=timezone.now() - timedelta(hours=1),
+            created_by=self.employee,
+        )
+        from .tasks import send_followup_reminders
+        result = send_followup_reminders()
+        self.assertEqual(result['sent'], 1)
+        reminder.refresh_from_db()
+        self.assertEqual(reminder.status, FollowUpReminder.ReminderStatus.SENT)
+        self.assertTrue(Notification.objects.filter(user=self.employee, title__startswith='Follow-up').exists())
+
+    def test_detect_stale_submissions_task(self):
+        from django.utils import timezone
+        ApplicationSubmission.objects.filter(pk=self.sub.pk).update(
+            updated_at=timezone.now() - timedelta(days=20)
+        )
+        from .tasks import detect_stale_submissions
+        result = detect_stale_submissions()
+        self.assertGreaterEqual(result['notifications_created'], 1)
+        self.assertTrue(Notification.objects.filter(user=self.employee, title__startswith='Stale').exists())
+
+
+class FieldLevelAuditTests(_Phase45TestBase):
+
+    def test_log_field_changes(self):
+        from core.models import AuditLog
+        from core.audit_utils import log_field_changes
+        old = {'status': 'APPLIED', 'notes': 'old'}
+        new = {'status': 'INTERVIEW', 'notes': 'old'}
+        changes = log_field_changes(self.employee, self.sub, old, new)
+        self.assertEqual(len(changes), 1)
+        self.assertEqual(changes[0]['field'], 'status')
+        self.assertEqual(AuditLog.objects.count(), 1)
+        log = AuditLog.objects.first()
+        self.assertEqual(log.action, 'field_change')
+        self.assertEqual(log.target_model, 'ApplicationSubmission')
+
+    def test_no_log_when_no_changes(self):
+        from core.models import AuditLog
+        from core.audit_utils import log_field_changes
+        old = {'status': 'APPLIED'}
+        new = {'status': 'APPLIED'}
+        changes = log_field_changes(self.employee, self.sub, old, new)
+        self.assertEqual(len(changes), 0)
+        self.assertEqual(AuditLog.objects.count(), 0)

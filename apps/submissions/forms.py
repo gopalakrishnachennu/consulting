@@ -1,7 +1,7 @@
 from django import forms
 from .models import (
     ApplicationSubmission, SubmissionResponse, Offer, OfferRound, EmailEvent,
-    Placement, Timesheet, Commission,
+    Placement, Timesheet, Commission, FollowUpReminder,
 )
 
 class ApplicationSubmissionForm(forms.ModelForm):
@@ -124,3 +124,13 @@ class EmailEventReviewForm(forms.Form):
         widget=forms.Textarea(attrs={'rows': 2, 'placeholder': 'Optional note (will be added to the timeline)'}),
         label="Note",
     )
+
+
+class FollowUpReminderForm(forms.ModelForm):
+    class Meta:
+        model = FollowUpReminder
+        fields = ['remind_at', 'message']
+        widgets = {
+            'remind_at': forms.DateTimeInput(attrs={'type': 'datetime-local'}),
+            'message': forms.Textarea(attrs={'rows': 3, 'placeholder': 'Custom follow-up message (optional)'}),
+        }

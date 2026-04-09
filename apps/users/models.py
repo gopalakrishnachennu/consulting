@@ -63,6 +63,23 @@ class UserEmailNotificationPreferences(models.Model):
         default=True,
         help_text=_("Email for system and account messages."),
     )
+    # In-app (bell) — same categories as email; users can mute in-app without disabling email.
+    inapp_submissions = models.BooleanField(
+        default=True,
+        help_text=_("In-app alerts for applications and pipeline updates."),
+    )
+    inapp_interviews = models.BooleanField(
+        default=True,
+        help_text=_("In-app alerts for interviews and scheduling."),
+    )
+    inapp_jobs = models.BooleanField(
+        default=True,
+        help_text=_("In-app alerts for job postings and job-related notices."),
+    )
+    inapp_system = models.BooleanField(
+        default=True,
+        help_text=_("In-app alerts for system and account messages."),
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
@@ -99,6 +116,12 @@ class ConsultantProfile(models.Model):
     skills = models.JSONField(default=list, blank=True)
     hourly_rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     phone = models.CharField(max_length=20, blank=True, default='')
+    preferred_location = models.CharField(
+        max_length=120,
+        blank=True,
+        default='',
+        help_text=_("City, State used in resume header. e.g. 'Jersey City, NJ' or 'Remote'"),
+    )
     marketing_roles = models.ManyToManyField(MarketingRole, blank=True, related_name='consultants')
 
     class Status(models.TextChoices):

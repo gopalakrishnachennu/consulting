@@ -1,7 +1,9 @@
 from django.test import TestCase, Client
 from django.urls import reverse
-from users.models import User
-from .models import PlatformConfig, LLMConfig, AuditLog, Organisation
+from users.models import User, UserEmailNotificationPreferences
+from .models import PlatformConfig, LLMConfig, AuditLog, Organisation, Notification, BroadcastMessage
+from .notification_utils import create_notification, sanitize_internal_link
+from .broadcast_utils import _recipient_queryset
 
 
 class PlatformConfigTests(TestCase):
@@ -108,3 +110,71 @@ class SeedDataCommandTests(TestCase):
         call_command("seed_data")
         count2 = User.objects.count()
         self.assertEqual(count1, count2)
+
+
+class NotificationUtilsTests(TestCase):
+    def test_sanitize_internal_link_accepts_safe_paths(self):
+        self.assertEqual(sanitize_internal_link("/submissions/1/"), "/submissions/1/")
+        self.assertEqual(sanitize_internal_link(""), "")
+
+    def test_sanitize_internal_link_rejects_open_redirects(self):
+        self.assertEqual(sanitize_internal_link("//evil.com"), "")
+        self.assertEqual(sanitize_internal_link("https://evil.com"), "")
+        self.assertEqual(sanitize_internal_link("/\\evil.com"), "")
+
+    def test_create_notification_respects_inapp_mute(self):
+        user = User.objects.create_user(username="n1", password="pass", role=User.Role.CONSULTANT)
+        prefs, _ = UserEmailNotificationPreferences.objects.get_or_create(user=user)
+        prefs.inapp_submissions = False
+        prefs.save()
+        out = create_notification(
+            user,
+            kind=Notification.Kind.SUBMISSION,
+            title="Test",
+            body="Body",
+            link="/submissions/1/",
+        )
+        self.assertIsNone(out)
+        self.assertEqual(Notification.objects.filter(user=user).count(), 0)
+
+    def test_dedupe_key_prevents_duplicate_rows(self):
+        user = User.objects.create_user(username="n2", password="pass", role=User.Role.EMPLOYEE)
+        a = create_notification(
+            user,
+            kind=Notification.Kind.SYSTEM,
+            title="Once",
+            dedupe_key="task:123",
+        )
+        b = create_notification(
+            user,
+            kind=Notification.Kind.SYSTEM,
+            title="Twice",
+            dedupe_key="task:123",
+        )
+        self.assertEqual(a.pk, b.pk)
+        self.assertEqual(Notification.objects.filter(user=user).count(), 1)
+
+
+class BroadcastAudienceQueryTests(TestCase):
+    """Workforce audience filters: employees, consultants, both."""
+
+    def setUp(self):
+        self.emp = User.objects.create_user(username="aud_emp", password="pass", role=User.Role.EMPLOYEE)
+        self.con = User.objects.create_user(username="aud_con", password="pass", role=User.Role.CONSULTANT)
+        self.adm = User.objects.create_user(username="aud_adm", password="pass", role=User.Role.ADMIN)
+
+    def _ids(self, audience: str):
+        m = BroadcastMessage(audience=audience)
+        return set(_recipient_queryset(m).values_list("pk", flat=True))
+
+    def test_employees_only(self):
+        self.assertEqual(self._ids(BroadcastMessage.Audience.EMPLOYEES_ONLY), {self.emp.pk})
+
+    def test_consultants_only(self):
+        self.assertEqual(self._ids(BroadcastMessage.Audience.CONSULTANTS), {self.con.pk})
+
+    def test_employees_and_consultants(self):
+        self.assertEqual(
+            self._ids(BroadcastMessage.Audience.EMPLOYEES_AND_CONSULTANTS),
+            {self.emp.pk, self.con.pk},
+        )

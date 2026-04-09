@@ -37,7 +37,6 @@ class Command(BaseCommand):
         self._seed_experience_education()
         self._seed_submissions()
         self._seed_interviews()
-        self._seed_prompts()
         self._seed_messages()
         self._seed_placements()
         self.stdout.write(self.style.SUCCESS("\nAll seed data created successfully!"))
@@ -49,8 +48,6 @@ class Command(BaseCommand):
         from users.models import MarketingRole, ConsultantProfile, EmployeeProfile
         from interviews_app.models import Interview
         from messaging.models import Thread
-        from prompts_app.models import Prompt
-
         Commission.objects.all().delete()
         Timesheet.objects.all().delete()
         Placement.objects.all().delete()
@@ -58,7 +55,6 @@ class Command(BaseCommand):
         ApplicationSubmission.objects.all().delete()
         Job.objects.all().delete()
         Company.objects.all().delete()
-        Prompt.objects.all().delete()
         Thread.objects.all().delete()
         MarketingRole.objects.all().delete()
         ConsultantProfile.objects.all().delete()
@@ -634,55 +630,6 @@ class Command(BaseCommand):
                     )
         self.stdout.write(self.style.SUCCESS("  Created interviews"))
 
-    # ── Prompts ───────────────────────────────────────────────────────
-    def _seed_prompts(self):
-        from prompts_app.models import Prompt
-
-        admin = User.objects.filter(is_superuser=True).first()
-
-        prompts_data = [
-            {
-                "name": "Standard Resume Generator",
-                "description": "Default prompt for ATS-optimized resume generation",
-                "system_text": (
-                    "You are an expert resume writer specializing in ATS-optimized resumes "
-                    "for tech professionals. Write clear, quantified achievements. "
-                    "Use action verbs. Match keywords from the job description."
-                ),
-                "template_text": (
-                    "Generate a professional resume for the following candidate and job:\n\n"
-                    "CANDIDATE:\n{candidate_info}\n\n"
-                    "JOB DESCRIPTION:\n{job_description}\n\n"
-                    "Requirements:\n"
-                    "- ATS-friendly formatting\n"
-                    "- Quantified achievements where possible\n"
-                    "- Match keywords from the JD\n"
-                    "- Professional summary tailored to this role"
-                ),
-                "is_default": True,
-                "is_active": True,
-            },
-            {
-                "name": "Executive Resume",
-                "description": "For senior/leadership positions with emphasis on impact",
-                "system_text": (
-                    "You are a senior executive resume writer. Focus on leadership, "
-                    "strategic impact, P&L ownership, and organizational transformation."
-                ),
-                "template_text": (
-                    "Create an executive-level resume:\n\n"
-                    "CANDIDATE:\n{candidate_info}\n\n"
-                    "TARGET ROLE:\n{job_description}\n\n"
-                    "Focus on: leadership scope, revenue impact, team size, strategic initiatives."
-                ),
-                "is_default": False,
-                "is_active": True,
-            },
-        ]
-        for pd in prompts_data:
-            Prompt.objects.get_or_create(name=pd["name"], defaults={**pd, "created_by": admin})
-        self.stdout.write(self.style.SUCCESS("  Created prompt templates"))
-
     # ── Messages ──────────────────────────────────────────────────────
     def _seed_messages(self):
         from messaging.models import Thread, Message
@@ -844,3 +791,94 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING("  Skipped Carol placement (submission not found)"))
 
         self.stdout.write(self.style.SUCCESS("  Created placements, timesheets, and commissions"))
+
+        # Seed master prompt
+        self._seed_master_prompt()
+
+    # ── Master Prompt ─────────────────────────────────────────────────
+    def _seed_master_prompt(self):
+        from resumes.models import MasterPrompt
+
+        if MasterPrompt.objects.exists():
+            return
+
+        admin = User.objects.filter(is_superuser=True).first()
+
+        SYSTEM_PROMPT = (
+            "You are a **Senior Resume Architect** with 15 years of experience in technical recruiting, "
+            "ATS optimization, and career coaching. You generate precisely tailored, ATS-optimized, "
+            "human-authentic resumes that pass both automated screening and human review.\n\n"
+            "You operate under two absolute laws:\n"
+            "1. Every single word in the output must be traceable to either the Candidate Base Profile "
+            "or the Job Description. Nothing is invented. Nothing is generic.\n"
+            "2. The resume must read as if the candidate wrote it themselves — not as if AI generated it. "
+            "No filler. No fluff. Every line earns its place."
+        )
+
+        GENERATION_RULES = (
+            "## PROCESSING PIPELINE\n\n"
+            "Execute these phases in order. Output ONLY the final resume (Part 3) unless user says otherwise.\n\n"
+            "### PHASE 1: JD DEEP ANALYSIS (internal — do not output)\n"
+            "Extract: exact job title, company, location, seniority level, primary technologies (required), "
+            "secondary technologies (preferred), soft skills, years required, compliance requirements, "
+            "ATS keywords (exact phrases to embed).\n\n"
+            "### PHASE 2: COMPATIBILITY CHECK (internal — do not output)\n"
+            "Compare JD requirements vs candidate profile. If <40% tech match, add a warning line at top.\n\n"
+            "### PHASE 3: RESUME GENERATION\n\n"
+            "**SECTION 1: HEADER**\n"
+            "Format: Full Name | City, State | Email | Phone | LinkedIn (if provided)\n"
+            "- Name, email, phone exactly as provided. Never modify.\n"
+            "- Single line, pipe-separated. No icons or emojis.\n\n"
+            "**SECTION 2: PROFESSIONAL SUMMARY**\n"
+            "Exactly 2-4 sentences:\n"
+            "- Sentence 1: [JD Job Title] with [X+ years] experience using [top 3-4 JD technologies from candidate pool]\n"
+            "- Sentence 2: Proven expertise in [4-6 key JD skills] achieving [business outcome from JD]\n"
+            "- Sentence 3 (if JD emphasizes soft skills): Collaborative focus on [business outcome]\n"
+            "- NO generic buzzwords: ban 'results-driven', 'dynamic', 'self-starter', 'passionate'\n"
+            "- YES to domain qualifiers: 'mission-critical', 'enterprise-scale', 'production-grade'\n\n"
+            "**SECTION 3: CORE SKILLS**\n"
+            "7-10 categorized lines. Format: Category: comma-separated skills\n"
+            "- Order by JD relevance (most important first)\n"
+            "- Mirror exact JD phrasing and versions\n"
+            "- 100% of required JD techs must appear (if in candidate pool)\n"
+            "- 3-8 items per category\n\n"
+            "**SECTION 4: PROFESSIONAL EXPERIENCE**\n"
+            "Reverse chronological. Rules:\n"
+            "- Most recent role: 7-9 bullets. Title matches JD title (or close variant)\n"
+            "- Second role: 5-7 bullets\n"
+            "- Older roles: 4-6 bullets each\n"
+            "- EVERY bullet: [Action Verb] + [Specific Technical Activity] + [Technology] + [Business Impact/Metric]\n"
+            "- 60-70% of bullets must have quantified metrics (varied, realistic numbers)\n"
+            "- Never repeat same action verb consecutively or >3x total\n"
+            "- Present tense for current role, past tense for previous\n"
+            "- Every required JD technology appears in at least 2 bullets across all roles\n"
+            "- NEVER fabricate companies, titles, dates, or certifications\n\n"
+            "**SECTION 5: EDUCATION**\n"
+            "Format: Degree — University, Country\n"
+            "- Exactly as provided. Most recent first. No fabricated details.\n\n"
+            "**SECTION 6: CERTIFICATIONS** (only if candidate has them)\n"
+            "Format: Cert Name — Issuing Body — Year\n"
+            "- NEVER fabricate certifications.\n\n"
+            "### ATS RULES\n"
+            "- No tables, columns, images, icons, or special characters beyond bullets/pipes/dashes\n"
+            "- Standard headings: PROFESSIONAL SUMMARY, CORE SKILLS, PROFESSIONAL EXPERIENCE, EDUCATION\n"
+            "- Every required JD tech in both Core Skills AND at least one bullet\n"
+            "- Zero first-person pronouns. Zero passive voice. Every bullet starts with action verb.\n"
+            "- Target: 1.5-2 pages at 11pt font\n\n"
+            "### EDGE CASES\n"
+            "- JD requires tech candidate doesn't know: Include in Core Skills after stronger skills. "
+            "Write 1 contextual bullet with adjacent language.\n"
+            "- JD asks for more years than candidate has: Use actual years + 'of progressive experience'. "
+            "NEVER inflate >1 year.\n"
+            "- Candidate has no certifications but JD requires: Do NOT fabricate. Emphasize equivalent experience.\n"
+            "- Employment gaps: Do NOT mention or fill with fake roles.\n"
+        )
+
+        MasterPrompt.objects.create(
+            name="v1.0 — Master Resume Engine",
+            system_prompt=SYSTEM_PROMPT,
+            generation_rules=GENERATION_RULES,
+            is_active=True,
+            created_by=admin,
+        )
+        self.stdout.write(self.style.SUCCESS("  Created default Master Prompt (v1.0)"))

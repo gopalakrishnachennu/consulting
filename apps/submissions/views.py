@@ -8,7 +8,9 @@ from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.urls import reverse_lazy, reverse
 from django.contrib import messages
 from django.utils import timezone
-from django.http import HttpResponse, JsonResponse
+from datetime import timedelta
+from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
+from django.utils.http import url_has_allowed_host_and_scheme
 from .models import (
     ApplicationSubmission, Offer, OfferRound, record_submission_status_change, EmailEvent,
     Placement, Timesheet, Commission,
@@ -1181,3 +1183,740 @@ class SubmissionKanbanMoveView(LoginRequiredMixin, UserPassesTestMixin, View):
         if request.headers.get('HX-Request'):
             return render(request, 'submissions/partials/kanban_board.html', _kanban_context(request))
         return redirect('submission-kanban')
+
+
+# ─── Phase 4: Follow-Up Reminders ────────────────────────────────────
+class FollowUpReminderCreateView(_StaffRequiredMixin, View):
+    """Create a follow-up reminder for a submission."""
+
+    def post(self, request, pk):
+        from .forms import FollowUpReminderForm
+        from .models import FollowUpReminder
+        submission = get_object_or_404(ApplicationSubmission, pk=pk)
+        form = FollowUpReminderForm(request.POST)
+        if form.is_valid():
+            reminder = form.save(commit=False)
+            reminder.submission = submission
+            reminder.created_by = request.user
+            reminder.save()
+            messages.success(request, "Follow-up reminder created.")
+        else:
+            messages.error(request, "Invalid reminder data.")
+        return redirect('submission-detail', pk=pk)
+
+
+class FollowUpReminderDismissView(_StaffRequiredMixin, View):
+    """Dismiss a follow-up reminder."""
+
+    def post(self, request, pk):
+        from .models import FollowUpReminder
+        reminder = get_object_or_404(FollowUpReminder, pk=pk)
+        reminder.status = FollowUpReminder.ReminderStatus.DISMISSED
+        reminder.save(update_fields=['status'])
+        messages.success(request, "Reminder dismissed.")
+        return redirect('submission-detail', pk=reminder.submission_id)
+
+
+class StaleSubmissionsView(_StaffRequiredMixin, ListView):
+    """List submissions that haven't been updated in >14 days and are still active."""
+    template_name = 'submissions/stale_submissions.html'
+    context_object_name = 'submissions'
+    paginate_by = 25
+
+    def get_queryset(self):
+        cutoff = timezone.now() - timedelta(days=14)
+        return ApplicationSubmission.objects.filter(
+            updated_at__lt=cutoff,
+            status__in=[
+                ApplicationSubmission.Status.APPLIED,
+                ApplicationSubmission.Status.IN_PROGRESS,
+                ApplicationSubmission.Status.INTERVIEW,
+            ],
+            is_archived=False,
+        ).select_related('job', 'consultant__user').order_by('updated_at')
+
+
+# ─── Phase 5: Soft-Delete / Archive ──────────────────────────────────
+class SubmissionArchiveView(_StaffRequiredMixin, View):
+    """Soft-delete (archive) a submission."""
+
+    def post(self, request, pk):
+        sub = get_object_or_404(ApplicationSubmission, pk=pk)
+        sub.is_archived = True
+        sub.archived_at = timezone.now()
+        sub.save(update_fields=['is_archived', 'archived_at'])
+        messages.success(request, "Submission archived.")
+        return redirect('submission-list')
+
+
+class SubmissionRestoreView(_StaffRequiredMixin, View):
+    """Restore an archived submission."""
+
+    def post(self, request, pk):
+        sub = get_object_or_404(ApplicationSubmission, pk=pk)
+        sub.is_archived = False
+        sub.archived_at = None
+        sub.save(update_fields=['is_archived', 'archived_at'])
+        messages.success(request, "Submission restored.")
+        return redirect('submission-list')
+
+
+class ArchivedSubmissionsView(_StaffRequiredMixin, ListView):
+    """List all archived submissions."""
+    template_name = 'submissions/archived_list.html'
+    context_object_name = 'submissions'
+    paginate_by = 25
+
+    def get_queryset(self):
+        return ApplicationSubmission.objects.filter(
+            is_archived=True
+        ).select_related('job', 'consultant__user').order_by('-archived_at')
+
+
+# ─── Phase 5: GDPR Data Export ───────────────────────────────────────
+class GDPRExportView(LoginRequiredMixin, View):
+    """Export all data for a consultant (GDPR compliance)."""
+
+    def get(self, request, pk):
+        user = request.user
+        # Only admin/employee or the consultant themselves
+        if not (user.is_superuser or user.role in ('ADMIN', 'EMPLOYEE') or user.pk == pk):
+            messages.error(request, "Permission denied.")
+            return redirect('home')
+
+        from users.models import ConsultantProfile
+        try:
+            profile = ConsultantProfile.objects.get(user__pk=pk)
+        except ConsultantProfile.DoesNotExist:
+            messages.error(request, "Consultant not found.")
+            return redirect('home')
+
+        import json as json_module
+        data = {
+            'user': {
+                'username': profile.user.username,
+                'email': profile.user.email,
+                'first_name': profile.user.first_name,
+                'last_name': profile.user.last_name,
+                'date_joined': str(profile.user.date_joined),
+            },
+            'profile': {
+                'bio': profile.bio or '',
+                'phone': profile.phone or '',
+                'skills': profile.skills or [],
+                'status': profile.status,
+            },
+            'submissions': list(
+                ApplicationSubmission.objects.filter(consultant=profile).values(
+                    'id', 'job__title', 'job__company', 'status', 'created_at', 'notes'
+                )
+            ),
+            'placements': list(
+                Placement.objects.filter(submission__consultant=profile).values(
+                    'id', 'placement_type', 'status', 'start_date', 'end_date',
+                )
+            ),
+            'resumes': list(
+                ResumeDraft.objects.filter(consultant=profile).values(
+                    'id', 'job__title', 'version', 'status', 'ats_score', 'created_at'
+                )
+            ),
+        }
+
+        response = HttpResponse(
+            json_module.dumps(data, indent=2, default=str),
+            content_type='application/json'
+        )
+        response['Content-Disposition'] = f'attachment; filename="gdpr_export_{profile.user.username}.json"'
+        return response
+
+
+# ─── Phase 5: Win/Loss Analysis ──────────────────────────────────────
+class WinLossAnalysisView(_StaffRequiredMixin, TemplateView):
+    """Win/loss analysis dashboard."""
+    template_name = 'submissions/win_loss_analysis.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        from django.db.models import Count, Q, F
+
+        total = ApplicationSubmission.objects.filter(is_archived=False).count()
+        placed = ApplicationSubmission.objects.filter(status=ApplicationSubmission.Status.PLACED, is_archived=False).count()
+        rejected = ApplicationSubmission.objects.filter(status=ApplicationSubmission.Status.REJECTED, is_archived=False).count()
+        withdrawn = ApplicationSubmission.objects.filter(status=ApplicationSubmission.Status.WITHDRAWN, is_archived=False).count()
+        active = total - placed - rejected - withdrawn
+
+        context['total'] = total
+        context['placed'] = placed
+        context['rejected'] = rejected
+        context['withdrawn'] = withdrawn
+        context['active'] = active
+        context['win_rate'] = round((placed / total * 100), 1) if total else 0
+        context['loss_rate'] = round((rejected / total * 100), 1) if total else 0
+
+        # By company
+        context['by_company'] = (
+            ApplicationSubmission.objects.filter(is_archived=False)
+            .values('job__company')
+            .annotate(
+                total=Count('id'),
+                wins=Count('id', filter=Q(status=ApplicationSubmission.Status.PLACED)),
+                losses=Count('id', filter=Q(status=ApplicationSubmission.Status.REJECTED)),
+            )
+            .order_by('-total')[:15]
+        )
+
+        # By job source (Phase 5)
+        context['by_source'] = (
+            ApplicationSubmission.objects.filter(is_archived=False, job__job_source__gt='')
+            .values('job__job_source')
+            .annotate(
+                total=Count('id'),
+                wins=Count('id', filter=Q(status=ApplicationSubmission.Status.PLACED)),
+                losses=Count('id', filter=Q(status=ApplicationSubmission.Status.REJECTED)),
+            )
+            .order_by('-total')[:10]
+        )
+
+        return context
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Consultant Workflow Pipeline -- Lock-based assignment dashboard
+# ──────────────────────────────────────────────────────────────────────────────
+
+from .models import ConsultantLock, WorkflowConsultantStar
+from jobs.models import Job
+
+
+def _workflow_build_qs(q: str, wf_filter: str, sort: str, consultant_pk=None) -> str:
+    from urllib.parse import urlencode
+    p = {}
+    if q:
+        p['q'] = q
+    if wf_filter and wf_filter != 'all':
+        p['filter'] = wf_filter
+    if sort and sort != 'name':
+        p['sort'] = sort
+    if consultant_pk is not None:
+        p['consultant'] = str(consultant_pk)
+    return urlencode(p)
+
+
+def _get_ip(request):
+    xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
+    return xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR', '')
+
+
+def _audit(request, action, target_model='', target_id='', details=None):
+    try:
+        from core.models import AuditLog
+        AuditLog.objects.create(
+            actor=request.user,
+            action=action,
+            target_model=target_model,
+            target_id=str(target_id),
+            details=details or {},
+            ip_address=_get_ip(request),
+        )
+    except Exception:
+        pass
+
+
+class WorkflowDashboardView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
+    """Main consultant workflow pipeline dashboard for employees."""
+    template_name = 'submissions/workflow.html'
+
+    def test_func(self):
+        u = self.request.user
+        return u.is_superuser or getattr(u, 'role', None) in ('ADMIN', 'EMPLOYEE')
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.GET.get('clear'):
+            for k in ('workflow_q', 'workflow_filter', 'workflow_sort', 'workflow_consultant_pk'):
+                request.session.pop(k, None)
+            return HttpResponseRedirect(reverse('workflow-dashboard'))
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        req = self.request
+        sess = req.session
+
+        ConsultantLock.objects.filter(expires_at__lt=timezone.now()).delete()
+
+        consultants = list(
+            ConsultantProfile.objects
+            .filter(user__is_active=True)
+            .select_related('user', 'active_lock', 'active_lock__locked_by')
+            .prefetch_related('marketing_roles')
+            .order_by('user__first_name', 'user__last_name')
+        )
+
+        from django.conf import settings as dj_settings
+        from .workflow_utils import get_pipeline_workflow_bulk
+
+        pipeline_by_pk = get_pipeline_workflow_bulk(consultants)
+
+        if 'q' in req.GET:
+            q_raw = (req.GET.get('q') or '').strip()
+        else:
+            q_raw = (sess.get('workflow_q') or '').strip()
+
+        if 'filter' in req.GET:
+            wf_filter = (req.GET.get('filter') or 'all').strip()
+        else:
+            wf_filter = (sess.get('workflow_filter') or 'all').strip()
+
+        valid_sorts = ('name', 'pending', 'submitted')
+        if 'sort' in req.GET:
+            sort = (req.GET.get('sort') or 'name').strip()
+        else:
+            sort = (sess.get('workflow_sort') or 'name').strip()
+        if sort not in valid_sorts:
+            sort = 'name'
+
+        if 'consultant' in req.GET:
+            sel_param = req.GET.get('consultant') or None
+        else:
+            sel_param = sess.get('workflow_consultant_pk')
+
+        starred_ids = set(
+            WorkflowConsultantStar.objects.filter(user=req.user).values_list('consultant_id', flat=True)
+        )
+
+        now = timezone.now()
+        consultant_rows = []
+        for c in consultants:
+            lock = getattr(c, 'active_lock', None)
+            if lock and lock.expires_at <= now:
+                lock = None
+            pipe = pipeline_by_pk.get(
+                c.pk,
+                {
+                    'assigned': 0,
+                    'drafting': 0,
+                    'submitted': 0,
+                    'stale_assigned': False,
+                    'stale_drafting': False,
+                    'stale_assigned_days': None,
+                    'stale_drafting_days': None,
+                },
+            )
+            consultant_rows.append({
+                'consultant': c,
+                'lock': lock,
+                'is_locked_by_me': bool(lock and lock.locked_by_id == req.user.pk),
+                'is_locked_by_other': bool(lock and lock.locked_by_id != req.user.pk),
+                'pipeline': pipe,
+                'starred': c.pk in starred_ids,
+            })
+
+        summary = {'need_work': 0, 'in_draft': 0, 'has_submitted': 0}
+        for c in consultants:
+            p = pipeline_by_pk.get(c.pk, {})
+            a, d, s = p.get('assigned', 0), p.get('drafting', 0), p.get('submitted', 0)
+            if a + d > 0:
+                summary['need_work'] += 1
+            if d > 0:
+                summary['in_draft'] += 1
+            if s > 0:
+                summary['has_submitted'] += 1
+
+        if q_raw:
+            ql = q_raw.lower()
+            consultant_rows = [
+                row for row in consultant_rows
+                if ql in (row['consultant'].user.get_full_name() or '').lower()
+                or ql in (row['consultant'].user.username or '').lower()
+                or ql in (row['consultant'].user.email or '').lower()
+            ]
+
+        if wf_filter == 'needs_assigned':
+            consultant_rows = [r for r in consultant_rows if r['pipeline']['assigned'] > 0]
+        elif wf_filter == 'needs_draft':
+            consultant_rows = [r for r in consultant_rows if r['pipeline']['drafting'] > 0]
+        elif wf_filter == 'has_submitted':
+            consultant_rows = [r for r in consultant_rows if r['pipeline']['submitted'] > 0]
+        elif wf_filter == 'needs_work':
+            consultant_rows = [
+                r for r in consultant_rows
+                if r['pipeline']['assigned'] > 0 or r['pipeline']['drafting'] > 0
+            ]
+
+        def _row_key(r):
+            star = 0 if r['starred'] else 1
+            name = (r['consultant'].user.get_full_name() or '').lower()
+            pend = r['pipeline']['assigned'] + r['pipeline']['drafting']
+            subm = r['pipeline']['submitted']
+            if sort == 'pending':
+                return (star, -pend, name)
+            if sort == 'submitted':
+                return (star, -subm, name)
+            return (star, name)
+
+        consultant_rows.sort(key=_row_key)
+
+        effective_sel = None
+        if sel_param:
+            for r in consultant_rows:
+                if str(r['consultant'].pk) == str(sel_param):
+                    effective_sel = str(r['consultant'].pk)
+                    break
+
+        sess['workflow_q'] = q_raw
+        sess['workflow_filter'] = wf_filter
+        sess['workflow_sort'] = sort
+        sess['workflow_consultant_pk'] = effective_sel
+
+        wfqs = {
+            'all': _workflow_build_qs(q_raw, 'all', sort),
+            'needs_work': _workflow_build_qs(q_raw, 'needs_work', sort),
+            'needs_assigned': _workflow_build_qs(q_raw, 'needs_assigned', sort),
+            'needs_draft': _workflow_build_qs(q_raw, 'needs_draft', sort),
+            'has_submitted': _workflow_build_qs(q_raw, 'has_submitted', sort),
+            'sort_name': _workflow_build_qs(q_raw, wf_filter, 'name'),
+            'sort_pending': _workflow_build_qs(q_raw, wf_filter, 'pending'),
+            'sort_submitted': _workflow_build_qs(q_raw, wf_filter, 'submitted'),
+        }
+
+        for r in consultant_rows:
+            r['href_qs'] = _workflow_build_qs(q_raw, wf_filter, sort, r['consultant'].pk)
+
+        ctx['consultant_rows'] = consultant_rows
+        ctx['workflow_q'] = q_raw
+        ctx['workflow_filter'] = wf_filter
+        ctx['workflow_sort'] = sort
+        ctx['workflow_qs'] = wfqs
+        ctx['workflow_summary'] = summary
+        ctx['workflow_total_count'] = len(consultants)
+        ctx['workflow_stale_days'] = int(getattr(dj_settings, 'WORKFLOW_STALE_DAYS', 7))
+        ctx['workflow_next_path'] = req.get_full_path()
+        ctx['selected_pk'] = effective_sel
+
+        return ctx
+
+
+class WorkflowStarToggleView(LoginRequiredMixin, UserPassesTestMixin, View):
+    """POST: toggle starred consultant for the workflow sidebar."""
+
+    def test_func(self):
+        u = self.request.user
+        return u.is_superuser or getattr(u, 'role', None) in ('ADMIN', 'EMPLOYEE')
+
+    def post(self, request, pk):
+        consultant = get_object_or_404(ConsultantProfile.objects.select_related('user'), pk=pk)
+        star, created = WorkflowConsultantStar.objects.get_or_create(
+            user=request.user,
+            consultant=consultant,
+        )
+        if not created:
+            star.delete()
+        next_url = request.POST.get('next') or reverse('workflow-dashboard')
+        if next_url and not url_has_allowed_host_and_scheme(
+            next_url,
+            allowed_hosts={request.get_host()},
+            require_https=request.is_secure(),
+        ):
+            next_url = reverse('workflow-dashboard')
+        return redirect(next_url)
+
+
+class WorkflowPanelView(LoginRequiredMixin, UserPassesTestMixin, View):
+    """
+    HTMX fragment: the 3-column pipeline for a selected consultant.
+    Loaded when user clicks a consultant card on the dashboard.
+    """
+    template_name = 'submissions/workflow_panel.html'
+
+    def test_func(self):
+        u = self.request.user
+        return u.is_superuser or getattr(u, 'role', None) in ('ADMIN', 'EMPLOYEE')
+
+    def get(self, request, pk):
+        consultant = get_object_or_404(
+            ConsultantProfile.objects.select_related('user', 'active_lock', 'active_lock__locked_by')
+            .prefetch_related('marketing_roles'),
+            pk=pk
+        )
+        now = timezone.now()
+
+        # Resolve lock
+        lock = getattr(consultant, 'active_lock', None)
+        if lock and lock.expires_at <= now:
+            lock.delete()
+            lock = None
+
+        is_locked_by_me = bool(lock and lock.locked_by_id == request.user.pk)
+        is_locked_by_other = bool(lock and lock.locked_by_id != request.user.pk)
+        is_manager = request.user.is_superuser or getattr(request.user, 'role', '') == 'ADMIN'
+        can_act = is_locked_by_me  # Only the lock holder can take actions
+
+        # Jobs matching consultant's marketing roles (OPEN only)
+        role_ids = list(consultant.marketing_roles.values_list('id', flat=True))
+        if role_ids:
+            matched_jobs_qs = (
+                Job.objects
+                .filter(status=Job.Status.OPEN, is_archived=False, marketing_roles__in=role_ids)
+                .distinct()
+                .select_related('company_obj')
+            )
+        else:
+            matched_jobs_qs = Job.objects.none()
+
+        matched_job_ids = list(matched_jobs_qs.values_list('id', flat=True))
+
+        # Latest draft per job for this consultant (all jobs, not just matched -- for column 3)
+        all_drafts = (
+            Resume.objects
+            .filter(consultant=consultant)
+            .select_related('job')
+            .order_by('job_id', '-version')
+        )
+        drafts_by_job = {}
+        for d in all_drafts:
+            if d.job_id not in drafts_by_job:
+                drafts_by_job[d.job_id] = d
+
+        # All submissions for this consultant
+        all_subs = (
+            ApplicationSubmission.objects
+            .filter(consultant=consultant, is_archived=False)
+            .select_related('job', 'resume', 'job__company_obj')
+            .order_by('-updated_at')
+        )
+        subs_by_job = {}
+        for s in all_subs:
+            if s.job_id not in subs_by_job:
+                subs_by_job[s.job_id] = s
+
+        # Categorise
+        ACTIVE_STATUSES = {
+            ApplicationSubmission.Status.APPLIED,
+            ApplicationSubmission.Status.INTERVIEW,
+            ApplicationSubmission.Status.OFFER,
+            ApplicationSubmission.Status.PLACED,
+            ApplicationSubmission.Status.REJECTED,
+            ApplicationSubmission.Status.WITHDRAWN,
+        }
+
+        column1 = []  # Assigned, no draft, no submission
+        column2 = []  # Draft exists or IN_PROGRESS submission -- not yet applied
+        column3 = []  # Applied or beyond
+
+        for job in matched_jobs_qs:
+            sub = subs_by_job.get(job.pk)
+            draft = drafts_by_job.get(job.pk)
+            if sub and sub.status in ACTIVE_STATUSES:
+                column3.append({'job': job, 'sub': sub, 'draft': draft})
+            elif sub or draft:
+                column2.append({'job': job, 'sub': sub, 'draft': draft})
+            else:
+                column1.append({'job': job, 'sub': None, 'draft': None})
+
+        # Also add column3 for jobs NOT in matched_jobs but with active submissions
+        # (e.g. job was closed/filled after they started)
+        for job_id, sub in subs_by_job.items():
+            if job_id not in matched_job_ids and sub.status in ACTIVE_STATUSES:
+                column3.append({'job': sub.job, 'sub': sub, 'draft': drafts_by_job.get(job_id)})
+
+        return render(request, self.template_name, {
+            'consultant': consultant,
+            'lock': lock,
+            'is_locked_by_me': is_locked_by_me,
+            'is_locked_by_other': is_locked_by_other,
+            'can_act': can_act,
+            'is_manager': is_manager,
+            'column1': column1,
+            'column2': column2,
+            'column3': column3,
+        })
+
+
+class ConsultantClaimView(LoginRequiredMixin, UserPassesTestMixin, View):
+    """Atomically claim (lock) a consultant profile. POST only."""
+
+    def test_func(self):
+        u = self.request.user
+        return u.is_superuser or getattr(u, 'role', None) in ('ADMIN', 'EMPLOYEE')
+
+    def post(self, request, pk):
+        from django.db import transaction
+        consultant = get_object_or_404(ConsultantProfile.objects.select_related('user'), pk=pk)
+        now = timezone.now()
+
+        try:
+            with transaction.atomic():
+                try:
+                    lock = ConsultantLock.objects.select_for_update(nowait=True).get(
+                        consultant=consultant
+                    )
+                    if lock.expires_at > now:
+                        if lock.locked_by_id == request.user.pk:
+                            lock.extend()
+                            messages.success(request, f"Lock extended -- {consultant.user.get_full_name()} is yours for 2 more hours.")
+                        else:
+                            messages.error(
+                                request,
+                                f"{consultant.user.get_full_name()} is locked by "
+                                f"{lock.locked_by.get_full_name()}. Cannot claim."
+                            )
+                            return redirect(f"{reverse('workflow-dashboard')}?consultant={pk}")
+                    else:
+                        # Expired -- take it over
+                        lock.locked_by = request.user
+                        lock.locked_at = now
+                        lock.expires_at = now + timedelta(hours=2)
+                        lock.last_heartbeat_at = now
+                        lock.save()
+                        messages.success(request, f"Claimed {consultant.user.get_full_name()} (previous lock expired).")
+                except ConsultantLock.DoesNotExist:
+                    ConsultantLock.objects.create(
+                        consultant=consultant,
+                        locked_by=request.user,
+                        expires_at=now + timedelta(hours=2),
+                    )
+                    messages.success(request, f"You've claimed {consultant.user.get_full_name()}. Lock active for 2 hours.")
+        except Exception:
+            messages.error(request, "Could not claim this consultant -- someone else may have just claimed them. Try again.")
+            return redirect(f"{reverse('workflow-dashboard')}?consultant={pk}")
+
+        _audit(request, 'consultant_claim', 'ConsultantProfile', pk, {
+            'consultant_name': consultant.user.get_full_name()
+        })
+        return redirect(f"{reverse('workflow-dashboard')}?consultant={pk}")
+
+
+class ConsultantReleaseView(LoginRequiredMixin, UserPassesTestMixin, View):
+    """Release own lock on a consultant profile. POST only."""
+
+    def test_func(self):
+        u = self.request.user
+        return u.is_superuser or getattr(u, 'role', None) in ('ADMIN', 'EMPLOYEE')
+
+    def post(self, request, pk):
+        consultant = get_object_or_404(ConsultantProfile.objects.select_related('user'), pk=pk)
+        lock = getattr(consultant, 'active_lock', None)
+        if not lock:
+            messages.warning(request, "No active lock found.")
+        elif lock.locked_by_id != request.user.pk and not (
+            request.user.is_superuser or getattr(request.user, 'role', '') == 'ADMIN'
+        ):
+            messages.error(request, "You can only release your own lock.")
+        else:
+            name = consultant.user.get_full_name()
+            lock.delete()
+            _audit(request, 'consultant_release', 'ConsultantProfile', pk, {
+                'consultant_name': name
+            })
+            messages.success(request, f"Released {name}.")
+        return redirect(f"{reverse('workflow-dashboard')}?consultant={pk}")
+
+
+class LockHeartbeatView(LoginRequiredMixin, View):
+    """
+    HTMX endpoint -- called every ~4 min by the browser to extend the lock.
+    Returns a small HTML fragment with the updated countdown.
+    """
+
+    def post(self, request, pk):
+        try:
+            lock = ConsultantLock.objects.get(consultant_id=pk, locked_by=request.user)
+            if not lock.is_expired():
+                lock.extend()
+                secs = lock.time_remaining_seconds()
+                hrs = secs // 3600
+                mins = (secs % 3600) // 60
+                return HttpResponse(
+                    f'<span id="lock-timer" '
+                    f'hx-post="{reverse("workflow-heartbeat", args=[pk])}" '
+                    f'hx-trigger="every 240s" hx-swap="outerHTML">'
+                    f'{hrs}h {mins}m remaining</span>',
+                    content_type='text/html'
+                )
+        except ConsultantLock.DoesNotExist:
+            pass
+        return HttpResponse(
+            '<span id="lock-timer" class="text-red-600">Lock expired</span>',
+            content_type='text/html'
+        )
+
+
+class LockOverrideView(LoginRequiredMixin, UserPassesTestMixin, View):
+    """Manager/Admin force-take a locked consultant profile."""
+
+    def test_func(self):
+        u = self.request.user
+        return u.is_superuser or getattr(u, 'role', '') == 'ADMIN'
+
+    def post(self, request, pk):
+        from django.db import transaction
+        consultant = get_object_or_404(ConsultantProfile.objects.select_related('user'), pk=pk)
+        now = timezone.now()
+        with transaction.atomic():
+            ConsultantLock.objects.filter(consultant=consultant).delete()
+            ConsultantLock.objects.create(
+                consultant=consultant,
+                locked_by=request.user,
+                expires_at=now + timedelta(hours=2),
+            )
+        name = consultant.user.get_full_name()
+        _audit(request, 'consultant_lock_override', 'ConsultantProfile', pk, {
+            'consultant_name': name,
+            'reason': request.POST.get('reason', ''),
+        })
+        messages.success(request, f"Override successful -- you now hold the lock for {name}.")
+        return redirect(f"{reverse('workflow-dashboard')}?consultant={pk}")
+
+
+class MarkExternalApplicationView(LoginRequiredMixin, UserPassesTestMixin, View):
+    """
+    Mark a job as applied externally by the consultant.
+    Creates an ApplicationSubmission with status=APPLIED and a note.
+    Only allowed if caller holds the lock on this consultant.
+    """
+
+    def test_func(self):
+        u = self.request.user
+        return u.is_superuser or getattr(u, 'role', None) in ('ADMIN', 'EMPLOYEE')
+
+    def post(self, request, consultant_pk, job_pk):
+        consultant = get_object_or_404(ConsultantProfile, pk=consultant_pk)
+        job = get_object_or_404(Job, pk=job_pk)
+
+        # Enforce lock
+        lock = getattr(consultant, 'active_lock', None)
+        is_manager = request.user.is_superuser or getattr(request.user, 'role', '') == 'ADMIN'
+        if not lock or (lock.locked_by_id != request.user.pk and not is_manager):
+            messages.error(request, "You must hold the lock on this consultant to mark external applications.")
+            return redirect(f"{reverse('workflow-dashboard')}?consultant={consultant_pk}")
+
+        note = request.POST.get('note', '').strip() or 'Applied externally by consultant'
+        try:
+            sub, created = ApplicationSubmission.objects.get_or_create(
+                job=job,
+                consultant=consultant,
+                defaults={
+                    'status': ApplicationSubmission.Status.APPLIED,
+                    'submitted_by': request.user,
+                    'notes': note,
+                }
+            )
+            if not created:
+                if sub.status == ApplicationSubmission.Status.IN_PROGRESS:
+                    sub.status = ApplicationSubmission.Status.APPLIED
+                    sub.notes = note
+                    sub.submitted_by = request.user
+                    sub.save(update_fields=['status', 'notes', 'submitted_by', 'updated_at'])
+                    messages.success(request, f"Marked '{job.title}' as externally applied.")
+                else:
+                    messages.warning(request, f"'{job.title}' already has a submission (status: {sub.get_status_display()}).")
+            else:
+                messages.success(request, f"Marked '{job.title}' as externally applied.")
+            _audit(request, 'mark_applied_external', 'ApplicationSubmission', sub.pk, {
+                'job': job.title, 'consultant': consultant.user.get_full_name()
+            })
+        except Exception as e:
+            messages.error(request, f"Could not mark as applied: {e}")
+
+        return redirect(f"{reverse('workflow-dashboard')}?consultant={consultant_pk}")

@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Win/Loss Analysis{% endblock %}
+{% block content %}
+<div class="max-w-6xl mx-auto">
+  <h1 class="text-2xl font-bold text-gray-900 mb-6">Win/Loss Analysis</h1>
+
+  <!-- Summary Cards -->
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+    <div class="bg-white shadow rounded-lg p-4 text-center">
+      <div class="text-2xl font-bold text-gray-900">{{ total }}</div>
+      <div class="text-xs text-gray-500 uppercase">Total</div>
+    </div>
+    <div class="bg-white shadow rounded-lg p-4 text-center">
+      <div class="text-2xl font-bold text-green-600">{{ placed }}</div>
+      <div class="text-xs text-gray-500 uppercase">Placed (Wins)</div>
+    </div>
+    <div class="bg-white shadow rounded-lg p-4 text-center">
+      <div class="text-2xl font-bold text-red-600">{{ rejected }}</div>
+      <div class="text-xs text-gray-500 uppercase">Rejected (Losses)</div>
+    </div>
+    <div class="bg-white shadow rounded-lg p-4 text-center">
+      <div class="text-2xl font-bold text-blue-600">{{ active }}</div>
+      <div class="text-xs text-gray-500 uppercase">Active</div>
+    </div>
+    <div class="bg-white shadow rounded-lg p-4 text-center">
+      <div class="text-2xl font-bold text-gray-600">{{ withdrawn }}</div>
+      <div class="text-xs text-gray-500 uppercase">Withdrawn</div>
+    </div>
+  </div>
+
+  <!-- Win/Loss Rates -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+    <div class="bg-white shadow rounded-lg p-6">
+      <h2 class="text-lg font-semibold mb-3">Win Rate</h2>
+      <div class="flex items-center">
+        <div class="w-full bg-gray-200 rounded-full h-4 mr-3">
+          <div class="h-4 rounded-full bg-green-500" style="width: {{ win_rate }}%"></div>
+        </div>
+        <span class="text-xl font-bold text-green-600">{{ win_rate }}%</span>
+      </div>
+    </div>
+    <div class="bg-white shadow rounded-lg p-6">
+      <h2 class="text-lg font-semibold mb-3">Loss Rate</h2>
+      <div class="flex items-center">
+        <div class="w-full bg-gray-200 rounded-full h-4 mr-3">
+          <div class="h-4 rounded-full bg-red-400" style="width: {{ loss_rate }}%"></div>
+        </div>
+        <span class="text-xl font-bold text-red-600">{{ loss_rate }}%</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- By Company -->
+  <div class="bg-white shadow rounded-lg overflow-hidden mb-8">
+    <div class="px-6 py-4 border-b"><h2 class="text-lg font-semibold">By Company</h2></div>
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Wins</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Losses</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Win Rate</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-200">
+        {% for row in by_company %}
+        <tr>
+          <td class="px-6 py-4 text-sm font-medium">{{ row.job__company }}</td>
+          <td class="px-6 py-4 text-sm">{{ row.total }}</td>
+          <td class="px-6 py-4 text-sm text-green-600">{{ row.wins }}</td>
+          <td class="px-6 py-4 text-sm text-red-600">{{ row.losses }}</td>
+          <td class="px-6 py-4 text-sm">
+            {% widthratio row.wins row.total 100 as wr %}
+            {% if row.total > 0 %}{% widthratio row.wins row.total 100 %}%{% else %}—{% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No data yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- By Source -->
+  {% if by_source %}
+  <div class="bg-white shadow rounded-lg overflow-hidden">
+    <div class="px-6 py-4 border-b"><h2 class="text-lg font-semibold">By Job Source</h2></div>
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Wins</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Losses</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-200">
+        {% for row in by_source %}
+        <tr>
+          <td class="px-6 py-4 text-sm font-medium">{{ row.job__job_source }}</td>
+          <td class="px-6 py-4 text-sm">{{ row.total }}</td>
+          <td class="px-6 py-4 text-sm text-green-600">{{ row.wins }}</td>
+          <td class="px-6 py-4 text-sm text-red-600">{{ row.losses }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

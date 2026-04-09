@@ -1,0 +1,13 @@
+{% if typing_names %}
+<div class="flex items-center gap-2 px-3 py-2 text-xs text-gray-600 sm:px-4" role="status" aria-live="polite">
+    <span class="flex items-center gap-0.5" aria-hidden="true">
+        <span class="inline-block h-2 w-2 animate-bounce rounded-full bg-blue-500 [animation-delay:-0.3s]"></span>
+        <span class="inline-block h-2 w-2 animate-bounce rounded-full bg-blue-500 [animation-delay:-0.15s]"></span>
+        <span class="inline-block h-2 w-2 animate-bounce rounded-full bg-blue-500"></span>
+    </span>
+    <span class="font-medium text-gray-800">
+        {{ typing_names|join:", " }}
+        {% if typing_names|length == 1 %} is{% else %} are{% endif %} typing…
+    </span>
+</div>
+{% endif %}

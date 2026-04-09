@@ -1,0 +1,275 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="min-h-screen bg-gray-50">
+  <!-- Page Header -->
+  <div class="bg-white border-b border-gray-200 px-6 py-4">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900">Consultant Workflow Pipeline</h1>
+        <p class="text-sm text-gray-500 mt-0.5">Select a consultant to view and work their assigned jobs.</p>
+      </div>
+      <div class="flex items-center gap-3 text-sm text-gray-600">
+        <span class="font-medium">You are:</span>
+        <span class="bg-indigo-100 text-indigo-800 font-semibold px-3 py-1 rounded-full">
+          {{ request.user.get_full_name|default:request.user.username }}
+        </span>
+        <span class="bg-gray-100 text-gray-700 px-3 py-1 rounded-full">{{ request.user.role }}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="flex h-[calc(100vh-120px)]">
+    <!-- LEFT SIDEBAR: Consultant List -->
+    <div class="w-96 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col overflow-hidden">
+      <div class="px-3 py-3 border-b border-gray-100 space-y-3 flex-shrink-0">
+        <div class="flex items-center justify-between gap-2">
+          <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Consultants</p>
+          <span class="text-xs font-bold text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">{{ consultant_rows|length }}</span>
+        </div>
+        <p class="text-xs text-gray-600 bg-gray-50 rounded-lg px-2.5 py-2 leading-snug border border-gray-100">
+          <span class="font-semibold text-gray-800">{{ workflow_summary.need_work }}</span> need work
+          · <span class="font-semibold text-gray-800">{{ workflow_summary.in_draft }}</span> in draft
+          · <span class="font-semibold text-gray-800">{{ workflow_summary.has_submitted }}</span> with submissions
+          <span class="text-gray-400">· {{ workflow_total_count }} total</span>
+        </p>
+        <form method="get" class="space-y-2">
+          {% if workflow_filter and workflow_filter != 'all' %}
+          <input type="hidden" name="filter" value="{{ workflow_filter }}">
+          {% endif %}
+          {% if workflow_sort and workflow_sort != 'name' %}
+          <input type="hidden" name="sort" value="{{ workflow_sort }}">
+          {% endif %}
+          <div class="flex gap-2">
+            <input type="search" name="q" id="workflow-search" value="{{ workflow_q|default:'' }}" placeholder="Search name, username…"
+              class="flex-1 min-w-0 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+            <button type="submit" class="shrink-0 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg transition">
+              Go
+            </button>
+          </div>
+        </form>
+        <div class="flex flex-wrap items-center gap-1.5 text-[10px] text-gray-500">
+          <span>Sort:</span>
+          <a href="{% url 'workflow-dashboard' %}?{{ workflow_qs.sort_name }}"
+            class="font-semibold px-2 py-0.5 rounded {% if workflow_sort == 'name' %}bg-indigo-100 text-indigo-900{% else %}text-indigo-700 hover:bg-gray-100{% endif %}">Name</a>
+          <a href="{% url 'workflow-dashboard' %}?{{ workflow_qs.sort_pending }}"
+            class="font-semibold px-2 py-0.5 rounded {% if workflow_sort == 'pending' %}bg-indigo-100 text-indigo-900{% else %}text-indigo-700 hover:bg-gray-100{% endif %}">Most pending</a>
+          <a href="{% url 'workflow-dashboard' %}?{{ workflow_qs.sort_submitted }}"
+            class="font-semibold px-2 py-0.5 rounded {% if workflow_sort == 'submitted' %}bg-indigo-100 text-indigo-900{% else %}text-indigo-700 hover:bg-gray-100{% endif %}">Most submitted</a>
+        </div>
+        <p class="text-[10px] text-gray-400 leading-tight">Filters: <span class="font-mono text-amber-700">A</span> assigned · <span class="font-mono text-blue-700">D</span> drafting · <span class="font-mono text-purple-700">S</span> submitted · Stale = &gt;{{ workflow_stale_days }}d in A or D</p>
+        <div class="flex flex-wrap gap-1.5">
+          <a href="{% url 'workflow-dashboard' %}?{{ workflow_qs.all }}"
+            class="text-xs font-semibold px-2 py-1 rounded-md transition {% if workflow_filter == 'all' %}bg-indigo-600 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">All</a>
+          <a href="{% url 'workflow-dashboard' %}?{{ workflow_qs.needs_work }}"
+            class="text-xs font-semibold px-2 py-1 rounded-md transition {% if workflow_filter == 'needs_work' %}bg-amber-700 text-white{% else %}bg-amber-50 text-amber-900 hover:bg-amber-100{% endif %}"
+            title="Has assigned jobs or drafts in progress">Needs work</a>
+          <a href="{% url 'workflow-dashboard' %}?{{ workflow_qs.needs_assigned }}"
+            class="text-xs font-semibold px-2 py-1 rounded-md transition {% if workflow_filter == 'needs_assigned' %}bg-amber-600 text-white{% else %}bg-amber-50 text-amber-900 hover:bg-amber-100{% endif %}"
+            title="Column 1 — matched jobs not started">A &gt; 0</a>
+          <a href="{% url 'workflow-dashboard' %}?{{ workflow_qs.needs_draft }}"
+            class="text-xs font-semibold px-2 py-1 rounded-md transition {% if workflow_filter == 'needs_draft' %}bg-blue-600 text-white{% else %}bg-blue-50 text-blue-800 hover:bg-blue-100{% endif %}"
+            title="Column 2 — draft or in-progress">D &gt; 0</a>
+          <a href="{% url 'workflow-dashboard' %}?{{ workflow_qs.has_submitted }}"
+            class="text-xs font-semibold px-2 py-1 rounded-md transition {% if workflow_filter == 'has_submitted' %}bg-purple-600 text-white{% else %}bg-purple-50 text-purple-800 hover:bg-purple-100{% endif %}"
+            title="Column 3 — applied or beyond">S &gt; 0</a>
+        </div>
+        <p class="text-[10px]"><a href="{% url 'workflow-dashboard' %}?clear=1" class="text-indigo-600 hover:underline">Reset saved search, filters, and selection</a></p>
+      </div>
+
+      <div id="workflow-consultant-list" class="flex-1 overflow-y-auto" role="list">
+      {% for row in consultant_rows %}
+      {% with c=row.consultant lock=row.lock %}
+      <div class="flex items-stretch border-b border-gray-100 transition
+        {% if row.pipeline.stale_assigned or row.pipeline.stale_drafting %}bg-orange-50/40{% endif %}
+        {% if selected_pk == c.pk|stringformat:'s' %}bg-indigo-50{% endif %}">
+        <a href="{% url 'workflow-dashboard' %}?{{ row.href_qs }}"
+           hx-get="{% url 'workflow-panel' c.pk %}"
+           hx-target="#workflow-panel"
+           hx-push-url="{% url 'workflow-dashboard' %}?{{ row.href_qs }}"
+           data-pk="{{ c.pk }}"
+           tabindex="0"
+           class="wf-row block flex-1 min-w-0 px-4 py-3 text-left hover:bg-gray-50 transition outline-none
+                  {% if selected_pk == c.pk|stringformat:'s' %}border-l-4 border-l-indigo-500{% elif row.pipeline.stale_assigned or row.pipeline.stale_drafting %}border-l-2 border-l-orange-400{% endif %}">
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0
+                        {% if row.is_locked_by_me %}bg-indigo-600 text-white
+                        {% elif row.is_locked_by_other %}bg-amber-500 text-white
+                        {% else %}bg-gray-200 text-gray-700{% endif %}">
+              {{ c.user.first_name|slice:":1" }}{{ c.user.last_name|slice:":1" }}
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-semibold text-gray-900 truncate flex items-center gap-1.5">
+                {{ c.user.get_full_name }}
+                {% if row.starred %}<span class="text-amber-500" title="Starred">★</span>{% endif %}
+              </p>
+              <p class="text-xs text-gray-500 truncate">
+                {% for role in c.marketing_roles.all|slice:":2" %}{{ role.name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                {% if c.marketing_roles.count > 2 %} +{{ c.marketing_roles.count|add:"-2" }} more{% endif %}
+              </p>
+              <div class="flex flex-wrap gap-1 mt-1.5 items-center">
+                {% if row.pipeline.assigned %}
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200" title="Assigned &amp; unapplied">A{{ row.pipeline.assigned }}</span>
+                {% endif %}
+                {% if row.pipeline.drafting %}
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-900 border border-blue-200" title="Draft / in progress">D{{ row.pipeline.drafting }}</span>
+                {% endif %}
+                {% if row.pipeline.submitted %}
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-900 border border-purple-200" title="Submitted+">S{{ row.pipeline.submitted }}</span>
+                {% endif %}
+                {% if not row.pipeline.assigned and not row.pipeline.drafting and not row.pipeline.submitted %}
+                <span class="text-[10px] text-gray-400">—</span>
+                {% endif %}
+                {% if row.pipeline.stale_assigned %}
+                <span class="text-[9px] font-semibold text-orange-900 bg-orange-100 border border-orange-200 rounded px-1 py-0.5" title="Oldest assigned match &gt; {{ workflow_stale_days }}d">Stale A{% if row.pipeline.stale_assigned_days %} {{ row.pipeline.stale_assigned_days }}d{% endif %}</span>
+                {% endif %}
+                {% if row.pipeline.stale_drafting %}
+                <span class="text-[9px] font-semibold text-orange-900 bg-orange-100 border border-orange-200 rounded px-1 py-0.5" title="Longest draft / in-progress &gt; {{ workflow_stale_days }}d">Stale D{% if row.pipeline.stale_drafting_days %} {{ row.pipeline.stale_drafting_days }}d{% endif %}</span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          {% if row.is_locked_by_me %}
+          <div class="mt-1.5 flex items-center gap-1 text-xs text-indigo-700">
+            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
+            Claimed by you
+          </div>
+          {% elif row.is_locked_by_other %}
+          <div class="mt-1.5 flex items-center gap-1 text-xs text-amber-700">
+            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
+            Locked by {{ lock.locked_by.get_full_name }}
+          </div>
+          {% else %}
+          <div class="mt-1.5 flex items-center gap-1 text-xs text-green-700">
+            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a5 5 0 00-5 5v2a2 2 0 00-2 2v5a2 2 0 002 2h10a2 2 0 002-2v-5a2 2 0 00-2-2H7V7a3 3 0 016 0v1h2V7a5 5 0 00-5-5z"/></svg>
+            Available
+          </div>
+          {% endif %}
+        </a>
+        <form method="post" action="{% url 'workflow-star-toggle' c.pk %}" class="shrink-0 flex flex-col justify-center border-l border-gray-100 bg-white px-1"
+              onclick="event.stopPropagation();">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ workflow_next_path }}">
+          <button type="submit" class="p-2 rounded text-lg leading-none text-amber-500 hover:bg-amber-50 hover:text-amber-600 focus:outline-none focus:ring-2 focus:ring-indigo-400" title="{% if row.starred %}Unstar{% else %}Star{% endif %} consultant">
+            {% if row.starred %}★{% else %}☆{% endif %}
+          </button>
+        </form>
+      </div>
+      {% endwith %}
+      {% empty %}
+      <div class="px-4 py-8 text-center text-gray-400 text-sm">No consultants match your search or filter.</div>
+      {% endfor %}
+      </div>
+    </div>
+
+    <!-- RIGHT AREA: Pipeline Panel (flex column so empty/loading states center vertically) -->
+    <div id="workflow-panel" class="flex-1 flex flex-col min-h-0 overflow-auto bg-white">
+      {% if selected_pk %}
+        <!-- The panel will load via HTMX on page load for pre-selected consultant -->
+        <div class="flex-1 flex items-center justify-center min-h-[12rem] text-gray-400">
+          <p class="text-sm">Loading pipeline…</p>
+        </div>
+        <script>
+          document.addEventListener('DOMContentLoaded', function() {
+            htmx.ajax('GET', '{% url "workflow-panel" 0 %}'.replace('/0/', '/{{ selected_pk }}/'), {target: '#workflow-panel'});
+          });
+        </script>
+      {% else %}
+      <div class="flex-1 flex flex-col items-center justify-center px-4 py-8 sm:px-8 min-h-0">
+        <div class="w-full max-w-md rounded-xl border border-gray-200 bg-white px-8 py-10 text-center shadow-sm">
+          <p class="text-sm font-semibold text-gray-800">No consultant selected</p>
+          <p class="text-sm text-gray-500 mt-3 leading-relaxed">Pick someone from the list on the left to load their assigned jobs, drafts, and submissions here.</p>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  var list = document.getElementById('workflow-consultant-list');
+  if (!list) return;
+
+  function rows() {
+    return Array.prototype.slice.call(list.querySelectorAll('a.wf-row'));
+  }
+
+  function clearHighlight() {
+    rows().forEach(function(a) {
+      a.classList.remove('ring-2', 'ring-indigo-400', 'ring-inset');
+    });
+  }
+
+  function highlightIndex(i) {
+    var r = rows();
+    clearHighlight();
+    if (i >= 0 && i < r.length) {
+      r[i].classList.add('ring-2', 'ring-indigo-400', 'ring-inset');
+      r[i].focus({ preventScroll: false });
+      try { r[i].scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) {}
+    }
+  }
+
+  var idx = -1;
+
+  function isTypingContext(el) {
+    if (!el) return false;
+    if (el.isContentEditable) return true;
+    var n = el.tagName;
+    if (n === 'TEXTAREA' || n === 'SELECT') return true;
+    if (n === 'INPUT') {
+      var ty = (el.type || '').toLowerCase();
+      if (ty === 'button' || ty === 'submit' || ty === 'checkbox' || ty === 'radio') return false;
+      return true;
+    }
+    return false;
+  }
+
+  document.addEventListener('keydown', function(e) {
+    var t = e.target;
+    if (t && t.id === 'workflow-search') {
+      if (e.key === 'j' || e.key === 'k' || e.key === 'J' || e.key === 'K' || e.key === 'Enter') return;
+      if (e.key === '/') return;
+    }
+    if (isTypingContext(t) && t.id !== 'workflow-search') return;
+
+    if (e.key === '/') {
+      e.preventDefault();
+      var inp = document.getElementById('workflow-search');
+      if (inp) { inp.focus(); if (inp.select) inp.select(); }
+      return;
+    }
+
+    var r = rows();
+    if (!r.length) return;
+
+    if (e.key === 'j' || e.key === 'J') {
+      e.preventDefault();
+      idx = Math.min(idx + 1, r.length - 1);
+      highlightIndex(idx);
+      return;
+    }
+    if (e.key === 'k' || e.key === 'K') {
+      e.preventDefault();
+      idx = Math.max(idx - 1, 0);
+      highlightIndex(idx);
+      return;
+    }
+    if (e.key === 'Enter' && idx >= 0 && idx < r.length) {
+      e.preventDefault();
+      window.location.href = r[idx].href;
+      return;
+    }
+  });
+
+  list.addEventListener('click', function(e) {
+    if (e.target.closest('form')) return;
+    var a = e.target.closest('a.wf-row');
+    if (!a) return;
+    idx = rows().indexOf(a);
+    clearHighlight();
+  });
+})();
+</script>
+{% endblock %}

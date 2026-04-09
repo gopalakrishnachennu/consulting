@@ -1,0 +1,48 @@
+{% if rate_limited %}
+<p class="rounded-xl bg-red-50 px-3 py-2 text-sm font-medium text-red-700">Slow down — try again shortly.</p>
+{% elif too_short %}
+<div class="flex flex-col items-center justify-center px-4 py-8 text-center">
+    <p class="text-sm font-medium text-gray-600">
+        {% if staff_only %}
+        Type at least 2 characters (staff search).
+        {% else %}
+        Keep typing — at least 2 characters to search.
+        {% endif %}
+    </p>
+</div>
+{% elif not results %}
+<p class="px-3 py-6 text-center text-sm text-gray-500">No matches — try another name or email.</p>
+{% else %}
+<ul class="divide-y divide-gray-100 rounded-2xl border border-gray-100 bg-white">
+    {% for u in results %}
+    <li>
+        <form method="post" action="{% url 'start-thread' u.pk %}" class="m-0">
+            {% csrf_token %}
+            <button type="submit"
+                class="flex w-full items-center gap-3 px-3 py-3.5 text-left transition hover:bg-gray-50 active:bg-gray-100">
+            {% if u.role == 'CONSULTANT' %}
+            <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-sm font-bold text-white shadow-sm">
+                {{ u.get_full_name|default:u.username|slice:":1"|upper }}
+            </div>
+            {% elif u.role == 'ADMIN' or u.is_superuser %}
+            <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-amber-500 text-sm font-bold text-white shadow-sm">
+                {{ u.get_full_name|default:u.username|slice:":1"|upper }}
+            </div>
+            {% else %}
+            <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white shadow-sm">
+                {{ u.get_full_name|default:u.username|slice:":1"|upper }}
+            </div>
+            {% endif %}
+            <div class="min-w-0 flex-1">
+                <p class="truncate text-[15px] font-bold text-gray-900">{{ u.get_full_name|default:u.username }}</p>
+                <p class="truncate text-xs text-gray-500">{{ u.email }}</p>
+            </div>
+            <span class="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-gray-600">
+                {% if u.is_superuser or u.role == 'ADMIN' %}Admin{% elif u.role == 'EMPLOYEE' %}Staff{% else %}Consultant{% endif %}
+            </span>
+            </button>
+        </form>
+    </li>
+    {% endfor %}
+</ul>
+{% endif %}

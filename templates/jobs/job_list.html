@@ -74,6 +74,13 @@
         <span class="w-1.5 h-1.5 rounded-full bg-gray-500"></span>
         Closed {{ status_summary.CLOSED }}
     </span>
+    {% if status_summary.POOL %}
+    <a href="{% url 'job-pool' %}"
+        class="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-yellow-50 text-yellow-700 border border-yellow-200 hover:bg-yellow-100 transition font-semibold">
+        <span class="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>
+        {{ status_summary.POOL }} in Pool →
+    </a>
+    {% endif %}
 </div>
 {% endif %}
 
@@ -83,7 +90,7 @@
         <div class="flex flex-wrap items-center gap-3 flex-1 w-full md:w-auto">
         <!-- Role Filter -->
         <div class="relative w-full md:w-auto">
-            <select onchange="var p=new URLSearchParams(window.location.search);p.set('role',this.value);window.location.search=p.toString();"
+            <select name="role" onchange="var p=new URLSearchParams(window.location.search);if(this.value)p.set('role',this.value);else p.delete('role');p.delete('page');window.location.search=p.toString();"
                 class="w-full md:w-48 pl-4 pr-10 py-3 bg-white/80 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition appearance-none cursor-pointer">
                 <option value="">All Roles</option>
                 {% for role in marketing_roles %}
@@ -99,9 +106,10 @@
 
         <!-- Status Filter -->
         <div class="relative w-full md:w-auto">
-            <select onchange="var p=new URLSearchParams(window.location.search);p.set('status',this.value);window.location.search=p.toString();"
+            <select name="status" onchange="var p=new URLSearchParams(window.location.search);if(this.value)p.set('status',this.value);else p.delete('status');p.delete('page');window.location.search=p.toString();"
                 class="w-full md:w-40 pl-4 pr-10 py-3 bg-white/80 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition appearance-none cursor-pointer">
                 <option value="">All Statuses</option>
+                <option value="POOL" {% if selected_status == 'POOL' %}selected{% endif %}>In Pool</option>
                 <option value="OPEN" {% if selected_status == 'OPEN' %}selected{% endif %}>Open</option>
                 <option value="CLOSED" {% if selected_status == 'CLOSED' %}selected{% endif %}>Closed</option>
                 <option value="DRAFT" {% if selected_status == 'DRAFT' %}selected{% endif %}>Draft</option>
@@ -115,9 +123,9 @@
 
         <!-- Possibly Filled Filter -->
         <div class="relative w-full md:w-auto">
-            <select onchange="var p=new URLSearchParams(window.location.search);p.set('possibly_filled',this.value);window.location.search=p.toString();"
+            <select name="possibly_filled" onchange="var p=new URLSearchParams(window.location.search);if(this.value)p.set('possibly_filled',this.value);else p.delete('possibly_filled');p.delete('page');window.location.search=p.toString();"
                 class="w-full md:w-44 pl-4 pr-10 py-3 bg-white/80 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition appearance-none cursor-pointer">
-                <option value="">All Jobs</option>
+                <option value="">Posting status (any)</option>
                 <option value="1" {% if selected_possibly_filled == '1' %}selected{% endif %}>Possibly filled</option>
                 <option value="0" {% if selected_possibly_filled == '0' %}selected{% endif %}>Not flagged</option>
             </select>
@@ -128,9 +136,25 @@
             </div>
         </div>
 
+        <!-- Original URL / link health (employee workflow) -->
+        <div class="relative w-full md:w-auto">
+            <select name="link_live" onchange="var p=new URLSearchParams(window.location.search);if(this.value)p.set('link_live',this.value);else p.delete('link_live');p.delete('page');window.location.search=p.toString();"
+                class="w-full md:w-48 pl-4 pr-10 py-3 bg-white/80 border border-amber-100 rounded-xl text-sm font-medium text-gray-700 hover:border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 transition appearance-none cursor-pointer"
+                title="From daily URL revalidation (Celery)">
+                <option value="">Link check (any)</option>
+                <option value="1" {% if selected_link_live == '1' %}selected{% endif %}>Link looks live</option>
+                <option value="0" {% if selected_link_live == '0' %}selected{% endif %}>Link not live</option>
+            </select>
+            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+            </div>
+        </div>
+
         <!-- Job Type Filter -->
         <div class="relative w-full md:w-auto">
-            <select onchange="var p=new URLSearchParams(window.location.search);p.set('job_type',this.value);window.location.search=p.toString();"
+            <select name="job_type" onchange="var p=new URLSearchParams(window.location.search);if(this.value)p.set('job_type',this.value);else p.delete('job_type');p.delete('page');window.location.search=p.toString();"
                 class="w-full md:w-44 pl-4 pr-10 py-3 bg-white/80 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition appearance-none cursor-pointer">
                 <option value="">All Types</option>
                 <option value="FULL_TIME" {% if selected_job_type == 'FULL_TIME' %}selected{% endif %}>Full Time</option>
@@ -158,7 +182,7 @@
                 placeholder="Search title, company, description…"
                 value="{{ request.GET.search }}"
                 hx-get="{% url 'job-list' %}"
-                hx-include="[name='location'], [name='role'], [name='status'], [name='job_type'], [name='possibly_filled']"
+                hx-include="[name='location'], [name='role'], [name='status'], [name='job_type'], [name='possibly_filled'], [name='link_live']"
                 hx-push-url="true"
                 hx-trigger="keyup changed delay:500ms"
                 hx-target="#job-list-results"

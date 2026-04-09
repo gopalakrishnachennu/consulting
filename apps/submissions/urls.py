@@ -10,6 +10,16 @@ from .views import (
     PlacementListView, PlacementDetailView, PlacementCreateView, PlacementUpdateView,
     TimesheetCreateView, TimesheetApproveView, TimesheetListView,
     CommissionCreateView, CommissionListView, CommissionUpdateView,
+    # Phase 4+5
+    FollowUpReminderCreateView, FollowUpReminderDismissView, StaleSubmissionsView,
+    SubmissionArchiveView, SubmissionRestoreView, ArchivedSubmissionsView,
+    GDPRExportView, WinLossAnalysisView,
+)
+from .views import (
+    WorkflowDashboardView, WorkflowPanelView, WorkflowStarToggleView,
+    ConsultantClaimView, ConsultantReleaseView,
+    LockHeartbeatView, LockOverrideView,
+    MarkExternalApplicationView,
 )
 
 urlpatterns = [
@@ -45,4 +55,30 @@ urlpatterns = [
     path('commissions/', CommissionListView.as_view(), name='commission-list'),
     path('commissions/<int:pk>/edit/', CommissionUpdateView.as_view(), name='commission-update'),
     path('placements/<int:placement_pk>/commissions/add/', CommissionCreateView.as_view(), name='commission-create'),
+
+    # Phase 4: Follow-up reminders
+    path('<int:pk>/reminder/', FollowUpReminderCreateView.as_view(), name='followup-reminder-create'),
+    path('reminders/<int:pk>/dismiss/', FollowUpReminderDismissView.as_view(), name='followup-reminder-dismiss'),
+    path('stale/', StaleSubmissionsView.as_view(), name='stale-submissions'),
+
+    # Phase 5: Archive / Restore
+    path('<int:pk>/archive/', SubmissionArchiveView.as_view(), name='submission-archive'),
+    path('<int:pk>/restore/', SubmissionRestoreView.as_view(), name='submission-restore'),
+    path('archived/', ArchivedSubmissionsView.as_view(), name='submission-archived'),
+
+    # Phase 5: GDPR export
+    path('gdpr-export/<int:pk>/', GDPRExportView.as_view(), name='gdpr-export'),
+
+    # Phase 5: Win/Loss analysis
+    path('win-loss/', WinLossAnalysisView.as_view(), name='win-loss-analysis'),
+
+    # Consultant Workflow Pipeline
+    path('workflow/', WorkflowDashboardView.as_view(), name='workflow-dashboard'),
+    path('workflow/star/<int:pk>/', WorkflowStarToggleView.as_view(), name='workflow-star-toggle'),
+    path('workflow/consultant/<int:pk>/', WorkflowPanelView.as_view(), name='workflow-panel'),
+    path('workflow/claim/<int:pk>/', ConsultantClaimView.as_view(), name='workflow-claim'),
+    path('workflow/release/<int:pk>/', ConsultantReleaseView.as_view(), name='workflow-release'),
+    path('workflow/heartbeat/<int:pk>/', LockHeartbeatView.as_view(), name='workflow-heartbeat'),
+    path('workflow/override/<int:pk>/', LockOverrideView.as_view(), name='workflow-override'),
+    path('workflow/mark-external/<int:consultant_pk>/job/<int:job_pk>/', MarkExternalApplicationView.as_view(), name='workflow-mark-external'),
 ]

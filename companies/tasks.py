@@ -14,6 +14,214 @@ from .models import Company
 from .services import normalize_company_name, normalize_domain
 
 
+# ─── Company-type keyword classifier (zero LLM cost) ─────────────────────────
+
+# Words that strongly suggest each company type.
+# Scored: first match wins; ties broken by order (product > service > consultancy > staffing).
+_TYPE_RULES: list[tuple[str, list[str]]] = [
+    ("product", [
+        "saas", "software as a service", "cloud platform", "our platform", "our product",
+        "b2b software", "enterprise software", "developer tool", "devtool",
+        "api platform", "our app", "mobile app", "web application",
+        "product-led", "product company", "product-first",
+        "open source", "open-source", "oss", "freemium",
+        "marketplace", "e-commerce", "ecommerce", "cloud-native",
+    ]),
+    ("service", [
+        "managed services", "it services", "technology services", "professional services",
+        "systems integrator", "system integrator", "digital services",
+        "outsourcing", "offshore", "nearshore", "it solutions",
+        "service provider", "technology partner", "implementation partner",
+        "we deliver services", "we provide services",
+    ]),
+    ("consultancy", [
+        "consulting firm", "consultancy", "advisory", "advisors",
+        "management consulting", "strategy consulting", "business consulting",
+        "digital transformation", "change management", "trusted advisor",
+        "we advise", "our consultants", "our advisors",
+    ]),
+    ("staffing", [
+        "staffing", "staff augmentation", "talent solutions", "talent acquisition",
+        "body shop", "it staffing", "recruiting", "recruitment agency",
+        "we place", "we connect talent", "hire engineers", "hire developers",
+        "contract staffing", "contingent workforce",
+    ]),
+]
+
+# Industry → keyword sets (all lowercase, partial match against description)
+_INDUSTRY_RULES: list[tuple[str, list[str]]] = [
+    ("Cloud Infrastructure",  ["cloud infrastructure", "cloud platform", "aws", "azure", "gcp", "kubernetes", "cloud computing"]),
+    ("Cybersecurity",         ["cybersecurity", "security platform", "threat detection", "endpoint security", "soc", "siem"]),
+    ("Financial Services",    ["fintech", "financial services", "banking", "insurance", "payments", "trading", "investment"]),
+    ("Healthcare",            ["healthcare", "health tech", "medical", "pharma", "biotech", "clinical", "ehr", "emr"]),
+    ("E-commerce / Retail",   ["e-commerce", "ecommerce", "retail", "shopping", "marketplace", "fulfillment"]),
+    ("Data & Analytics",      ["data analytics", "business intelligence", "data platform", "ml platform", "machine learning", "ai platform"]),
+    ("Enterprise Software",   ["erp", "crm", "hrms", "hcm", "scm", "supply chain", "enterprise resource"]),
+    ("DevOps / Dev Tools",    ["devops", "developer tool", "devtool", "ci/cd", "devsecops", "code review", "observability"]),
+    ("IT Services",           ["it services", "managed services", "outsourcing", "staff augmentation", "staffing"]),
+    ("Logistics",             ["logistics", "supply chain", "freight", "shipping", "last-mile", "fleet"]),
+    ("Education / EdTech",    ["edtech", "education", "learning platform", "lms", "e-learning", "university"]),
+    ("Media / Entertainment", ["media", "entertainment", "streaming", "content platform", "gaming", "music"]),
+    ("Telecom",               ["telecom", "telecommunications", "carrier", "5g", "network services", "isp"]),
+]
+
+# Headcount range → size band mapping
+_SIZE_MAP: list[tuple[str, str]] = [
+    ("1-10",       "startup"),
+    ("1-50",       "startup"),
+    ("11-50",      "startup"),
+    ("51-200",     "small"),
+    ("201-500",    "medium"),
+    ("501-1,000",  "medium"),
+    ("1,001-5,000","large"),
+    ("5,001+",     "enterprise"),
+    ("10,001+",    "enterprise"),
+]
+
+
+def _classify_company_type(text: str) -> str:
+    """
+    Keyword-based company type classifier.
+    Scans description/about text (lowercased). Returns CompanyType value.
+    Zero LLM cost — pure heuristic.
+    """
+    if not text:
+        return "unknown"
+    low = text.lower()
+    scores: dict[str, int] = {}
+    for ctype, keywords in _TYPE_RULES:
+        for kw in keywords:
+            if kw in low:
+                scores[ctype] = scores.get(ctype, 0) + 1
+    if not scores:
+        return "unknown"
+    return max(scores, key=lambda k: scores[k])
+
+
+def _classify_industry(text: str) -> str:
+    """Keyword-based industry classifier. Returns best-matching industry label or ''."""
+    if not text:
+        return ""
+    low = text.lower()
+    best_label, best_count = "", 0
+    for label, keywords in _INDUSTRY_RULES:
+        count = sum(1 for kw in keywords if kw in low)
+        if count > best_count:
+            best_count = count
+            best_label = label
+    return best_label
+
+
+def _headcount_to_size_band(headcount: str) -> str:
+    """Map '51-200' → 'small' etc. Returns '' if no match."""
+    if not headcount:
+        return ""
+    for pattern, band in _SIZE_MAP:
+        if pattern.lower() in headcount.lower() or headcount.lower() in pattern.lower():
+            return band
+    # Try parsing raw numbers
+    m = re.search(r'(\d[\d,]*)', headcount.replace(",", ""))
+    if m:
+        n = int(m.group(1).replace(",", ""))
+        if n <= 50:    return "startup"
+        if n <= 200:   return "small"
+        if n <= 1000:  return "medium"
+        if n <= 5000:  return "large"
+        return "enterprise"
+    return ""
+
+
+# ─── Free DuckDuckGo Instant Answer discovery ────────────────────────────────
+
+def _fetch_ddg_instant(query: str) -> dict:
+    """
+    Free DuckDuckGo Instant Answer API — no key, no rate limit on reasonable use.
+    Returns dict with keys: abstract, abstract_url, website (from Results[0]).
+    """
+    out: dict = {}
+    if not query:
+        return out
+    try:
+        params = urlencode({
+            "q": query,
+            "format": "json",
+            "no_redirect": "1",
+            "no_html": "1",
+            "skip_disambig": "1",
+        })
+        url = f"https://api.duckduckgo.com/?{params}"
+        ctx = ssl.create_default_context()
+        req = Request(url, headers={"User-Agent": "GoCareers-enrichment/1.0"})
+        resp = urlopen(req, context=ctx, timeout=8)
+        data = json.loads(resp.read().decode("utf-8"))
+
+        if data.get("Abstract"):
+            out["abstract"] = data["Abstract"]
+        if data.get("AbstractURL"):
+            out["abstract_url"] = data["AbstractURL"]
+        if data.get("AbstractSource"):
+            out["source"] = data["AbstractSource"]
+
+        # Official website from Results
+        for result in data.get("Results") or []:
+            first_url = result.get("FirstURL") or ""
+            if first_url and "wikipedia" not in first_url.lower():
+                out["website"] = first_url
+                break
+
+        # Infobox: headcount, industry, location
+        for item in (data.get("Infobox") or {}).get("content", []):
+            label = (item.get("label") or "").lower()
+            value = item.get("value") or ""
+            if "employee" in label or "headcount" in label:
+                out["headcount_range"] = str(value)
+            elif "industry" in label or "sector" in label:
+                out["industry"] = str(value)
+            elif "headquarters" in label or "location" in label:
+                out["hq_location"] = str(value)
+            elif "founded" in label:
+                out["founded"] = str(value)
+            elif "type" in label and "company" in label:
+                out["org_type"] = str(value)
+
+    except Exception:
+        pass
+    return out
+
+
+def _search_ddg_for_website(company_name: str) -> str:
+    """
+    Search DuckDuckGo for '<company_name> official website' and return first non-wiki URL.
+    Used when the company has no website stored yet.
+    """
+    try:
+        params = urlencode({
+            "q": f"{company_name} official website",
+            "format": "json",
+            "no_redirect": "1",
+            "no_html": "1",
+            "skip_disambig": "1",
+        })
+        url = f"https://api.duckduckgo.com/?{params}"
+        ctx = ssl.create_default_context()
+        req = Request(url, headers={"User-Agent": "GoCareers-enrichment/1.0"})
+        resp = urlopen(req, context=ctx, timeout=8)
+        data = json.loads(resp.read().decode("utf-8"))
+
+        for result in data.get("Results") or []:
+            u = result.get("FirstURL") or ""
+            if u and "wikipedia" not in u.lower() and "duckduckgo" not in u.lower():
+                return u
+
+        # Fall back to AbstractURL
+        if data.get("AbstractURL") and "wikipedia" not in (data.get("AbstractURL") or "").lower():
+            return data["AbstractURL"]
+
+    except Exception:
+        pass
+    return ""
+
+
 def _log_pipeline_run(task_name: str, result: dict) -> None:
     """Record pipeline task run for Settings UI."""
     try:
@@ -36,6 +244,22 @@ def _normalize_url(url: str) -> str:
     if not urlparse(url).scheme:
         url = "https://" + url
     return url
+
+
+def _apply_link_validation(company: Company) -> None:
+    """HEAD/GET check for website + LinkedIn; updates *_is_valid and *_last_checked_at."""
+    now = timezone.now()
+    if company.website:
+        company.website = _normalize_url(company.website)
+        company.website_is_valid = _check_url(company.website)
+        company.website_last_checked_at = now
+    if company.linkedin_url:
+        company.linkedin_url = _normalize_url(company.linkedin_url)
+        if "linkedin.com/company/" in company.linkedin_url.lower():
+            company.linkedin_is_valid = _check_url(company.linkedin_url)
+        else:
+            company.linkedin_is_valid = False
+        company.linkedin_last_checked_at = now
 
 
 def _check_url(url: str) -> bool:
@@ -312,39 +536,171 @@ def _fetch_og_meta(page_url: str, max_bytes: int = 100_000) -> dict:
     m = re.search(r'<meta\s+property=["\']og:image["\']\s+content=["\']([^"\']*)["\']', raw, re.I)
     if m:
         out["image"] = m.group(1).strip()
+    # For career / LinkedIn discovery on company homepage (trim for memory)
+    out["_raw_html"] = raw[:250000]
     return out
 
 
-def _fetch_google_kg(api_key: str, query: str) -> dict:
-    """Fetch company info from Google Knowledge Graph. Returns dict with name, description, image, url."""
-    out = {}
-    if not api_key or not query:
-        return out
+def _resolve_google_kg_api_key(config) -> str:
+    """Platform Config field wins; else Django GOOGLE_KG_API_KEY from settings."""
+    if config:
+        k = (getattr(config, "google_kg_api_key", None) or "").strip()
+        if k:
+            return k
     try:
-        params = urlencode({"query": query[:100], "key": api_key, "types": "Organization", "limit": 1})
+        from django.conf import settings
+
+        return (getattr(settings, "GOOGLE_KG_API_KEY", None) or "").strip()
+    except Exception:
+        return ""
+
+
+def _kg_image_url(image_field) -> str:
+    if not image_field:
+        return ""
+    if isinstance(image_field, dict):
+        return (image_field.get("contentUrl") or image_field.get("url") or "").strip()
+    if isinstance(image_field, str):
+        return image_field.strip()
+    return ""
+
+
+def _kg_location_string(result: dict) -> str:
+    """Best-effort HQ string from Knowledge Graph location / address."""
+    loc = result.get("location")
+    if isinstance(loc, str) and loc.strip():
+        return loc.strip()[:255]
+    if not isinstance(loc, dict):
+        return ""
+    addr = loc.get("address")
+    if isinstance(addr, dict):
+        parts = [
+            addr.get("streetAddress"),
+            addr.get("addressLocality"),
+            addr.get("addressRegion"),
+            addr.get("addressCountry"),
+        ]
+        line = ", ".join(str(p).strip() for p in parts if p)
+        if line:
+            return line[:255]
+    name = loc.get("name")
+    if isinstance(name, str) and name.strip():
+        return name.strip()[:255]
+    return ""
+
+
+def _fetch_google_kg(api_key: str, query: str) -> dict:
+    """
+    Google Knowledge Graph Search API — Organization-focused.
+    Returns: name, description (long), image, url (website), linkedin_url, alias, hq_location,
+    industry_label (short KG description line, often sector-like).
+    """
+    out: dict = {}
+    if not api_key or not (query or "").strip():
+        return out
+    q = (query or "").strip()[:200]
+    try:
+        params = urlencode(
+            {
+                "query": q,
+                "key": api_key,
+                "types": "Organization",
+                "limit": "10",
+            }
+        )
         url = f"https://kgsearch.googleapis.com/v1/entities:search?{params}"
         req = Request(url, headers={"User-Agent": "GoCareers-enrichment/1.0"})
-        resp = urlopen(req, timeout=8)
+        resp = urlopen(req, timeout=12)
         data = json.loads(resp.read().decode("utf-8"))
         items = data.get("itemListElement") or []
         if not items:
             return out
-        result = items[0].get("result") or {}
+
+        best_result = None
+        best_score = -1.0
+        for el in items:
+            res = el.get("result") or {}
+            if not res:
+                continue
+            score = float(el.get("resultScore") or 0)
+            types = res.get("@type") or []
+            if isinstance(types, str):
+                types = [types]
+            if types and not any(t in ("Organization", "Corporation", "Company") for t in types):
+                continue
+            if score >= best_score:
+                best_score = score
+                best_result = res
+
+        if not best_result and items:
+            best_result = (items[0].get("result") or {})
+
+        result = best_result or {}
         if result.get("name"):
             out["name"] = result["name"]
-        desc = result.get("description") or (result.get("detailedDescription") or {}).get("articleBody")
-        if desc:
-            out["description"] = (desc[:2000] + "…") if len(desc) > 2000 else desc
-        img = result.get("image") or {}
-        if isinstance(img, dict) and img.get("contentUrl"):
-            out["image"] = img["contentUrl"]
-        elif isinstance(img, str):
+
+        dd = result.get("detailedDescription") or {}
+        body = (dd.get("articleBody") or "").strip()
+        short = (result.get("description") or "").strip()
+        if body:
+            out["description"] = body[:8000]
+        elif short:
+            out["description"] = short[:8000]
+
+        if short:
+            out["industry_label"] = short[:255]
+
+        img = _kg_image_url(result.get("image"))
+        if img:
             out["image"] = img
+
         if result.get("url"):
-            out["url"] = result["url"]
+            out["url"] = (result["url"] or "").strip()
+
+        same_as = result.get("sameAs") or []
+        if isinstance(same_as, str):
+            same_as = [same_as]
+        for u in same_as:
+            if not u:
+                continue
+            low = u.lower()
+            if "linkedin.com/company/" in low:
+                out["linkedin_url"] = u.split("?")[0]
+                break
+
+        an = result.get("alternateName")
+        if isinstance(an, list) and an:
+            out["alias"] = str(an[0])[:255]
+        elif isinstance(an, str) and an.strip():
+            out["alias"] = an.strip()[:255]
+
+        hq = _kg_location_string(result)
+        if hq:
+            out["hq_location"] = hq
+
         return out
     except Exception:
         return out
+
+
+def merge_google_kg_dicts(a: dict, b: dict) -> dict:
+    """Merge two KG result dicts; prefer longer description and any missing fields."""
+    if not a:
+        return dict(b or {})
+    if not b:
+        return dict(a or {})
+    m = dict(a)
+    for k, v in (b or {}).items():
+        if v is None or v == "":
+            continue
+        if k == "description":
+            prev = (m.get("description") or "")
+            nv = str(v)
+            if len(nv) > len(prev):
+                m["description"] = nv
+        elif k not in m or m[k] in ("", None):
+            m[k] = v
+    return m
 
 
 def _fetch_hunter(api_key: str, domain: str) -> dict:
@@ -442,8 +798,12 @@ def _compute_data_quality_score(company: Company) -> int:
         bool(company.size_band or company.headcount_range),
         bool(company.hq_location),
         bool(company.linkedin_url),
+        bool(company.career_site_url),
+        bool(company.alias),
+        bool(company.relationship_status),
     ]
-    return min(100, sum(fields) * 100 // 9)
+    n = len(fields)
+    return min(100, sum(fields) * 100 // n) if n else 0
 
 
 @shared_task
@@ -459,6 +819,10 @@ def enrich_company_task(company_id: int) -> dict:
 
     now = timezone.now()
     try:
+        from .enrichment_helpers import apply_free_enrichment
+
+        _, src_tags = apply_free_enrichment(company)
+
         domain = _extract_domain_for_enrichment(company)
         if not domain and not company.website:
             company.enrichment_status = Company.EnrichmentStatus.FAILED
@@ -471,50 +835,15 @@ def enrich_company_task(company_id: int) -> dict:
             _log_enrichment(company.pk, "", [], success=False)
             return {"ok": False, "reason": "no_domain_or_website"}
 
-        sources = []
-        updates = {}
+        sources = list(src_tags)
+        updates: dict = {}
 
-        # Clearbit logo
-        logo_url = _fetch_clearbit_logo(domain)
-        if logo_url:
-            updates["logo_url"] = logo_url
-            sources.append("clearbit")
-
-        # OG / meta from website
-        page_url = company.website or (f"https://{domain}" if domain else "")
-        if page_url:
-            og = _fetch_og_meta(page_url)
-            if og["description"]:
-                updates["description"] = (og["description"][:2000] + "…") if len(og["description"]) > 2000 else og["description"]
-                if "og" not in sources:
-                    sources.append("og")
-            if og["image"] and not updates.get("logo_url"):
-                updates["logo_url"] = og["image"]
-                if "og" not in sources:
-                    sources.append("og")
-
-        # Optional APIs (Phase 4)
         try:
             config = __import__("core.models", fromlist=["PlatformConfig"]).PlatformConfig.load()
         except Exception:
             config = None
+        domain = _extract_domain_for_enrichment(company)
         if config:
-            # Google Knowledge Graph (by name or domain)
-            kg_key = (getattr(config, "google_kg_api_key", None) or "").strip()
-            if kg_key:
-                kg_query = company.name or domain
-                if kg_query:
-                    kg_data = _fetch_google_kg(kg_key, kg_query)
-                    if kg_data and "kg" not in sources:
-                        sources.append("kg")
-                    if kg_data.get("description") and not updates.get("description"):
-                        updates["description"] = kg_data["description"]
-                    if kg_data.get("image") and not updates.get("logo_url"):
-                        updates["logo_url"] = kg_data["image"]
-                    if kg_data.get("name") and not company.name:
-                        updates["name"] = kg_data["name"]
-
-            # Hunter (by domain)
             hunter_key = (getattr(config, "hunter_api_key", None) or "").strip()
             if hunter_key and domain:
                 h_data = _fetch_hunter(hunter_key, domain)
@@ -523,10 +852,9 @@ def enrich_company_task(company_id: int) -> dict:
                 for k, v in h_data.items():
                     if v and not getattr(company, k, None) and k not in updates:
                         updates[k] = v
-                if h_data.get("logo") and not updates.get("logo_url"):
+                if h_data.get("logo") and not company.logo_url:
                     updates["logo_url"] = h_data["logo"]
 
-            # Apollo (by domain)
             apollo_key = (getattr(config, "apollo_api_key", None) or "").strip()
             if apollo_key and domain:
                 a_data = _fetch_apollo(apollo_key, domain)
@@ -536,21 +864,39 @@ def enrich_company_task(company_id: int) -> dict:
                     if v and not getattr(company, k, None) and k not in updates:
                         updates[k] = v
 
-        company.enrichment_status = Company.EnrichmentStatus.ENRICHED
-        company.enriched_at = now
-        company.enrichment_source = "+".join(sources) if sources else "none"
+        classify_text = " ".join(filter(None, [
+            updates.get("description") or company.description,
+            updates.get("industry") or company.industry,
+            company.name,
+        ]))
+        if classify_text.strip():
+            if company.company_type in ("unknown", "", None):
+                detected_type = _classify_company_type(classify_text)
+                if detected_type != "unknown":
+                    updates["company_type"] = detected_type
+            if not (updates.get("industry") or company.industry):
+                detected_industry = _classify_industry(classify_text)
+                if detected_industry:
+                    updates["industry"] = detected_industry
+        hc = updates.get("headcount_range") or company.headcount_range
+        if hc and not company.size_band:
+            sb = _headcount_to_size_band(hc)
+            if sb:
+                updates["size_band"] = sb
+
         if updates:
             for k, v in updates.items():
                 if hasattr(company, k):
                     setattr(company, k, v)
+
+        _apply_link_validation(company)
+
+        company.enrichment_status = Company.EnrichmentStatus.ENRICHED
+        company.enriched_at = now
+        company.enrichment_source = "+".join(sources) if sources else "none"
         company.data_quality_score = _compute_data_quality_score(company)
-        update_fields = ["enrichment_status", "enriched_at", "enrichment_source", "data_quality_score", "updated_at"]
-        valid_fields = {f.name for f in Company._meta.get_fields() if hasattr(f, "name")}
-        for k in updates:
-            if k in valid_fields:
-                update_fields.append(k)
-        company.save(update_fields=list(dict.fromkeys(update_fields)))
-        _log_enrichment(company.pk, "+".join(sources) if sources else "none", list(updates.keys()), success=True)
+        company.save()
+        _log_enrichment(company.pk, company.enrichment_source, list(updates.keys()), success=True)
         return {"ok": True, "enrichment_source": company.enrichment_source}
     except Exception:
         company.enrichment_status = Company.EnrichmentStatus.FAILED

@@ -1,5 +1,31 @@
 from django.contrib import admin
-from .models import PlatformConfig, LLMConfig, LLMConfigVersion, LLMUsageLog, AuditLog, Notification
+from .models import (
+    PlatformConfig,
+    LLMConfig,
+    LLMConfigVersion,
+    LLMUsageLog,
+    AuditLog,
+    Notification,
+    BroadcastMessage,
+    BroadcastDelivery,
+)
+
+
+class BroadcastDeliveryInline(admin.TabularInline):
+    model = BroadcastDelivery
+    extra = 0
+    readonly_fields = ('user', 'notification', 'status', 'created_at')
+    can_delete = False
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(BroadcastMessage)
+class BroadcastMessageAdmin(admin.ModelAdmin):
+    list_display = ('title', 'audience', 'kind', 'created_by', 'created_at')
+    list_filter = ('audience', 'kind', 'created_at')
+    inlines = [BroadcastDeliveryInline]
 
 
 @admin.register(PlatformConfig)
@@ -105,6 +131,13 @@ class AuditLogAdmin(admin.ModelAdmin):
 
 @admin.register(Notification)
 class NotificationAdmin(admin.ModelAdmin):
-    list_display = ('user', 'kind', 'title', 'read_at', 'created_at')
+    list_display = ('user', 'kind', 'title', 'read_at', 'dedupe_key', 'created_at')
     list_filter = ('kind', 'read_at')
-    search_fields = ('title', 'body', 'user__username')
+    search_fields = ('title', 'body', 'user__username', 'dedupe_key')
+
+
+@admin.register(BroadcastDelivery)
+class BroadcastDeliveryAdmin(admin.ModelAdmin):
+    list_display = ('broadcast', 'user', 'status', 'notification', 'created_at')
+    list_filter = ('status',)
+    search_fields = ('broadcast__title', 'user__username')

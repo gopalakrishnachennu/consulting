@@ -60,6 +60,11 @@ from config.constants import (
     MSG_ONLY_CONSULTANTS_SAVE,
 )
 from core.models import PlatformConfig, LLMUsageLog
+from .journey_utils import (
+    compute_consultant_readiness,
+    build_journey_steps,
+    at_risk_submissions_queryset,
+)
 
 class ConsultantListView(LoginRequiredMixin, ListView):
     model = User
@@ -450,19 +455,13 @@ class ConsultantDetailView(LoginRequiredMixin, DetailView):
                 latest_draft = profile.resume_drafts.order_by('-created_at').first()
             context['latest_draft'] = latest_draft
             if latest_draft:
-                from resumes.services import LLMService, build_input_summary, get_system_prompt_text
-                llm = LLMService()
-                user_prompt = latest_draft.llm_user_prompt or llm._build_prompt(latest_draft.job, profile)
-                llm_system = latest_draft.llm_system_prompt or get_system_prompt_text(latest_draft.job, profile)
-                context['llm_system_prompt'] = llm_system
-                context['llm_user_prompt'] = user_prompt
-                from core.models import LLMConfig
-                from prompts_app.models import Prompt
-                config = LLMConfig.load()
-                context['prompt_options'] = Prompt.objects.filter(is_active=True).order_by('name')
-                context['selected_prompt_id'] = config.active_prompt_id
-                context['selected_prompt_name'] = config.active_prompt.name if config.active_prompt else None
-                context['llm_input_summary'] = latest_draft.llm_input_summary or build_input_summary(latest_draft.job, profile)
+                from resumes.models import MasterPrompt
+                from resumes.services import get_system_prompt_text
+                master = MasterPrompt.get_active()
+                context['llm_system_prompt'] = latest_draft.llm_system_prompt or (master.system_prompt if master else "")
+                context['llm_user_prompt'] = latest_draft.llm_user_prompt or ""
+                context['active_master_prompt'] = master
+                context['llm_input_summary'] = latest_draft.llm_input_summary or {}
 
         return context
 
@@ -712,6 +711,30 @@ class ConsultantDashboardView(LoginRequiredMixin, UserPassesTestMixin, TemplateV
         context['recent_interviews'] = Interview.objects.filter(consultant=profile).order_by('-scheduled_at')[:5]
         context['needs_onboarding'] = bool(profile and not profile.onboarding_completed_at)
 
+        context['readiness_score'] = compute_consultant_readiness(profile, my_submissions)
+        _at_risk = at_risk_submissions_queryset(profile)
+        context['at_risk_count'] = _at_risk.count()
+        context['at_risk_submissions_preview'] = _at_risk[:5]
+
+        return context
+
+
+class ConsultantJourneyView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
+    """Readiness score, journey checklist, and alerts for stale / dead job links."""
+
+    template_name = 'users/consultant_journey.html'
+
+    def test_func(self):
+        return self.request.user.role == User.Role.CONSULTANT
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        profile = user.consultant_profile
+        my_submissions = ApplicationSubmission.objects.filter(consultant=profile).select_related('job')
+        context['readiness_score'] = compute_consultant_readiness(profile, my_submissions)
+        context['journey_steps'] = build_journey_steps(profile, my_submissions)
+        context['at_risk_submissions'] = at_risk_submissions_queryset(profile)[:20]
         return context
 
 
@@ -895,7 +918,7 @@ class MarketingRoleDeleteView(AdminRequiredMixin, DeleteView):
 
 
 class EmailNotificationPreferencesView(LoginRequiredMixin, UpdateView):
-    """Phase 3: per-user outbound email toggles (in-app notifications are separate)."""
+    """Per-user email and in-app (bell) notification toggles."""
 
     model = UserEmailNotificationPreferences
     form_class = UserEmailNotificationPreferencesForm
@@ -907,7 +930,7 @@ class EmailNotificationPreferencesView(LoginRequiredMixin, UpdateView):
         return obj
 
     def form_valid(self, form):
-        messages.success(self.request, 'Email notification preferences saved.')
+        messages.success(self.request, 'Notification preferences saved.')
         return super().form_valid(form)
 
 

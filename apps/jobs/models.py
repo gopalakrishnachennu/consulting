@@ -12,6 +12,7 @@ class Job(models.Model):
         INTERNSHIP = 'INTERNSHIP', _('Internship')
 
     class Status(models.TextChoices):
+        POOL = 'POOL', _('In Pool')
         OPEN = 'OPEN', _('Open')
         CLOSED = 'CLOSED', _('Closed')
         DRAFT = 'DRAFT', _('Draft')
@@ -49,8 +50,33 @@ class Job(models.Model):
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
-        default=Status.OPEN
+        default=Status.POOL
     )
+
+    # ─── Validation pipeline ───────────────────────────────────────────
+    validation_score = models.IntegerField(
+        null=True, blank=True,
+        help_text="Quality score 0–100 computed by validate_job_quality()"
+    )
+    validation_result = models.JSONField(
+        null=True, blank=True,
+        help_text="Full breakdown: issues[], passed[], auto_approved"
+    )
+    validation_run_at = models.DateTimeField(null=True, blank=True)
+    validated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='validated_jobs',
+    )
+    rejection_reason = models.TextField(blank=True)
+    rejected_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='rejected_jobs',
+    )
+    rejected_at = models.DateTimeField(null=True, blank=True)
 
     marketing_roles = models.ManyToManyField(
         MarketingRole,
@@ -76,6 +102,20 @@ class Job(models.Model):
     parsed_jd_error = models.TextField(blank=True)
     parsed_jd_updated_at = models.DateTimeField(null=True, blank=True)
     
+    # Phase 5: Job source tracking
+    job_source = models.CharField(
+        max_length=100, blank=True,
+        help_text=_("Where this job was found (e.g. LinkedIn, Indeed, Referral, Website)"),
+    )
+
+    # Phase 5: Soft-delete
+    is_archived = models.BooleanField(default=False, help_text=_("Soft-deleted / archived"))
+    archived_at = models.DateTimeField(null=True, blank=True)
+    archived_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='archived_jobs',
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

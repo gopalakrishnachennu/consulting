@@ -151,6 +151,31 @@ class PlatformConfig(models.Model):
         help_text="If enabled, OPEN jobs whose original posting URL is no longer live are closed automatically.",
     )
 
+    # Job Pool / Vetting pipeline
+    require_pool_staging = models.BooleanField(
+        default=True,
+        help_text=(
+            "When enabled (recommended), all new jobs land in the Pool for review before going live. "
+            "Disable to make new jobs OPEN immediately (legacy behaviour)."
+        ),
+    )
+    auto_approve_pool_threshold = models.PositiveSmallIntegerField(
+        default=0,
+        help_text=(
+            "Validation score threshold (0–100). Jobs that score at or above this number are "
+            "automatically promoted from Pool to Open without manual review. "
+            "Set to 0 to disable auto-approval entirely."
+        ),
+    )
+    pool_review_notify_emails = models.TextField(
+        blank=True,
+        help_text=(
+            "Comma-separated list of email addresses to notify whenever a new job enters the Pool. "
+            "Leave blank to send no external emails. "
+            "Example: admin@company.com, recruiter@company.com"
+        ),
+    )
+
     # Social Media
     twitter_url = models.URLField(blank=True)
     linkedin_url = models.URLField(blank=True)
@@ -206,12 +231,20 @@ class Notification(models.Model):
         INTERVIEW = 'INTERVIEW', 'Interview'
         JOB = 'JOB', 'Job'
         SYSTEM = 'SYSTEM', 'System'
+        MESSAGE = 'MESSAGE', 'Message'
 
     user = models.ForeignKey('users.User', on_delete=models.CASCADE, related_name='notifications')
     kind = models.CharField(max_length=20, choices=Kind.choices, default=Kind.SYSTEM)
     title = models.CharField(max_length=200)
     body = models.TextField(blank=True)
     link = models.CharField(max_length=500, blank=True, help_text="Relative path, e.g. /submissions/12/")
+    dedupe_key = models.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Optional stable id for idempotent creates (tasks, automations).",
+    )
     read_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -221,9 +254,99 @@ class Notification(models.Model):
             models.Index(fields=['user', '-created_at']),
             models.Index(fields=['user', 'read_at']),
         ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'dedupe_key'],
+                name='notification_user_dedupe_key_uniq',
+                condition=models.Q(dedupe_key__isnull=False),
+            ),
+        ]
 
     def __str__(self):
         return f"{self.title} → {self.user_id}"
+
+
+class BroadcastMessage(models.Model):
+    """
+    Admin/org broadcast: one message fan-out to many users with per-recipient audit (BroadcastDelivery).
+    """
+
+    class Audience(models.TextChoices):
+        # Primary options (recruiting / workforce comms)
+        EMPLOYEES_ONLY = 'EMPLOYEES_ONLY', 'Employees only'
+        CONSULTANTS = 'CONSULTANTS', 'Consultants only'
+        EMPLOYEES_AND_CONSULTANTS = (
+            'EMPLOYEES_AND_CONSULTANTS',
+            'Employees and consultants (both)',
+        )
+        # Other scopes
+        ALL_ACTIVE = 'ALL_ACTIVE', 'Everyone (all active users)'
+        STAFF = 'STAFF', 'Staff (admins + employees)'
+        ADMINS = 'ADMINS', 'Admins only'
+
+    title = models.CharField(max_length=200)
+    body = models.TextField(blank=True)
+    link = models.CharField(max_length=500, blank=True)
+    kind = models.CharField(
+        max_length=20,
+        choices=Notification.Kind.choices,
+        default=Notification.Kind.SYSTEM,
+    )
+    audience = models.CharField(
+        max_length=32,
+        choices=Audience.choices,
+        default=Audience.EMPLOYEES_AND_CONSULTANTS,
+        help_text='Who receives this broadcast (respects optional organisation filter below).',
+    )
+    organisation = models.ForeignKey(
+        'core.Organisation',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        help_text='Optional: limit recipients to this tenant.',
+    )
+    created_by = models.ForeignKey(
+        'users.User',
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name='broadcasts_created',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.title
+
+
+class BroadcastDelivery(models.Model):
+    """Audit row: who received (or skipped) a broadcast."""
+
+    class Status(models.TextChoices):
+        DELIVERED = 'DELIVERED', 'Delivered'
+        SKIPPED_INAPP = 'SKIPPED_INAPP', 'Skipped (in-app category off)'
+
+    broadcast = models.ForeignKey(BroadcastMessage, on_delete=models.CASCADE, related_name='deliveries')
+    user = models.ForeignKey('users.User', on_delete=models.CASCADE, related_name='broadcast_deliveries')
+    notification = models.ForeignKey(Notification, on_delete=models.SET_NULL, null=True, blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.DELIVERED,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['broadcast', 'user'], name='broadcast_delivery_user_uniq'),
+        ]
+        indexes = [
+            models.Index(fields=['broadcast', 'status']),
+        ]
+
+    def __str__(self):
+        return f"{self.broadcast_id} → user {self.user_id} ({self.status})"
 
 
 class AuditLog(models.Model):
@@ -251,9 +374,6 @@ class LLMConfig(models.Model):
     """
     encrypted_api_key = models.TextField(blank=True, help_text="Encrypted OpenAI API key")
     active_model = models.CharField(max_length=100, default="gpt-4o-mini")
-    active_prompt = models.ForeignKey(
-        'prompts_app.Prompt', on_delete=models.SET_NULL, null=True, blank=True
-    )
     temperature = models.DecimalField(max_digits=3, decimal_places=2, default=0.70)
     max_output_tokens = models.PositiveIntegerField(default=2000)
 

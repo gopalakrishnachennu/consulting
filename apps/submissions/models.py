@@ -5,6 +5,8 @@ from jobs.models import Job
 from resumes.models import Resume
 from users.models import ConsultantProfile
 from django.utils.translation import gettext_lazy as _
+from django.utils import timezone
+from datetime import timedelta
 from config.constants.limits import ALLOWED_UPLOAD_EXTENSIONS
 
 
@@ -45,12 +47,16 @@ class ApplicationSubmission(models.Model):
     notes = models.TextField(blank=True)
     submitted_at = models.DateTimeField(blank=True, null=True, help_text="When proof of submission was uploaded")
     
+    # Phase 5: Soft-delete
+    is_archived = models.BooleanField(default=False)
+    archived_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"{self.consultant.user.username} applied to {self.job.title}"
-    
+
     class Meta:
         ordering = ['-created_at']
         unique_together = ('job', 'consultant')  # Prevent double applications? Maybe not if re-applying later.
@@ -445,3 +451,96 @@ class EmailEvent(models.Model):
 
     def __str__(self):
         return f"[{self.received_at}] {self.subject}"
+
+
+class FollowUpReminder(models.Model):
+    """Phase 4: Stale submission follow-up reminders."""
+
+    class ReminderStatus(models.TextChoices):
+        PENDING = 'PENDING', _('Pending')
+        SENT = 'SENT', _('Sent')
+        DISMISSED = 'DISMISSED', _('Dismissed')
+
+    submission = models.ForeignKey(
+        ApplicationSubmission, on_delete=models.CASCADE, related_name='follow_up_reminders'
+    )
+    remind_at = models.DateTimeField(help_text=_("When to send the follow-up reminder"))
+    message = models.TextField(blank=True, help_text=_("Custom reminder message"))
+    status = models.CharField(
+        max_length=20, choices=ReminderStatus.choices, default=ReminderStatus.PENDING,
+    )
+    sent_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['remind_at']
+
+    def __str__(self):
+        return f"Reminder for {self.submission} at {self.remind_at}"
+
+
+class WorkflowConsultantStar(models.Model):
+    """Employee-starred consultants on the workflow pipeline sidebar (per user)."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='workflow_starred_consultants',
+    )
+    consultant = models.ForeignKey(
+        ConsultantProfile,
+        on_delete=models.CASCADE,
+        related_name='workflow_stars',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'consultant')
+
+    def __str__(self):
+        return f"{self.user_id} ★ {self.consultant_id}"
+
+
+class ConsultantLock(models.Model):
+    """
+    Pessimistic lock on a consultant profile -- one employee works one consultant at a time.
+    Auto-expires after LOCK_DURATION_HOURS of inactivity (enforced by heartbeat).
+    """
+    LOCK_DURATION_HOURS = 2
+
+    consultant = models.OneToOneField(
+        ConsultantProfile,
+        on_delete=models.CASCADE,
+        related_name='active_lock'
+    )
+    locked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='held_consultant_locks'
+    )
+    locked_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    last_heartbeat_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Consultant Lock'
+        verbose_name_plural = 'Consultant Locks'
+
+    def __str__(self):
+        return f"{self.consultant} locked by {self.locked_by} until {self.expires_at}"
+
+    def is_expired(self):
+        return timezone.now() >= self.expires_at
+
+    def time_remaining_seconds(self):
+        delta = self.expires_at - timezone.now()
+        return max(int(delta.total_seconds()), 0)
+
+    def extend(self):
+        now = timezone.now()
+        self.expires_at = now + timedelta(hours=self.LOCK_DURATION_HOURS)
+        self.last_heartbeat_at = now
+        self.save(update_fields=['expires_at', 'last_heartbeat_at'])

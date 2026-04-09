@@ -1,0 +1,52 @@
+<script>
+(function () {
+    if (window.__messagingHtmxScrollBound) return;
+    window.__messagingHtmxScrollBound = true;
+    document.body.addEventListener('htmx:afterSwap', function (evt) {
+        var t = evt.detail && evt.detail.target;
+        if (t && (t.id === 'thread-conversation' || t.id === 'msg-scroll')) {
+            var el = document.getElementById('msg-scroll');
+            if (el) el.scrollTop = el.scrollHeight;
+        }
+        if (t && t.id === 'thread-conversation') {
+            bindMessagingTypingPing();
+        }
+    });
+    document.addEventListener('DOMContentLoaded', function () {
+        bindMessagingTypingPing();
+    });
+
+    function getCsrfToken() {
+        var inp = document.querySelector('#thread-conversation [name=csrfmiddlewaretoken]');
+        if (!inp) inp = document.querySelector('[name=csrfmiddlewaretoken]');
+        return inp ? inp.value : '';
+    }
+
+    function bindMessagingTypingPing() {
+        var wrap = document.getElementById('msg-composer-wrap');
+        var ta = document.getElementById('id_message_content');
+        if (!wrap || !ta || !wrap.dataset.typingPingUrl) return;
+        if (ta.dataset.typingPingBound === '1') return;
+        ta.dataset.typingPingBound = '1';
+        var url = wrap.dataset.typingPingUrl;
+        var timer;
+        function ping() {
+            if (!ta.value.trim()) return;
+            var tok = getCsrfToken();
+            if (!tok) return;
+            fetch(url, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': tok,
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                credentials: 'same-origin',
+            }).catch(function () {});
+        }
+        ta.addEventListener('input', function () {
+            clearTimeout(timer);
+            timer = setTimeout(ping, 450);
+        });
+    }
+})();
+</script>

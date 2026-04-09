@@ -1,5 +1,5 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from django.views.generic import TemplateView, UpdateView, View, ListView, DetailView
+from django.views.generic import TemplateView, UpdateView, View, ListView, DetailView, CreateView
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.conf import settings
 from django.db.models import Count, Q, Sum
@@ -8,6 +8,7 @@ from django.utils import timezone
 from datetime import timedelta
 from django.contrib import messages
 from django.http import JsonResponse
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.core.serializers.json import DjangoJSONEncoder
 import json
 
@@ -15,8 +16,19 @@ from users.models import User, ConsultantProfile
 from jobs.models import Job
 from submissions.models import ApplicationSubmission, Placement, Timesheet, Commission
 from resumes.models import ResumeDraft
-from .models import PlatformConfig, LLMConfig, LLMUsageLog, AuditLog, PipelineRunLog, Notification
-from .forms import PlatformConfigForm, LLMConfigForm
+from .models import (
+    PlatformConfig,
+    LLMConfig,
+    LLMUsageLog,
+    AuditLog,
+    PipelineRunLog,
+    Notification,
+    BroadcastMessage,
+    BroadcastDelivery,
+)
+from .forms import PlatformConfigForm, LLMConfigForm, BroadcastForm
+from .broadcast_utils import deliver_broadcast
+from .notification_utils import invalidate_notification_unread_cache
 from .monitor import SystemMonitor
 from .security import decrypt_value
 from .llm_services import list_openai_models, sort_models_by_cost, get_cost_info
@@ -78,6 +90,12 @@ class PlatformConfigView(AdminRequiredMixin, UpdateView):
         for log in PipelineRunLog.objects.all():
             logs[log.task_name] = log
         context["pipeline_run_logs"] = logs
+        # Pool count for the Job Pool settings tab
+        try:
+            from jobs.models import Job
+            context["pool_job_count"] = Job.objects.filter(status=Job.Status.POOL, is_archived=False).count()
+        except Exception:
+            context["pool_job_count"] = 0
         return context
 
     def form_valid(self, form):
@@ -348,6 +366,91 @@ def home(request):
     elif role == 'CONSULTANT':
         return redirect('consultant-dashboard')
     return render(request, 'home.html')
+
+
+# ─── Phase 6: Master Prompt Editor ────────────────────────────────────
+
+class MasterPromptListView(AdminRequiredMixin, ListView):
+    """List all master prompt versions."""
+    template_name = 'settings/master_prompt_list.html'
+    context_object_name = 'prompts'
+
+    def get_queryset(self):
+        from resumes.models import MasterPrompt
+        return MasterPrompt.objects.all().order_by('-updated_at')
+
+
+class MasterPromptCreateView(AdminRequiredMixin, View):
+    """Create a new master prompt version."""
+
+    def get(self, request):
+        from resumes.models import MasterPrompt
+        return render(request, 'settings/master_prompt_form.html', {
+            'prompt': None,
+            'form_action': reverse('master-prompt-create'),
+        })
+
+    def post(self, request):
+        from resumes.engine import INPUT_SECTION_KEYS
+        from resumes.models import MasterPrompt
+
+        sections = {
+            k: request.POST.get(f'default_input_{k}') == 'on' for k in INPUT_SECTION_KEYS
+        }
+        sections['personal'] = True
+        mp = MasterPrompt(
+            name=request.POST.get('name', 'Untitled'),
+            system_prompt=request.POST.get('system_prompt', ''),
+            generation_rules=request.POST.get('generation_rules', ''),
+            is_active=request.POST.get('is_active') == 'on',
+            created_by=request.user,
+            default_input_sections=sections,
+        )
+        mp.save()
+        messages.success(request, f"Master prompt '{mp.name}' created.")
+        return redirect('master-prompt-list')
+
+
+class MasterPromptEditView(AdminRequiredMixin, View):
+    """Edit an existing master prompt."""
+
+    def get(self, request, pk):
+        from resumes.models import MasterPrompt
+        mp = get_object_or_404(MasterPrompt, pk=pk)
+        return render(request, 'settings/master_prompt_form.html', {
+            'prompt': mp,
+            'form_action': reverse('master-prompt-edit', args=[pk]),
+        })
+
+    def post(self, request, pk):
+        from resumes.engine import INPUT_SECTION_KEYS
+        from resumes.models import MasterPrompt
+
+        mp = get_object_or_404(MasterPrompt, pk=pk)
+        mp.name = request.POST.get('name', mp.name)
+        mp.system_prompt = request.POST.get('system_prompt', '')
+        mp.generation_rules = request.POST.get('generation_rules', '')
+        mp.is_active = request.POST.get('is_active') == 'on'
+        sections = {
+            k: request.POST.get(f'default_input_{k}') == 'on' for k in INPUT_SECTION_KEYS
+        }
+        sections['personal'] = True
+        mp.default_input_sections = sections
+        mp.save()
+        messages.success(request, f"Master prompt '{mp.name}' updated.")
+        return redirect('master-prompt-list')
+
+
+class MasterPromptActivateView(AdminRequiredMixin, View):
+    """Activate a master prompt (deactivates all others)."""
+
+    def post(self, request, pk):
+        from resumes.models import MasterPrompt
+        mp = get_object_or_404(MasterPrompt, pk=pk)
+        mp.is_active = True
+        mp.save()
+        messages.success(request, f"'{mp.name}' is now the active master prompt.")
+        return redirect('master-prompt-list')
 
 
 class AdminDashboardView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
@@ -1322,7 +1425,27 @@ class NotificationListView(LoginRequiredMixin, ListView):
     paginate_by = 30
 
     def get_queryset(self):
-        return Notification.objects.filter(user=self.request.user)
+        qs = Notification.objects.filter(user=self.request.user)
+        kind = (self.request.GET.get('kind') or '').strip()
+        if kind in {k for k, _ in Notification.Kind.choices}:
+            qs = qs.filter(kind=kind)
+        if self.request.GET.get('unread') == '1':
+            qs = qs.filter(read_at__isnull=True)
+        return qs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        q = self.request.GET.copy()
+        if 'page' in q:
+            del q['page']
+        context['filter_query'] = q.urlencode()
+        context['kind_choices'] = Notification.Kind.choices
+        context['active_kind'] = (self.request.GET.get('kind') or '').strip()
+        context['unread_only'] = self.request.GET.get('unread') == '1'
+        context['unread_total'] = Notification.objects.filter(
+            user=self.request.user, read_at__isnull=True
+        ).count()
+        return context
 
 
 class NotificationMarkReadView(LoginRequiredMixin, View):
@@ -1331,14 +1454,67 @@ class NotificationMarkReadView(LoginRequiredMixin, View):
         if not n.read_at:
             n.read_at = timezone.now()
             n.save(update_fields=['read_at'])
+            invalidate_notification_unread_cache(request.user.pk)
         next_url = request.POST.get('next') or reverse('notification-list')
-        return redirect(next_url)
+        if next_url and url_has_allowed_host_and_scheme(
+            next_url,
+            allowed_hosts={request.get_host()},
+            require_https=request.is_secure(),
+        ):
+            return redirect(next_url)
+        return redirect('notification-list')
 
 
 class NotificationMarkAllReadView(LoginRequiredMixin, View):
     def post(self, request, *args, **kwargs):
-        Notification.objects.filter(user=request.user, read_at__isnull=True).update(
+        updated = Notification.objects.filter(user=request.user, read_at__isnull=True).update(
             read_at=timezone.now()
         )
+        if updated:
+            invalidate_notification_unread_cache(request.user.pk)
         messages.success(request, 'All notifications marked as read.')
         return redirect('notification-list')
+
+
+class BroadcastListView(AdminRequiredMixin, ListView):
+    model = BroadcastMessage
+    template_name = 'core/broadcast_list.html'
+    context_object_name = 'broadcasts'
+    paginate_by = 20
+
+
+class BroadcastCreateView(AdminRequiredMixin, CreateView):
+    model = BroadcastMessage
+    form_class = BroadcastForm
+    template_name = 'core/broadcast_form.html'
+
+    def form_valid(self, form):
+        form.instance.created_by = self.request.user
+        self.object = form.save()
+        try:
+            stats = deliver_broadcast(self.object)
+        except Exception as exc:
+            messages.error(self.request, f"Broadcast saved but delivery failed: {exc}")
+            return redirect('broadcast-detail', pk=self.object.pk)
+        messages.success(
+            self.request,
+            f"Broadcast sent. Delivered: {stats['delivered']}, skipped (in-app off): {stats['skipped_inapp']}.",
+        )
+        return redirect('broadcast-detail', pk=self.object.pk)
+
+
+class BroadcastDetailView(AdminRequiredMixin, DetailView):
+    model = BroadcastMessage
+    template_name = 'core/broadcast_detail.html'
+    context_object_name = 'broadcast'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        qs = self.object.deliveries.select_related('user', 'notification').order_by('-created_at')
+        context['deliveries'] = qs[:500]
+        context['delivery_counts'] = {
+            'total': self.object.deliveries.count(),
+            'delivered': self.object.deliveries.filter(status=BroadcastDelivery.Status.DELIVERED).count(),
+            'skipped': self.object.deliveries.filter(status=BroadcastDelivery.Status.SKIPPED_INAPP).count(),
+        }
+        return context

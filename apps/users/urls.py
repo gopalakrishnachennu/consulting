@@ -2,7 +2,8 @@ from django.urls import path
 from .views import (
     ConsultantListView, ConsultantExportCSVView,
     EmployeeListView, EmployeeExportCSVView, EmployeeDetailView, EmployeeCreateView,
-    EmployeeEditView, ConsultantEditView, ConsultantDetailView, ConsultantDashboardView,
+    EmployeeEditView, ConsultantEditView, ConsultantDetailView,     ConsultantDashboardView,
+    ConsultantJourneyView,
     ConsultantOnboardingView,
     EmailNotificationPreferencesView,
     SaveJobView, SavedJobListView, ConsultantCreateView,
@@ -12,7 +13,6 @@ from .views import (
     EducationCreateView, EducationUpdateView, EducationDeleteView,
     CertificationCreateView, CertificationUpdateView, CertificationDeleteView,
 )
-from resumes.views import DraftGenerateView
 from resumes.preview_views import draft_preview_llm
 
 
@@ -31,6 +31,7 @@ urlpatterns = [
     path('<int:pk>/', ConsultantDetailView.as_view(), name='consultant-detail'),
     path('<int:pk>/edit/', ConsultantEditView.as_view(), name='consultant-edit'),
     path('dashboard/', ConsultantDashboardView.as_view(), name='consultant-dashboard'),
+    path('journey/', ConsultantJourneyView.as_view(), name='consultant-journey'),
 
     # Experience CRUD (self)
     path('experience/add/', ExperienceCreateView.as_view(), name='experience-add'),
@@ -68,7 +69,6 @@ urlpatterns = [
     path('marketing-roles/<int:pk>/edit/', MarketingRoleUpdateView.as_view(), name='marketing-role-edit'),
     path('marketing-roles/<int:pk>/delete/', MarketingRoleDeleteView.as_view(), name='marketing-role-delete'),
 
-    # Resume Draft Generation (Admin/Employee only)
-    path('<int:pk>/drafts/generate/', DraftGenerateView.as_view(), name='draft-generate'),
+    # Resume Draft Preview
     path('<int:pk>/drafts/preview/', draft_preview_llm, name='draft-preview-llm'),
 ]

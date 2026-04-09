@@ -1,5 +1,5 @@
 from django import forms
-from .models import PlatformConfig, LLMConfig
+from .models import PlatformConfig, LLMConfig, BroadcastMessage, Organisation
 from .security import encrypt_value, decrypt_value
 
 
@@ -56,10 +56,10 @@ class PlatformConfigForm(forms.ModelForm):
         model = PlatformConfig
         fields = '__all__'
         widgets = {
-            'site_description': forms.Textarea(attrs={'rows': 3}),
             'meta_description': forms.Textarea(attrs={'rows': 3}),
             'address': forms.Textarea(attrs={'rows': 3}),
             'maintenance_message': forms.Textarea(attrs={'rows': 3}),
+            'pool_review_notify_emails': forms.Textarea(attrs={'rows': 3}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -89,3 +89,33 @@ class PlatformConfigForm(forms.ModelForm):
             instance.save()
             self.save_m2m()
         return instance
+
+
+class BroadcastForm(forms.ModelForm):
+    """Admin broadcast: title, body, optional link, audience, optional org scope."""
+
+    class Meta:
+        model = BroadcastMessage
+        fields = ['title', 'body', 'link', 'kind', 'audience', 'organisation']
+        help_texts = {
+            'audience': (
+                'Employees only = internal staff. Consultants only = candidates. '
+                '"Employees and consultants" sends to both (excludes admin-only accounts unless you pick another scope).'
+            ),
+        }
+        widgets = {
+            'title': forms.TextInput(attrs={'class': 'w-full px-3 py-2 border rounded-lg'}),
+            'body': forms.Textarea(attrs={'rows': 5, 'class': 'w-full px-3 py-2 border rounded-lg'}),
+            'link': forms.TextInput(
+                attrs={'class': 'w-full px-3 py-2 border rounded-lg', 'placeholder': '/help/ or /jobs/…'}
+            ),
+            'kind': forms.Select(attrs={'class': 'w-full px-3 py-2 border rounded-lg'}),
+            'audience': forms.Select(attrs={'class': 'w-full px-3 py-2 border rounded-lg'}),
+            'organisation': forms.Select(attrs={'class': 'w-full px-3 py-2 border rounded-lg'}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['organisation'].required = False
+        self.fields['organisation'].queryset = Organisation.objects.order_by('name')
+        self.fields['link'].required = False

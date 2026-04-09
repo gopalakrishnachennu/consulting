@@ -16,6 +16,14 @@ from .views import (
     NotificationListView,
     NotificationMarkReadView,
     NotificationMarkAllReadView,
+    # Phase 6: Master Prompt
+    MasterPromptListView,
+    MasterPromptCreateView,
+    MasterPromptEditView,
+    MasterPromptActivateView,
+    BroadcastListView,
+    BroadcastCreateView,
+    BroadcastDetailView,
 )
 
 urlpatterns = [
@@ -35,4 +43,14 @@ urlpatterns = [
     path('notifications/', NotificationListView.as_view(), name='notification-list'),
     path('notifications/read-all/', NotificationMarkAllReadView.as_view(), name='notification-mark-all-read'),
     path('notifications/<int:pk>/read/', NotificationMarkReadView.as_view(), name='notification-mark-read'),
+
+    # Phase 6: Master Prompt Editor
+    path('master-prompt/', MasterPromptListView.as_view(), name='master-prompt-list'),
+    path('master-prompt/new/', MasterPromptCreateView.as_view(), name='master-prompt-create'),
+    path('master-prompt/<int:pk>/edit/', MasterPromptEditView.as_view(), name='master-prompt-edit'),
+    path('master-prompt/<int:pk>/activate/', MasterPromptActivateView.as_view(), name='master-prompt-activate'),
+
+    path('broadcasts/', BroadcastListView.as_view(), name='broadcast-list'),
+    path('broadcasts/new/', BroadcastCreateView.as_view(), name='broadcast-create'),
+    path('broadcasts/<int:pk>/', BroadcastDetailView.as_view(), name='broadcast-detail'),
 ]

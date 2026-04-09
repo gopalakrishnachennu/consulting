@@ -1,17 +1,10 @@
-"""Unread inbound message count for nav badge."""
+"""Unread inbound message count for nav badge (cached)."""
 
-from messaging.models import Message
+from messaging.utils import get_cached_messaging_unread_count
 
 
 def unread_messages_count(request):
     if not request.user.is_authenticated:
         return {"unread_message_count": 0}
-    n = (
-        Message.objects.filter(
-            thread__participants=request.user,
-            is_read=False,
-        )
-        .exclude(sender=request.user)
-        .count()
-    )
+    n = get_cached_messaging_unread_count(request.user.pk)
     return {"unread_message_count": n}

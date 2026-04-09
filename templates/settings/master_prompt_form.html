@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}{% if prompt %}Edit{% else %}New{% endif %} Master Prompt{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto">
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">{% if prompt %}Edit: {{ prompt.name }}{% else %}New Master Prompt{% endif %}</h1>
+    <a href="{% url 'master-prompt-list' %}" class="text-sm text-gray-500 hover:underline">&larr; Back to list</a>
+  </div>
+
+  <form method="post" action="{{ form_action }}">
+    {% csrf_token %}
+
+    <!-- Name -->
+    <div class="bg-white shadow rounded-lg p-6 mb-6">
+      <label class="block text-sm font-medium text-gray-700 mb-1">Version Name</label>
+      <input type="text" name="name" value="{{ prompt.name|default:'' }}" required
+        placeholder="e.g. v2.0 — ATS-optimized master"
+        class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+      <p class="text-xs text-gray-400 mt-1">A label to identify this version (e.g. "v1.0 — Master Resume Engine")</p>
+    </div>
+
+    <!-- System Prompt -->
+    <div class="bg-white shadow rounded-lg p-6 mb-6">
+      <label class="block text-sm font-medium text-gray-700 mb-1">System Prompt</label>
+      <p class="text-xs text-gray-500 mb-2">
+        This is the SYSTEM role sent to the LLM. Defines who the AI is and its core rules.
+        Think of it as the "personality + constraints" layer.
+      </p>
+      <textarea name="system_prompt" rows="12" required
+        class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+        placeholder="You are a Senior Resume Architect with 15 years of experience...">{{ prompt.system_prompt|default:'' }}</textarea>
+    </div>
+
+    <!-- Generation Rules -->
+    <div class="bg-white shadow rounded-lg p-6 mb-6">
+      <label class="block text-sm font-medium text-gray-700 mb-1">Generation Rules</label>
+      <p class="text-xs text-gray-500 mb-2">
+        Appended after the candidate profile + JD in the user message. Use this for output format,
+        section-by-section rules, edge cases, ATS checklist, quality gates. Supports Markdown.
+      </p>
+      <textarea name="generation_rules" rows="20"
+        class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+        placeholder="## PROCESSING PIPELINE&#10;&#10;### PHASE 1: JD DEEP ANALYSIS...">{{ prompt.generation_rules|default:'' }}</textarea>
+    </div>
+
+    <!-- Default candidate data (Master Prompt) -->
+    <div class="bg-white shadow rounded-lg p-6 mb-6">
+      <h2 class="text-sm font-semibold text-gray-800 mb-1">Default candidate data for LLM</h2>
+      <p class="text-xs text-gray-500 mb-4">
+        When employees generate a resume, toggles start here. They can override per run on the Generate page.
+      </p>
+      <input type="hidden" name="default_input_personal" value="on">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div class="text-sm text-gray-700 sm:col-span-2">
+          <span class="font-medium">Personal details</span>
+          <span class="text-gray-500"> — name, email, phone (always included)</span>
+        </div>
+        <label class="flex items-start gap-2 text-sm text-gray-700">
+          <input type="checkbox" name="default_input_experience"
+            {% if not prompt or prompt.default_input_sections.experience != False %}checked{% endif %}
+            class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
+          <span><span class="font-medium">Work experience</span> — roles, companies, dates, responsibilities</span>
+        </label>
+        <label class="flex items-start gap-2 text-sm text-gray-700">
+          <input type="checkbox" name="default_input_education"
+            {% if not prompt or prompt.default_input_sections.education != False %}checked{% endif %}
+            class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
+          <span><span class="font-medium">Education</span></span>
+        </label>
+        <label class="flex items-start gap-2 text-sm text-gray-700">
+          <input type="checkbox" name="default_input_certifications"
+            {% if not prompt or prompt.default_input_sections.certifications != False %}checked{% endif %}
+            class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
+          <span><span class="font-medium">Certifications</span></span>
+        </label>
+        <label class="flex items-start gap-2 text-sm text-gray-700">
+          <input type="checkbox" name="default_input_skills"
+            {% if not prompt or prompt.default_input_sections.skills != False %}checked{% endif %}
+            class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
+          <span><span class="font-medium">Skills pool</span> — master tech list</span>
+        </label>
+        <label class="flex items-start gap-2 text-sm text-gray-700">
+          <input type="checkbox" name="default_input_total_years"
+            {% if not prompt or prompt.default_input_sections.total_years != False %}checked{% endif %}
+            class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
+          <span><span class="font-medium">Total years</span> — calculated from experience</span>
+        </label>
+        <label class="flex items-start gap-2 text-sm text-gray-700 sm:col-span-2">
+          <input type="checkbox" name="default_input_base_resume"
+            {% if not prompt or prompt.default_input_sections.base_resume != False %}checked{% endif %}
+            class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
+          <span><span class="font-medium">Base resume text</span> — pasted resume (can be large)</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Active Toggle -->
+    <div class="bg-white shadow rounded-lg p-6 mb-6">
+      <label class="flex items-center gap-3">
+        <input type="checkbox" name="is_active" {% if prompt.is_active %}checked{% endif %}
+          class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-5 w-5">
+        <div>
+          <span class="text-sm font-medium text-gray-700">Set as active prompt</span>
+          <p class="text-xs text-gray-500">Only one prompt can be active. This will deactivate all others.</p>
+        </div>
+      </label>
+    </div>
+
+    <!-- Submit -->
+    <div class="flex items-center justify-between">
+      <a href="{% url 'master-prompt-list' %}" class="text-sm text-gray-500 hover:underline">Cancel</a>
+      <button type="submit"
+        class="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition">
+        {% if prompt %}Save Changes{% else %}Create Prompt{% endif %}
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

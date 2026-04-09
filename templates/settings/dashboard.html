@@ -95,19 +95,6 @@
             </div>
         </div>
 
-        <!-- Prompt Service -->
-        <div class="bg-white rounded-lg shadow-sm p-6 border-l-4 border-teal-500 hover:shadow-sm transition" style="min-height:220px;display:flex;flex-direction:column;">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-xl font-bold text-gray-800">Prompt Service</h2>
-                <span class="bg-teal-100 text-teal-800 text-xs font-semibold px-2.5 py-0.5 rounded">AI</span>
-            </div>
-            <p class="text-gray-600 mb-4 h-12">Create, version, and assign prompts by marketing role.</p>
-            <a href="{% url 'prompt-list' %}"
-                class="mt-auto block text-center bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-4 rounded transition"
-                style="margin-top:auto;display:block;text-align:center;background:#0d9488;color:#fff;padding:0.5rem 1rem;border-radius:0.5rem;">
-                Manage Prompts
-            </a>
-        </div>
         <!-- System Health -->
         <div class="bg-white rounded-lg shadow-sm p-6 border-l-4 border-red-500 hover:shadow-sm transition">
             <div class="flex items-center justify-between mb-4">
@@ -134,16 +121,80 @@
             </a>
         </div>
 
-        <!-- Data pipeline / Company enrichment -->
-        <div class="bg-white rounded-lg shadow-sm p-6 border-l-4 border-sky-500 hover:shadow-sm transition">
+        <!-- Broadcasts (purple-* matches compiled Tailwind; violet-* was not generated → invisible buttons) -->
+        <div class="bg-white rounded-lg shadow-sm p-6 border-l-4 border-purple-500 hover:shadow-sm transition">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-bold text-gray-800">Broadcasts</h2>
+                <span class="bg-purple-100 text-purple-800 text-xs font-semibold px-2.5 py-0.5 rounded">Comms</span>
+            </div>
+            <p class="text-gray-600 mb-4 h-12">Send one in-app message to staff or consultants. Each delivery is audited.</p>
+            <div class="flex gap-2">
+                <a href="{% url 'broadcast-list' %}"
+                    class="flex-1 block text-center bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded transition">
+                    History
+                </a>
+                <a href="{% url 'broadcast-create' %}"
+                    class="flex-1 block text-center bg-gray-700 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded transition">
+                    New
+                </a>
+            </div>
+        </div>
+
+        <!-- Data pipeline / Company enrichment (blue-* matches compiled Tailwind; sky-600 was not generated) -->
+        <div class="bg-white rounded-lg shadow-sm p-6 border-l-4 border-blue-500 hover:shadow-sm transition">
             <div class="flex items-center justify-between mb-4">
                 <h2 class="text-xl font-bold text-gray-800">Data pipeline</h2>
-                <span class="bg-sky-100 text-sky-800 text-xs font-semibold px-2.5 py-0.5 rounded">Enrichment</span>
+                <span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded">Enrichment</span>
             </div>
             <p class="text-gray-600 mb-4 h-12">Company enrichment status: Clearbit logos and OG scraping. Pending, enriched, stale, failed counts and re-enrich actions.</p>
             <a href="{% url 'data-pipeline' %}"
-                class="block text-center bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-4 rounded transition">
+                class="block text-center bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition">
                 Enrichment status
+            </a>
+        </div>
+
+        <!-- Job Pool Settings -->
+        <div class="bg-white rounded-lg shadow-sm p-6 border-l-4 border-yellow-500 hover:shadow-sm transition">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-bold text-gray-800">Job Pool</h2>
+                <div class="flex items-center gap-2">
+                    {% if PLATFORM_CONFIG.require_pool_staging %}
+                    <span class="bg-green-100 text-green-800 text-xs font-semibold px-2.5 py-0.5 rounded">Staging ON</span>
+                    {% else %}
+                    <span class="bg-gray-100 text-gray-600 text-xs font-semibold px-2.5 py-0.5 rounded">Staging OFF</span>
+                    {% endif %}
+                    {% if pending_pool_count %}
+                    <span class="bg-yellow-100 text-yellow-800 text-xs font-bold px-2.5 py-0.5 rounded-full">
+                        {{ pending_pool_count }} pending
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+            <p class="text-gray-600 mb-4 h-12">
+                Configure the vetting pipeline for new jobs — staging toggle, auto-approve threshold, and review notifications.
+            </p>
+            <div class="flex gap-2">
+                <a href="{% url 'platform-config' %}#tab-job-pool"
+                    class="flex-1 text-center bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded transition text-sm">
+                    Pool Settings
+                </a>
+                <a href="{% url 'job-pool' %}"
+                    class="flex-1 text-center bg-white border border-yellow-400 text-yellow-700 hover:bg-yellow-50 font-bold py-2 px-4 rounded transition text-sm">
+                    View Pool
+                </a>
+            </div>
+        </div>
+
+        <!-- Master Prompt -->
+        <div class="bg-white rounded-lg shadow-sm p-6 border-l-4 border-indigo-500 hover:shadow-sm transition">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-bold text-gray-800">Master Prompt</h2>
+                <span class="bg-indigo-100 text-indigo-800 text-xs font-semibold px-2.5 py-0.5 rounded">AI Resume</span>
+            </div>
+            <p class="text-gray-600 mb-4 h-12">Version and manage the master prompt that controls all AI resume generation.</p>
+            <a href="{% url 'master-prompt-list' %}"
+                class="block text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded transition">
+                Manage Prompts
             </a>
         </div>
 

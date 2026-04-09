@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Stale Submissions{% endblock %}
+{% block content %}
+<div class="max-w-6xl mx-auto">
+  <h1 class="text-2xl font-bold text-gray-900 mb-2">Stale Submissions</h1>
+  <p class="text-gray-500 mb-6">Submissions with no updates in 14+ days that are still in an active status.</p>
+
+  {% if submissions %}
+  <div class="bg-white shadow rounded-lg overflow-hidden">
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Consultant</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Job</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Updated</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-200">
+        {% for sub in submissions %}
+        <tr>
+          <td class="px-6 py-4 text-sm">
+            <a href="{% url 'consultant-detail' sub.consultant.user.pk %}" class="text-blue-600 hover:underline">
+              {{ sub.consultant.user.get_full_name|default:sub.consultant.user.username }}
+            </a>
+          </td>
+          <td class="px-6 py-4 text-sm">
+            <a href="{% url 'job-detail' sub.job.pk %}" class="text-blue-600 hover:underline">{{ sub.job.title }}</a>
+            <span class="text-gray-400 text-xs block">{{ sub.job.company }}</span>
+          </td>
+          <td class="px-6 py-4">
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">{{ sub.get_status_display }}</span>
+          </td>
+          <td class="px-6 py-4 text-sm text-gray-500">{{ sub.updated_at|timesince }} ago</td>
+          <td class="px-6 py-4 text-sm">
+            <a href="{% url 'submission-detail' sub.pk %}" class="text-blue-600 hover:underline mr-3">View</a>
+            <form method="post" action="{% url 'followup-reminder-create' sub.pk %}" class="inline">
+              {% csrf_token %}
+              <input type="hidden" name="remind_at" value="">
+              <button type="submit" class="text-orange-600 hover:underline" onclick="this.form.remind_at.value=new Date(Date.now()+3*86400000).toISOString().slice(0,16)">Set Reminder</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if is_paginated %}
+  <div class="mt-4 flex justify-center">
+    {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}" class="mr-2 text-blue-600">&laquo; Prev</a>{% endif %}
+    <span class="text-gray-500">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}" class="ml-2 text-blue-600">Next &raquo;</a>{% endif %}
+  </div>
+  {% endif %}
+  {% else %}
+  <div class="bg-white shadow rounded-lg p-8 text-center text-gray-500">
+    No stale submissions found. All submissions are up to date.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

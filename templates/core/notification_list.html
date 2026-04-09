@@ -2,8 +2,13 @@
 
 {% block content %}
 <div class="max-w-3xl mx-auto px-4 py-8">
-    <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
-        <h1 class="text-2xl font-bold text-gray-900">Notifications</h1>
+    <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">Notifications</h1>
+            {% if unread_total %}
+            <p class="text-sm text-gray-500 mt-1">{{ unread_total }} unread</p>
+            {% endif %}
+        </div>
         {% if notifications %}
         <form method="post" action="{% url 'notification-mark-all-read' %}">
             {% csrf_token %}
@@ -12,11 +17,26 @@
         {% endif %}
     </div>
 
+    <div class="flex flex-wrap items-center gap-2 mb-6">
+        <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Filter</span>
+        <a href="{% url 'notification-list' %}{% if unread_only %}?unread=1{% endif %}"
+            class="text-xs px-3 py-1.5 rounded-full border {% if not active_kind %}bg-blue-50 border-blue-200 text-blue-800{% else %}border-gray-200 text-gray-600 hover:bg-gray-50{% endif %}">All types</a>
+        <a href="?{% if active_kind %}kind={{ active_kind }}&{% endif %}unread=1"
+            class="text-xs px-3 py-1.5 rounded-full border {% if unread_only %}bg-amber-50 border-amber-200 text-amber-900{% else %}border-gray-200 text-gray-600 hover:bg-gray-50{% endif %}">Unread only</a>
+        {% for code, label in kind_choices %}
+        <a href="?kind={{ code }}{% if unread_only %}&unread=1{% endif %}"
+            class="text-xs px-3 py-1.5 rounded-full border {% if active_kind == code %}bg-indigo-50 border-indigo-200 text-indigo-900{% else %}border-gray-200 text-gray-600 hover:bg-gray-50{% endif %}">{{ label }}</a>
+        {% endfor %}
+    </div>
+
     <div class="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
         {% for n in notifications %}
         <div class="p-4 flex flex-wrap gap-3 {% if not n.read_at %}bg-blue-50/40{% endif %}">
             <div class="flex-1 min-w-0">
-                <p class="font-semibold text-gray-900">{{ n.title }}</p>
+                <div class="flex flex-wrap items-center gap-2">
+                    <p class="font-semibold text-gray-900">{{ n.title }}</p>
+                    <span class="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded bg-gray-100 text-gray-600">{{ n.get_kind_display }}</span>
+                </div>
                 {% if n.body %}<p class="text-sm text-gray-600 mt-1">{{ n.body }}</p>{% endif %}
                 <p class="text-xs text-gray-400 mt-2">{{ n.created_at|date:"M j, Y g:i A" }}</p>
                 {% if n.link %}
@@ -36,12 +56,12 @@
     </div>
 
     {% if is_paginated %}
-    <div class="mt-6 flex justify-center gap-2">
+    <div class="mt-6 flex justify-center gap-4">
         {% if page_obj.has_previous %}
-        <a href="?page={{ page_obj.previous_page_number }}" class="text-sm text-blue-600">Previous</a>
+        <a href="?{% if filter_query %}{{ filter_query }}&{% endif %}page={{ page_obj.previous_page_number }}" class="text-sm text-blue-600 hover:underline">Previous</a>
         {% endif %}
         {% if page_obj.has_next %}
-        <a href="?page={{ page_obj.next_page_number }}" class="text-sm text-blue-600">Next</a>
+        <a href="?{% if filter_query %}{{ filter_query }}&{% endif %}page={{ page_obj.next_page_number }}" class="text-sm text-blue-600 hover:underline">Next</a>
         {% endif %}
     </div>
     {% endif %}

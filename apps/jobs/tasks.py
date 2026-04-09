@@ -2,10 +2,13 @@ from celery import shared_task
 from urllib.request import Request, urlopen
 from urllib.parse import urlparse
 import ssl
+import logging
 
 from django.utils import timezone
 
 from .models import Job
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_url(url: str) -> str:
@@ -45,6 +48,102 @@ def _check_job_url(url: str) -> bool:
 
 
 @shared_task
+def run_job_validation(job_id: int):
+    """
+    Run quality validation on a single job and persist the score.
+    Auto-promotes to OPEN if the score meets PlatformConfig.auto_approve_pool_threshold.
+    Called async when a job enters POOL status.
+    """
+    from .services import validate_job_quality, ensure_parsed_jd
+
+    try:
+        job = Job.objects.get(pk=job_id)
+    except Job.DoesNotExist:
+        return {"error": f"Job {job_id} not found"}
+
+    # Ensure JD is parsed first so skills check is meaningful
+    ensure_parsed_jd(job)
+    job.refresh_from_db()
+
+    result = validate_job_quality(job)
+    job.validation_score = result["score"]
+    job.validation_result = result
+    job.validation_run_at = timezone.now()
+    job.save(update_fields=["validation_score", "validation_result", "validation_run_at"])
+
+    # Auto-approve if threshold met
+    if result.get("auto_approved") and job.status == Job.Status.POOL:
+        job.status = Job.Status.OPEN
+        job.save(update_fields=["status"])
+        try:
+            from .notify import notify_new_open_job_to_consultants, notify_job_pool_status
+            notify_new_open_job_to_consultants(job)
+            notify_job_pool_status(job, approved=True, auto=True)
+        except Exception:
+            logger.exception("Auto-approve notification failed for job %s", job_id)
+
+    # Notify pool review recipients if the job is still in pool (not auto-approved)
+    if job.status == Job.Status.POOL:
+        _notify_pool_review_emails(job, result)
+
+    logger.info("Job %s validation complete — score=%s auto_approved=%s", job_id, result["score"], result.get("auto_approved"))
+    return {"job_id": job_id, "score": result["score"], "auto_approved": result.get("auto_approved")}
+
+
+def _notify_pool_review_emails(job: Job, validation_result: dict):
+    """
+    Send a plain-text email to pool_review_notify_emails when a job needs manual review.
+    Uses Django's send_mail; silently skips if not configured.
+    """
+    try:
+        from core.models import PlatformConfig
+        cfg = PlatformConfig.load()
+        raw = (getattr(cfg, 'pool_review_notify_emails', '') or '').strip()
+        if not raw:
+            return
+        recipients = [e.strip() for e in raw.split(',') if e.strip() and '@' in e]
+        if not recipients:
+            return
+
+        from django.core.mail import send_mail
+        from django.conf import settings
+        from django.urls import reverse
+
+        score = validation_result.get('score', '?')
+        issues = validation_result.get('issues', [])
+        issue_lines = '\n'.join(
+            f"  [{i['severity'].upper()}] {i['message']}" for i in issues
+        ) or '  None'
+
+        try:
+            pool_url = settings.SITE_URL.rstrip('/') + reverse('job-pool')
+        except Exception:
+            pool_url = reverse('job-pool')
+
+        subject = f"[Job Pool] New job needs review: {job.title} at {job.company}"
+        body = (
+            f"A new job has been added to the vetting pool and needs your review.\n\n"
+            f"Job: {job.title}\n"
+            f"Company: {job.company}\n"
+            f"Location: {job.location or 'Not specified'}\n"
+            f"Validation Score: {score}/100\n\n"
+            f"Issues:\n{issue_lines}\n\n"
+            f"Review the job pool here:\n{pool_url}\n"
+        )
+
+        send_mail(
+            subject=subject,
+            message=body,
+            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@example.com'),
+            recipient_list=recipients,
+            fail_silently=True,
+        )
+        logger.info("Pool review notification sent to %s for job %s", recipients, job.pk)
+    except Exception:
+        logger.exception("Failed to send pool review notification for job %s", job.pk)
+
+
+@shared_task
 def validate_job_urls_task(batch_size: int = 50):
     """
     Re-check original job URLs and flag jobs as 'possibly_filled' when their source goes away.
@@ -63,6 +162,7 @@ def validate_job_urls_task(batch_size: int = 50):
 
     processed = 0
     for job in qs[:batch_size]:
+        was_pf = job.possibly_filled
         is_live = _check_job_url(job.original_link)
         job.original_link_is_live = is_live
         job.original_link_last_checked_at = now
@@ -70,6 +170,13 @@ def validate_job_urls_task(batch_size: int = 50):
         job.possibly_filled = not is_live and job.status == Job.Status.OPEN
         job.save(update_fields=["original_link_is_live", "original_link_last_checked_at", "possibly_filled"])
         processed += 1
+        if job.possibly_filled and not was_pf:
+            try:
+                from jobs.notify import notify_job_posting_link_unhealthy
+
+                notify_job_posting_link_unhealthy(job)
+            except Exception:
+                pass
 
     result = {"processed": processed}
     try:
@@ -105,6 +212,12 @@ def auto_close_jobs_task():
             job.status = Job.Status.CLOSED
             job.save(update_fields=["status", "updated_at"])
             closed_age += 1
+            try:
+                from jobs.notify import notify_job_auto_closed_for_owner
+
+                notify_job_auto_closed_for_owner(job)
+            except Exception:
+                pass
 
     if getattr(config, "job_auto_close_when_link_dead", False):
         qs = Job.objects.filter(
@@ -115,6 +228,12 @@ def auto_close_jobs_task():
             job.status = Job.Status.CLOSED
             job.save(update_fields=["status", "updated_at"])
             closed_dead += 1
+            try:
+                from jobs.notify import notify_job_auto_closed_for_owner
+
+                notify_job_auto_closed_for_owner(job)
+            except Exception:
+                pass
 
     result = {"closed_stale_days": closed_age, "closed_dead_link": closed_dead}
     try:

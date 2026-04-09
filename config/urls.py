@@ -23,10 +23,13 @@ urlpatterns = [
     path("analytics/", include("analytics.urls")),
     path("companies/", include("companies.urls")),
     path("core/", include("core.urls")),
-    path("prompts/", include("prompts_app.urls")),
     path("admin-dashboard/", AdminDashboardView.as_view(), name="admin-dashboard"),
     path("employee-dashboard/", EmployeeDashboardView.as_view(), name="employee-dashboard"),
     path("impersonate/<int:user_id>/", start_impersonate, name="start-impersonate"),
     path("impersonate/stop/", stop_impersonate, name="stop-impersonate"),
     path("", home, name="home"),
 ]
+
+handler404 = 'django.views.defaults.page_not_found'
+handler403 = 'django.views.defaults.permission_denied'
+handler500 = 'django.views.defaults.server_error'

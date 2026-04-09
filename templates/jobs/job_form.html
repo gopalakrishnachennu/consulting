@@ -32,7 +32,7 @@
         <div class="flex justify-center">
             <!-- MAIN FORM COMPONENT: Centered and standard width -->
             <div class="w-full max-w-4xl bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative">
-                <!-- HEADER WITH SMART IMPORT BUTTON -->
+                <!-- Header + Quick paste -->
                 <div class="px-8 py-6 border-b border-gray-100 flex justify-between items-center bg-white">
                     <div>
                         <h1 class="text-2xl font-bold text-gray-900">
@@ -41,17 +41,20 @@
                         <p class="text-gray-500 mt-1 text-sm">Fill in the details below.</p>
                     </div>
                     <button type="button" id="btnOpenImportModal"
-                        class="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition border border-indigo-100">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                        class="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition border border-indigo-100"
+                        title="Paste a full job description — first line becomes title if empty; all text fills Description">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                             <path fill-rule="evenodd"
                                 d="M3 5a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2h-2.22l-.9-1.352A1 1 0 0011 13H9a1 1 0 00-.88.648L7.22 15H5a2 2 0 01-2-2V5zm5.77 7.5a3.001 3.001 0 002.46 0h2.24A1 1 0 0018 10V5a1 1 0 00-1-1H3a1 1 0 00-1 1v5a1 1 0 001 1h2.24a3.001 3.001 0 002.46 0h.07zM10 8a1 1 0 100-2 1 1 0 000 2z"
                                 clip-rule="evenodd" />
                         </svg>
-                        ✨ Smart Import
+                        Quick paste
                     </button>
                 </div>
 
                 <div class="p-8">
+                    {% url 'job-duplicate-check' as dup_check_url %}
+                    {% url 'job-url-check' as url_check_url %}
                     <form method="post" id="job-form">
                         {% csrf_token %}
                         {% if form.instance.pk %}
@@ -59,8 +62,37 @@
                         {% endif %}
 
                         {% if form.non_field_errors %}
-                        <div class="bg-red-50 text-red-700 p-4 mb-6 rounded border border-red-200">
-                            {{ form.non_field_errors }}
+                        <div class="bg-red-50 text-red-800 p-4 mb-6 rounded-lg border-2 border-red-300 flex items-start gap-3">
+                            <svg class="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                            </svg>
+                            <div>{{ form.non_field_errors }}</div>
+                        </div>
+                        {% endif %}
+                        {% if form.errors %}
+                        <div class="bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-4 text-sm text-red-700">
+                            <p class="font-bold mb-1">Please fix the following before submitting:</p>
+                            <ul class="list-disc list-inside space-y-0.5">
+                                {% for field in form %}
+                                    {% for error in field.errors %}
+                                    <li><span class="font-semibold">{{ field.label }}:</span> {{ error }}</li>
+                                    {% endfor %}
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+
+                        {% if form.instance.pk %}
+                        <div class="mb-6 rounded-lg border px-4 py-3 text-sm leading-relaxed
+                            {% if require_pool_staging %}border-indigo-200 bg-indigo-50/90 text-indigo-950{% else %}border-gray-200 bg-gray-50 text-gray-800{% endif %}">
+                            {% if require_pool_staging %}
+                            <p class="font-semibold text-indigo-900">Pool staging is on</p>
+                            <p class="mt-1 text-indigo-900/90">New jobs start in the vetting pool. Use <strong>Status</strong> below to move this listing between <em>In pool</em>, <em>Open</em>, <em>Closed</em>, or <em>Draft</em>. Consultants only see jobs that are <strong>Open</strong>.</p>
+                            {% else %}
+                            <p class="font-semibold text-gray-900">Direct publishing</p>
+                            <p class="mt-1 text-gray-700">New jobs can go live without pool review. Use <strong>Status</strong> below to control whether this listing is visible to consultants (<strong>Open</strong>) or not.</p>
+                            {% endif %}
                         </div>
                         {% endif %}
 
@@ -80,12 +112,13 @@
                                         <label class="block font-bold text-gray-700 mb-2"
                                             for="{{ form.company.id_for_label }}">Company name <span
                                                 class="text-red-500">*</span></label>
-                                        {{ form.company|add_class:"form-input" }}
-                                        <p class="text-xs text-gray-500 mt-1">
-                                            Free-text label shown on the job. It will be auto-filled from the company
-                                            profile when linked.
-                                        </p>
-                                        <p id="company-match-status" class="text-xs text-gray-400 mt-1"></p>
+                                        <div class="relative" id="company-name-wrap">
+                                            {{ form.company|add_class:"form-input" }}
+                                            <div id="company-name-dropdown" class="hidden absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto text-sm">
+                                                <p class="px-3 py-1.5 text-xs text-gray-400 border-b">Existing matches — click to link</p>
+                                            </div>
+                                        </div>
+                                        <p id="company-match-status" class="text-xs mt-1 text-gray-400"></p>
                                         {{ form.company.errors }}
                                     </div>
                                     <div>
@@ -102,7 +135,8 @@
                                         <div class="relative" id="company-typeahead-wrap">
                                             <input type="text" id="company-typeahead-input" autocomplete="off"
                                                 class="form-input w-full"
-                                                placeholder="Type to search and link to a company profile…">
+                                                placeholder="Search company profiles…"
+                                                title="Type to search and link to an existing company profile for analytics and matching">
                                             <div id="company-typeahead-dropdown" class="hidden absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto"></div>
                                         </div>
                                         <p class="text-xs text-gray-500 mt-1">
@@ -126,11 +160,26 @@
                             <!-- ORIGINAL LINK -->
                             <div>
                                 <label class="block font-bold text-gray-700 mb-2"
-                                    for="{{ form.original_link.id_for_label }}">Job Posting URL <span
-                                        class="text-red-500">*</span></label>
+                                    for="{{ form.original_link.id_for_label }}">
+                                    Job Posting URL <span class="text-red-500">*</span>
+                                    <span class="ml-2 text-xs font-normal text-gray-400">(must be unique in the system)</span>
+                                </label>
                                 {{ form.original_link|add_class:"form-input" }}
-                                <p class="text-sm text-gray-500 mt-1">The URL where this job was originally found.</p>
-                                {{ form.original_link.errors }}
+                                {% if form.original_link.errors %}
+                                <div class="mt-1.5 rounded-lg border-2 border-red-400 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
+                                    {% for error in form.original_link.errors %}{{ error }}{% endfor %}
+                                </div>
+                                {% endif %}
+                                <!-- HTMX real-time URL uniqueness check result goes here -->
+                                <div id="url-check-result"
+                                    hx-get="{{ url_check_url }}"
+                                    hx-trigger="blur from:#id_original_link, keyup changed delay:900ms from:#id_original_link"
+                                    hx-include="[name=exclude]"
+                                    hx-vals="js:{url: document.getElementById('id_original_link').value}"
+                                    hx-swap="innerHTML"
+                                    hx-target="#url-check-result">
+                                    <p class="text-xs text-gray-400 mt-1">URL will be checked for uniqueness as you type.</p>
+                                </div>
                             </div>
 
                             <!-- DESCRIPTION -->
@@ -142,12 +191,13 @@
                                 {{ form.description.errors }}
                             </div>
 
-                            <div id="job-duplicate-results" class="rounded-xl border border-gray-200 bg-gray-50/80 p-4 min-h-[3rem]"
-                                hx-get="{% url 'job-duplicate-check' %}"
-                                hx-include="#job-form"
-                                hx-trigger="keyup changed delay:750ms from:#id_title, keyup changed delay:750ms from:#id_company, changed delay:750ms from:#id_description"
+                            <div id="job-duplicate-results" class="rounded-xl border border-gray-200 bg-gray-50/80 p-4"
+                                hx-get="{{ dup_check_url }}"
+                                hx-include="[name=title],[name=company],[name=description],[name=salary_range],[name=exclude]"
+                                hx-trigger="keyup changed delay:750ms from:#id_title, keyup changed delay:750ms from:#id_company, keyup changed delay:750ms from:#id_salary_range, change delay:500ms from:#id_description"
                                 hx-swap="innerHTML">
-                                <p class="text-xs text-gray-500">We’ll flag similar jobs here as you type (title, company, description).</p>
+                                <p class="text-xs text-gray-600 font-medium">Similarity scanner</p>
+                                <p class="text-xs text-gray-500 mt-1">We compare title, company, description, and salary. <span class="text-gray-600">Enter both title and company name</span> to run the scan — URL uniqueness below is still the hard gate.</p>
                             </div>
 
                             <!-- METADATA -->
@@ -180,9 +230,31 @@
                             </div>
                             <div>
                                 <label class="block font-bold text-gray-700 mb-2"
+                                    for="{{ form.job_source.id_for_label }}">Job source <span class="font-normal text-gray-400">(optional)</span></label>
+                                {{ form.job_source|add_class:"form-input" }}
+                                <p class="text-xs text-gray-500 mt-1">Where this listing was found (e.g. LinkedIn, company site). Used for reporting.</p>
+                                {{ form.job_source.errors }}
+                            </div>
+                            {% if form.instance.pk %}
+                            <div>
+                                <label class="block font-bold text-gray-700 mb-2"
                                     for="{{ form.status.id_for_label }}">Status</label>
                                 {{ form.status|add_class:"form-input" }}
+                                {{ form.status.errors }}
                             </div>
+                            {% else %}
+                            {% if require_pool_staging %}
+                            <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                                <p class="font-semibold text-amber-900">Vetting workflow</p>
+                                <p class="mt-1 text-amber-900/90 leading-relaxed">New listings go to the <strong>job pool</strong> first. After approval, they become visible to consultants.</p>
+                            </div>
+                            {% else %}
+                            <div class="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-950">
+                                <p class="font-semibold text-green-900">Publishing</p>
+                                <p class="mt-1 text-green-900/90 leading-relaxed">This job will be saved as <strong>Open</strong> and visible to consultants as soon as you submit.</p>
+                            </div>
+                            {% endif %}
+                            {% endif %}
                         </div>
                 </div>
 
@@ -191,7 +263,13 @@
                     <a href="{% url 'job-list' %}" class="text-gray-600 font-medium hover:underline">Cancel</a>
                     <button type="submit"
                         class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded shadow transition transform hover:-translate-y-0.5">
-                        {% if form.instance.pk %}Save Changes{% else %}Publish Job{% endif %}
+                        {% if form.instance.pk %}
+                            Save changes
+                        {% elif require_pool_staging %}
+                            Submit for review
+                        {% else %}
+                            Publish job
+                        {% endif %}
                     </button>
                 </div>
                 </form>
@@ -200,7 +278,7 @@
     </div>
 </div>
 
-<!-- SMART IMPORT MODAL -->
+<!-- Quick paste modal -->
 <div id="importModal" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-labelledby="modal-title" role="dialog"
     aria-modal="true">
     <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
@@ -227,16 +305,16 @@
                     </div>
                     <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
                         <h3 class="text-lg leading-6 font-bold text-gray-900" id="modal-title">
-                            Import from Raw Data
+                            Paste job text
                         </h3>
                         <div class="mt-2">
-                            <p class="text-sm text-gray-500 mb-3">
-                                Paste the raw job description below. We'll automatically identify the title and fill
-                                the description.
+                            <p class="text-sm text-gray-600 mb-3 leading-relaxed">
+                                Paste the full posting below. <strong class="font-semibold text-gray-800">No AI parsing</strong> — we copy everything into <em>Description</em>. If <em>Title</em> is still empty, we use the <strong>first line</strong> as the title (when it’s under 100 characters).
                             </p>
                             <textarea id="rawJD" rows="10"
-                                class="w-full text-sm border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 p-3"
-                                placeholder="Paste full JD here..."></textarea>
+                                class="w-full text-sm border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 p-3"
+                                placeholder="Paste full job description…"
+                                aria-label="Raw job text to paste into the form"></textarea>
                         </div>
                     </div>
                 </div>
@@ -244,7 +322,7 @@
             <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse border-t border-gray-100">
                 <button type="button" id="btnSmartFill"
                     class="w-full inline-flex justify-center rounded-lg border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:ml-3 sm:w-auto sm:text-sm transition-colors">
-                    Dump to Description
+                    Add to description
                 </button>
                 <button type="button" id="btnCloseImportModal"
                     class="mt-3 w-full inline-flex justify-center rounded-lg border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm transition-colors">
@@ -264,7 +342,9 @@
         const typeaheadInput = document.getElementById('company-typeahead-input');
         const typeaheadDropdown = document.getElementById('company-typeahead-dropdown');
         const companyProfileCurrent = document.getElementById('company-profile-current');
+        const companyNameDropdown = document.getElementById('company-name-dropdown');
         let typeaheadDebounce = null;
+        let companyNameDebounce = null;
 
         function setLinkedCompany(id, name) {
             if (companySelect) companySelect.value = id || '';
@@ -356,9 +436,80 @@
                 }, 200);
             });
         }
+
+        // --- Company NAME field: fuzzy suggestions as you type ---
+        function showNameSuggestions(results) {
+            if (!companyNameDropdown) return;
+            // Remove old result rows (keep the header <p>)
+            Array.from(companyNameDropdown.children).forEach(function(el) {
+                if (el.tagName !== 'P') el.remove();
+            });
+            if (!results.length) {
+                companyNameDropdown.classList.add('hidden');
+                return;
+            }
+            results.forEach(function(r) {
+                const div = document.createElement('div');
+                div.className = 'px-3 py-2 cursor-pointer hover:bg-indigo-50 border-b border-gray-100 last:border-0 flex items-center justify-between';
+                div.innerHTML = '<span class="font-medium text-gray-800">' + r.name + '</span>'
+                    + (r.domain ? '<span class="text-xs text-gray-400 ml-2">' + r.domain + '</span>' : '');
+                div.addEventListener('mousedown', function(e) {
+                    e.preventDefault(); // prevent blur clearing before click
+                    // Fill company name field
+                    if (companyInput) companyInput.value = r.name;
+                    // Also link company_obj
+                    setLinkedCompany(r.id, r.name);
+                    // Update status
+                    if (companyStatus) {
+                        companyStatus.textContent = '✓ Linked to existing company profile';
+                        companyStatus.className = 'text-xs mt-1 text-green-600';
+                    }
+                    companyNameDropdown.classList.add('hidden');
+                });
+                companyNameDropdown.appendChild(div);
+            });
+            companyNameDropdown.classList.remove('hidden');
+        }
+
+        if (companyInput) {
+            companyInput.addEventListener('input', function() {
+                clearTimeout(companyNameDebounce);
+                const q = companyInput.value.trim();
+                if (q.length < 2) {
+                    if (companyNameDropdown) companyNameDropdown.classList.add('hidden');
+                    if (companyStatus) { companyStatus.textContent = ''; companyStatus.className = 'text-xs mt-1 text-gray-400'; }
+                    return;
+                }
+                companyNameDebounce = setTimeout(async function() {
+                    const results = await fetchSuggestions(q);
+                    if (results.length) {
+                        showNameSuggestions(results);
+                        if (companyStatus) {
+                            companyStatus.textContent = results.length + ' similar compan' + (results.length === 1 ? 'y' : 'ies') + ' found — pick one or keep typing for a new entry';
+                            companyStatus.className = 'text-xs mt-1 text-amber-600';
+                        }
+                    } else {
+                        if (companyNameDropdown) companyNameDropdown.classList.add('hidden');
+                        if (companyStatus) {
+                            companyStatus.textContent = 'New company — a profile will be created automatically on save';
+                            companyStatus.className = 'text-xs mt-1 text-gray-400';
+                        }
+                    }
+                }, 350);
+            });
+            companyInput.addEventListener('blur', function() {
+                setTimeout(function() {
+                    if (companyNameDropdown) companyNameDropdown.classList.add('hidden');
+                }, 250);
+            });
+        }
+
         document.addEventListener('click', function (e) {
             if (typeaheadDropdown && !document.getElementById('company-typeahead-wrap').contains(e.target)) {
                 typeaheadDropdown.classList.add('hidden');
+            }
+            if (companyNameDropdown && !document.getElementById('company-name-wrap').contains(e.target)) {
+                companyNameDropdown.classList.add('hidden');
             }
         });
 
@@ -372,12 +523,23 @@
         const titleField = document.getElementById('id_title');
         const descriptionField = document.getElementById('id_description');
 
+        function onImportModalEscape(e) {
+            if (e.key === 'Escape') {
+                closeModal();
+            }
+        }
+
         function openModal() {
             importModal.classList.remove('hidden');
+            document.addEventListener('keydown', onImportModalEscape);
+            if (rawJDInput) {
+                rawJDInput.focus();
+            }
         }
 
         function closeModal() {
             importModal.classList.add('hidden');
+            document.removeEventListener('keydown', onImportModalEscape);
         }
 
         if (btnOpenImportModal) {
@@ -396,7 +558,7 @@
             btnSmartFill.addEventListener('click', function () {
                 const rawText = rawJDInput.value;
                 if (!rawText.trim()) {
-                    alert('Please paste a job description first.');
+                    if (rawJDInput) rawJDInput.focus();
                     return;
                 }
 
@@ -411,14 +573,55 @@
 
                 // Feedback & Close
                 const originalText = btnSmartFill.innerText;
-                btnSmartFill.innerText = 'Dumped!';
+                btnSmartFill.innerText = 'Added';
                 btnSmartFill.classList.add('bg-green-600');
 
                 setTimeout(() => {
                     btnSmartFill.innerText = originalText;
                     btnSmartFill.classList.remove('bg-green-600');
-                    closeModal(); // Auto close on success
-                }, 1000);
+                    closeModal();
+                }, 600);
+            });
+        }
+
+        // --- URL Duplicate Submit Guard ---
+        const jobForm = document.getElementById('job-form');
+        const submitBtn = jobForm ? jobForm.querySelector('button[type="submit"]') : null;
+
+        function checkUrlDuplicateBlock() {
+            const dupEl = document.getElementById('url-check-duplicate');
+            const isDuplicate = dupEl && dupEl.dataset.urlDuplicate === 'true';
+            if (submitBtn) {
+                if (isDuplicate) {
+                    submitBtn.disabled = true;
+                    submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                    submitBtn.title = 'Fix the duplicate URL before submitting.';
+                } else {
+                    submitBtn.disabled = false;
+                    submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    submitBtn.title = '';
+                }
+            }
+        }
+
+        // Watch for HTMX swaps on the url-check-result div
+        document.body.addEventListener('htmx:afterSwap', function (e) {
+            if (e.detail && e.detail.target && e.detail.target.id === 'url-check-result') {
+                checkUrlDuplicateBlock();
+            }
+        });
+
+        // Also block on manual submit attempt
+        if (jobForm) {
+            jobForm.addEventListener('submit', function (e) {
+                const dupEl = document.getElementById('url-check-duplicate');
+                if (dupEl && dupEl.dataset.urlDuplicate === 'true') {
+                    e.preventDefault();
+                    dupEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    dupEl.classList.add('ring-4', 'ring-red-300');
+                    setTimeout(() => dupEl.classList.remove('ring-4', 'ring-red-300'), 2000);
+                    return false;
+                }
             });
         }
 

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Archived Jobs{% endblock %}
+{% block content %}
+<div class="max-w-6xl mx-auto">
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">Archived Jobs</h1>
+    <a href="{% url 'job-list' %}" class="text-sm text-blue-600 hover:underline">&larr; Active jobs</a>
+  </div>
+
+  {% if jobs %}
+  <div class="bg-white shadow rounded-lg overflow-hidden">
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Archived</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-200">
+        {% for job in jobs %}
+        <tr class="bg-gray-50">
+          <td class="px-6 py-4 text-sm font-medium">{{ job.title }}</td>
+          <td class="px-6 py-4 text-sm text-gray-600">{{ job.company }}</td>
+          <td class="px-6 py-4"><span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-600">{{ job.get_status_display }}</span></td>
+          <td class="px-6 py-4 text-sm text-gray-500">{{ job.archived_at|date:"M d, Y" }}</td>
+          <td class="px-6 py-4">
+            <form method="post" action="{% url 'job-restore' job.pk %}" class="inline">
+              {% csrf_token %}
+              <button type="submit" class="text-green-600 hover:underline text-sm">Restore</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="bg-white shadow rounded-lg p-8 text-center text-gray-500">No archived jobs.</div>
+  {% endif %}
+</div>
+{% endblock %}

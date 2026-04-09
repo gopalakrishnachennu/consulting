@@ -317,10 +317,35 @@
             box-shadow: 0 6px 20px rgba(99, 102, 241, .5);
             transform: translateY(-1px);
         }
+
+        /* ── HTMX loading bar ── */
+        @keyframes loading-bar {
+            0% { width: 0; }
+            50% { width: 70%; }
+            100% { width: 95%; }
+        }
+        .htmx-request .htmx-indicator {
+            animation: loading-bar 2s ease-in-out forwards;
+        }
+        .htmx-request.htmx-settling .htmx-indicator {
+            width: 100% !important;
+            animation: none;
+            transition: width .15s ease;
+        }
+
+        /* ── Breadcrumb separator ── */
+        .breadcrumb-sep::before {
+            content: '/';
+            margin: 0 0.5rem;
+            color: #94a3b8;
+        }
+
+        /* ── Confirmation modal ── */
+        [x-cloak] { display: none !important; }
     </style>
 </head>
 
-<body class="min-h-screen bg-gray-100 font-sans leading-normal tracking-normal text-gray-800">
+<body class="min-h-screen bg-gray-50 font-sans leading-normal tracking-normal text-gray-800" hx-indicator="#global-loading-bar">
 
     {% if PLATFORM_CONFIG.maintenance_mode and not user.is_staff %}
     <div class="bg-red-600 text-white text-center py-2 px-4 shadow-sm z-50 relative">
@@ -352,6 +377,11 @@
     </div>
     {% endif %}
 
+    <!-- HTMX Global Loading Bar -->
+    <div id="global-loading-bar" class="fixed top-0 left-0 right-0 z-[100] h-0.5 bg-transparent">
+        <div class="htmx-indicator h-full bg-indigo-500 animate-loading-bar"></div>
+    </div>
+
     <nav class="flex items-center gap-4 flex-wrap bg-blue-600 px-6 py-4 shadow-lg" x-data="{ open: false }"
         :class="{ 'nav-open': open }">
         <div class="flex items-center flex-shrink-0">
@@ -365,7 +395,7 @@
         </div>
         <div class="block lg:hidden">
             <button type="button" @click="open = !open"
-                class="flex items-center px-3 py-2 rounded-lg text-blue-200 hover:text-white hover:bg-white/20 transition"
+                class="flex items-center px-3 py-2 rounded-lg text-blue-100 hover:text-white hover:bg-white/20 transition"
                 aria-expanded="false" :aria-expanded="open">
                 <svg class="fill-current h-5 w-5" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
                     <title>Menu</title>
@@ -378,7 +408,7 @@
             <!-- Mobile: HTMX search at top of hamburger menu (separate targets from desktop) -->
             <div class="relative w-full lg:hidden pb-3 mb-2 border-b border-white/15">
                 <input type="search" name="q" id="global-search-input-mobile" autocomplete="off" placeholder="Search jobs, people, companies…" aria-label="Global search"
-                    class="w-full rounded-lg border border-white/25 bg-white/10 px-3 py-2.5 text-sm text-white placeholder:text-blue-200/90 focus:outline-none focus:ring-2 focus:ring-white/40"
+                    class="w-full rounded-lg border border-white/25 bg-white/10 px-3 py-2.5 text-sm text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-white/40"
                     hx-get="{% url 'global-search-partial' %}"
                     hx-trigger="keyup changed delay:450ms"
                     hx-target="#global-search-results-mobile"
@@ -391,7 +421,7 @@
             <div class="flex flex-wrap items-center gap-1 lg:gap-2 w-full lg:w-auto">
                 <div class="relative hidden lg:block w-full lg:flex-1 lg:min-w-[12rem] lg:max-w-md lg:order-first">
                     <input type="search" name="q" id="global-search-input" autocomplete="off" placeholder="Search jobs, people, companies…" aria-label="Global search"
-                        class="w-full rounded-lg border border-white/25 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-blue-200/90 focus:outline-none focus:ring-2 focus:ring-white/40"
+                        class="w-full rounded-lg border border-white/25 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-white/40"
                         hx-get="{% url 'global-search-partial' %}"
                         hx-trigger="keyup changed delay:450ms"
                         hx-target="#global-search-results"
@@ -406,7 +436,18 @@
                 <a href="{% url 'admin-dashboard' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'admin-dashboard' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Dashboard</a>
                 <a href="{% url 'job-list' %}"
-                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'job-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Jobs</a>
+                    class="nav-link relative px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'job-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">
+                    Jobs
+                    {% with pool_count=pending_pool_count %}
+                    {% if pool_count %}
+                    <span class="absolute -top-1 -right-1 min-w-[1rem] h-4 px-0.5 bg-yellow-400 text-yellow-900 text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
+                        {{ pool_count }}
+                    </span>
+                    {% endif %}
+                    {% endwith %}
+                </a>
+                <a href="{% url 'job-pool' %}"
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'job-pool' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Pool</a>
                 <a href="{% url 'company-list' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'company-list' or url_name == 'company-detail' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Companies</a>
                 <a href="{% url 'submission-list' %}"
@@ -420,20 +461,35 @@
                 <a href="{% url 'analytics-dashboard' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'analytics-dashboard' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Analytics</a>
                 <a href="{% url 'inbox' %}"
-                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition inline-flex items-center gap-1.5 {% if url_name == 'inbox' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Messages{% if unread_message_count %}<span class="inline-flex min-w-[1.25rem] h-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">{{ unread_message_count }}</span>{% endif %}</a>
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition inline-flex items-center gap-1.5 {% if url_name == 'inbox' or url_name == 'thread-detail' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Messages{% if unread_message_count %}<span class="inline-flex min-w-[1.25rem] h-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">{{ unread_message_count }}</span>{% endif %}</a>
                 <a href="{% url 'consultant-list' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'consultant-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Consultants</a>
                 <a href="{% url 'employee-list' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'employee-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Employees</a>
                 <a href="{% url 'placement-list' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'placement-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Placements</a>
+                <a href="{% url 'resume-generate' %}"
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'resume-generate' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Resumes</a>
+                <a href="{% url 'workflow-dashboard' %}"
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'workflow-dashboard' or url_name == 'workflow-panel' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Workflow</a>
 
                 {% elif user.role == 'EMPLOYEE' %}
                 {# --- EMPLOYEE NAV --- #}
                 <a href="{% url 'employee-dashboard' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'employee-dashboard' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Dashboard</a>
                 <a href="{% url 'job-list' %}"
-                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'job-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Jobs</a>
+                    class="nav-link relative px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'job-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">
+                    Jobs
+                    {% with pool_count=pending_pool_count %}
+                    {% if pool_count %}
+                    <span class="absolute -top-1 -right-1 min-w-[1rem] h-4 px-0.5 bg-yellow-400 text-yellow-900 text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
+                        {{ pool_count }}
+                    </span>
+                    {% endif %}
+                    {% endwith %}
+                </a>
+                <a href="{% url 'job-pool' %}"
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'job-pool' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Pool</a>
                 <a href="{% url 'submission-list' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'submission-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Applications</a>
                 <a href="{% url 'submission-quick-submit' %}"
@@ -443,18 +499,24 @@
                 <a href="{% url 'interview-calendar' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'interview-calendar' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Calendar</a>
                 <a href="{% url 'inbox' %}"
-                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition inline-flex items-center gap-1.5 {% if url_name == 'inbox' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Messages{% if unread_message_count %}<span class="inline-flex min-w-[1.25rem] h-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">{{ unread_message_count }}</span>{% endif %}</a>
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition inline-flex items-center gap-1.5 {% if url_name == 'inbox' or url_name == 'thread-detail' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Messages{% if unread_message_count %}<span class="inline-flex min-w-[1.25rem] h-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">{{ unread_message_count }}</span>{% endif %}</a>
                 <a href="{% url 'consultant-list' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'consultant-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Consultants</a>
                 <a href="{% url 'analytics-dashboard' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'analytics-dashboard' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Analytics</a>
                 <a href="{% url 'placement-list' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'placement-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Placements</a>
+                <a href="{% url 'resume-generate' %}"
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'resume-generate' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Resumes</a>
+                <a href="{% url 'workflow-dashboard' %}"
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'workflow-dashboard' or url_name == 'workflow-panel' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Workflow</a>
 
                 {% elif user.role == 'CONSULTANT' %}
                 {# --- CONSULTANT NAV --- #}
                 <a href="{% url 'consultant-dashboard' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'consultant-dashboard' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Dashboard</a>
+                <a href="{% url 'consultant-journey' %}"
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'consultant-journey' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Journey</a>
                 <a href="{% url 'job-list' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'job-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Jobs</a>
                 <a href="{% url 'submission-list' %}"
@@ -464,7 +526,7 @@
                 <a href="{% url 'interview-list' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'interview-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Interviews</a>
                 <a href="{% url 'inbox' %}"
-                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition inline-flex items-center gap-1.5 {% if url_name == 'inbox' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Messages{% if unread_message_count %}<span class="inline-flex min-w-[1.25rem] h-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">{{ unread_message_count }}</span>{% endif %}</a>
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition inline-flex items-center gap-1.5 {% if url_name == 'inbox' or url_name == 'thread-detail' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Messages{% if unread_message_count %}<span class="inline-flex min-w-[1.25rem] h-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">{{ unread_message_count }}</span>{% endif %}</a>
                 <a href="{% url 'consultant-list' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'consultant-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Consultants</a>
 
@@ -480,7 +542,7 @@
                     {% if unread_notification_count %}<span
                         class="inline-flex min-w-[1.25rem] h-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">{{ unread_notification_count }}</span>{% endif %}
                 </a>
-                <a href="{% url 'email-notification-preferences' %}" class="text-blue-100 hover:text-white text-sm">Email prefs</a>
+                <a href="{% url 'email-notification-preferences' %}" class="text-blue-100 hover:text-white text-sm">Alerts</a>
                 <a href="{% url 'password_change' %}" class="text-blue-100 hover:text-white text-sm">Change password</a>
                 <form action="{% url 'logout' %}" method="post" class="inline">
                     {% csrf_token %}
@@ -494,7 +556,7 @@
         <div class="hidden lg:flex items-center ml-auto flex-shrink-0 gap-2">
             {% if user.is_authenticated %}
             <a href="{% url 'notification-list' %}"
-                class="relative inline-flex items-center justify-center h-10 w-10 rounded-full bg-blue-700/80 text-white border border-blue-500 hover:bg-blue-800 transition"
+                class="relative inline-flex items-center justify-center h-10 w-10 rounded-full bg-blue-700 text-white border border-blue-500 hover:bg-blue-800 transition"
                 aria-label="Notifications">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -508,7 +570,7 @@
             <div class="relative" x-data="{ profileOpen: false }" @keydown.escape.window="profileOpen = false">
                 <button type="button"
                     @click="profileOpen = !profileOpen"
-                    class="inline-flex items-center justify-center h-10 w-10 rounded-full bg-blue-700 text-white font-bold shadow-sm border border-blue-500 hover:bg-blue-800 transition"
+                    class="inline-flex items-center justify-center h-10 w-10 rounded-full bg-blue-700text-white font-bold shadow-sm border border-blue-500 hover:bg-blue-800 transition"
                     aria-label="Open profile menu"
                     :aria-expanded="profileOpen">
                     {{ user.username|slice:":1"|upper }}
@@ -534,11 +596,15 @@
                             class="block px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
                             Platform settings
                         </a>
+                        <a href="{% url 'master-prompt-list' %}"
+                            class="block px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
+                            Master Prompt
+                        </a>
                         {% endif %}
 
                         <a href="{% url 'email-notification-preferences' %}"
                             class="block px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
-                            Email notifications
+                            Notification preferences
                         </a>
                         <a href="{% url 'password_change' %}"
                             class="block px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
@@ -575,7 +641,7 @@
             {% if message.tags == 'error' %} bg-red-600 text-white ring-red-300/60
             {% elif message.tags == 'warning' %} bg-amber-500 text-white ring-amber-300/60
             {% elif message.tags == 'success' %} bg-emerald-600 text-white ring-emerald-300/60
-            {% else %} bg-slate-700 text-white ring-slate-400/60 {% endif %}">
+            {% else %} bg-blue-700 text-white ring-slate-400/60 {% endif %}">
             <div class="mt-0.5">
                 <svg class="h-5 w-5 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -591,13 +657,82 @@
     </div>
     {% endif %}
 
-    <div class="container mx-auto mt-8 p-4">
+    {% block fullscreen_content %}{% endblock %}
+
+    <div class="container mx-auto mt-8 p-4" {% block hide_container %}{% endblock %}>
+        {% block breadcrumbs %}{% endblock %}
 
         {% block content %}
         {% endblock %}
     </div>
 
+    <!-- Global Confirmation Modal (Alpine.js) -->
+    <div x-data="confirmModal()" x-cloak @confirm-modal.window="open($event.detail)">
+        <template x-if="visible">
+            <div class="fixed inset-0 z-[200] flex items-center justify-center p-4">
+                <!-- Backdrop -->
+                <div class="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" @click="cancel()"></div>
+                <!-- Modal Card -->
+                <div class="relative bg-white rounded-xl shadow-2xl max-w-md w-full p-6 animate-fade-in-up">
+                    <div class="flex items-start gap-3 mb-4">
+                        <div class="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center"
+                             :class="variant === 'danger' ? 'bg-red-100' : 'bg-amber-100'">
+                            <svg class="w-5 h-5" :class="variant === 'danger' ? 'text-red-600' : 'text-amber-600'"
+                                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a1 1 0 00.86 1.5h18.64a1 1 0 00.86-1.5L13.71 3.86a1 1 0 00-1.72 0z" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-900" x-text="title"></h3>
+                            <p class="text-sm text-gray-500 mt-1" x-text="message"></p>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-end gap-3 mt-6">
+                        <button @click="cancel()"
+                            class="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition">
+                            Cancel
+                        </button>
+                        <button @click="confirm()"
+                            class="px-4 py-2 rounded-lg text-sm font-medium text-white transition"
+                            :class="variant === 'danger' ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-600 hover:bg-amber-700'"
+                            x-text="confirmText">
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+
 <script>
+    // Alpine.js Confirmation Modal
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('confirmModal', () => ({
+            visible: false,
+            title: '',
+            message: '',
+            confirmText: 'Confirm',
+            variant: 'danger',
+            formEl: null,
+            open(detail) {
+                this.title = detail.title || 'Are you sure?';
+                this.message = detail.message || 'This action cannot be undone.';
+                this.confirmText = detail.confirmText || 'Confirm';
+                this.variant = detail.variant || 'danger';
+                this.formEl = detail.form || null;
+                this.visible = true;
+            },
+            confirm() {
+                this.visible = false;
+                if (this.formEl) this.formEl.submit();
+            },
+            cancel() {
+                this.visible = false;
+                this.formEl = null;
+            }
+        }));
+    });
+
     // Auto-dismiss toast messages with a subtle fade/slide
     (function () {
         const toasts = document.querySelectorAll('.toast-enter');

@@ -12,8 +12,7 @@ from docx.shared import Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from io import BytesIO
-from prompts_app.services import get_active_prompt_for_job
-from prompts_app.models import Prompt
+from .models import MasterPrompt
 from .prompt_strings import (
     DEFAULT_SYSTEM_PROMPT,
     BULLETS_SYSTEM_PROMPT,
@@ -46,10 +45,6 @@ from core.security import decrypt_value
 from core.llm_services import calculate_cost
 
 logger = logging.getLogger("apps.resumes")
-
-FILLER_PHRASES = []
-EXPANSION_PHRASES = []
-NOISE_PHRASES = []
 
 ACTION_VERBS = {
     "improved","reduced","increased","decreased","optimized","streamlined","built","designed","implemented",
@@ -662,23 +657,6 @@ def _apply_metric_rules(bullets, job, method_keywords, max_metrics):
     return cleaned
 
 
-def _expand_bullet_to_min_words(line, job, min_words=22):
-    """Expand short bullets to meet minimum word count by adding
-    relevant JD context. Uses proper grammar, not garbage filler."""
-    if not line:
-        return line
-    words = _bullet_word_count(line)
-    if words >= min_words:
-        # Trim if over max (32 words)
-        if words > 32:
-            word_list = line.split()
-            line = " ".join(word_list[:32])
-            if not line.endswith("."):
-                line = line.rstrip(" ,;-") + "."
-        return line
-    return line
-
-
 def _total_experience_years_display(consultant):
     experiences = list(consultant.experience.all())
     if not experiences:
@@ -1136,34 +1114,6 @@ def _term_present(summary_lower, term):
     return False
 
 
-def _sanitize_summary(summary, title, years_display):
-    if not summary:
-        return summary
-    text = " ".join(summary.strip().split())
-    # Drop generic qualifier phrases in summary to keep it technical and concrete.
-    text = re.sub(r"\b(basic understanding of|knowledge of|familiarity with|general)\b\s+", "", text, flags=re.I)
-    # Remove sentences containing JD meta or work-arrangement language.
-    sentences = re.split(r"(?<=[.!?])\s+", text)
-    filtered = []
-    for s in sentences:
-        if re.search(r"\b(hybrid|onsite|on-site|remote|work arrangement|arrangements|vision)\b", s, re.I):
-            continue
-        filtered.append(s)
-    text = " ".join(filtered).strip()
-    # Ensure summary starts with the exact job title.
-    if title and not text.lower().startswith(title.lower()):
-        if years_display and f"{years_display} years" in text:
-            remainder = re.sub(r"^[^ ]+.*?\bwith\b\s+", "", text, flags=re.I)
-        else:
-            remainder = text
-        prefix = f"{title} with {years_display} years of experience "
-        text = prefix + remainder
-    # Ensure years appear
-    if years_display and f"{years_display} years" not in text:
-        text = f"{title} with {years_display} years of experience " + text[len(title):].lstrip()
-    return " ".join(text.split())
-
-
 def _validate_summary(summary, title, years_display, jd_keywords, required_terms=None):
     reasons = []
     if not summary:
@@ -1210,13 +1160,6 @@ def _validate_summary(summary, title, years_display, jd_keywords, required_terms
     if missing:
         reasons.append("required_terms_missing")
     return (len(reasons) == 0), reasons
-
-
-def _pick_top_keywords(jd_text, limit=6):
-    keywords = extract_keywords(jd_text or "", max_keywords=200)
-    # Prefer longer/technical tokens over generic ones and remove numerics
-    keywords = [k for k in keywords if len(k) >= 3 and not k.isdigit()]
-    return keywords[:limit]
 
 
 def _build_summary_section(job, consultant):
@@ -1452,25 +1395,11 @@ def build_user_prompt_from_sections(job, consultant, sections):
 
     return "\n".join(parts).strip()
 
-def get_system_prompt_text(job, consultant, prompt_override=None):
-    if prompt_override:
-        if prompt_override.system_text:
-            return prompt_override.system_text
-        if prompt_override.description:
-            return strip_tags(prompt_override.description)
-    # Force resume-specific prompt when available
-    resume_prompt = Prompt.objects.filter(name='resume-2').first()
-    if resume_prompt:
-        if resume_prompt.system_text:
-            return resume_prompt.system_text
-        if resume_prompt.description:
-            return strip_tags(resume_prompt.description)
-    prompt = get_active_prompt_for_job(job, consultant)
-    if prompt:
-        if prompt.system_text:
-            return prompt.system_text
-        if prompt.description:
-            return strip_tags(prompt.description)
+def get_system_prompt_text(job=None, consultant=None, prompt_override=None):
+    """Returns the system prompt — always uses the active MasterPrompt if set."""
+    master = MasterPrompt.get_active()
+    if master and master.system_prompt:
+        return master.system_prompt
     return DEFAULT_SYSTEM_PROMPT
 
 
@@ -1556,29 +1485,6 @@ class LLMService:
             f"Education:\n{edu_summary}\n"
             f"Certifications: {cert_summary}\n"
         )
-
-        prompt = prompt_override or get_active_prompt_for_job(job, consultant)
-        if prompt:
-            try:
-                template_text = prompt.template_text
-                base = template_text.format(
-                    job_title=job.title,
-                    company=job.company,
-                    job_description=job.description,
-                    consultant_name=consultant.user.get_full_name() or consultant.user.username,
-                    consultant_bio=consultant.bio or "Not provided.",
-                    consultant_skills=", ".join(consultant.skills) if consultant.skills else "Not provided.",
-                    experience_summary=exp_summary,
-                    certifications=cert_summary,
-                    base_resume_text=base_resume_text,
-                    input_summary=input_summary,
-                )
-                return (
-                    f"{base}\n\n"
-                    f"{BUILD_PROMPT_TEMPLATE_SUFFIX.format(jd_text=job.description or 'Not provided.')}"
-                )
-            except (KeyError, IndexError):
-                pass  # Fall through to default
 
         base_section = (
             BUILD_PROMPT_BASE_SECTION_WITH.format(base_resume_text=base_resume_text)

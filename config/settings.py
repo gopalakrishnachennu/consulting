@@ -40,7 +40,7 @@ INSTALLED_APPS = [
     'analytics.apps.AnalyticsConfig',
     'companies',
     'interviews_app.apps.InterviewsAppConfig',
-    'prompts_app.apps.PromptsAppConfig',
+    'prompts_app.apps.PromptsAppConfig',  # kept for migration chain — UI/URLs fully removed
 ]
 
 AUTH_USER_MODEL = 'users.User'
@@ -77,6 +77,7 @@ TEMPLATES = [
                 'config.context_processors.site_config',
                 'messaging.context_processors.unread_messages_count',
                 'core.context_processors.unread_notifications_count',
+                'core.context_processors.pending_pool_count',  # Job pool badge in nav
             ],
         },
     },
@@ -111,6 +112,12 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
+# Consultant workflow dashboard: flag sidebar rows when assigned/drafting work is older than N days
+WORKFLOW_STALE_DAYS = int(config('WORKFLOW_STALE_DAYS', default='7'))
+
+# Optional: Google Knowledge Graph Search API key for company enrichment (used when Platform Config field is empty)
+GOOGLE_KG_API_KEY = config('GOOGLE_KG_API_KEY', default='').strip()
+
 # Static files
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
@@ -134,6 +141,14 @@ CELERY_TASK_ALWAYS_EAGER = config('CELERY_TASK_ALWAYS_EAGER', default=False, cas
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# Used by messaging typing indicators, rate limits, etc. Use Redis in multi-instance production.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "app-locmem",
+    }
+}
+
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/'
 
@@ -151,6 +166,20 @@ EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
 EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='noreply@localhost')
+
+# --- Error monitoring (Sentry) — set SENTRY_DSN in production ---
+SENTRY_DSN = config('SENTRY_DSN', default='').strip()
+if SENTRY_DSN:
+    import sentry_sdk
+    from sentry_sdk.integrations.django import DjangoIntegration
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[DjangoIntegration()],
+        send_default_pii=False,
+        environment=config('SENTRY_ENVIRONMENT', default='development' if DEBUG else 'production'),
+        traces_sample_rate=config('SENTRY_TRACES_SAMPLE_RATE', default=0.0, cast=float),
+    )
 
 # --- Advanced Logging ---
 from config.logging_config import get_logging_config

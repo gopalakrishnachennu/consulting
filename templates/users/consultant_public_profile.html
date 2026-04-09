@@ -3,29 +3,29 @@
 {% block content %}
 <div class="max-w-4xl mx-auto px-4 py-8">
     <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-        <!-- Header -->
-        <div class="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-8 text-white">
+        <!-- Header: solid bg + gradient so text stays readable if gradient is missing from CSS build -->
+        <div class="bg-blue-700 bg-gradient-to-r from-blue-600 to-indigo-800 px-6 py-8 text-white">
             <div class="flex flex-col sm:flex-row sm:items-center gap-4">
                 {% if consultant.avatar %}
                 <img src="{{ consultant.avatar.url }}" alt="" class="w-24 h-24 rounded-full border-4 border-white/30 object-cover shrink-0">
                 {% else %}
-                <div class="w-24 h-24 rounded-full border-4 border-white/30 bg-white/20 flex items-center justify-center text-3xl font-bold shrink-0">
+                <div class="w-24 h-24 rounded-full border-4 border-white/30 bg-white/20 flex items-center justify-center text-3xl font-bold shrink-0 text-white">
                     {{ consultant.get_full_name|default:consultant.username|slice:":1"|upper }}
                 </div>
                 {% endif %}
-                <div>
-                    <h1 class="text-2xl md:text-3xl font-bold tracking-tight">
+                <div class="min-w-0">
+                    <h1 class="text-2xl md:text-3xl font-bold tracking-tight text-white">
                         {{ consultant.get_full_name|default:consultant.username }}
                     </h1>
                     <div class="flex flex-wrap gap-2 mt-2">
                         {% for role in profile.marketing_roles.all %}
-                        <span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold bg-white/20 text-white">
+                        <span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold bg-white/20 text-white border border-white/10">
                             {{ role.name }}
                         </span>
                         {% endfor %}
                     </div>
                     {% if profile.hourly_rate %}
-                    <p class="mt-2 text-blue-100 text-sm">Rate: ${{ profile.hourly_rate }}/hr</p>
+                    <p class="mt-2 text-sm font-medium text-white/95">Rate: ${{ profile.hourly_rate }}/hr</p>
                     {% endif %}
                 </div>
             </div>

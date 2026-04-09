@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 py-8">
+    <div class="mb-6">
+        <a href="{% url 'broadcast-list' %}" class="text-sm text-blue-600 hover:underline">← All broadcasts</a>
+        <h1 class="text-2xl font-bold text-gray-900 mt-2">{{ broadcast.title }}</h1>
+        <p class="text-sm text-gray-500 mt-1">{{ broadcast.get_audience_display }} · {{ broadcast.get_kind_display }} · {{ broadcast.created_at|date:"M j, Y g:i A" }}</p>
+        {% if broadcast.body %}
+        <p class="text-gray-700 mt-4 whitespace-pre-wrap">{{ broadcast.body }}</p>
+        {% endif %}
+        {% if broadcast.link %}
+        <p class="text-sm mt-2"><span class="text-gray-500">Link:</span> <code class="bg-gray-100 px-1 rounded">{{ broadcast.link }}</code></p>
+        {% endif %}
+    </div>
+
+    <div class="grid grid-cols-3 gap-4 mb-6">
+        <div class="bg-white rounded-lg border p-4 text-center">
+            <p class="text-2xl font-bold text-gray-900">{{ delivery_counts.total }}</p>
+            <p class="text-xs text-gray-500 uppercase">Total rows</p>
+        </div>
+        <div class="bg-white rounded-lg border p-4 text-center">
+            <p class="text-2xl font-bold text-emerald-700">{{ delivery_counts.delivered }}</p>
+            <p class="text-xs text-gray-500 uppercase">Delivered</p>
+        </div>
+        <div class="bg-white rounded-lg border p-4 text-center">
+            <p class="text-2xl font-bold text-amber-700">{{ delivery_counts.skipped }}</p>
+            <p class="text-xs text-gray-500 uppercase">Skipped (in-app off)</p>
+        </div>
+    </div>
+
+    <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Audit (latest 500)</h2>
+    <div class="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+        <table class="min-w-full text-sm">
+            <thead>
+                <tr class="border-b bg-gray-50 text-left text-gray-600">
+                    <th class="px-4 py-2">User</th>
+                    <th class="px-4 py-2">Status</th>
+                    <th class="px-4 py-2">Notification</th>
+                    <th class="px-4 py-2">At</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in deliveries %}
+                <tr class="border-b border-gray-100">
+                    <td class="px-4 py-2">{{ d.user.get_full_name|default:d.user.username }}</td>
+                    <td class="px-4 py-2">{{ d.get_status_display }}</td>
+                    <td class="px-4 py-2">
+                        {% if d.notification_id %}#{{ d.notification_id }}{% else %}—{% endif %}
+                    </td>
+                    <td class="px-4 py-2 text-gray-500">{{ d.created_at|date:"M j, Y g:i A" }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="4" class="px-4 py-6 text-center text-gray-500">No delivery rows.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

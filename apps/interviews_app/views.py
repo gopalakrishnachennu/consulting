@@ -11,8 +11,11 @@ from django import forms
 from django.http import HttpResponse
 from django.contrib import messages
 from django.db.models import Count
+import logging
 
 from .models import Interview, InterviewFeedback
+
+logger = logging.getLogger(__name__)
 from .forms import InterviewFeedbackForm
 from submissions.models import ApplicationSubmission
 from users.models import User
@@ -283,6 +286,12 @@ class InterviewCreateView(ConsultantOnlyMixin, CreateView):
             interview.company = job.company
             interview.location = job.location
         interview.save()
+        try:
+            from .notify import notify_interview_scheduled
+
+            notify_interview_scheduled(interview)
+        except Exception:
+            logger.exception("notify_interview_scheduled failed")
         return redirect(self.success_url)
 
 
@@ -306,6 +315,9 @@ class InterviewUpdateView(ConsultantOnlyMixin, UpdateView):
         return Interview.objects.filter(consultant=self.request.user.consultant_profile)
 
     def form_valid(self, form):
+        old = self.get_object()
+        old_status = old.status
+        old_scheduled_at = old.scheduled_at
         interview = form.save(commit=False)
         if interview.submission:
             job = interview.submission.job
@@ -313,6 +325,16 @@ class InterviewUpdateView(ConsultantOnlyMixin, UpdateView):
             interview.company = job.company
             interview.location = job.location
         interview.save()
+        try:
+            from .notify import notify_interview_updated
+
+            notify_interview_updated(
+                interview,
+                old_status=old_status,
+                old_scheduled_at=old_scheduled_at,
+            )
+        except Exception:
+            logger.exception("notify_interview_updated failed")
         return redirect(self.success_url)
 
 
@@ -362,7 +384,14 @@ class InterviewFeedbackCreateView(LoginRequiredMixin, UserPassesTestMixin, Creat
         form.instance.interview = interview
         form.instance.author = self.request.user
         messages.success(self.request, 'Interview feedback saved.')
-        return super().form_valid(form)
+        resp = super().form_valid(form)
+        try:
+            from .notify import notify_interview_feedback_submitted
+
+            notify_interview_feedback_submitted(self.object)
+        except Exception:
+            logger.exception("notify_interview_feedback_submitted failed")
+        return resp
 
     def get_success_url(self):
         return reverse('interview-detail', kwargs={'pk': self.kwargs['pk']})

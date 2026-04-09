@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}Resume Review — v{{ draft.version }}{% endblock %}
+{% block content %}
+<div class="max-w-5xl mx-auto">
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Resume Review</h1>
+      <p class="text-sm text-gray-500 mt-1">
+        {{ draft.consultant.user.get_full_name }} &rarr; {{ draft.job.title }} @ {{ draft.job.company }}
+        &middot; v{{ draft.version }}
+      </p>
+    </div>
+    <div class="flex items-center gap-3 flex-wrap">
+      <a href="{% url 'resume-generate' %}?consultant={{ draft.consultant.pk }}&job={{ draft.job.pk }}"
+        class="text-sm text-indigo-600 hover:underline">Regenerate</a>
+
+      <a href="{% url 'resume-editor' draft.pk %}"
+        class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+        </svg>
+        Open in Editor
+      </a>
+
+      <a href="{% url 'draft-download' draft.pk %}"
+        class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white bg-green-600 hover:bg-green-700 transition">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        Download .docx
+      </a>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Main Content (2/3) -->
+    <div class="lg:col-span-2">
+      <!-- Resume Content -->
+      <div class="bg-white shadow rounded-lg p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-semibold text-gray-800">Generated Resume</h2>
+          <button onclick="navigator.clipboard.writeText(document.getElementById('resume-content').innerText).then(()=>this.textContent='Copied!')"
+            class="text-xs text-indigo-600 hover:underline">Copy to clipboard</button>
+        </div>
+        <div id="resume-content" class="prose prose-sm max-w-none whitespace-pre-wrap font-mono text-sm bg-gray-50 rounded-lg p-4 border">{{ draft.content }}</div>
+      </div>
+
+      <!-- Version History -->
+      {% if all_versions|length > 1 %}
+      <div class="bg-white shadow rounded-lg p-6 mt-6">
+        <h2 class="text-lg font-semibold text-gray-800 mb-3">Version History</h2>
+        <div class="space-y-2">
+          {% for v in all_versions %}
+          <div class="flex items-center justify-between py-2 px-3 rounded {% if v.pk == draft.pk %}bg-indigo-50 border border-indigo-200{% else %}hover:bg-gray-50{% endif %}">
+            <div>
+              <span class="text-sm font-medium {% if v.pk == draft.pk %}text-indigo-700{% else %}text-gray-700{% endif %}">v{{ v.version }}</span>
+              <span class="text-xs text-gray-400 ml-2">{{ v.created_at|date:"M d, H:i" }}</span>
+              <span class="text-xs ml-2 px-1.5 py-0.5 rounded
+                {% if v.status == 'FINAL' %}bg-green-100 text-green-700
+                {% elif v.status == 'DRAFT' %}bg-blue-100 text-blue-700
+                {% elif v.status == 'ERROR' %}bg-red-100 text-red-700
+                {% else %}bg-gray-100 text-gray-600{% endif %}">{{ v.get_status_display }}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-gray-500">ATS: {{ v.ats_score }}%</span>
+              {% if v.pk != draft.pk %}
+              <a href="{% url 'draft-review' v.pk %}" class="text-xs text-indigo-600 hover:underline">View</a>
+              <span class="text-xs text-gray-400">·</span>
+              <a href="{% url 'draft-detail' draft.pk %}" target="_blank" rel="noopener noreferrer" class="text-xs text-gray-600 hover:underline" title="Open current version in new tab">Open current</a>
+              <a href="{% url 'draft-detail' v.pk %}" target="_blank" rel="noopener noreferrer" class="text-xs text-gray-600 hover:underline" title="Open this version in new tab">Open v{{ v.version }}</a>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Sidebar (1/3) -->
+    <div class="space-y-6">
+      <!-- ATS Score -->
+      <div class="bg-white shadow rounded-lg p-6">
+        <h3 class="text-sm font-semibold text-gray-600 uppercase mb-3">ATS Score</h3>
+        <div class="flex items-center justify-center">
+          <div class="relative w-28 h-28">
+            <svg class="w-28 h-28 -rotate-90" viewBox="0 0 120 120">
+              <circle cx="60" cy="60" r="50" fill="none" stroke="#e5e7eb" stroke-width="10" />
+              <circle cx="60" cy="60" r="50" fill="none"
+                stroke="{% if draft.ats_score >= 70 %}#22c55e{% elif draft.ats_score >= 50 %}#eab308{% else %}#ef4444{% endif %}"
+                stroke-width="10" stroke-linecap="round"
+                stroke-dasharray="{{ draft.ats_score|floatformat:0 }}% 314"
+                style="stroke-dasharray: calc(3.14 * {{ draft.ats_score }}) 314" />
+            </svg>
+            <div class="absolute inset-0 flex items-center justify-center">
+              <span class="text-2xl font-bold {% if draft.ats_score >= 70 %}text-green-600{% elif draft.ats_score >= 50 %}text-yellow-600{% else %}text-red-600{% endif %}">{{ draft.ats_score }}%</span>
+            </div>
+          </div>
+        </div>
+        <p class="text-xs text-gray-500 text-center mt-2">
+          {% if draft.ats_score >= 70 %}Strong keyword match{% elif draft.ats_score >= 50 %}Moderate match — consider regenerating{% else %}Low match — review JD alignment{% endif %}
+        </p>
+      </div>
+
+      <!-- Metadata -->
+      <div class="bg-white shadow rounded-lg p-6">
+        <h3 class="text-sm font-semibold text-gray-600 uppercase mb-3">Details</h3>
+        <dl class="space-y-2 text-sm">
+          <div class="flex justify-between">
+            <dt class="text-gray-500">Status</dt>
+            <dd><span class="px-2 py-0.5 rounded text-xs font-medium
+              {% if draft.status == 'FINAL' %}bg-green-100 text-green-700
+              {% elif draft.status == 'DRAFT' %}bg-blue-100 text-blue-700
+              {% elif draft.status == 'ERROR' %}bg-red-100 text-red-700
+              {% else %}bg-gray-100 text-gray-600{% endif %}">{{ draft.get_status_display }}</span></dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-gray-500">Tokens</dt>
+            <dd class="text-gray-900">{{ draft.tokens_used|default:"—" }}</dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-gray-500">Created</dt>
+            <dd class="text-gray-900">{{ draft.created_at|date:"M d, Y H:i" }}</dd>
+          </div>
+          {% if draft.llm_request_payload.master_prompt %}
+          <div class="flex justify-between">
+            <dt class="text-gray-500">Prompt</dt>
+            <dd class="text-gray-900 text-xs">{{ draft.llm_request_payload.master_prompt }}</dd>
+          </div>
+          {% endif %}
+          <div class="flex justify-between">
+            <dt class="text-gray-500">Model</dt>
+            <dd class="text-gray-900 text-xs">{{ draft.llm_request_payload.model|default:"—" }}</dd>
+          </div>
+        </dl>
+      </div>
+
+      <!-- Actions -->
+      <div class="bg-white shadow rounded-lg p-6">
+        <h3 class="text-sm font-semibold text-gray-600 uppercase mb-3">Actions</h3>
+        <div class="space-y-2">
+          {% if draft.status != 'FINAL' and request.user.is_superuser or request.user.role == 'ADMIN' %}
+          <form method="post" action="{% url 'draft-promote' draft.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="w-full text-center px-4 py-2 rounded-lg text-sm font-medium text-white bg-green-600 hover:bg-green-700 transition">
+              Promote to FINAL
+            </button>
+          </form>
+          {% endif %}
+          <form method="post" action="{% url 'draft-delete' draft.pk %}" id="delete-draft-form">
+            {% csrf_token %}
+            <button type="button" @click="$dispatch('confirm-modal', { title: 'Delete Draft?', message: 'This will permanently remove this draft version. This cannot be undone.', confirmText: 'Delete Draft', variant: 'danger', form: $el.closest('form') })"
+              class="w-full text-center px-4 py-2 rounded-lg text-sm font-medium text-red-600 border border-red-200 hover:bg-red-50 transition">
+              Delete Draft
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Pre-flight Info -->
+      {% if draft.llm_input_summary.match_pct is not None %}
+      <div class="bg-white shadow rounded-lg p-6">
+        <h3 class="text-sm font-semibold text-gray-600 uppercase mb-3">Pre-flight</h3>
+        <div class="flex items-center mb-2">
+          <div class="w-full bg-gray-200 rounded-full h-2 mr-2">
+            <div class="h-2 rounded-full {% if draft.llm_input_summary.match_pct >= 70 %}bg-green-500{% elif draft.llm_input_summary.match_pct >= 40 %}bg-yellow-500{% else %}bg-red-500{% endif %}"
+              style="width: {{ draft.llm_input_summary.match_pct }}%"></div>
+          </div>
+          <span class="text-sm font-medium">{{ draft.llm_input_summary.match_pct }}%</span>
+        </div>
+        <p class="text-xs text-gray-500">Skills match at time of generation</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

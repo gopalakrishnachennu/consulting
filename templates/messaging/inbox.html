@@ -1,46 +1,122 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="container mx-auto mt-8">
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-3xl font-bold text-gray-800">Messages</h1>
+{# Messenger-style shell: platform blue-600 accent (matches nav), gray sidebar, white conversation pane #}
+<div class="min-h-[calc(100vh-7rem)] bg-[#f0f2f5] pb-4 pt-2 sm:pb-6 sm:pt-4">
+<div class="mx-auto flex h-full min-h-[calc(100vh-8rem)] w-full max-w-6xl flex-col px-3 sm:px-5">
+    {# Slim page title — actions move into chat shell #}
+    <div class="mb-3 flex flex-shrink-0 flex-col gap-2 sm:mb-4 sm:flex-row sm:items-center sm:justify-between">
+        <div class="min-w-0">
+            <h1 class="text-xl font-bold tracking-tight text-gray-900 sm:text-2xl">Chats</h1>
+            <p class="mt-0.5 text-sm text-gray-500">
+                {% if messaging_search_staff_only %}
+                Message your team
+                {% else %}
+                Staff and consultants
+                {% endif %}
+            </p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+            {% include "messaging/_messaging_search_header.html" %}
+            {% if can_start_org_thread %}
+            <form method="post" action="{% url 'start-org-thread' %}" class="m-0 inline">
+                {% csrf_token %}
+                <button type="submit" class="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50">
+                    <svg class="h-4 w-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                    Team
+                </button>
+            </form>
+            {% endif %}
+        </div>
     </div>
 
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <ul class="divide-y divide-gray-200">
-            {% for thread in threads %}
-            <li>
-                <a href="{% url 'thread-detail' thread.pk %}" class="block hover:bg-gray-50">
-                    <div class="px-4 py-4 sm:px-6">
-                        <div class="flex items-center justify-between">
-                            <p class="text-sm font-medium text-indigo-600 truncate">
-                                {% for participant in thread.participants.all %}
-                                {% if participant != user %}
-                                {{ participant.username }}
-                                {% endif %}
-                                {% endfor %}
-                            </p>
-                            <div class="ml-2 flex-shrink-0 flex">
-                                <p
-                                    class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                                    {{ thread.messages.count }} Messages
-                                </p>
-                            </div>
-                        </div>
-                        <div class="mt-2 sm:flex sm:justify-between">
-                            <div class="sm:flex">
-                                <p class="flex items-center text-sm text-gray-500">
-                                    Last updated: {{ thread.updated_at|timesince }} ago
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </a>
-            </li>
-            {% empty %}
-            <li class="px-4 py-4 text-center text-gray-500">No messages yet.</li>
-            {% endfor %}
-        </ul>
+    {% if threads %}
+    <div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.08)] sm:rounded-3xl md:grid md:min-h-[min(78vh,44rem)] md:grid-cols-[minmax(300px,380px)_1fr]">
+        {# —— Sidebar: search + thread list (Messenger left rail) —— #}
+        <aside class="flex min-h-0 min-w-0 flex-col border-b border-gray-200 bg-[#f0f2f5] md:border-b-0 md:border-r md:border-gray-200">
+            <form method="get" action="{% url 'inbox' %}" class="shrink-0 space-y-2 border-b border-gray-200/80 bg-[#f0f2f5] p-3">
+                {% if selected_thread_id %}
+                <input type="hidden" name="thread" value="{{ selected_thread_id }}" />
+                {% endif %}
+                <label for="inbox-list-q" class="sr-only">Search conversations</label>
+                <div class="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-2 shadow-sm">
+                    <svg width="18" height="18" class="shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input id="inbox-list-q" type="text" name="list_q" value="{{ list_q|default:'' }}" inputmode="search" autocomplete="off"
+                        placeholder="Search conversations"
+                        class="min-w-0 flex-1 border-0 bg-transparent text-[15px] text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0" />
+                </div>
+                <div class="flex items-center justify-end gap-2">
+                    {% if list_q %}
+                    <a href="{% url 'inbox' %}{% if selected_thread_id %}?thread={{ selected_thread_id }}{% endif %}" class="text-xs font-semibold text-gray-500 hover:text-gray-800">Clear</a>
+                    {% endif %}
+                    <button type="submit" class="rounded-full bg-blue-600 px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-white transition hover:bg-blue-700">Apply</button>
+                </div>
+            </form>
+            <ul role="list" class="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                {% for thread in threads %}
+                <li>
+                    <a href="{% url 'thread-detail' thread.pk %}"
+                        class="flex items-start gap-3 border-b border-gray-200/60 px-3 py-3 transition md:hidden {% if selected_thread_id == thread.pk %}bg-white{% elif thread.unread_count %}bg-white/80{% else %}hover:bg-gray-100/80{% endif %}">
+                        {% include "messaging/_inbox_thread_row_content.html" %}
+                    </a>
+                    <a href="{% url 'inbox' %}?thread={{ thread.pk }}{% if list_q %}&list_q={{ list_q|urlencode }}{% endif %}"
+                        class="hidden items-start gap-3 border-b border-gray-200/60 px-3 py-3 transition md:flex {% if selected_thread_id == thread.pk %}border-l-[3px] border-l-blue-500 bg-white shadow-inner{% elif thread.unread_count %}bg-white/70{% else %}hover:bg-gray-100/80{% endif %}">
+                        {% include "messaging/_inbox_thread_row_content.html" %}
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+        </aside>
+
+        {# —— Conversation pane —— #}
+        <div class="hidden min-h-0 min-w-0 flex-col bg-white md:flex">
+            {% if thread_pane %}
+            {% with thread=thread_pane.thread messages=thread_pane.messages form=thread_pane.form other_user=thread_pane.other_user other_role_label=thread_pane.other_role_label other_display_name=thread_pane.other_display_name is_pane=thread_pane.is_pane %}
+            <div class="flex min-h-0 flex-1 flex-col">
+                {% include "messaging/_thread_pane.html" %}
+            </div>
+            {% endwith %}
+            {% else %}
+            <div class="flex flex-1 flex-col items-center justify-center bg-gradient-to-b from-gray-50/50 to-white px-6 py-16 text-center">
+                <div class="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-blue-100">
+                    <svg class="h-10 w-10 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+                </div>
+                <p class="text-lg font-semibold text-gray-900">Select a chat</p>
+                <p class="mt-1 max-w-xs text-sm text-gray-500">Pick a conversation on the left to see messages here.</p>
+            </div>
+            {% endif %}
+        </div>
     </div>
+    {% else %}
+    <div class="flex flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-20 text-center sm:rounded-3xl">
+        <div class="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg">
+            <svg class="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+        </div>
+        <p class="text-lg font-semibold text-gray-900">No chats yet</p>
+        <p class="mx-auto mt-2 max-w-md text-sm text-gray-600">
+            {% if messaging_search_staff_only %}
+            Tap <span class="font-semibold text-blue-600">New chat</span> to find someone on your team.
+            {% else %}
+            Start from <span class="font-semibold text-blue-600">New chat</span> or message from a profile.
+            {% endif %}
+        </p>
+        {% if user.role == 'EMPLOYEE' or user.role == 'ADMIN' or user.is_superuser %}
+        {% if not messaging_search_staff_only %}
+        <a href="{% url 'consultant-list' %}"
+            class="mt-8 inline-flex items-center gap-2 rounded-full bg-blue-600 px-6 py-3 text-sm font-bold text-white shadow-md transition hover:bg-blue-700">
+            Browse consultants
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+        </a>
+        {% endif %}
+        {% endif %}
+    </div>
+    {% endif %}
 </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% include "messaging/_messaging_htmx_scroll.html" %}
 {% endblock %}

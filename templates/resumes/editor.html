@@ -1,0 +1,738 @@
+{% extends "base.html" %}
+{% block title %}Resume Editor — {{ draft.consultant.user.get_full_name }} v{{ draft.version }}{% endblock %}
+
+{% block hide_container %}style="display:none"{% endblock %}
+
+{% block fullscreen_content %}
+<div x-data="resumeEditor()" x-init="init()" class="flex flex-col h-screen overflow-hidden bg-gray-100">
+
+  {# ═══════════════════════════════════════════════════════ TOP BAR ══ #}
+  <header class="flex-none flex items-center justify-between h-14 px-4 bg-white border-b border-gray-200 shadow-sm z-20">
+
+    {# Left — breadcrumb #}
+    <div class="flex items-center gap-3 min-w-0">
+      <a href="{% url 'draft-review' draft.pk %}"
+         class="text-gray-400 hover:text-gray-600 flex-none">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+        </svg>
+      </a>
+      <div class="min-w-0">
+        <p class="text-sm font-semibold text-gray-900 truncate">
+          {{ draft.consultant.user.get_full_name|default:draft.consultant.user.username }}
+          <span class="text-gray-400 font-normal">→</span>
+          {{ draft.job.title|truncatechars:35 }}
+        </p>
+        <p class="text-xs text-gray-400">Draft v{{ draft.version }}</p>
+      </div>
+    </div>
+
+    {# Centre — template picker #}
+    <div class="flex items-center gap-2">
+      <span class="text-xs text-gray-500 hidden sm:inline">Template</span>
+      <div class="relative">
+        <select @change="switchTemplate($event.target.value)"
+                class="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 pr-8 appearance-none cursor-pointer min-w-[160px]">
+          {% regroup all_templates by is_builtin as tpl_groups %}
+          {% for group in tpl_groups %}
+            <optgroup label="{% if group.grouper %}Built-in{% else %}My Templates{% endif %}">
+              {% for tpl in group.list %}
+                <option value="{{ tpl.pk }}"
+                  {% if active_template.pk == tpl.pk %}selected{% endif %}>
+                  {{ tpl.name }}
+                </option>
+              {% endfor %}
+            </optgroup>
+          {% endfor %}
+        </select>
+        <div class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+          </svg>
+        </div>
+      </div>
+      <button @click="showTplPanel = !showTplPanel"
+              :class="showTplPanel ? 'bg-indigo-100 text-indigo-700 border-indigo-300' : 'bg-white text-gray-600 border-gray-200'"
+              class="border rounded-lg px-2.5 py-1.5 text-xs font-medium hover:bg-indigo-50 transition flex items-center gap-1">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
+        </svg>
+        Customise
+      </button>
+    </div>
+
+    {# Right — ATS + save + export #}
+    <div class="flex items-center gap-2 flex-none">
+      {% if draft.ats_score %}
+      <span class="hidden sm:inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full
+        {% if draft.ats_score >= 80 %}bg-emerald-100 text-emerald-700
+        {% elif draft.ats_score >= 60 %}bg-amber-100 text-amber-700
+        {% else %}bg-red-100 text-red-600{% endif %}">
+        ATS {{ draft.ats_score }}%
+      </span>
+      {% endif %}
+
+      {# Save status #}
+      <span x-show="saving" class="text-xs text-indigo-500 animate-pulse hidden sm:block">Saving…</span>
+      <span x-show="!saving && !dirty" x-cloak class="text-xs text-emerald-600 hidden sm:block">Saved</span>
+
+      {# Export buttons #}
+      <a href="{% url 'resume-export-docx' draft.pk %}"
+         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+        </svg>
+        DOCX
+      </a>
+      <a href="{% url 'resume-export-pdf' draft.pk %}"
+         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+        </svg>
+        PDF
+      </a>
+    </div>
+  </header>
+
+  {# ══════════════════════════════════════════════════ MAIN BODY ══ #}
+  <div class="flex flex-1 overflow-hidden relative">
+
+    {# ──────────────────────────── LEFT PANEL: section editors ──── #}
+    <aside class="w-[400px] flex-none flex flex-col bg-white border-r border-gray-200 overflow-hidden">
+
+      {# Section nav tabs #}
+      <nav class="flex-none flex gap-1 p-2 bg-gray-50 border-b border-gray-200 overflow-x-auto">
+        {% for tab_id, tab_label, tab_icon in sections_nav %}
+        <button @click="activeSection = '{{ tab_id }}'"
+                :class="activeSection === '{{ tab_id }}' ? 'bg-white text-indigo-700 shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700'"
+                class="flex-none flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition whitespace-nowrap">
+          {{ tab_icon }} {{ tab_label }}
+        </button>
+        {% endfor %}
+        {# Hardcode since Django template can't call Python loops easily #}
+      </nav>
+      {# Override nav with static tabs since we can't do the above cleanly #}
+
+      {# Section editor body — scrollable #}
+      <div class="flex-1 overflow-y-auto p-4 space-y-4">
+
+        {# ── Personal ── #}
+        <div x-show="activeSection === 'personal'" x-cloak>
+          <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Personal Details</h3>
+          <div class="space-y-3">
+            <div>
+              <label class="block text-xs font-medium text-gray-700 mb-1">Full Name</label>
+              <input type="text" x-model="sections.name" @input="dirty = true"
+                     class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                     placeholder="GOPALA KRISHNA CHENNU">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-700 mb-1">Contact Line</label>
+              <input type="text" x-model="sections.contact" @input="dirty = true"
+                     class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                     placeholder="City, State | email | phone">
+              <p class="mt-1 text-xs text-gray-400">Format: City, ST | email | phone | LinkedIn (optional)</p>
+            </div>
+          </div>
+        </div>
+
+        {# ── Summary ── #}
+        <div x-show="activeSection === 'summary'" x-cloak>
+          <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Professional Summary</h3>
+          <textarea x-model="sections.summary" @input="dirty = true" rows="7"
+                    class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-none leading-relaxed"
+                    placeholder="2–4 sentences. Senior [Title] with X years of experience..."></textarea>
+          <p class="mt-1 text-xs text-gray-400" x-text="(sections.summary || '').length + ' chars'"></p>
+        </div>
+
+        {# ── Skills ── #}
+        <div x-show="activeSection === 'skills'" x-cloak>
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Core Skills</h3>
+            <button @click="addSkill()" class="text-xs text-indigo-600 hover:underline font-medium">+ Add Row</button>
+          </div>
+          <div class="space-y-2">
+            <template x-for="(sk, i) in sections.skills" :key="i">
+              <div class="flex gap-2 items-start">
+                <div class="flex-1 grid grid-cols-5 gap-1">
+                  <input type="text" x-model="sk.category" @input="dirty = true"
+                         class="col-span-2 rounded border border-gray-300 px-2 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500"
+                         placeholder="Category">
+                  <input type="text" x-model="sk.items" @input="dirty = true"
+                         class="col-span-3 rounded border border-gray-300 px-2 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500"
+                         placeholder="skill1, skill2, skill3">
+                </div>
+                <button @click="removeSkill(i)"
+                        class="flex-none mt-1 text-gray-300 hover:text-red-400 transition">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                </button>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        {# ── Experience ── #}
+        <div x-show="activeSection === 'experience'" x-cloak>
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Professional Experience</h3>
+            <button @click="addExperience()"
+                    class="text-xs text-indigo-600 hover:underline font-medium">+ Add Role</button>
+          </div>
+          <div class="space-y-4">
+            <template x-for="(exp, ei) in sections.experience" :key="ei">
+              <div class="rounded-lg border border-gray-200 bg-gray-50 overflow-hidden">
+                {# Role header #}
+                <div class="flex items-center justify-between px-3 py-2 bg-white border-b border-gray-200">
+                  <span class="text-xs font-medium text-gray-700 truncate"
+                        x-text="exp.title || 'New Role'"></span>
+                  <button @click="removeExperience(ei)"
+                          class="text-gray-300 hover:text-red-400 transition flex-none ml-2">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                  </button>
+                </div>
+                <div class="p-3 space-y-2">
+                  <input type="text" x-model="exp.title" @input="dirty = true"
+                         class="w-full rounded border border-gray-300 px-2 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-indigo-500"
+                         placeholder="Job Title">
+                  <div class="grid grid-cols-2 gap-2">
+                    <input type="text" x-model="exp.company" @input="dirty = true"
+                           class="rounded border border-gray-300 px-2 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500"
+                           placeholder="Company Name">
+                    <input type="text" x-model="exp.dates" @input="dirty = true"
+                           class="rounded border border-gray-300 px-2 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500"
+                           placeholder="Jan 2022 - Present">
+                  </div>
+                  {# Bullets #}
+                  <div class="space-y-1.5 pt-1">
+                    <p class="text-xs text-gray-400 font-medium">Bullets</p>
+                    <template x-for="(bl, bi) in exp.bullets" :key="bi">
+                      <div class="flex gap-1.5 items-start">
+                        <span class="flex-none mt-2 text-gray-300 text-xs">•</span>
+                        <textarea x-model="exp.bullets[bi]" @input="dirty = true"
+                                  rows="2"
+                                  class="flex-1 rounded border border-gray-200 px-2 py-1 text-xs focus:ring-1 focus:ring-indigo-500 resize-none leading-snug"
+                                  placeholder="Action verb + impact + metric..."></textarea>
+                        <button @click="removeBullet(ei, bi)"
+                                class="flex-none mt-1 text-gray-200 hover:text-red-400 transition">
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                          </svg>
+                        </button>
+                      </div>
+                    </template>
+                    <button @click="addBullet(ei)"
+                            class="text-xs text-gray-400 hover:text-indigo-600 transition mt-1">+ bullet</button>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        {# ── Education ── #}
+        <div x-show="activeSection === 'education'" x-cloak>
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Education</h3>
+            <button @click="addEducation()" class="text-xs text-indigo-600 hover:underline font-medium">+ Add</button>
+          </div>
+          <div class="space-y-3">
+            <template x-for="(edu, i) in sections.education" :key="i">
+              <div class="rounded-lg border border-gray-200 p-3 space-y-2 bg-gray-50">
+                <div class="flex gap-1">
+                  <input type="text" x-model="edu.degree" @input="dirty = true"
+                         class="flex-1 rounded border border-gray-300 px-2 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500"
+                         placeholder="Degree / Field (e.g. B.Tech in Computer Science)">
+                  <button @click="removeEducation(i)"
+                          class="text-gray-300 hover:text-red-400 transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                  </button>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                  <input type="text" x-model="edu.school" @input="dirty = true"
+                         class="rounded border border-gray-300 px-2 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500"
+                         placeholder="University / School">
+                  <input type="text" x-model="edu.dates" @input="dirty = true"
+                         class="rounded border border-gray-300 px-2 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500"
+                         placeholder="2016 - 2020">
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        {# ── Certifications ── #}
+        <div x-show="activeSection === 'certifications'" x-cloak>
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Certifications</h3>
+            <button @click="addCert()" class="text-xs text-indigo-600 hover:underline font-medium">+ Add</button>
+          </div>
+          <div class="space-y-2">
+            <template x-for="(cert, i) in sections.certifications" :key="i">
+              <div class="flex gap-2 items-center">
+                <span class="flex-none text-gray-300 text-xs">•</span>
+                <input type="text" x-model="sections.certifications[i]" @input="dirty = true"
+                       class="flex-1 rounded border border-gray-300 px-2 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500"
+                       placeholder="AWS Certified Solutions Architect">
+                <button @click="removeCert(i)" class="text-gray-300 hover:text-red-400 transition">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                </button>
+              </div>
+            </template>
+          </div>
+        </div>
+
+      </div>{# /section editor body #}
+
+      {# ── Static nav tabs (replace the template-loop above) #}
+      {# We embed the nav INSIDE the aside instead, handled via JS #}
+    </aside>
+
+    {# ──────────────────────────── RIGHT PANEL: live A4 preview ─── #}
+    <main class="flex-1 overflow-y-auto bg-gray-200 flex flex-col items-center py-6 px-4 relative">
+
+      {# Hint badge #}
+      <p class="flex-none text-xs text-gray-400 mb-4 self-start ml-2 sm:ml-8">
+        Live preview updates as you edit &nbsp;·&nbsp; Exports use the selected template
+      </p>
+
+      {# A4 paper container #}
+      <div class="w-full max-w-[850px]">
+        <div id="a4-preview-wrapper" class="bg-white shadow-xl rounded-sm overflow-hidden"
+             style="min-height:1100px;">
+          <div id="a4-preview-content" x-html="previewHtml"
+               class="w-full h-full" style="font-size:11pt; line-height:1.35;">
+          </div>
+        </div>
+      </div>
+    </main>
+
+    {# ────────────── TEMPLATE SETTINGS PANEL (slide-over) ─────── #}
+    <div x-show="showTplPanel" x-cloak
+         @click.outside="showTplPanel = false"
+         class="absolute right-0 top-0 h-full w-[340px] bg-white border-l border-gray-200 shadow-2xl z-30 flex flex-col overflow-hidden">
+
+      <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-none">
+        <h2 class="font-semibold text-gray-900 text-sm">Template Settings</h2>
+        <button @click="showTplPanel = false" class="text-gray-400 hover:text-gray-600">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto p-4 space-y-5">
+
+        {# Template Name #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1">Template Name</label>
+          <input type="text" x-model="tpl.name"
+                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
+                 placeholder="My Custom Template">
+        </div>
+
+        {# Font #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1">Font Family</label>
+          <select x-model="tpl.font_family" @change="previewHtml = renderPreview()"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500">
+            {% for val, label in font_choices %}
+            <option value="{{ val }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {# Font sizes #}
+        <div class="grid grid-cols-2 gap-3">
+          {% for field_name, label, model_key in font_size_fields %}
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">{{ label }} <span class="text-gray-400" x-text="tpl.{{ model_key }} + 'pt'"></span></label>
+            <input type="range" min="8" max="32" step="1" x-model.number="tpl.{{ model_key }}" @input="previewHtml = renderPreview()"
+                   class="w-full accent-indigo-600">
+          </div>
+          {% endfor %}
+        </div>
+
+        {# Colors #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-2">Colors</label>
+          <div class="grid grid-cols-3 gap-3">
+            <div class="text-center">
+              <input type="color" x-model="tpl.accent_color" @input="previewHtml = renderPreview()"
+                     class="w-10 h-10 rounded cursor-pointer border border-gray-300 block mx-auto">
+              <span class="text-xs text-gray-500 mt-1 block">Accent</span>
+            </div>
+            <div class="text-center">
+              <input type="color" x-model="tpl.name_color" @input="previewHtml = renderPreview()"
+                     class="w-10 h-10 rounded cursor-pointer border border-gray-300 block mx-auto">
+              <span class="text-xs text-gray-500 mt-1 block">Name</span>
+            </div>
+            <div class="text-center">
+              <input type="color" x-model="tpl.body_color" @input="previewHtml = renderPreview()"
+                     class="w-10 h-10 rounded cursor-pointer border border-gray-300 block mx-auto">
+              <span class="text-xs text-gray-500 mt-1 block">Body</span>
+            </div>
+          </div>
+        </div>
+
+        {# Section Header Style #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-2">Section Header Style</label>
+          <div class="grid grid-cols-2 gap-2">
+            {% for val, label in header_style_choices %}
+            <label class="flex items-center gap-2 border rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-50 transition"
+                   :class="tpl.header_style === '{{ val }}' ? 'border-indigo-400 bg-indigo-50' : 'border-gray-200'">
+              <input type="radio" x-model="tpl.header_style" value="{{ val }}" @change="previewHtml = renderPreview()"
+                     class="text-indigo-600">
+              <span class="text-xs text-gray-700">{{ label }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        {# Margins #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-2">Margins (inches)</label>
+          <div class="grid grid-cols-4 gap-2 text-center">
+            {% for edge, model_key in margin_fields %}
+            <div>
+              <input type="number" min="0.3" max="2" step="0.05" x-model.number="tpl.{{ model_key }}" @input="previewHtml = renderPreview()"
+                     class="w-full text-center rounded border border-gray-300 px-1 py-1 text-xs focus:ring-1 focus:ring-indigo-500">
+              <span class="text-xs text-gray-400">{{ edge }}</span>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        {# Spacing #}
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">
+              Line Height <span class="text-gray-400" x-text="tpl.line_height"></span>
+            </label>
+            <input type="range" min="1.0" max="2.0" step="0.05" x-model.number="tpl.line_height" @input="previewHtml = renderPreview()"
+                   class="w-full accent-indigo-600">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">
+              Bullet <span class="text-gray-400" x-text="tpl.bullet_char"></span>
+            </label>
+            <select x-model="tpl.bullet_char" @change="previewHtml = renderPreview()"
+                    class="w-full rounded border border-gray-300 px-2 py-1.5 text-sm">
+              <option value="•">• Bullet</option>
+              <option value="▪">▪ Square</option>
+              <option value="›">› Arrow</option>
+              <option value="-">- Dash</option>
+              <option value="◦">◦ Circle</option>
+            </select>
+          </div>
+        </div>
+
+      </div>{# /settings body #}
+
+      {# Save template actions #}
+      <div class="flex-none border-t border-gray-200 p-4 space-y-2">
+        <button @click="saveTemplateAsNew()"
+                :disabled="savingTpl"
+                class="w-full py-2 rounded-lg text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition">
+          <span x-show="!savingTpl">Save as New Template</span>
+          <span x-show="savingTpl" x-cloak>Saving…</span>
+        </button>
+        <button x-show="tpl.id && !tpl.is_builtin" x-cloak
+                @click="updateTemplate()"
+                :disabled="savingTpl"
+                class="w-full py-2 rounded-lg text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition">
+          Update "<span x-text="tpl.name"></span>"
+        </button>
+        <p x-show="tplSaveMsg" x-text="tplSaveMsg" x-cloak
+           class="text-xs text-center text-emerald-600"></p>
+      </div>
+
+    </div>{# /template panel #}
+
+  </div>{# /main body flex #}
+</div>{# /root #}
+
+{# ── Static section tab nav override (replace template-loop above) ─────────── #}
+<script>
+// We inline the tabs via JS since Django template can't loop non-template data easily
+document.addEventListener('alpine:init', () => {
+  // nav tabs are rendered via Alpine below
+});
+</script>
+
+{# ════════════════════════════════════════ ALPINE COMPONENT ══ #}
+<script>
+function resumeEditor() {
+  return {
+    sections: {},
+    tpl: {},
+    allTemplates: {{ all_templates_json|safe }},
+    activeSection: 'personal',
+    showTplPanel: false,
+    dirty: false,
+    saving: false,
+    saveTimer: null,
+    savingTpl: false,
+    tplSaveMsg: '',
+    previewHtml: '',
+
+    init() {
+      this.sections = {{ sections_json|safe }};
+      this.tpl = {{ template_config|safe }};
+
+      // Ensure arrays exist
+      if (!Array.isArray(this.sections.skills))         this.sections.skills = [];
+      if (!Array.isArray(this.sections.experience))     this.sections.experience = [];
+      if (!Array.isArray(this.sections.education))      this.sections.education = [];
+      if (!Array.isArray(this.sections.certifications)) this.sections.certifications = [];
+
+      // Initial render
+      this.previewHtml = this.renderPreview();
+
+      // Watch sections + template for changes
+      this.$watch('sections', () => { this.dirty = true; this.previewHtml = this.renderPreview(); this.scheduleSave(); });
+      this.$watch('tpl', () => { this.previewHtml = this.renderPreview(); });
+    },
+
+    // ── Section nav tab helpers ──────────────────────────────────────
+    get navTabs() {
+      return [
+        { id: 'personal',       label: 'Personal',       icon: '👤' },
+        { id: 'summary',        label: 'Summary',        icon: '📝' },
+        { id: 'skills',         label: 'Skills',         icon: '⚡' },
+        { id: 'experience',     label: 'Experience',     icon: '💼' },
+        { id: 'education',      label: 'Education',      icon: '🎓' },
+        { id: 'certifications', label: 'Certs',          icon: '🏆' },
+      ];
+    },
+
+    // ── Autosave ─────────────────────────────────────────────────────
+    scheduleSave() {
+      if (this.saveTimer) clearTimeout(this.saveTimer);
+      this.saveTimer = setTimeout(() => this.save(), 1800);
+    },
+
+    async save() {
+      this.saving = true;
+      try {
+        await fetch('{% url "resume-editor-save" draft.pk %}', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ csrf_token }}',
+          },
+          body: JSON.stringify({ sections: this.sections, template_id: this.tpl.id || null }),
+        });
+        this.dirty = false;
+      } catch(e) { console.error('Save failed', e); }
+      finally { this.saving = false; }
+    },
+
+    // ── Template switch (from header dropdown) ───────────────────────
+    async switchTemplate(tplId) {
+      if (!tplId) return;
+      const found = this.allTemplates.find(t => String(t.id) === String(tplId));
+      if (found) {
+        this.tpl = { ...found };
+        this.previewHtml = this.renderPreview();
+        await this.save();
+      }
+    },
+
+    // ── Template save helpers ─────────────────────────────────────────
+    async saveTemplateAsNew() {
+      if (!this.tpl.name || !this.tpl.name.trim()) {
+        alert('Enter a template name first.'); return;
+      }
+      this.savingTpl = true;
+      const payload = { ...this.tpl, id: null };  // force new
+      try {
+        const resp = await fetch('{% url "resume-template-save" %}', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+          body: JSON.stringify(payload),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          this.tpl = data.template;
+          this.allTemplates.push(data.template);
+          this.tplSaveMsg = `"${data.template.name}" saved!`;
+          setTimeout(() => this.tplSaveMsg = '', 3000);
+          // Refresh page select
+          location.reload();
+        }
+      } finally { this.savingTpl = false; }
+    },
+
+    async updateTemplate() {
+      this.savingTpl = true;
+      try {
+        const resp = await fetch('{% url "resume-template-save" %}', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+          body: JSON.stringify(this.tpl),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          this.tpl = data.template;
+          this.tplSaveMsg = 'Template updated!';
+          setTimeout(() => this.tplSaveMsg = '', 3000);
+        }
+      } finally { this.savingTpl = false; }
+    },
+
+    // ── Sections CRUD ─────────────────────────────────────────────────
+    addSkill()             { this.sections.skills.push({ category: '', items: '' }); },
+    removeSkill(i)         { this.sections.skills.splice(i, 1); },
+    addExperience()        { this.sections.experience.unshift({ title: '', company: '', dates: '', bullets: [''] }); },
+    removeExperience(i)    { this.sections.experience.splice(i, 1); },
+    addBullet(ei)          { this.sections.experience[ei].bullets.push(''); },
+    removeBullet(ei, bi)   { this.sections.experience[ei].bullets.splice(bi, 1); },
+    addEducation()         { this.sections.education.push({ degree: '', school: '', dates: '' }); },
+    removeEducation(i)     { this.sections.education.splice(i, 1); },
+    addCert()              { this.sections.certifications.push(''); },
+    removeCert(i)          { this.sections.certifications.splice(i, 1); },
+
+    // ── Live preview renderer (pure JS, zero server calls) ───────────
+    renderPreview() {
+      const s   = this.sections;
+      const t   = this.tpl;
+      const fnt = t.font_family  || 'Georgia, serif';
+      const ns  = (t.name_size   || 22)  + 'pt';
+      const hs  = (t.header_size || 13)  + 'pt';
+      const bs  = (t.body_size   || 11)  + 'pt';
+      const cs  = (t.contact_size|| 10)  + 'pt';
+      const acc = t.accent_color  || '#1e3a5f';
+      const nc  = t.name_color    || '#111827';
+      const bc  = t.body_color    || '#374151';
+      const mt  = (t.margin_top   || 0.75) + 'in';
+      const mr  = (t.margin_right || 0.75) + 'in';
+      const mb  = (t.margin_bottom|| 0.75) + 'in';
+      const ml  = (t.margin_left  || 0.75) + 'in';
+      const lh  = t.line_height   || 1.3;
+      const ps  = (t.para_spacing || 5)   + 'pt';
+      const ss  = (t.section_spacing||10) + 'pt';
+      const hs2 = t.header_style  || 'underline';
+      const bul = t.bullet_char   || '•';
+      const bodyStyle = `font-family:${fnt};font-size:${bs};color:${bc};line-height:${lh};`;
+
+      const esc = (str) => String(str||'')
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+      const secHdr = (title) => {
+        const t2 = esc(title.toUpperCase());
+        const spanStyle = `font-size:${hs};font-weight:bold;font-family:${fnt};color:${acc};letter-spacing:0.8px;`;
+        const wrap = `margin-top:${ss};margin-bottom:4pt;`;
+        if (hs2 === 'bar')
+          return `<div style="${wrap}background:${acc};padding:3px 7px;"><span style="font-size:${hs};font-weight:bold;font-family:${fnt};color:#fff;letter-spacing:0.8px;">${t2}</span></div>`;
+        if (hs2 === 'caps')
+          return `<div style="${wrap}border-bottom:1px solid ${acc};padding-bottom:2px;"><span style="${spanStyle}letter-spacing:1.8px;">${t2}</span></div>`;
+        if (hs2 === 'plain')
+          return `<div style="${wrap}"><span style="font-size:${hs};font-weight:bold;font-family:${fnt};color:${bc};">${t2}</span></div>`;
+        // underline (default)
+        return `<div style="${wrap}border-bottom:1.5px solid ${acc};padding-bottom:2px;"><span style="${spanStyle}">${t2}</span></div>`;
+      };
+
+      let html = `<div style="padding:${mt} ${mr} ${mb} ${ml};background:#fff;font-family:${fnt};font-size:${bs};color:${bc};line-height:${lh};">`;
+
+      // Header
+      html += `<div style="text-align:center;margin-bottom:6pt;">
+        <div style="font-size:${ns};font-weight:bold;font-family:${fnt};color:${nc};letter-spacing:0.5px;">${esc(s.name||'')}</div>
+        <div style="font-size:${cs};font-family:${fnt};color:${bc};margin-top:3pt;">${esc(s.contact||'')}</div>
+      </div>`;
+
+      // Summary
+      if (s.summary) {
+        html += secHdr('Professional Summary');
+        html += `<p style="${bodyStyle}margin:0 0 ${ps};">${esc(s.summary)}</p>`;
+      }
+
+      // Skills
+      const skills = (s.skills||[]).filter(sk => sk.items || sk.category);
+      if (skills.length) {
+        html += secHdr('Core Skills');
+        skills.forEach(sk => {
+          const cat = sk.category ? `<strong>${esc(sk.category)}:</strong> ` : '';
+          html += `<div style="${bodyStyle}margin-bottom:3pt;">${cat}${esc(sk.items||'')}</div>`;
+        });
+      }
+
+      // Experience
+      const exps = (s.experience||[]).filter(e => e.title);
+      if (exps.length) {
+        html += secHdr('Professional Experience');
+        exps.forEach(exp => {
+          const compLine = exp.company + (exp.dates ? ' &nbsp;|&nbsp; ' + esc(exp.dates) : '');
+          const bullets  = (exp.bullets||[]).filter(b=>b);
+          html += `<div style="margin-bottom:${ps};">
+            <div style="font-size:${(parseInt(t.body_size||11)+1)+'pt'};font-weight:bold;font-family:${fnt};color:${nc};">${esc(exp.title||'')}</div>
+            <div style="${bodyStyle}margin-bottom:3pt;">${esc(exp.company||'')}${exp.dates ? ' &nbsp;|&nbsp; '+esc(exp.dates) : ''}</div>`;
+          bullets.forEach(bl => {
+            html += `<div style="${bodyStyle}display:flex;gap:6px;padding-left:10pt;margin-bottom:2pt;">
+              <span style="min-width:8pt;">${bul}</span><span>${esc(bl)}</span>
+            </div>`;
+          });
+          html += '</div>';
+        });
+      }
+
+      // Education
+      const edu = (s.education||[]).filter(e => e.degree);
+      if (edu.length) {
+        html += secHdr('Education');
+        edu.forEach(e => {
+          const l2 = e.school && e.dates ? `${esc(e.school)} &nbsp;|&nbsp; ${esc(e.dates)}` : esc(e.school||e.dates||'');
+          html += `<div style="${bodyStyle}margin-bottom:${ps};"><strong>${esc(e.degree||'')}</strong>${l2 ? '<br>'+l2 : ''}</div>`;
+        });
+      }
+
+      // Certifications
+      const certs = (s.certifications||[]).filter(c=>c);
+      if (certs.length) {
+        html += secHdr('Certifications');
+        certs.forEach(c => {
+          html += `<div style="${bodyStyle}display:flex;gap:6px;padding-left:10pt;margin-bottom:2pt;"><span>${bul}</span><span>${esc(c)}</span></div>`;
+        });
+      }
+
+      html += '</div>';
+      return html;
+    },
+  };
+}
+</script>
+
+{# ── Inject section nav tabs via inline script (avoids Django template loop issue) ── #}
+<script>
+document.addEventListener('alpine:init', () => {});
+// Replace the static nav with Alpine-driven tabs
+document.addEventListener('DOMContentLoaded', () => {
+  const nav = document.querySelector('aside nav');
+  if (!nav) return;
+  const tabs = [
+    ['personal','Personal','👤'],['summary','Summary','📝'],
+    ['skills','Skills','⚡'],['experience','Experience','💼'],
+    ['education','Education','🎓'],['certifications','Certs','🏆'],
+  ];
+  nav.innerHTML = tabs.map(([id, label, icon]) =>
+    `<button onclick="void(0)"
+       @click="activeSection = '${id}'"
+       :class="activeSection === '${id}' ? 'bg-white text-indigo-700 shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700'"
+       class="flex-none flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition whitespace-nowrap">
+       ${icon} ${label}
+     </button>`
+  ).join('');
+});
+</script>
+{% endblock fullscreen_content %}

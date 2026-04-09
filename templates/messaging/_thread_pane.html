@@ -1,0 +1,54 @@
+<div class="flex min-h-0 flex-1 flex-col">
+<header class="flex shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-3 py-3 sm:px-4">
+    <a href="{% url 'inbox' %}"
+        class="{% if is_pane %}inline-flex md:hidden{% else %}inline-flex{% endif %} h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-600 transition hover:bg-gray-100"
+        aria-label="Back to chats">
+        <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+    </a>
+    <div class="flex min-w-0 flex-1 items-center gap-3">
+        {% if thread.thread_type == 'org_shared' %}
+        <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-purple-600 text-sm font-bold text-white ring-2 ring-gray-100">
+            {{ thread.organisation.name|default:"Team"|slice:":1"|upper }}
+        </div>
+        <div class="min-w-0">
+            <h1 class="truncate text-lg font-bold text-gray-900">{{ thread.organisation.name|default:"Team" }}</h1>
+            <p class="truncate text-xs text-purple-700">Team chat · all staff</p>
+        </div>
+        {% elif other_user %}
+        {% if other_user.role == 'CONSULTANT' %}
+        <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-sm font-bold text-white ring-2 ring-gray-100">
+            {{ other_display_name|slice:":1"|upper }}
+        </div>
+        {% else %}
+        <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white ring-2 ring-gray-100">
+            {{ other_display_name|slice:":1"|upper }}
+        </div>
+        {% endif %}
+        <div class="min-w-0">
+            <h1 class="truncate text-lg font-bold text-gray-900">
+                {{ other_display_name }}
+                {% if thread_is_group %}<span class="font-normal text-gray-400"> · Group</span>{% endif %}
+            </h1>
+            <p class="truncate text-xs text-gray-500">
+                <span class="font-medium text-blue-600">{{ other_role_label }}</span>{% if other_user.email %}<span class="text-gray-300"> · </span>{{ other_user.email }}{% endif %}
+            </p>
+        </div>
+        {% else %}
+        <h1 class="text-lg font-bold text-gray-900">Chat</h1>
+        {% endif %}
+    </div>
+</header>
+
+{% include "messaging/_thread_history_search.html" %}
+
+<div id="thread-conversation" class="flex min-h-0 flex-1 flex-col bg-[#f0f2f5]">
+    {% include "messaging/_thread_messages_form.html" %}
+</div>
+
+<script>
+(function () {
+    var el = document.getElementById('msg-scroll');
+    if (el) el.scrollTop = el.scrollHeight;
+})();
+</script>
+</div>

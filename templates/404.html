@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Page Not Found{% endblock %}
+{% block content %}
+<div class="max-w-lg mx-auto text-center py-20">
+  <div class="text-6xl font-extrabold text-slate-300 mb-4">404</div>
+  <h1 class="text-2xl font-bold text-gray-900 mb-2">Page not found</h1>
+  <p class="text-gray-500 mb-8">The page you're looking for doesn't exist or has been moved.</p>
+  <a href="{% if user.is_authenticated %}{% if user.is_superuser or user.role == 'ADMIN' %}{% url 'admin-dashboard' %}{% elif user.role == 'EMPLOYEE' %}{% url 'employee-dashboard' %}{% else %}{% url 'consultant-dashboard' %}{% endif %}{% else %}/{% endif %}"
+    class="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-semibold text-white bg-slate-800 hover:bg-slate-700 transition">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+    Back to Dashboard
+  </a>
+</div>
+{% endblock %}

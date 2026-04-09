@@ -36,7 +36,20 @@
     </div>
     {% endif %}
 
-    <!-- (No big KPI strip or charts; metrics are shown inline in the header and pipeline below) -->
+    <div class="mb-5 rounded-xl border border-emerald-100 bg-gradient-to-r from-emerald-50 to-white px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+        <div>
+            <p class="text-sm font-semibold text-emerald-900">Readiness {{ readiness_score }}/100</p>
+            {% if at_risk_count %}
+            <p class="text-xs text-amber-800 mt-1">{{ at_risk_count }} active application{{ at_risk_count|pluralize }} — original job link may be down. See <a href="{% url 'consultant-journey' %}" class="font-semibold underline">My journey</a>.</p>
+            {% else %}
+            <p class="text-xs text-gray-600 mt-1">See your checklist and next steps on your journey page.</p>
+            {% endif %}
+        </div>
+        <a href="{% url 'consultant-journey' %}"
+            class="inline-flex items-center px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition shrink-0">
+            My journey
+        </a>
+    </div>
 
     <!-- ═══════ PIPELINE SNAPSHOT ═══════ -->
     <div class="bg-white rounded-2xl shadow-sm p-5 border border-gray-100 mb-5">

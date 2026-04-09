@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block title %}Generate Resume{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto">
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">Generate Resume</h1>
+    <p class="text-gray-500 text-sm mt-1">Select a consultant and job, review compatibility, then generate with one click.</p>
+  </div>
+
+  <!-- Step 1: Select Consultant + Job -->
+  <div class="bg-white shadow rounded-lg p-6 mb-6">
+    <h2 class="text-lg font-semibold text-gray-800 mb-4">Step 1: Select Consultant & Job</h2>
+    <form id="select-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Consultant</label>
+        <select name="consultant" id="consultant-select"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+          <option value="">-- Select consultant --</option>
+          {% for cp in consultants %}
+          <option value="{{ cp.pk }}" {% if selected_consultant_id == cp.pk %}selected{% endif %}
+            data-exp="{{ cp.experience.count }}"
+            data-skills="{{ cp.skills|length }}"
+            data-base="{{ cp.base_resume_text|length }}">
+            {{ cp.user.get_full_name|default:cp.user.username }} ({{ cp.get_status_display }}){% if not cp.experience.count and not cp.base_resume_text %} ⚠ No profile data{% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Job</label>
+        <select name="job" id="job-select"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+          <option value="">-- Select open job --</option>
+          {% for j in jobs %}
+          <option value="{{ j.pk }}" {% if selected_job_id == j.pk %}selected{% endif %}>
+            {{ j.title }} @ {{ j.company }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+    </form>
+    <!-- Profile data warning -->
+    <div id="profile-warning" class="hidden mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+      <strong>Warning:</strong> This consultant profile has no experience records or base resume text.
+      The LLM will generate placeholder content.
+      <a href="#" id="profile-edit-link" class="underline font-medium ml-1">Edit profile to add data first.</a>
+    </div>
+
+    <div class="mt-3 text-right">
+      <button id="check-btn" onclick="checkPreflight()"
+        class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-gray-600 hover:bg-gray-700 transition">
+        Check Compatibility
+      </button>
+    </div>
+  </div>
+
+  <!-- Step 2: Pre-flight Compatibility -->
+  <div id="preflight-container">
+    {% if preflight %}
+      {% include "resumes/partials/preflight.html" %}
+    {% endif %}
+  </div>
+
+  <!-- Step 3: Generate -->
+  <div id="generate-section" class="{% if not preflight %}hidden{% endif %}">
+    {{ input_sections_defaults|json_script:"input-sections-defaults" }}
+    <div class="bg-white shadow rounded-lg p-6" x-data="resumeInputSections()" x-init="loadFromServer(JSON.parse(document.getElementById('input-sections-defaults').textContent))">
+      <h2 class="text-lg font-semibold text-gray-800 mb-4">Step 3: Candidate data &amp; generate</h2>
+      <p class="text-sm text-gray-500 mb-4">
+        Choose which consultant fields are sent in the user message with the job description. Defaults follow the active Master Prompt; personal details are always included.
+      </p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+        <div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+          <span class="font-medium text-gray-900">Personal details</span>
+          <span class="text-gray-500 block text-xs mt-0.5">Name, email, phone — always sent</span>
+        </div>
+        <label class="flex items-start gap-3 rounded-lg border border-gray-200 px-4 py-3 cursor-pointer hover:bg-gray-50">
+          <input type="checkbox" x-model="sections.experience" class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
+          <span class="text-sm text-gray-700"><span class="font-medium text-gray-900">Work experience</span><span class="text-gray-500 block text-xs mt-0.5">Roles, companies, dates, responsibilities</span></span>
+        </label>
+        <label class="flex items-start gap-3 rounded-lg border border-gray-200 px-4 py-3 cursor-pointer hover:bg-gray-50">
+          <input type="checkbox" x-model="sections.education" class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
+          <span class="text-sm text-gray-700"><span class="font-medium text-gray-900">Education</span></span>
+        </label>
+        <label class="flex items-start gap-3 rounded-lg border border-gray-200 px-4 py-3 cursor-pointer hover:bg-gray-50">
+          <input type="checkbox" x-model="sections.certifications" class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
+          <span class="text-sm text-gray-700"><span class="font-medium text-gray-900">Certifications</span></span>
+        </label>
+        <label class="flex items-start gap-3 rounded-lg border border-gray-200 px-4 py-3 cursor-pointer hover:bg-gray-50">
+          <input type="checkbox" x-model="sections.skills" class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
+          <span class="text-sm text-gray-700"><span class="font-medium text-gray-900">Skills pool</span><span class="text-gray-500 block text-xs mt-0.5">Master tech list</span></span>
+        </label>
+        <label class="flex items-start gap-3 rounded-lg border border-gray-200 px-4 py-3 cursor-pointer hover:bg-gray-50">
+          <input type="checkbox" x-model="sections.total_years" class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
+          <span class="text-sm text-gray-700"><span class="font-medium text-gray-900">Total years</span><span class="text-gray-500 block text-xs mt-0.5">Calculated from experience records</span></span>
+        </label>
+        <label class="flex items-start gap-3 rounded-lg border border-gray-200 px-4 py-3 cursor-pointer hover:bg-gray-50 sm:col-span-2">
+          <input type="checkbox" x-model="sections.base_resume" class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
+          <span class="text-sm text-gray-700"><span class="font-medium text-gray-900">Base resume text</span><span class="text-gray-500 block text-xs mt-0.5">Pasted resume (can be large)</span></span>
+        </label>
+        <label class="flex items-start gap-3 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 cursor-pointer hover:bg-indigo-100 sm:col-span-2">
+          <input type="checkbox" x-model="sections.use_preferred_location" class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
+          <span class="text-sm">
+            <span class="font-medium text-gray-900">Use my preferred location in header</span>
+            <span class="text-gray-500 block text-xs mt-1 leading-relaxed">
+              <strong>Unchecked (default):</strong> header shows a city in the JD's state — but NOT the JD city.
+              e.g. JD is Seattle, WA → resume shows "Spokane, WA".<br>
+              <strong>Checked:</strong> header shows your saved preferred location exactly
+              (e.g. "Jersey City, NJ"). Falls back to JD-state city if none saved.
+            </span>
+          </span>
+        </label>
+      </div>
+      <form method="post" action="{% url 'resume-generate-run' %}" id="generate-form" @submit="sync()">
+        {% csrf_token %}
+        <input type="hidden" name="consultant" id="gen-consultant" value="{{ selected_consultant_id|default:'' }}">
+        <input type="hidden" name="job" id="gen-job" value="{{ selected_job_id|default:'' }}">
+        <input type="hidden" name="input_sections_json" id="input_sections_json" value="">
+        <button type="submit" id="generate-btn"
+          class="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+          Generate Resume
+        </button>
+      </form>
+      <div id="gen-progress" class="hidden mt-4">
+        <div class="text-sm font-medium text-indigo-700 mb-2">Generating... this may take 15-30 seconds</div>
+        <div class="w-full h-2 rounded-full bg-indigo-100 overflow-hidden">
+          <div class="h-2 bg-indigo-600 animate-pulse w-full"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Check profile completeness when consultant changes
+document.getElementById('consultant-select').addEventListener('change', function() {
+  const sel = this.options[this.selectedIndex];
+  const expCount = parseInt(sel.dataset.exp || '0');
+  const baseLen = parseInt(sel.dataset.base || '0');
+  const warning = document.getElementById('profile-warning');
+  const editLink = document.getElementById('profile-edit-link');
+  if (this.value && expCount === 0 && baseLen === 0) {
+    warning.classList.remove('hidden');
+    editLink.href = '/consultants/' + this.value + '/edit/';
+  } else {
+    warning.classList.add('hidden');
+  }
+});
+
+function checkPreflight() {
+  const c = document.getElementById('consultant-select').value;
+  const j = document.getElementById('job-select').value;
+  if (!c || !j) { alert('Select both consultant and job.'); return; }
+
+  // Update hidden fields
+  document.getElementById('gen-consultant').value = c;
+  document.getElementById('gen-job').value = j;
+
+  // Fetch preflight
+  fetch(`{% url 'resume-preflight' %}?consultant=${c}&job=${j}`, {
+    headers: {'X-Requested-With': 'XMLHttpRequest'}
+  })
+  .then(r => r.text())
+  .then(html => {
+    document.getElementById('preflight-container').innerHTML = html;
+    document.getElementById('generate-section').classList.remove('hidden');
+  });
+}
+
+// Show progress on submit
+document.getElementById('generate-form')?.addEventListener('submit', function() {
+  document.getElementById('generate-btn').disabled = true;
+  document.getElementById('generate-btn').textContent = 'Generating...';
+  document.getElementById('gen-progress').classList.remove('hidden');
+});
+</script>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('alpine:init', () => {
+  Alpine.data('resumeInputSections', () => ({
+    sections: {},
+    loadFromServer(d) {
+      this.sections = { ...d };
+      this.sections.personal = true;
+    },
+    sync() {
+      this.sections.personal = true;
+      const h = document.getElementById('input_sections_json');
+      if (h) h.value = JSON.stringify(this.sections);
+    },
+  }));
+});
+</script>
+{% endblock %}

@@ -246,6 +246,7 @@ class ConsultantProfileEditForm(forms.ModelForm):
             'base_resume_text',
             'hourly_rate',
             'phone',
+            'preferred_location',
             'match_jd_title_override',
             'marketing_roles',
             'status',
@@ -256,6 +257,7 @@ class ConsultantProfileEditForm(forms.ModelForm):
             'bio': forms.Textarea(attrs={'rows': 3}),
             'base_resume_text': forms.Textarea(attrs={'rows': 6}),
             'available_from': forms.DateInput(attrs={'type': 'date'}),
+            'preferred_location': forms.TextInput(attrs={'placeholder': 'e.g. Jersey City, NJ or Remote'}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -321,27 +323,55 @@ class ConsultantOnboardingStep2Form(forms.ModelForm):
 class UserEmailNotificationPreferencesForm(forms.ModelForm):
     class Meta:
         model = UserEmailNotificationPreferences
-        fields = ['email_submissions', 'email_interviews', 'email_jobs', 'email_system']
+        fields = [
+            'email_submissions',
+            'email_interviews',
+            'email_jobs',
+            'email_system',
+            'inapp_submissions',
+            'inapp_interviews',
+            'inapp_jobs',
+            'inapp_system',
+        ]
         labels = {
             'email_submissions': 'Applications & pipeline',
             'email_interviews': 'Interviews & scheduling',
             'email_jobs': 'Jobs & postings',
             'email_system': 'System & account',
+            'inapp_submissions': 'Applications & pipeline',
+            'inapp_interviews': 'Interviews & scheduling',
+            'inapp_jobs': 'Jobs & postings',
+            'inapp_system': 'System & account',
         }
         widgets = {
             'email_submissions': forms.CheckboxInput(attrs={'class': 'h-4 w-4 text-blue-600 rounded border-gray-300'}),
             'email_interviews': forms.CheckboxInput(attrs={'class': 'h-4 w-4 text-blue-600 rounded border-gray-300'}),
             'email_jobs': forms.CheckboxInput(attrs={'class': 'h-4 w-4 text-blue-600 rounded border-gray-300'}),
             'email_system': forms.CheckboxInput(attrs={'class': 'h-4 w-4 text-blue-600 rounded border-gray-300'}),
+            'inapp_submissions': forms.CheckboxInput(attrs={'class': 'h-4 w-4 text-blue-600 rounded border-gray-300'}),
+            'inapp_interviews': forms.CheckboxInput(attrs={'class': 'h-4 w-4 text-blue-600 rounded border-gray-300'}),
+            'inapp_jobs': forms.CheckboxInput(attrs={'class': 'h-4 w-4 text-blue-600 rounded border-gray-300'}),
+            'inapp_system': forms.CheckboxInput(attrs={'class': 'h-4 w-4 text-blue-600 rounded border-gray-300'}),
         }
 
 
 class MarketingRoleForm(forms.ModelForm):
     """Form for admins to create/edit marketing roles."""
+
     class Meta:
-        model = EmployeeProfile
-        fields = ['company_name', 'department', 'can_manage_consultants']
+        model = MarketingRole
+        fields = ['name', 'slug', 'description']
         widgets = {
-            'department': forms.Select(attrs={'class': 'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500'}),
-            'can_manage_consultants': forms.CheckboxInput(attrs={'class': 'h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded'}),
+            'name': forms.TextInput(attrs={'class': 'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500'}),
+            'slug': forms.TextInput(
+                attrs={
+                    'class': 'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500',
+                    'placeholder': 'Leave blank to auto-generate from name',
+                }
+            ),
+            'description': forms.Textarea(attrs={'rows': 4, 'class': 'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500'}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['slug'].required = False

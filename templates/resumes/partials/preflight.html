@@ -1,0 +1,85 @@
+{% if preflight %}
+<div class="bg-white shadow rounded-lg p-6 mb-6">
+  <h2 class="text-lg font-semibold text-gray-800 mb-4">Step 2: Compatibility Check</h2>
+
+  <!-- Match Score Bar -->
+  <div class="flex items-center mb-4">
+    <div class="w-full bg-gray-200 rounded-full h-4 mr-3">
+      <div class="h-4 rounded-full transition-all duration-500
+        {% if preflight.match_pct >= 70 %}bg-green-500{% elif preflight.match_pct >= 40 %}bg-yellow-500{% else %}bg-red-500{% endif %}"
+        style="width: {{ preflight.match_pct }}%"></div>
+    </div>
+    <span class="text-lg font-bold whitespace-nowrap
+      {% if preflight.match_pct >= 70 %}text-green-700{% elif preflight.match_pct >= 40 %}text-yellow-700{% else %}text-red-700{% endif %}">
+      {{ preflight.match_pct }}% match
+    </span>
+  </div>
+
+  <!-- Resume Location Preview -->
+  {% if resolved_location %}
+  <div class="flex items-center gap-3 mb-4 p-3 rounded-lg border
+    {% if location_source == 'profile' %}bg-indigo-50 border-indigo-200{% else %}bg-amber-50 border-amber-200{% endif %}">
+    <svg class="w-4 h-4 flex-shrink-0 {% if location_source == 'profile' %}text-indigo-500{% else %}text-amber-500{% endif %}"
+         fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+    </svg>
+    <div class="flex-1 min-w-0">
+      <span class="text-sm font-semibold {% if location_source == 'profile' %}text-indigo-800{% else %}text-amber-800{% endif %}">
+        Resume will show: <strong>{{ resolved_location }}</strong>
+      </span>
+      <span class="ml-2 text-xs {% if location_source == 'profile' %}text-indigo-600{% else %}text-amber-600{% endif %}">
+        {% if location_source == 'profile' %}
+          — your saved preferred location
+        {% else %}
+          — different city, same state as JD (no preferred location set on profile)
+        {% endif %}
+      </span>
+    </div>
+    {% if location_source == 'jd' and consultant_obj %}
+    <a href="{% url 'consultant-edit' consultant_obj.pk %}"
+       target="_blank"
+       class="text-xs font-medium text-amber-700 underline whitespace-nowrap flex-shrink-0">
+      Set preferred location &rarr;
+    </a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- Warnings -->
+  {% for w in preflight.warnings %}
+  <div class="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-3">
+    <p class="text-sm text-yellow-800">{{ w }}</p>
+  </div>
+  {% endfor %}
+
+  <!-- Matched Keywords -->
+  {% if preflight.matched %}
+  <div class="mb-3">
+    <h3 class="text-sm font-medium text-gray-600 mb-2">Matched Skills ({{ preflight.matched|length }}/{{ preflight.jd_keyword_count }})</h3>
+    <div class="flex flex-wrap gap-1.5">
+      {% for kw in preflight.matched|slice:":30" %}
+      <span class="inline-block bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded">{{ kw }}</span>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Missing Keywords -->
+  {% if preflight.missing %}
+  <div>
+    <h3 class="text-sm font-medium text-gray-600 mb-2">Missing from Profile ({{ preflight.missing|length }})</h3>
+    <div class="flex flex-wrap gap-1.5">
+      {% for kw in preflight.missing|slice:":20" %}
+      <span class="inline-block bg-red-100 text-red-600 text-xs px-2 py-0.5 rounded">{{ kw }}</span>
+      {% endfor %}
+      {% if preflight.missing|length > 20 %}
+      <span class="text-xs text-gray-400">+{{ preflight.missing|length|add:"-20" }} more</span>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
