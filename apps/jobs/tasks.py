@@ -41,8 +41,32 @@ def _check_job_url(url: str) -> bool:
         if status is None:
             return True
         status = int(status)
-        # Consider 2xx and 3xx as live; 4xx (especially 404/410) and 5xx as not live.
-        return 200 <= status < 400
+        # 4xx/5xx are dead links.
+        if status >= 400:
+            return False
+        # 3xx redirect chain accepted as live.
+        if 300 <= status < 400:
+            return True
+        # For 2xx responses, detect "soft 404" pages that still return HTTP 200.
+        try:
+            req_get = Request(url, headers={"User-Agent": "GoCareers-job-url-checker/1.0"})
+            req_get.get_method = lambda: "GET"
+            resp_get = urlopen(req_get, context=ctx, timeout=7)
+            body = (resp_get.read(8192) or b"").decode("utf-8", errors="ignore").lower()
+            soft_404_markers = (
+                "page you are looking for doesn't exist",
+                "page you are looking for does not exist",
+                "job not found",
+                "this job is no longer available",
+                "position no longer available",
+                "404",
+            )
+            if any(m in body for m in soft_404_markers):
+                return False
+        except Exception:
+            # If body check fails but status was 2xx, keep as live to avoid false negatives.
+            pass
+        return True
     except Exception:
         return False
 
@@ -152,7 +176,8 @@ def validate_job_urls_task(batch_size: int = 50):
     now = timezone.now()
     cutoff = now - timezone.timedelta(hours=24)
 
-    qs = Job.objects.filter(status=Job.Status.OPEN)
+    # Check both OPEN and POOL jobs so pool UI status stays accurate too.
+    qs = Job.objects.filter(status__in=[Job.Status.OPEN, Job.Status.POOL], is_archived=False)
     qs = qs.filter(original_link__isnull=False).exclude(original_link="")
     qs = qs.filter(
         original_link_last_checked_at__lt=cutoff
