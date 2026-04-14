@@ -6,17 +6,21 @@ from django.contrib.auth import get_user_model
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 
+from core.feature_flags import feature_enabled_for
+
 User = get_user_model()
 
 
-def _is_admin(user):
-    return user.is_superuser or user.role == 'ADMIN'
+def _can_impersonate(user):
+    if user.is_superuser or user.role == 'ADMIN':
+        return True
+    return feature_enabled_for(user, 'employee_impersonate')
 
 
 @login_required
 def start_impersonate(request, user_id):
-    """Start impersonating a user. Admin only."""
-    if not _is_admin(request.user):
+    """Start impersonating a user. Admin or users with employee_impersonate."""
+    if not _can_impersonate(request.user):
         messages.error(request, "You don't have permission to impersonate users.")
         return redirect('home')
 

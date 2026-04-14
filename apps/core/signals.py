@@ -1,7 +1,23 @@
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, m2m_changed
 from django.dispatch import receiver
 
-from .models import PlatformConfig
+from .models import PlatformConfig, FeatureFlag, EmployeeDesignation
+from .feature_flags import invalidate_feature_flag_cache
+
+
+@receiver(post_save, sender=FeatureFlag)
+def invalidate_flags_on_feature_flag_save(sender, **kwargs):
+    invalidate_feature_flag_cache()
+
+
+@receiver(post_save, sender=EmployeeDesignation)
+def invalidate_flags_on_designation_save(sender, **kwargs):
+    invalidate_feature_flag_cache()
+
+
+@receiver(m2m_changed, sender=EmployeeDesignation.allowed_features.through)
+def invalidate_flags_on_designation_m2m(sender, **kwargs):
+    invalidate_feature_flag_cache()
 
 
 @receiver(post_save, sender=PlatformConfig)

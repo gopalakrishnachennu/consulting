@@ -25,6 +25,8 @@ from .models import (
     Notification,
     BroadcastMessage,
     BroadcastDelivery,
+    FeatureFlag,
+    EmployeeDesignation,
 )
 from .forms import PlatformConfigForm, LLMConfigForm, BroadcastForm
 from .broadcast_utils import deliver_broadcast
@@ -39,6 +41,8 @@ from .monitor import SystemMonitor
 from .security import decrypt_value
 from .llm_services import list_openai_models, sort_models_by_cost, get_cost_info
 from .llm_pricing import PRICING_PER_1M
+from .feature_flags import feature_enabled_for, invalidate_feature_flag_cache
+
 
 class AdminRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
@@ -118,7 +122,9 @@ class DataPipelineDashboardView(LoginRequiredMixin, UserPassesTestMixin, Templat
 
     def test_func(self):
         u = self.request.user
-        return u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE)
+        if not (u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE)):
+            return False
+        return feature_enabled_for(u, 'system_data_enrichment')
 
     def get_context_data(self, **kwargs):
         from companies.models import Company
@@ -932,3 +938,74 @@ class BroadcastDetailView(AdminRequiredMixin, DetailView):
             'skipped': self.object.deliveries.filter(status=BroadcastDelivery.Status.SKIPPED_INAPP).count(),
         }
         return context
+
+
+class FeatureControlCenterView(AdminRequiredMixin, TemplateView):
+    """Superuser / Admin: manage feature flags and designation RBAC."""
+
+    template_name = 'settings/feature_control.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        tab = self.request.GET.get('tab') or 'consultant'
+        if tab not in ('consultant', 'employee', 'ai', 'system', 'designations'):
+            tab = 'consultant'
+        context['active_tab'] = tab
+        context['consultant_flags'] = FeatureFlag.objects.filter(category=FeatureFlag.Category.CONSULTANT)
+        context['employee_flags'] = FeatureFlag.objects.filter(category=FeatureFlag.Category.EMPLOYEE)
+        context['ai_flags'] = FeatureFlag.objects.filter(category=FeatureFlag.Category.AI)
+        context['system_flags'] = FeatureFlag.objects.filter(category=FeatureFlag.Category.SYSTEM)
+        des_qs = EmployeeDesignation.objects.prefetch_related('allowed_features').order_by('level', 'name')
+        context['designations'] = des_qs
+        context['matrix_flags'] = FeatureFlag.objects.filter(
+            category__in=(FeatureFlag.Category.EMPLOYEE, FeatureFlag.Category.AI)
+        ).order_by('sort_order', 'key')
+        context['designation_matrix'] = {
+            d.pk: set(d.allowed_features.values_list('pk', flat=True)) for d in des_qs
+        }
+        return context
+
+    def post(self, request, *args, **kwargs):
+        action = request.POST.get('action')
+        next_tab = request.POST.get('next_tab') or 'consultant'
+        if action == 'update_flag':
+            pk = request.POST.get('pk')
+            field = request.POST.get('field')
+            value = request.POST.get('value') == 'on'
+            allowed = {'is_enabled', 'enabled_for_consultants', 'enabled_for_employees'}
+            if pk and field in allowed:
+                flag = get_object_or_404(FeatureFlag, pk=pk)
+                setattr(flag, field, value)
+                flag.updated_by = request.user
+                flag.save(update_fields=[field, 'updated_by', 'updated_at'])
+                AuditLog.objects.create(
+                    actor=request.user,
+                    action='feature_flag_update',
+                    target_model='FeatureFlag',
+                    target_id=str(flag.pk),
+                    details={'key': flag.key, 'field': field, 'value': value},
+                )
+                invalidate_feature_flag_cache()
+                messages.success(request, f'Updated {flag.key}.')
+        elif action == 'designation_matrix':
+            des_pk = request.POST.get('designation_pk')
+            flag_pk = request.POST.get('flag_pk')
+            checked = request.POST.get('checked') == '1'
+            des = get_object_or_404(EmployeeDesignation, pk=des_pk)
+            ff = get_object_or_404(FeatureFlag, pk=flag_pk)
+            if checked:
+                des.allowed_features.add(ff)
+            else:
+                des.allowed_features.remove(ff)
+            invalidate_feature_flag_cache()
+            messages.success(request, 'Designation access updated.')
+        return redirect(f"{reverse('feature-control-center')}?tab={next_tab}")
+
+
+class MyFeaturesJsonView(LoginRequiredMixin, View):
+    """Return enabled feature keys for the current user (mobile / extensions)."""
+
+    def get(self, request, *args, **kwargs):
+        keys = FeatureFlag.objects.values_list('key', flat=True)
+        data = {k: feature_enabled_for(request.user, k) for k in keys}
+        return JsonResponse(data)

@@ -515,22 +515,32 @@
                 {# --- CONSULTANT NAV --- #}
                 <a href="{% url 'consultant-dashboard' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'consultant-dashboard' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Dashboard</a>
+                {% if USER_FEATURE_FLAGS.consultant_my_tracker %}
                 <a href="{% url 'consultant-my-tracker' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'consultant-my-tracker' or url_name == 'consultant-self-apply' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">My Tracker</a>
+                {% endif %}
                 <a href="{% url 'job-list' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'job-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Jobs</a>
                 <a href="{% url 'submission-list' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'submission-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Applications</a>
+                {% if USER_FEATURE_FLAGS.consultant_cover_letter %}
                 <a href="{% url 'cover-letter-generate' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'cover-letter-generate' or url_name == 'cover-letter-detail' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Cover Letter</a>
+                {% endif %}
+                {% if USER_FEATURE_FLAGS.consultant_resume_gen %}
                 <a href="{% url 'consultant-resume-generate' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'consultant-resume-generate' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Resume AI</a>
+                {% endif %}
                 <a href="{% url 'interview-list' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'interview-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Interviews</a>
+                {% if USER_FEATURE_FLAGS.consultant_messaging %}
                 <a href="{% url 'inbox' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition inline-flex items-center gap-1.5 {% if url_name == 'inbox' or url_name == 'thread-detail' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Messages{% if unread_message_count %}<span class="inline-flex min-w-[1.25rem] h-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">{{ unread_message_count }}</span>{% endif %}</a>
+                {% endif %}
+                {% if USER_FEATURE_FLAGS.consultant_career_timeline %}
                 <a href="{% url 'consultant-career-timeline' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'consultant-career-timeline' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Timeline</a>
+                {% endif %}
 
                 {% endif %}
                 {% endwith %}

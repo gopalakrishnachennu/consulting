@@ -1,6 +1,7 @@
 from django.db import models
 from django.core.cache import cache
 from django.conf import settings
+from django.utils.translation import gettext_lazy as _
 
 from users.models import User, ConsultantProfile
 from jobs.models import Job
@@ -449,3 +450,66 @@ class LLMUsageLog(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+
+
+class FeatureFlag(models.Model):
+    """
+    Centralized feature toggles (replaces ad-hoc booleans over time).
+    See core.feature_flags.feature_enabled_for() for runtime checks.
+    """
+
+    class Category(models.TextChoices):
+        CONSULTANT = 'CONSULTANT', _('Consultant')
+        EMPLOYEE = 'EMPLOYEE', _('Employee')
+        AI = 'AI', _('AI / LLM')
+        SYSTEM = 'SYSTEM', _('System')
+
+    class AppliesTo(models.TextChoices):
+        CONSULTANT = 'CONSULTANT', _('Consultants')
+        EMPLOYEE = 'EMPLOYEE', _('Employees')
+        BOTH = 'BOTH', _('Both')
+        SYSTEM = 'SYSTEM', _('System only')
+
+    key = models.CharField(max_length=80, unique=True, db_index=True)
+    label = models.CharField(max_length=120)
+    description = models.TextField(blank=True)
+    category = models.CharField(max_length=20, choices=Category.choices, default=Category.CONSULTANT)
+    applies_to = models.CharField(max_length=20, choices=AppliesTo.choices, default=AppliesTo.CONSULTANT)
+    is_enabled = models.BooleanField(default=True, help_text=_('Master kill switch for this flag.'))
+    enabled_for_consultants = models.BooleanField(default=True)
+    enabled_for_employees = models.BooleanField(default=True)
+    icon = models.CharField(max_length=32, blank=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    updated_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='feature_flags_updated',
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['sort_order', 'key']
+        verbose_name = _('Feature flag')
+        verbose_name_plural = _('Feature flags')
+
+    def __str__(self):
+        return f'{self.key}'
+
+
+class EmployeeDesignation(models.Model):
+    """RBAC tier for employees (e.g. Recruiter → Senior → Manager)."""
+
+    name = models.CharField(max_length=100)
+    slug = models.SlugField(max_length=120, unique=True)
+    level = models.PositiveSmallIntegerField(default=1)
+    allowed_features = models.ManyToManyField(FeatureFlag, blank=True, related_name='designations')
+    color = models.CharField(max_length=32, blank=True, default='gray')
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['level', 'name']
+
+    def __str__(self):
+        return self.name

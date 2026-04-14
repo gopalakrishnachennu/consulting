@@ -9,7 +9,7 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import ListView, View
-from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.views.decorators.http import require_POST
 from django.utils.decorators import method_decorator
 
@@ -26,6 +26,7 @@ from .utils import (
     users_may_message_each_other,
 )
 from users.models import User
+from core.feature_flags import feature_enabled_for
 
 def _role_short_label(user: User) -> str:
     if user.is_superuser:
@@ -56,6 +57,16 @@ TYPING_CACHE_PREFIX = "msgtyping"
 
 def _typing_cache_key(thread_id: int, user_id: int) -> str:
     return f"{TYPING_CACHE_PREFIX}:{thread_id}:{user_id}"
+
+
+class MessagingFeatureGateMixin(UserPassesTestMixin):
+    """403 when direct messaging is turned off for this user."""
+
+    def test_func(self):
+        u = self.request.user
+        if u.is_superuser or getattr(u, 'role', None) == 'ADMIN':
+            return True
+        return feature_enabled_for(u, 'consultant_messaging')
 
 
 def build_thread_context(request, thread: Thread, form: MessageForm, *, is_pane: bool = False, history_q: str | None = None):
@@ -109,7 +120,7 @@ def recipient_search_queryset(viewer: User):
     return qs
 
 
-class MessagingRecipientSearchView(LoginRequiredMixin, View):
+class MessagingRecipientSearchView(MessagingFeatureGateMixin, LoginRequiredMixin, View):
     def get(self, request):
         if not _htmx(request):
             return redirect("inbox")
@@ -161,7 +172,7 @@ class MessagingRecipientSearchView(LoginRequiredMixin, View):
         )
 
 
-class InboxView(LoginRequiredMixin, ListView):
+class InboxView(MessagingFeatureGateMixin, LoginRequiredMixin, ListView):
     model = Thread
     template_name = "messaging/inbox.html"
     context_object_name = "threads"
@@ -203,7 +214,7 @@ class InboxView(LoginRequiredMixin, ListView):
         return context
 
 
-class ThreadDetailView(LoginRequiredMixin, View):
+class ThreadDetailView(MessagingFeatureGateMixin, LoginRequiredMixin, View):
     def get(self, request, pk):
         thread = get_object_or_404(
             Thread.objects.select_related("organisation").prefetch_related("participants"),
@@ -288,7 +299,7 @@ class ThreadDetailView(LoginRequiredMixin, View):
         return render(request, "messaging/thread_detail.html", ctx)
 
 
-class StartThreadView(LoginRequiredMixin, View):
+class StartThreadView(MessagingFeatureGateMixin, LoginRequiredMixin, View):
     def get(self, request, user_id):
         return redirect("inbox")
 
@@ -315,7 +326,7 @@ class StartThreadView(LoginRequiredMixin, View):
         return redirect(f"{reverse('inbox')}?thread={thread.pk}")
 
 
-class StartOrgThreadView(LoginRequiredMixin, View):
+class StartOrgThreadView(MessagingFeatureGateMixin, LoginRequiredMixin, View):
     """Consultant: one shared thread with org staff (visible to all staff in the org)."""
 
     def get(self, request):
@@ -369,7 +380,7 @@ class StartOrgThreadView(LoginRequiredMixin, View):
 
 
 @method_decorator(require_POST, name="dispatch")
-class MessageEditView(LoginRequiredMixin, View):
+class MessageEditView(MessagingFeatureGateMixin, LoginRequiredMixin, View):
     def post(self, request, pk):
         message = get_object_or_404(Message.objects.select_related("thread", "sender"), pk=pk)
         thread = message.thread
@@ -389,7 +400,7 @@ class MessageEditView(LoginRequiredMixin, View):
 
 
 @method_decorator(require_POST, name="dispatch")
-class MessageDeleteView(LoginRequiredMixin, View):
+class MessageDeleteView(MessagingFeatureGateMixin, LoginRequiredMixin, View):
     def post(self, request, pk):
         message = get_object_or_404(Message.objects.select_related("thread", "sender"), pk=pk)
         thread = message.thread
@@ -408,7 +419,7 @@ class MessageDeleteView(LoginRequiredMixin, View):
 
 
 @method_decorator(require_POST, name="dispatch")
-class ThreadTypingPingView(LoginRequiredMixin, View):
+class ThreadTypingPingView(MessagingFeatureGateMixin, LoginRequiredMixin, View):
     """Record that the current user is typing (cache TTL ~8s)."""
 
     def post(self, request, pk):
@@ -425,7 +436,7 @@ class ThreadTypingPingView(LoginRequiredMixin, View):
         return HttpResponse(status=204)
 
 
-class ThreadTypingStatusView(LoginRequiredMixin, View):
+class ThreadTypingStatusView(MessagingFeatureGateMixin, LoginRequiredMixin, View):
     """HTMX fragment: who else in the thread is typing."""
 
     def get(self, request, pk):

@@ -10,6 +10,7 @@ from django.contrib import messages
 from django.utils import timezone
 from datetime import timedelta
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
+from django.core.exceptions import PermissionDenied
 from django.utils.http import url_has_allowed_host_and_scheme
 from .models import (
     ApplicationSubmission, Offer, OfferRound, record_submission_status_change, EmailEvent,
@@ -36,6 +37,7 @@ from config.constants import (
     MSG_SUBMISSION_SUCCESS, MSG_SUBMISSION_MISMATCH, MSG_SUBMISSION_SELF_ONLY, MSG_FILE_TOO_LARGE,
 )
 from core.notification_utils import notify_submission_pipeline_event
+from core.feature_flags import feature_enabled_for
 from config.pagination import PAGE_SIZE_OPTIONS, get_page_size, build_pagination_window
 
 def _norm(s: str) -> str:
@@ -290,8 +292,18 @@ def _get_submission_queryset(request):
     return qs.order_by('-created_at')
 
 
-class SubmissionExportCSVView(LoginRequiredMixin, View):
+class SubmissionExportCSVView(LoginRequiredMixin, UserPassesTestMixin, View):
     """Export applications (submissions) as CSV with same filters as list view."""
+
+    def test_func(self):
+        u = self.request.user
+        if u.is_superuser or u.role == 'ADMIN':
+            return True
+        if u.role == 'EMPLOYEE':
+            return feature_enabled_for(u, 'employee_csv_export')
+        if u.role == 'CONSULTANT':
+            return feature_enabled_for(u, 'consultant_my_tracker')
+        return False
 
     def get(self, request, *args, **kwargs):
         qs = _get_submission_queryset(request)
@@ -319,7 +331,9 @@ class SubmissionBulkStatusView(LoginRequiredMixin, UserPassesTestMixin, View):
 
     def test_func(self):
         u = self.request.user
-        return u.is_superuser or u.role in (User.Role.EMPLOYEE, User.Role.ADMIN)
+        if not (u.is_superuser or u.role in (User.Role.EMPLOYEE, User.Role.ADMIN)):
+            return False
+        return feature_enabled_for(u, 'employee_bulk_ops')
 
     def post(self, request, *args, **kwargs):
         ids = request.POST.getlist('submission_ids')
@@ -367,7 +381,9 @@ class SubmissionInlineStatusView(LoginRequiredMixin, UserPassesTestMixin, View):
 
     def test_func(self):
         u = self.request.user
-        return u.is_superuser or u.role in (User.Role.EMPLOYEE, User.Role.ADMIN)
+        if not (u.is_superuser or u.role in (User.Role.EMPLOYEE, User.Role.ADMIN)):
+            return False
+        return feature_enabled_for(u, 'employee_bulk_ops')
 
     def post(self, request, pk, *args, **kwargs):
         submission = get_object_or_404(ApplicationSubmission, pk=pk)
@@ -579,9 +595,13 @@ class RejectionAnalysisView(LoginRequiredMixin, UserPassesTestMixin, DetailView)
     def test_func(self):
         sub = self.get_object()
         u = self.request.user
-        if u.is_superuser or u.role in (User.Role.EMPLOYEE, User.Role.ADMIN):
+        if u.is_superuser or u.role == 'ADMIN':
             return True
-        return u.role == User.Role.CONSULTANT and hasattr(u, 'consultant_profile') and sub.consultant == u.consultant_profile
+        if u.role == User.Role.EMPLOYEE:
+            return feature_enabled_for(u, 'ai_rejection_analysis')
+        if u.role == User.Role.CONSULTANT and hasattr(u, 'consultant_profile') and sub.consultant == u.consultant_profile:
+            return feature_enabled_for(u, 'ai_rejection_analysis')
+        return False
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -769,7 +789,9 @@ class EmailEventListView(LoginRequiredMixin, UserPassesTestMixin, ListView):
 
     def test_func(self):
         u = self.request.user
-        return u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE)
+        if not (u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE)):
+            return False
+        return feature_enabled_for(u, 'system_email_ingest')
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -799,7 +821,9 @@ class EmailEventPollNowView(LoginRequiredMixin, UserPassesTestMixin, View):
 
     def test_func(self):
         u = self.request.user
-        return u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE)
+        if not (u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE)):
+            return False
+        return feature_enabled_for(u, 'system_email_ingest')
 
     def post(self, request, *args, **kwargs):
         from core.email_ingest import fetch_unseen_and_process
@@ -829,7 +853,9 @@ class EmailEventDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
 
     def test_func(self):
         u = self.request.user
-        return u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE)
+        if not (u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE)):
+            return False
+        return feature_enabled_for(u, 'system_email_ingest')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -873,15 +899,24 @@ class EmailEventDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
 # ─────────────────────────────────────────────────────────────
 
 class _StaffRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
-    """Shortcut: admin or employee only."""
+    """Admin / employee only, plus optional feature flag (staff_feature_key)."""
+
+    staff_feature_key = None
+
     def test_func(self):
         u = self.request.user
-        return u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE)
+        if not (u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE)):
+            return False
+        key = getattr(self, 'staff_feature_key', None)
+        if key:
+            return feature_enabled_for(u, key)
+        return True
 
 
 # ── Placement views ──
 
 class PlacementListView(_StaffRequiredMixin, ListView):
+    staff_feature_key = 'employee_analytics'
     model = Placement
     template_name = 'submissions/placement_list.html'
     context_object_name = 'placements'
@@ -919,6 +954,7 @@ class PlacementListView(_StaffRequiredMixin, ListView):
 
 
 class PlacementDetailView(_StaffRequiredMixin, DetailView):
+    staff_feature_key = 'employee_analytics'
     model = Placement
     template_name = 'submissions/placement_detail.html'
     context_object_name = 'placement'
@@ -950,6 +986,7 @@ class PlacementDetailView(_StaffRequiredMixin, DetailView):
 
 
 class PlacementCreateView(_StaffRequiredMixin, CreateView):
+    staff_feature_key = 'employee_analytics'
     model = Placement
     form_class = PlacementForm
     template_name = 'submissions/placement_form.html'
@@ -987,6 +1024,7 @@ class PlacementCreateView(_StaffRequiredMixin, CreateView):
 
 
 class PlacementUpdateView(_StaffRequiredMixin, UpdateView):
+    staff_feature_key = 'employee_analytics'
     model = Placement
     form_class = PlacementForm
     template_name = 'submissions/placement_form.html'
@@ -1007,6 +1045,7 @@ class PlacementUpdateView(_StaffRequiredMixin, UpdateView):
 # ── Timesheet views ──
 
 class TimesheetCreateView(_StaffRequiredMixin, View):
+    staff_feature_key = 'employee_analytics'
     """Create a timesheet for a placement (POST from placement detail)."""
 
     def post(self, request, placement_pk):
@@ -1025,6 +1064,7 @@ class TimesheetCreateView(_StaffRequiredMixin, View):
 
 
 class TimesheetApproveView(_StaffRequiredMixin, View):
+    staff_feature_key = 'employee_analytics'
     """Approve or reject a timesheet."""
 
     def post(self, request, pk):
@@ -1044,6 +1084,7 @@ class TimesheetApproveView(_StaffRequiredMixin, View):
 
 
 class TimesheetListView(_StaffRequiredMixin, ListView):
+    staff_feature_key = 'employee_analytics'
     """All timesheets across all placements (for payroll overview)."""
     model = Timesheet
     template_name = 'submissions/timesheet_list.html'
@@ -1072,6 +1113,7 @@ class TimesheetListView(_StaffRequiredMixin, ListView):
 # ── Commission views ──
 
 class CommissionCreateView(_StaffRequiredMixin, View):
+    staff_feature_key = 'employee_analytics'
     """Create a commission for a placement (POST from placement detail)."""
 
     def post(self, request, placement_pk):
@@ -1089,6 +1131,7 @@ class CommissionCreateView(_StaffRequiredMixin, View):
 
 
 class CommissionListView(_StaffRequiredMixin, ListView):
+    staff_feature_key = 'employee_analytics'
     """All commissions across all placements."""
     model = Commission
     template_name = 'submissions/commission_list.html'
@@ -1122,6 +1165,7 @@ class CommissionListView(_StaffRequiredMixin, ListView):
 
 
 class CommissionUpdateView(_StaffRequiredMixin, UpdateView):
+    staff_feature_key = 'employee_analytics'
     """Update commission status (approve/mark paid)."""
     model = Commission
     fields = ['status', 'paid_date', 'notes']
@@ -1172,7 +1216,13 @@ class SubmissionKanbanView(LoginRequiredMixin, UserPassesTestMixin, TemplateView
 
     def test_func(self):
         u = self.request.user
-        return u.is_superuser or u.role in (User.Role.CONSULTANT, User.Role.EMPLOYEE, User.Role.ADMIN)
+        if u.is_superuser or u.role == User.Role.ADMIN:
+            return True
+        if u.role == User.Role.EMPLOYEE:
+            return feature_enabled_for(u, 'employee_workflow')
+        if u.role == User.Role.CONSULTANT:
+            return feature_enabled_for(u, 'consultant_my_tracker')
+        return False
 
     def get_template_names(self):
         if self.request.headers.get('HX-Request'):
@@ -1190,7 +1240,13 @@ class SubmissionKanbanMoveView(LoginRequiredMixin, UserPassesTestMixin, View):
 
     def test_func(self):
         u = self.request.user
-        return u.is_superuser or u.role in (User.Role.CONSULTANT, User.Role.EMPLOYEE, User.Role.ADMIN)
+        if u.is_superuser or u.role == User.Role.ADMIN:
+            return True
+        if u.role == User.Role.EMPLOYEE:
+            return feature_enabled_for(u, 'employee_workflow')
+        if u.role == User.Role.CONSULTANT:
+            return feature_enabled_for(u, 'consultant_my_tracker')
+        return False
 
     def post(self, request, *args, **kwargs):
         pk = request.POST.get('submission_id')
@@ -1225,6 +1281,7 @@ class SubmissionKanbanMoveView(LoginRequiredMixin, UserPassesTestMixin, View):
 
 # ─── Phase 4: Follow-Up Reminders ────────────────────────────────────
 class FollowUpReminderCreateView(_StaffRequiredMixin, View):
+    staff_feature_key = 'employee_workflow'
     """Create a follow-up reminder for a submission."""
 
     def post(self, request, pk):
@@ -1244,6 +1301,7 @@ class FollowUpReminderCreateView(_StaffRequiredMixin, View):
 
 
 class FollowUpReminderDismissView(_StaffRequiredMixin, View):
+    staff_feature_key = 'employee_workflow'
     """Dismiss a follow-up reminder."""
 
     def post(self, request, pk):
@@ -1256,6 +1314,7 @@ class FollowUpReminderDismissView(_StaffRequiredMixin, View):
 
 
 class StaleSubmissionsView(_StaffRequiredMixin, ListView):
+    staff_feature_key = 'employee_workflow'
     """List submissions that haven't been updated in >14 days and are still active."""
     template_name = 'submissions/stale_submissions.html'
     context_object_name = 'submissions'
@@ -1276,6 +1335,7 @@ class StaleSubmissionsView(_StaffRequiredMixin, ListView):
 
 # ─── Phase 5: Soft-Delete / Archive ──────────────────────────────────
 class SubmissionArchiveView(_StaffRequiredMixin, View):
+    staff_feature_key = 'employee_workflow'
     """Soft-delete (archive) a submission."""
 
     def post(self, request, pk):
@@ -1288,6 +1348,7 @@ class SubmissionArchiveView(_StaffRequiredMixin, View):
 
 
 class SubmissionRestoreView(_StaffRequiredMixin, View):
+    staff_feature_key = 'employee_workflow'
     """Restore an archived submission."""
 
     def post(self, request, pk):
@@ -1300,6 +1361,7 @@ class SubmissionRestoreView(_StaffRequiredMixin, View):
 
 
 class ArchivedSubmissionsView(_StaffRequiredMixin, ListView):
+    staff_feature_key = 'employee_workflow'
     """List all archived submissions."""
     template_name = 'submissions/archived_list.html'
     context_object_name = 'submissions'
@@ -1321,6 +1383,12 @@ class GDPRExportView(LoginRequiredMixin, View):
         if not (user.is_superuser or user.role in ('ADMIN', 'EMPLOYEE') or user.pk == pk):
             messages.error(request, "Permission denied.")
             return redirect('home')
+        if user.pk == pk and user.role == User.Role.CONSULTANT:
+            if not feature_enabled_for(user, 'consultant_gdpr_export'):
+                raise PermissionDenied
+        elif user.role == User.Role.EMPLOYEE:
+            if not feature_enabled_for(user, 'employee_csv_export'):
+                raise PermissionDenied
 
         from users.models import ConsultantProfile
         try:
@@ -1371,6 +1439,7 @@ class GDPRExportView(LoginRequiredMixin, View):
 
 # ─── Phase 5: Win/Loss Analysis ──────────────────────────────────────
 class WinLossAnalysisView(_StaffRequiredMixin, TemplateView):
+    staff_feature_key = 'employee_analytics'
     """Win/loss analysis dashboard."""
     template_name = 'submissions/win_loss_analysis.html'
 
@@ -1467,7 +1536,9 @@ class WorkflowDashboardView(LoginRequiredMixin, UserPassesTestMixin, TemplateVie
 
     def test_func(self):
         u = self.request.user
-        return u.is_superuser or getattr(u, 'role', None) in ('ADMIN', 'EMPLOYEE')
+        if not (u.is_superuser or getattr(u, 'role', None) in ('ADMIN', 'EMPLOYEE')):
+            return False
+        return feature_enabled_for(u, 'employee_workflow')
 
     def dispatch(self, request, *args, **kwargs):
         if request.GET.get('clear'):
@@ -1640,7 +1711,9 @@ class WorkflowStarToggleView(LoginRequiredMixin, UserPassesTestMixin, View):
 
     def test_func(self):
         u = self.request.user
-        return u.is_superuser or getattr(u, 'role', None) in ('ADMIN', 'EMPLOYEE')
+        if not (u.is_superuser or getattr(u, 'role', None) in ('ADMIN', 'EMPLOYEE')):
+            return False
+        return feature_enabled_for(u, 'employee_workflow')
 
     def post(self, request, pk):
         consultant = get_object_or_404(ConsultantProfile.objects.select_related('user'), pk=pk)
@@ -1669,7 +1742,9 @@ class WorkflowPanelView(LoginRequiredMixin, UserPassesTestMixin, View):
 
     def test_func(self):
         u = self.request.user
-        return u.is_superuser or getattr(u, 'role', None) in ('ADMIN', 'EMPLOYEE')
+        if not (u.is_superuser or getattr(u, 'role', None) in ('ADMIN', 'EMPLOYEE')):
+            return False
+        return feature_enabled_for(u, 'employee_workflow')
 
     def get(self, request, pk):
         consultant = get_object_or_404(
@@ -1776,7 +1851,9 @@ class ConsultantClaimView(LoginRequiredMixin, UserPassesTestMixin, View):
 
     def test_func(self):
         u = self.request.user
-        return u.is_superuser or getattr(u, 'role', None) in ('ADMIN', 'EMPLOYEE')
+        if not (u.is_superuser or getattr(u, 'role', None) in ('ADMIN', 'EMPLOYEE')):
+            return False
+        return feature_enabled_for(u, 'employee_workflow')
 
     def post(self, request, pk):
         from django.db import transaction
@@ -1830,7 +1907,9 @@ class ConsultantReleaseView(LoginRequiredMixin, UserPassesTestMixin, View):
 
     def test_func(self):
         u = self.request.user
-        return u.is_superuser or getattr(u, 'role', None) in ('ADMIN', 'EMPLOYEE')
+        if not (u.is_superuser or getattr(u, 'role', None) in ('ADMIN', 'EMPLOYEE')):
+            return False
+        return feature_enabled_for(u, 'employee_workflow')
 
     def post(self, request, pk):
         consultant = get_object_or_404(ConsultantProfile.objects.select_related('user'), pk=pk)
@@ -1851,11 +1930,17 @@ class ConsultantReleaseView(LoginRequiredMixin, UserPassesTestMixin, View):
         return redirect(f"{reverse('workflow-dashboard')}?consultant={pk}")
 
 
-class LockHeartbeatView(LoginRequiredMixin, View):
+class LockHeartbeatView(LoginRequiredMixin, UserPassesTestMixin, View):
     """
     HTMX endpoint -- called every ~4 min by the browser to extend the lock.
     Returns a small HTML fragment with the updated countdown.
     """
+
+    def test_func(self):
+        u = self.request.user
+        if not (u.is_superuser or getattr(u, 'role', None) in ('ADMIN', 'EMPLOYEE')):
+            return False
+        return feature_enabled_for(u, 'employee_workflow')
 
     def post(self, request, pk):
         try:
@@ -1885,7 +1970,9 @@ class LockOverrideView(LoginRequiredMixin, UserPassesTestMixin, View):
 
     def test_func(self):
         u = self.request.user
-        return u.is_superuser or getattr(u, 'role', '') == 'ADMIN'
+        if u.is_superuser or getattr(u, 'role', '') == 'ADMIN':
+            return True
+        return feature_enabled_for(u, 'employee_lock_override')
 
     def post(self, request, pk):
         from django.db import transaction
@@ -1916,7 +2003,9 @@ class MarkExternalApplicationView(LoginRequiredMixin, UserPassesTestMixin, View)
 
     def test_func(self):
         u = self.request.user
-        return u.is_superuser or getattr(u, 'role', None) in ('ADMIN', 'EMPLOYEE')
+        if not (u.is_superuser or getattr(u, 'role', None) in ('ADMIN', 'EMPLOYEE')):
+            return False
+        return feature_enabled_for(u, 'employee_workflow')
 
     def post(self, request, consultant_pk, job_pk):
         consultant = get_object_or_404(ConsultantProfile, pk=consultant_pk)
@@ -1969,7 +2058,11 @@ class ConsultantSelfApplyView(LoginRequiredMixin, UserPassesTestMixin, View):
 
     def test_func(self):
         u = self.request.user
-        return u.role == User.Role.CONSULTANT and hasattr(u, 'consultant_profile')
+        return (
+            u.role == User.Role.CONSULTANT
+            and hasattr(u, 'consultant_profile')
+            and feature_enabled_for(u, 'consultant_self_apply')
+        )
 
     def get(self, request):
         return render(request, self.template_name, {
@@ -2077,7 +2170,11 @@ class ConsultantMyTrackerView(LoginRequiredMixin, UserPassesTestMixin, ListView)
 
     def test_func(self):
         u = self.request.user
-        return u.role == User.Role.CONSULTANT and hasattr(u, 'consultant_profile')
+        return (
+            u.role == User.Role.CONSULTANT
+            and hasattr(u, 'consultant_profile')
+            and feature_enabled_for(u, 'consultant_my_tracker')
+        )
 
     def get_queryset(self):
         consultant = self.request.user.consultant_profile

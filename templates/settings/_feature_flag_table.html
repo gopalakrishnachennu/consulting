@@ -1,0 +1,62 @@
+<table class="min-w-full text-sm">
+    <thead>
+        <tr class="bg-gray-50 text-left">
+            <th class="p-3 border-b">Feature</th>
+            <th class="p-3 border-b">Key</th>
+            <th class="p-3 border-b text-center">Master</th>
+            <th class="p-3 border-b text-center">Consultants</th>
+            <th class="p-3 border-b text-center">Employees</th>
+            <th class="p-3 border-b text-right text-xs text-gray-500">Updated</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for flag in flags %}
+        <tr class="border-b hover:bg-gray-50">
+            <td class="p-3">
+                <span class="mr-1">{{ flag.icon }}</span>
+                <span class="font-medium text-gray-900">{{ flag.label }}</span>
+                {% if flag.description %}
+                <div class="text-xs text-gray-500 mt-0.5">{{ flag.description }}</div>
+                {% endif %}
+            </td>
+            <td class="p-3 font-mono text-xs text-gray-600">{{ flag.key }}</td>
+            <td class="p-2 text-center align-middle">
+                <form method="post" class="inline">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="update_flag">
+                    <input type="hidden" name="pk" value="{{ flag.pk }}">
+                    <input type="hidden" name="field" value="is_enabled">
+                    <input type="hidden" name="next_tab" value="{{ tab }}">
+                    <input type="checkbox" name="value" value="on" {% if flag.is_enabled %}checked{% endif %} onchange="this.form.submit()" class="rounded border-gray-300 text-blue-600">
+                </form>
+            </td>
+            <td class="p-2 text-center align-middle">
+                <form method="post" class="inline">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="update_flag">
+                    <input type="hidden" name="pk" value="{{ flag.pk }}">
+                    <input type="hidden" name="field" value="enabled_for_consultants">
+                    <input type="hidden" name="next_tab" value="{{ tab }}">
+                    <input type="checkbox" name="value" value="on" {% if flag.enabled_for_consultants %}checked{% endif %} onchange="this.form.submit()" class="rounded border-gray-300 text-blue-600">
+                </form>
+            </td>
+            <td class="p-2 text-center align-middle">
+                <form method="post" class="inline">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="update_flag">
+                    <input type="hidden" name="pk" value="{{ flag.pk }}">
+                    <input type="hidden" name="field" value="enabled_for_employees">
+                    <input type="hidden" name="next_tab" value="{{ tab }}">
+                    <input type="checkbox" name="value" value="on" {% if flag.enabled_for_employees %}checked{% endif %} onchange="this.form.submit()" class="rounded border-gray-300 text-blue-600">
+                </form>
+            </td>
+            <td class="p-3 text-right text-xs text-gray-500 whitespace-nowrap">
+                {% if flag.updated_by %}{{ flag.updated_by.username }}{% else %}—{% endif %}
+                <br>{{ flag.updated_at|date:"Y-m-d H:i" }}
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="p-6 text-center text-gray-500">No flags in this category.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>

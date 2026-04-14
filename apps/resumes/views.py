@@ -21,13 +21,16 @@ from .engine import (
 )
 from users.models import ConsultantProfile, User
 from core.models import LLMConfig
+from core.feature_flags import feature_enabled_for
 from jobs.services import JDParserService
 
 class AdminOrEmployeeMixin(LoginRequiredMixin, UserPassesTestMixin):
     """Only Admins and Employees can access draft features."""
     def test_func(self):
         u = self.request.user
-        return u.is_superuser or u.role in ('ADMIN', 'EMPLOYEE')
+        if not (u.is_superuser or u.role in ('ADMIN', 'EMPLOYEE')):
+            return False
+        return feature_enabled_for(u, 'ai_resume_generation')
 
 
 class DraftAccessMixin(LoginRequiredMixin, UserPassesTestMixin):
@@ -35,10 +38,12 @@ class DraftAccessMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
         u = self.request.user
         if u.is_superuser or u.role in ('ADMIN', 'EMPLOYEE'):
-            return True
+            return feature_enabled_for(u, 'ai_resume_generation')
         if u.role == 'CONSULTANT' and hasattr(u, 'consultant_profile'):
             draft_id = self.kwargs.get('pk')
-            return ResumeDraft.objects.filter(pk=draft_id, consultant=u.consultant_profile).exists()
+            if not ResumeDraft.objects.filter(pk=draft_id, consultant=u.consultant_profile).exists():
+                return False
+            return feature_enabled_for(u, 'consultant_resume_gen')
         return False
 
 
@@ -47,10 +52,12 @@ class DraftRegenerateAccessMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
         u = self.request.user
         if u.is_superuser or u.role in ('ADMIN', 'EMPLOYEE'):
-            return True
+            return feature_enabled_for(u, 'ai_resume_generation')
         if u.role == User.Role.CONSULTANT and hasattr(u, 'consultant_profile'):
             draft_id = self.kwargs.get('pk')
-            return ResumeDraft.objects.filter(pk=draft_id, consultant=u.consultant_profile).exists()
+            if not ResumeDraft.objects.filter(pk=draft_id, consultant=u.consultant_profile).exists():
+                return False
+            return feature_enabled_for(u, 'consultant_resume_gen')
         return False
 
 
@@ -59,10 +66,13 @@ class ResumeGenerateActionAccessMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
         u = self.request.user
         if u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE):
-            return True
+            return feature_enabled_for(u, 'ai_resume_generation')
         if u.role == User.Role.CONSULTANT and hasattr(u, 'consultant_profile'):
             cid = self.request.POST.get('consultant')
-            return cid and str(u.consultant_profile.pk) == str(cid)
+            return (
+                bool(cid and str(u.consultant_profile.pk) == str(cid))
+                and feature_enabled_for(u, 'consultant_resume_gen')
+            )
         return False
 
 
@@ -836,7 +846,13 @@ class ConsultantResumeGeneratePageView(LoginRequiredMixin, UserPassesTestMixin, 
 
     def test_func(self):
         u = self.request.user
-        return u.is_superuser or u.role in ('ADMIN', 'EMPLOYEE', 'CONSULTANT')
+        if u.is_superuser or u.role == 'ADMIN':
+            return True
+        if u.role == 'CONSULTANT':
+            return feature_enabled_for(u, 'consultant_resume_gen')
+        if u.role == 'EMPLOYEE':
+            return feature_enabled_for(u, 'ai_resume_generation')
+        return False
 
     def get(self, request):
         from jobs.models import Job as JobModel
@@ -890,7 +906,9 @@ class CoverLetterGenerateView(LoginRequiredMixin, UserPassesTestMixin, BaseView)
 
     def test_func(self):
         u = self.request.user
-        return u.is_superuser or u.role in ('ADMIN', 'EMPLOYEE', 'CONSULTANT')
+        if u.is_superuser or u.role == 'ADMIN':
+            return True
+        return feature_enabled_for(u, 'consultant_cover_letter')
 
     def get(self, request):
         from jobs.models import Job as JobModel
@@ -1025,6 +1043,8 @@ class CoverLetterDetailView(LoginRequiredMixin, UserPassesTestMixin, BaseView):
 
     def test_func(self):
         u = self.request.user
+        if not feature_enabled_for(u, 'consultant_cover_letter'):
+            return False
         if u.is_superuser or u.role in ('ADMIN', 'EMPLOYEE'):
             return True
         if u.role == 'CONSULTANT' and hasattr(u, 'consultant_profile'):
@@ -1044,6 +1064,8 @@ class CoverLetterDownloadView(LoginRequiredMixin, UserPassesTestMixin, BaseView)
 
     def test_func(self):
         u = self.request.user
+        if not feature_enabled_for(u, 'consultant_cover_letter'):
+            return False
         if u.is_superuser or u.role in ('ADMIN', 'EMPLOYEE'):
             return True
         if u.role == 'CONSULTANT' and hasattr(u, 'consultant_profile'):
@@ -1072,12 +1094,16 @@ class InterviewPrepView(LoginRequiredMixin, UserPassesTestMixin, BaseView):
 
     def test_func(self):
         u = self.request.user
-        if u.is_superuser or u.role in ('ADMIN', 'EMPLOYEE'):
+        if u.is_superuser or u.role == 'ADMIN':
             return True
+        if u.role == 'EMPLOYEE':
+            return feature_enabled_for(u, 'ai_interview_prep')
         if u.role == 'CONSULTANT' and hasattr(u, 'consultant_profile'):
             pk = self.kwargs.get('pk')
             from submissions.models import ApplicationSubmission
-            return ApplicationSubmission.objects.filter(pk=pk, consultant=u.consultant_profile).exists()
+            if not ApplicationSubmission.objects.filter(pk=pk, consultant=u.consultant_profile).exists():
+                return False
+            return feature_enabled_for(u, 'consultant_interview_prep')
         return False
 
     def get(self, request, pk):

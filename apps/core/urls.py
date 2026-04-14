@@ -24,6 +24,8 @@ from .views import (
     BroadcastListView,
     BroadcastCreateView,
     BroadcastDetailView,
+    FeatureControlCenterView,
+    MyFeaturesJsonView,
 )
 
 urlpatterns = [
@@ -53,4 +55,7 @@ urlpatterns = [
     path('broadcasts/', BroadcastListView.as_view(), name='broadcast-list'),
     path('broadcasts/new/', BroadcastCreateView.as_view(), name='broadcast-create'),
     path('broadcasts/<int:pk>/', BroadcastDetailView.as_view(), name='broadcast-detail'),
+
+    path('feature-control/', FeatureControlCenterView.as_view(), name='feature-control-center'),
+    path('api/my-features/', MyFeaturesJsonView.as_view(), name='api-my-features'),
 ]

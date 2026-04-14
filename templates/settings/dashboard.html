@@ -7,6 +7,19 @@
         <p class="text-gray-600">Manage users, roles, and platform configuration.</p>
     </div>
 
+    <div class="mb-8 bg-gradient-to-r from-slate-800 to-slate-700 rounded-xl shadow-lg p-6 text-white">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+                <h2 class="text-xl font-bold">Feature Control Center</h2>
+                <p class="text-slate-200 text-sm mt-1">Turn features on or off for consultants and employees, and edit designation RBAC.</p>
+            </div>
+            <a href="{% url 'feature-control-center' %}"
+                class="inline-flex justify-center items-center px-5 py-2.5 bg-white text-slate-900 font-semibold rounded-lg hover:bg-slate-100 transition text-sm">
+                Open Feature Control
+            </a>
+        </div>
+    </div>
+
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <!-- Employee Management -->
         <div class="bg-white rounded-lg shadow-sm p-6 border-l-4 border-blue-500 hover:shadow-sm transition">

@@ -31,6 +31,7 @@ def _get_require_pool_staging() -> bool:
         return True
 from companies.models import Company
 from users.models import User, MarketingRole
+from core.feature_flags import feature_enabled_for
 from .services import (
     JDParserService,
     match_consultants_for_job,
@@ -87,8 +88,18 @@ def apply_job_list_filters(qs, request):
 
 
 class EmployeeRequiredMixin(UserPassesTestMixin):
+    """Staff-only; set employee_feature_key to gate with a FeatureFlag (e.g. employee_job_pool)."""
+
+    employee_feature_key = None
+
     def test_func(self):
-        return self.request.user.is_superuser or self.request.user.role in (User.Role.EMPLOYEE, User.Role.ADMIN)
+        u = self.request.user
+        if not (u.is_superuser or u.role in (User.Role.EMPLOYEE, User.Role.ADMIN)):
+            return False
+        key = getattr(self, 'employee_feature_key', None)
+        if key:
+            return feature_enabled_for(u, key)
+        return True
 
 class JobListView(LoginRequiredMixin, ListView):
     model = Job
@@ -148,8 +159,14 @@ def _get_job_list_queryset(request):
     return apply_job_list_filters(qs, request)
 
 
-class JobExportCSVView(LoginRequiredMixin, View):
+class JobExportCSVView(LoginRequiredMixin, UserPassesTestMixin, View):
     """Export job list as CSV with same filters as list view."""
+
+    def test_func(self):
+        u = self.request.user
+        if not (u.is_superuser or u.role in (User.Role.EMPLOYEE, User.Role.ADMIN)):
+            return False
+        return feature_enabled_for(u, 'employee_csv_export')
 
     def get(self, request, *args, **kwargs):
         qs = _get_job_list_queryset(request)
@@ -209,8 +226,16 @@ class JobDetailView(LoginRequiredMixin, DetailView):
 
         # Consultant ↔ job match scores (ranked, with % and raw score)
         if job:
-            context['consultant_match_rankings'] = ranked_consultants_for_job(job, limit=25)
-            context['matched_consultants'] = match_consultants_for_job(job, limit=6)
+            if getattr(self.request.user, 'role', None) == User.Role.CONSULTANT:
+                if feature_enabled_for(self.request.user, 'consultant_job_matching'):
+                    context['consultant_match_rankings'] = ranked_consultants_for_job(job, limit=25)
+                    context['matched_consultants'] = match_consultants_for_job(job, limit=6)
+                else:
+                    context['consultant_match_rankings'] = []
+                    context['matched_consultants'] = []
+            else:
+                context['consultant_match_rankings'] = ranked_consultants_for_job(job, limit=25)
+                context['matched_consultants'] = match_consultants_for_job(job, limit=6)
         # Consultant: their application for this job (so they can "Schedule interview" from this job)
         if job and getattr(self.request.user, 'role', None) == User.Role.CONSULTANT and hasattr(self.request.user, 'consultant_profile'):
             context['consultant_submission_for_job'] = ApplicationSubmission.objects.filter(
@@ -431,6 +456,7 @@ def _bulk_existing_job_for_posting_url(url: str):
 
 
 class JobBulkUploadView(LoginRequiredMixin, EmployeeRequiredMixin, View):
+    employee_feature_key = 'employee_bulk_ops'
     def get(self, request):
         form = JobBulkUploadForm()
         return render(request, 'jobs/job_bulk_upload.html', {'form': form})
@@ -684,6 +710,7 @@ class ArchivedJobsView(LoginRequiredMixin, EmployeeRequiredMixin, ListView):
 # ─── Job Pool / Validation Pipeline ──────────────────────────────────────────
 
 class JobPoolView(LoginRequiredMixin, EmployeeRequiredMixin, ListView):
+    employee_feature_key = 'employee_job_pool'
     """Dashboard for jobs awaiting vetting before going live."""
     template_name = 'jobs/job_pool.html'
     context_object_name = 'jobs'
@@ -780,6 +807,7 @@ class JobPoolView(LoginRequiredMixin, EmployeeRequiredMixin, ListView):
 
 
 class JobPoolRevalidateView(LoginRequiredMixin, EmployeeRequiredMixin, View):
+    employee_feature_key = 'employee_job_pool'
     """Re-run validation scoring for a job (pool or live)."""
     def post(self, request, pk):
         job = get_object_or_404(Job, pk=pk, is_archived=False)
@@ -803,6 +831,7 @@ class JobPoolRevalidateView(LoginRequiredMixin, EmployeeRequiredMixin, View):
 
 
 class JobApproveView(LoginRequiredMixin, EmployeeRequiredMixin, View):
+    employee_feature_key = 'employee_job_pool'
     """Move a POOL job to OPEN (approve it)."""
     def post(self, request, pk):
         job = get_object_or_404(Job, pk=pk)
@@ -824,6 +853,7 @@ class JobApproveView(LoginRequiredMixin, EmployeeRequiredMixin, View):
 
 
 class JobRejectView(LoginRequiredMixin, EmployeeRequiredMixin, View):
+    employee_feature_key = 'employee_job_pool'
     """Reject a POOL job — moves to CLOSED and records reason."""
     def post(self, request, pk):
         job = get_object_or_404(Job, pk=pk)
@@ -849,6 +879,7 @@ class JobRejectView(LoginRequiredMixin, EmployeeRequiredMixin, View):
 
 
 class JobBulkApproveView(LoginRequiredMixin, EmployeeRequiredMixin, View):
+    employee_feature_key = 'employee_bulk_ops'
     """Bulk-approve multiple POOL jobs at once."""
     def post(self, request):
         job_ids = request.POST.getlist('job_ids')
@@ -888,6 +919,7 @@ class JobBulkApproveView(LoginRequiredMixin, EmployeeRequiredMixin, View):
 
 
 class JobPoolRefreshLinksView(LoginRequiredMixin, EmployeeRequiredMixin, View):
+    employee_feature_key = 'employee_job_pool'
     """Manual trigger from UI: refresh posting URL health in batch."""
 
     def post(self, request):

@@ -8,6 +8,8 @@ from .models import (
     Notification,
     BroadcastMessage,
     BroadcastDelivery,
+    FeatureFlag,
+    EmployeeDesignation,
 )
 
 
@@ -26,6 +28,21 @@ class BroadcastMessageAdmin(admin.ModelAdmin):
     list_display = ('title', 'audience', 'kind', 'created_by', 'created_at')
     list_filter = ('audience', 'kind', 'created_at')
     inlines = [BroadcastDeliveryInline]
+
+
+@admin.register(FeatureFlag)
+class FeatureFlagAdmin(admin.ModelAdmin):
+    list_display = ('key', 'label', 'category', 'applies_to', 'is_enabled', 'enabled_for_consultants', 'enabled_for_employees', 'sort_order')
+    list_filter = ('category', 'applies_to', 'is_enabled')
+    search_fields = ('key', 'label')
+    ordering = ('sort_order', 'key')
+
+
+@admin.register(EmployeeDesignation)
+class EmployeeDesignationAdmin(admin.ModelAdmin):
+    list_display = ('name', 'slug', 'level', 'is_active')
+    filter_horizontal = ('allowed_features',)
+    search_fields = ('name', 'slug')
 
 
 @admin.register(PlatformConfig)

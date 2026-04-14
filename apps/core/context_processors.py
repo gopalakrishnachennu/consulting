@@ -1,6 +1,7 @@
 """Platform singleton for templates + unread notification count for nav bell."""
 
 from core.notification_utils import get_cached_unread_count
+from core.feature_flags import feature_enabled_for
 
 
 def platform_settings(request):
@@ -33,3 +34,19 @@ def pending_pool_count(request):
     except Exception:
         count = 0
     return {'pending_pool_count': count}
+
+
+def user_feature_flags(request):
+    """
+    Inject USER_FEATURE_FLAGS: dict key -> bool for the current user (for nav / dashboards).
+    """
+    if not request.user.is_authenticated:
+        return {'USER_FEATURE_FLAGS': {}}
+    try:
+        from core.models import FeatureFlag
+    except Exception:
+        return {'USER_FEATURE_FLAGS': {}}
+    keys = FeatureFlag.objects.values_list('key', flat=True)
+    return {
+        'USER_FEATURE_FLAGS': {k: feature_enabled_for(request.user, k) for k in keys},
+    }

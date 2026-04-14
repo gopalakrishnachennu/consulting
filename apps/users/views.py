@@ -10,7 +10,10 @@ from django.contrib import messages
 from django.views import View as BaseView
 from django.http import HttpResponse
 from django.core.serializers.json import DjangoJSONEncoder
+from django.core.exceptions import PermissionDenied
 import json
+
+from core.feature_flags import feature_enabled_for, consultant_public_feature_enabled
 
 from .models import (
     User,
@@ -401,6 +404,8 @@ class PublicConsultantProfileView(View):
             ),
             profile_slug=slug,
         )
+        if not consultant_public_feature_enabled(profile.user, 'consultant_public_profile'):
+            return render(request, 'users/consultant_public_profile_disabled.html', status=404)
         context = {
             'profile': profile,
             'consultant': profile.user,
@@ -843,7 +848,9 @@ class SaveJobView(LoginRequiredMixin, BaseView):
         if request.user.role != User.Role.CONSULTANT:
             messages.error(request, MSG_ONLY_CONSULTANTS_SAVE)
             return redirect('job-list')
-        
+        if not feature_enabled_for(request.user, 'consultant_saved_jobs'):
+            raise PermissionDenied
+
         job = get_object_or_404(Job, pk=pk)
         saved, created = SavedJob.objects.get_or_create(user=request.user, job=job)
         
@@ -857,11 +864,15 @@ class SaveJobView(LoginRequiredMixin, BaseView):
         return redirect(next_url)
 
 
-class SavedJobListView(LoginRequiredMixin, ListView):
+class SavedJobListView(LoginRequiredMixin, UserPassesTestMixin, ListView):
     model = SavedJob
     template_name = 'users/saved_jobs.html'
     context_object_name = 'saved_jobs'
     paginate_by = 10
+
+    def test_func(self):
+        u = self.request.user
+        return u.role == User.Role.CONSULTANT and feature_enabled_for(u, 'consultant_saved_jobs')
 
     def get_queryset(self):
         return SavedJob.objects.filter(user=self.request.user).select_related('job')
@@ -964,7 +975,13 @@ class ConsultantCareerTimelineView(LoginRequiredMixin, UserPassesTestMixin, Temp
 
     def test_func(self):
         u = self.request.user
-        return u.is_superuser or u.role in ('ADMIN', 'EMPLOYEE', 'CONSULTANT')
+        if u.is_superuser or u.role == 'ADMIN':
+            return True
+        if u.role == 'EMPLOYEE':
+            return feature_enabled_for(u, 'employee_workflow')
+        if u.role == 'CONSULTANT':
+            return feature_enabled_for(u, 'consultant_career_timeline')
+        return False
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

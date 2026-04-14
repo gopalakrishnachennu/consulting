@@ -18,11 +18,15 @@ from core.dashboard_metrics import (
     get_employee_leaderboard_metrics,
     get_consultant_performance_metrics,
 )
+from core.feature_flags import feature_enabled_for
+
 
 class EmployeeRequiredMixin(UserPassesTestMixin):
     def test_func(self):
         u = self.request.user
-        return u.is_superuser or u.role in (User.Role.EMPLOYEE, User.Role.ADMIN)
+        if not (u.is_superuser or u.role in (User.Role.EMPLOYEE, User.Role.ADMIN)):
+            return False
+        return feature_enabled_for(u, 'employee_analytics')
 
 class AnalyticsDashboardView(LoginRequiredMixin, EmployeeRequiredMixin, TemplateView):
     template_name = 'analytics/dashboard.html'

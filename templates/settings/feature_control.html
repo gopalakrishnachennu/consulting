@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8 max-w-7xl">
+    <div class="mb-8 rounded-xl bg-gradient-to-r from-slate-800 to-slate-700 text-white p-6 shadow-lg">
+        <h1 class="text-2xl font-bold">Feature Control Center</h1>
+        <p class="text-slate-200 mt-1">Configure global toggles and employee designation access. Superuser and Admin always bypass runtime checks.</p>
+    </div>
+
+    <div class="flex flex-wrap gap-2 mb-6 border-b border-gray-200 pb-4">
+        <a href="?tab=consultant" class="px-4 py-2 rounded-lg text-sm font-medium {% if active_tab == 'consultant' %}bg-blue-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">Consultant</a>
+        <a href="?tab=employee" class="px-4 py-2 rounded-lg text-sm font-medium {% if active_tab == 'employee' %}bg-blue-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">Employee</a>
+        <a href="?tab=ai" class="px-4 py-2 rounded-lg text-sm font-medium {% if active_tab == 'ai' %}bg-blue-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">AI &amp; LLM</a>
+        <a href="?tab=system" class="px-4 py-2 rounded-lg text-sm font-medium {% if active_tab == 'system' %}bg-blue-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">System</a>
+        <a href="?tab=designations" class="px-4 py-2 rounded-lg text-sm font-medium {% if active_tab == 'designations' %}bg-blue-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">Designations</a>
+    </div>
+
+    {% if active_tab == 'designations' %}
+    {% load feature_flags %}
+    <div class="bg-white rounded-lg shadow overflow-x-auto">
+        <table class="min-w-full text-sm">
+            <thead>
+                <tr class="bg-gray-50 text-left">
+                    <th class="p-3 border-b">Feature</th>
+                    {% for d in designations %}
+                    <th class="p-3 border-b text-center whitespace-nowrap" title="{{ d.slug }}">{{ d.name }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for f in matrix_flags %}
+                <tr class="border-b hover:bg-gray-50">
+                    <td class="p-3">
+                        <div class="font-medium text-gray-900">{{ f.label }}</div>
+                        <div class="text-xs text-gray-500">{{ f.key }}</div>
+                    </td>
+                    {% for d in designations %}
+                    <td class="p-2 text-center align-middle">
+                        <form method="post" class="inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="designation_matrix">
+                            <input type="hidden" name="designation_pk" value="{{ d.pk }}">
+                            <input type="hidden" name="flag_pk" value="{{ f.pk }}">
+                            <input type="hidden" name="next_tab" value="designations">
+                            <input type="checkbox" name="checked" value="1" {% if f.pk in designation_matrix|get_item:d.pk %}checked{% endif %} onchange="this.form.submit()" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                        </form>
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <p class="p-4 text-xs text-gray-500">Employee access requires the master flag, &quot;enabled for employees&quot;, and this matrix checkbox for the user&apos;s designation.</p>
+    </div>
+    {% elif active_tab == 'consultant' %}
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        {% include "settings/_feature_flag_table.html" with flags=consultant_flags tab="consultant" %}
+    </div>
+    {% elif active_tab == 'employee' %}
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        {% include "settings/_feature_flag_table.html" with flags=employee_flags tab="employee" %}
+    </div>
+    {% elif active_tab == 'ai' %}
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        {% include "settings/_feature_flag_table.html" with flags=ai_flags tab="ai" %}
+    </div>
+    {% elif active_tab == 'system' %}
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        {% include "settings/_feature_flag_table.html" with flags=system_flags tab="system" %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

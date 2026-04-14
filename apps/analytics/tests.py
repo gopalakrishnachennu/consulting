@@ -1,6 +1,7 @@
 from django.test import TestCase, Client
 from django.urls import reverse
-from users.models import User
+from users.models import User, EmployeeProfile
+from core.models import EmployeeDesignation
 
 
 class AnalyticsDateRangeTests(TestCase):
@@ -9,6 +10,9 @@ class AnalyticsDateRangeTests(TestCase):
         self.employee = User.objects.create_user(
             username='emp1', password='testpass', role=User.Role.EMPLOYEE
         )
+        ep = EmployeeProfile.objects.create(user=self.employee, company_name='Test Co')
+        ep.designation = EmployeeDesignation.objects.get(slug='senior_recruiter')
+        ep.save(update_fields=['designation'])
 
     def test_analytics_dashboard_all_time(self):
         self.client.login(username='emp1', password='testpass')

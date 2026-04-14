@@ -184,6 +184,14 @@ class Department(models.Model):
 class EmployeeProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='employee_profile')
     department = models.ForeignKey(Department, on_delete=models.SET_NULL, null=True, blank=True, related_name='employees')
+    designation = models.ForeignKey(
+        'core.EmployeeDesignation',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='employees',
+        help_text=_('RBAC tier — controls which employee feature flags apply.'),
+    )
     company_name = models.CharField(max_length=200, default="My Company")
     can_manage_consultants = models.BooleanField(default=False, help_text="Designates whether this employee can add, edit, or delete consultants.")
     
