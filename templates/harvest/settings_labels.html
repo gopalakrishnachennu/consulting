@@ -53,6 +53,67 @@
     </div>
   </div>
 
+  <!-- Platform Distribution Chart -->
+  {% if platforms_chart %}
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 mb-6">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-sm font-semibold text-gray-700">Platform Distribution</h2>
+      <span class="text-xs text-gray-400">{{ stat_labeled }} companies labeled</span>
+    </div>
+    <div class="space-y-2.5" id="platform-chart">
+      {% for platform in platforms_chart %}
+      <a href="{% url 'harvest-labels' %}?platform={{ platform.slug }}"
+         title="Filter to {{ platform.name }} companies"
+         class="flex items-center gap-3 group rounded-lg px-1 py-0.5 -mx-1 hover:bg-gray-50 transition-colors cursor-pointer">
+        <div class="w-28 flex-shrink-0 flex items-center justify-end gap-1.5">
+          <span class="w-2 h-2 rounded-full flex-shrink-0" style="background-color: {{ platform.color_hex }};"></span>
+          <span class="text-xs text-gray-700 font-medium truncate group-hover:underline">{{ platform.name }}</span>
+        </div>
+        <div class="flex-1 h-4 bg-gray-100 rounded-full overflow-hidden">
+          <div class="h-full rounded-full transition-all duration-700 ease-out group-hover:brightness-110"
+               style="background-color: {{ platform.color_hex }}; width: 0%;"
+               data-count="{{ platform.company_count }}"
+               data-bar></div>
+        </div>
+        <div class="w-10 text-xs text-right font-semibold flex-shrink-0" style="color: {{ platform.color_hex }};">{{ platform.company_count }}</div>
+      </a>
+      {% endfor %}
+      {% if stat_unlabeled > 0 %}
+      <a href="{% url 'harvest-labels' %}?platform=UNDETECTED"
+         title="Filter to undetected companies"
+         class="flex items-center gap-3 group rounded-lg px-1 py-0.5 -mx-1 hover:bg-gray-50 transition-colors cursor-pointer">
+        <div class="w-28 flex-shrink-0 flex items-center justify-end gap-1.5">
+          <span class="w-2 h-2 rounded-full flex-shrink-0 bg-gray-300"></span>
+          <span class="text-xs text-gray-400 font-medium truncate group-hover:underline">Not scanned</span>
+        </div>
+        <div class="flex-1 h-4 bg-gray-100 rounded-full overflow-hidden">
+          <div class="h-full rounded-full bg-gray-300 transition-all duration-700 ease-out group-hover:brightness-110"
+               data-count="{{ stat_unlabeled }}"
+               data-bar></div>
+        </div>
+        <div class="w-10 text-xs text-right font-semibold text-gray-400 flex-shrink-0">{{ stat_unlabeled }}</div>
+      </a>
+      {% endif %}
+    </div>
+  </div>
+  <script>
+  (function () {
+    var bars = document.querySelectorAll('[data-bar]');
+    var max = 0;
+    bars.forEach(function (b) { max = Math.max(max, parseInt(b.dataset.count, 10) || 0); });
+    if (!max) return;
+    requestAnimationFrame(function () {
+      setTimeout(function () {
+        bars.forEach(function (b) {
+          var pct = Math.round((parseInt(b.dataset.count, 10) / max) * 100);
+          b.style.width = pct + '%';
+        });
+      }, 80);
+    });
+  })();
+  </script>
+  {% endif %}
+
   <!-- Actions Row -->
   <div class="flex flex-wrap items-center gap-3 mb-5">
     <form method="post" action="{% url 'harvest-run-detect' %}">

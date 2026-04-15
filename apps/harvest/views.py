@@ -164,6 +164,9 @@ class CompanyLabelListView(SuperuserRequiredMixin, ListView):
         ctx["platforms"] = JobBoardPlatform.objects.annotate(
             company_count=Count("labels")
         ).order_by("name")
+        ctx["platforms_chart"] = JobBoardPlatform.objects.annotate(
+            company_count=Count("labels")
+        ).filter(company_count__gt=0).order_by("-company_count")
         from companies.models import Company
 
         ctx["stat_labeled"] = CompanyPlatformLabel.objects.exclude(
