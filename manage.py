@@ -2,6 +2,11 @@
 """Django's command-line utility for administrative tasks."""
 import os
 import sys
+from pathlib import Path
+
+# Add /apps to sys.path BEFORE Django loads so 'users', 'core', etc. resolve
+# directly (not as 'apps.users', 'apps.core') matching INSTALLED_APPS names.
+sys.path.insert(0, str(Path(__file__).resolve().parent / 'apps'))
 
 
 def main():
