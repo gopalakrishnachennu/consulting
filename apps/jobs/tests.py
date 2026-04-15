@@ -205,7 +205,7 @@ class JobUrlRevalidationTests(TestCase):
 
     @patch('jobs.tasks._check_job_url', return_value=False)
     def test_validate_job_urls_flags_dead_link(self, _mock):
-        validate_job_urls_task()
+        validate_job_urls_task.apply(kwargs={"batch_size": 50}).get()
         self.job.refresh_from_db()
         self.assertFalse(self.job.original_link_is_live)
         self.assertTrue(self.job.possibly_filled)
@@ -213,7 +213,7 @@ class JobUrlRevalidationTests(TestCase):
 
     @patch('jobs.tasks._check_job_url', return_value=True)
     def test_validate_job_urls_keeps_live_link(self, _mock):
-        validate_job_urls_task()
+        validate_job_urls_task.apply(kwargs={"batch_size": 50}).get()
         self.job.refresh_from_db()
         self.assertTrue(self.job.original_link_is_live)
         self.assertFalse(self.job.possibly_filled)
@@ -222,7 +222,7 @@ class JobUrlRevalidationTests(TestCase):
     def test_validate_job_urls_skips_recently_checked(self, _mock):
         self.job.original_link_last_checked_at = timezone.now()
         self.job.save(update_fields=['original_link_last_checked_at'])
-        validate_job_urls_task()
+        validate_job_urls_task.apply(kwargs={"batch_size": 50}).get()
         self.job.refresh_from_db()
         # Not processed (batch prefers stale / null; empty batch for "recent only" in isolation)
         self.assertIsNotNone(self.job.original_link_last_checked_at)

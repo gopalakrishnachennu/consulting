@@ -1,5 +1,7 @@
 from celery import shared_task
 from urllib.request import Request, urlopen
+
+from core.task_progress import update_task_progress
 from urllib.parse import urlparse
 import ssl
 import logging
@@ -167,8 +169,8 @@ def _notify_pool_review_emails(job: Job, validation_result: dict):
         logger.exception("Failed to send pool review notification for job %s", job.pk)
 
 
-@shared_task
-def validate_job_urls_task(batch_size: int = 50):
+@shared_task(bind=True)
+def validate_job_urls_task(self, batch_size: int = 50):
     """
     Re-check original job URLs and flag jobs as 'possibly_filled' when their source goes away.
     Runs daily via Celery beat (see core.signals).
@@ -185,8 +187,13 @@ def validate_job_urls_task(batch_size: int = 50):
         original_link_last_checked_at__isnull=True
     )
 
+    jobs = list(qs[:batch_size])
+    total_n = len(jobs)
+    if total_n:
+        update_task_progress(self, current=0, total=total_n, message="Checking job posting URLs…")
+
     processed = 0
-    for job in qs[:batch_size]:
+    for i, job in enumerate(jobs, start=1):
         was_pf = job.possibly_filled
         is_live = _check_job_url(job.original_link)
         job.original_link_is_live = is_live
@@ -202,6 +209,14 @@ def validate_job_urls_task(batch_size: int = 50):
                 notify_job_posting_link_unhealthy(job)
             except Exception:
                 pass
+
+        if total_n:
+            update_task_progress(
+                self,
+                current=i,
+                total=total_n,
+                message=f"URL check {i}/{total_n}",
+            )
 
     result = {"processed": processed}
     try:

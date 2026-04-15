@@ -30,8 +30,19 @@ class CompanyPlatformLabelAdmin(admin.ModelAdmin):
 
 @admin.register(HarvestRun)
 class HarvestRunAdmin(admin.ModelAdmin):
-    list_display = ["pk", "platform", "status", "triggered_by", "started_at", "jobs_new", "jobs_fetched", "jobs_failed"]
-    list_filter = ["platform", "status", "triggered_by"]
+    list_display = [
+        "pk",
+        "run_type",
+        "platform",
+        "status",
+        "triggered_by",
+        "started_at",
+        "jobs_new",
+        "detection_detected",
+        "jobs_fetched",
+        "jobs_failed",
+    ]
+    list_filter = ["run_type", "status", "triggered_by"]
     readonly_fields = ["started_at", "finished_at"]
 
 

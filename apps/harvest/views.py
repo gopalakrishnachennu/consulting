@@ -10,6 +10,8 @@ from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.generic import CreateView, ListView, TemplateView, UpdateView, View
 
+from core.http import redirect_with_task_progress
+
 from .forms import JobBoardPlatformForm
 from .models import CompanyPlatformLabel, HarvestRun, HarvestedJob, JobBoardPlatform
 
@@ -217,19 +219,43 @@ class LabelManualSetView(SuperuserRequiredMixin, View):
 class RunDetectNowView(SuperuserRequiredMixin, View):
     def post(self, request):
         from .tasks import detect_company_platforms_task
-        task = detect_company_platforms_task.delay(batch_size=200)
-        messages.success(request, f"Platform detection started (Task: {task.id[:8]}...)")
-        return redirect("harvest-monitor")
+        task = detect_company_platforms_task.delay(
+            batch_size=200,
+            triggered_user_id=request.user.id,
+        )
+        messages.success(
+            request,
+            "Platform detection is running on the server. "
+            f"Refresh Run Monitor to see progress (task {task.id[:8]}…). "
+            "Switching tabs does not stop this job.",
+        )
+        return redirect_with_task_progress(
+            "harvest-monitor",
+            task.id,
+            "Platform detection",
+        )
 
 
 class RunHarvestNowView(SuperuserRequiredMixin, View):
     def post(self, request):
         from .tasks import harvest_jobs_task
         platform_slug = request.POST.get("platform_slug", "").strip() or None
-        task = harvest_jobs_task.delay(platform_slug=platform_slug)
+        task = harvest_jobs_task.delay(
+            platform_slug=platform_slug,
+            triggered_by="MANUAL",
+            triggered_user_id=request.user.id,
+        )
         label = platform_slug or "all platforms"
-        messages.success(request, f"Harvest started for {label} (Task: {task.id[:8]}...)")
-        return redirect("harvest-monitor")
+        messages.success(
+            request,
+            f"Harvest for {label} is running on the server (task {task.id[:8]}…). "
+            "Refresh Run Monitor for results; switching tabs does not cancel work.",
+        )
+        return redirect_with_task_progress(
+            "harvest-monitor",
+            task.id,
+            f"Harvest ({label})",
+        )
 
 
 class RunSyncNowView(SuperuserRequiredMixin, View):
@@ -237,7 +263,7 @@ class RunSyncNowView(SuperuserRequiredMixin, View):
         from .tasks import sync_harvested_to_pool_task
         task = sync_harvested_to_pool_task.delay()
         messages.success(request, f"Sync to job pool started (Task: {task.id[:8]}...)")
-        return redirect("harvest-monitor")
+        return redirect_with_task_progress("harvest-monitor", task.id, "Sync to job pool")
 
 
 class RunCleanupNowView(SuperuserRequiredMixin, View):
@@ -245,4 +271,4 @@ class RunCleanupNowView(SuperuserRequiredMixin, View):
         from .tasks import cleanup_harvested_jobs_task
         task = cleanup_harvested_jobs_task.delay()
         messages.success(request, f"Cleanup started (Task: {task.id[:8]}...)")
-        return redirect("harvest-monitor")
+        return redirect_with_task_progress("harvest-monitor", task.id, "Harvest cleanup")

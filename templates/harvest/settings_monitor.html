@@ -29,6 +29,16 @@
   {% endfor %}
   {% endif %}
 
+  <div class="mb-6 px-4 py-3 rounded-lg bg-slate-50 border border-slate-200 text-sm text-slate-700">
+    <strong class="text-slate-900">How this page works:</strong>
+    Detection, harvest, sync, and cleanup all run as <strong>Celery jobs on the server</strong>.
+    Leaving this tab or opening another Harvest tab does <strong>not</strong> cancel work—refresh this page to see updated status.
+    A <strong>live progress bar</strong> appears at the bottom of the screen (site-wide) while a task runs.
+    {% if running_runs %}
+    <span class="block mt-2 text-blue-700 font-medium">Auto-refresh in 20 seconds while runs are active…</span>
+    {% endif %}
+  </div>
+
   <!-- Stats -->
   <div class="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6">
     <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
@@ -97,8 +107,8 @@
   <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
     <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
       <div>
-        <h3 class="font-semibold text-gray-900">Recent Harvest Runs</h3>
-        <p class="text-xs text-gray-500 mt-0.5">Latest runs across all platforms, newest first</p>
+        <h3 class="font-semibold text-gray-900">Recent Runs</h3>
+        <p class="text-xs text-gray-500 mt-0.5">Harvest and platform-detection jobs, newest first</p>
       </div>
       {% if is_paginated %}
       <p class="text-xs text-gray-400">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</p>
@@ -110,10 +120,10 @@
       <table class="w-full text-sm">
         <thead>
           <tr class="border-b border-gray-100 bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wider">
-            <th class="px-4 py-3 text-left">Platform</th>
+            <th class="px-4 py-3 text-left">Platform / Run type</th>
             <th class="px-4 py-3 text-left">Status</th>
             <th class="px-4 py-3 text-left hidden md:table-cell">Started</th>
-            <th class="px-4 py-3 text-right font-mono">New</th>
+            <th class="px-4 py-3 text-right font-mono">New / detected</th>
             <th class="px-4 py-3 text-right font-mono hidden sm:table-cell">Dup</th>
             <th class="px-4 py-3 text-right font-mono hidden md:table-cell">Failed</th>
             <th class="px-4 py-3 text-right hidden lg:table-cell">Duration</th>
@@ -124,11 +134,20 @@
           {% for run in runs %}
           <tr class="border-b border-gray-100 hover:bg-gray-50/50 transition-colors">
             <td class="px-4 py-3">
+              {% if run.run_type == 'DETECTION' %}
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background-color: #2563EB;"></span>
+                <span class="font-medium text-gray-900">Platform detection</span>
+                <span class="text-[10px] uppercase tracking-wide text-blue-600 font-semibold">Detection</span>
+              </div>
+              <p class="text-xs text-gray-400 ml-4.5 mt-0.5">up to {{ run.companies_targeted }} companies in batch</p>
+              {% else %}
               <div class="flex items-center gap-2">
                 <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background-color: {{ run.platform.color_hex|default:'#6B7280' }};"></span>
                 <span class="font-medium text-gray-900">{{ run.platform.name }}</span>
               </div>
               <p class="text-xs text-gray-400 ml-4.5 mt-0.5">{{ run.companies_targeted }} companies targeted</p>
+              {% endif %}
             </td>
             <td class="px-4 py-3">
               {% if run.status == 'SUCCESS' %}
@@ -146,7 +165,12 @@
               <span class="text-gray-400">{{ run.started_at|timesince }} ago</span>
             </td>
             <td class="px-4 py-3 text-right">
+              {% if run.run_type == 'DETECTION' %}
+              <span class="font-mono font-bold text-blue-700">{{ run.detection_detected }}</span>
+              <span class="text-gray-400 text-xs"> / {{ run.detection_total }}</span>
+              {% else %}
               <span class="font-mono font-bold text-green-700">+{{ run.jobs_new }}</span>
+              {% endif %}
             </td>
             <td class="px-4 py-3 text-right font-mono text-gray-500 hidden sm:table-cell">{{ run.jobs_duplicate }}</td>
             <td class="px-4 py-3 text-right font-mono text-red-500 hidden md:table-cell">{{ run.jobs_failed }}</td>
@@ -165,7 +189,7 @@
           <tr class="bg-red-50/40 border-b border-gray-100">
             <td colspan="8" class="px-4 py-2">
               <details>
-                <summary class="cursor-pointer text-xs text-red-600 font-medium hover:text-red-700">⚠ View error log ({{ run.jobs_failed }} errors)</summary>
+                <summary class="cursor-pointer text-xs text-red-600 font-medium hover:text-red-700">⚠ View log{% if run.run_type != 'DETECTION' %} ({{ run.jobs_failed }} job errors){% endif %}</summary>
                 <pre class="mt-2 text-[11px] font-mono text-red-700 bg-red-50 rounded p-2 overflow-x-auto max-h-32 whitespace-pre-wrap">{{ run.error_log|truncatechars:800 }}</pre>
               </details>
             </td>
@@ -194,10 +218,15 @@
     <div class="p-16 text-center">
       <span class="text-5xl mb-4 block">📭</span>
       <h3 class="text-base font-semibold text-gray-700 mb-2">No harvest runs yet</h3>
-      <p class="text-sm text-gray-500 mb-5">Trigger your first harvest run using the Quick Actions above.</p>
+      <p class="text-sm text-gray-500 mb-5">Trigger detection or harvest from Quick Actions above—runs appear here after the server processes them.</p>
     </div>
     {% endif %}
   </div>
 
 </div>
+{% if running_runs %}
+<script>
+  setTimeout(function () { window.location.reload(); }, 20000);
+</script>
+{% endif %}
 {% endblock %}

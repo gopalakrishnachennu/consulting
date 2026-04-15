@@ -31,6 +31,7 @@ from .views import (
     TaskToggleView,
     TaskEditScheduleView,
     TaskRunNowView,
+    TaskProgressAPIView,
 )
 
 urlpatterns = [
@@ -63,6 +64,7 @@ urlpatterns = [
 
     path('feature-control/', FeatureControlCenterView.as_view(), name='feature-control-center'),
     path('api/my-features/', MyFeaturesJsonView.as_view(), name='api-my-features'),
+    path('api/task-progress/<str:task_id>/', TaskProgressAPIView.as_view(), name='api-task-progress'),
 
     # Task Scheduler
     path('task-scheduler/', TaskSchedulerView.as_view(), name='task-scheduler'),

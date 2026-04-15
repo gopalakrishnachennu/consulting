@@ -655,10 +655,17 @@ class CompanyReEnrichView(LoginRequiredMixin, UserPassesTestMixin, View):
         return u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE)
 
     def post(self, request, *args, **kwargs):
+        from core.http import redirect_with_task_progress
+
         company = get_object_or_404(Company, pk=kwargs["pk"])
-        enrich_company_task.delay(company.pk)
+        r = enrich_company_task.delay(company.pk)
         messages.success(request, f"Re-enrichment queued for “{company.name}”.")
-        return redirect("company-detail", pk=company.pk)
+        return redirect_with_task_progress(
+            "company-detail",
+            r.id,
+            f"Enrich: {company.name}"[:120],
+            kwargs={"pk": company.pk},
+        )
 
 
 class CompanyQuickFillView(LoginRequiredMixin, UserPassesTestMixin, View):

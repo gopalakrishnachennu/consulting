@@ -765,6 +765,116 @@
         });
     })();
 </script>
+{% if user.is_authenticated %}
+<div id="task-progress-dock" class="fixed bottom-0 left-0 right-0 z-[90] pointer-events-none px-3 pb-3 max-h-[40vh] overflow-y-auto hidden"
+     aria-live="polite">
+</div>
+<script>
+(function () {
+    var STORAGE_KEY = 'gc_celery_tasks_v1';
+    var dock = document.getElementById('task-progress-dock');
+    if (!dock) return;
+
+    function apiUrl(taskId) {
+        return "{% url 'api-task-progress' task_id='TASK_ID_PLACEHOLDER' %}".replace('TASK_ID_PLACEHOLDER', taskId);
+    }
+
+    function loadTasks() {
+        try {
+            var raw = sessionStorage.getItem(STORAGE_KEY);
+            return raw ? JSON.parse(raw) : [];
+        } catch (e) { return []; }
+    }
+
+    function saveTasks(arr) {
+        try {
+            sessionStorage.setItem(STORAGE_KEY, JSON.stringify(arr.slice(0, 12)));
+        } catch (e) {}
+    }
+
+    function mergeFromQuery() {
+        var u = new URL(window.location.href);
+        var id = u.searchParams.get('tp');
+        if (!id) return;
+        var label = u.searchParams.get('tpl') || 'Background task';
+        u.searchParams.delete('tp');
+        u.searchParams.delete('tpl');
+        window.history.replaceState({}, '', u.pathname + u.search + u.hash);
+        var list = loadTasks();
+        var exists = list.some(function (t) { return t.id === id; });
+        if (!exists) list.push({ id: id, label: label, added: Date.now() });
+        saveTasks(list);
+    }
+
+    function renderCard(task, data) {
+        var pct = Math.max(0, Math.min(100, data.percent | 0));
+        var msg = (data.message || '').replace(/</g, '');
+        var state = data.state || '';
+        var barColor = state === 'FAILURE' ? 'bg-red-500' : (state === 'SUCCESS' ? 'bg-emerald-500' : 'bg-blue-500');
+        var sub = '';
+        if (data.total > 0) sub = (data.current || 0) + ' / ' + data.total;
+        return (
+            '<div class="pointer-events-auto mb-2 rounded-xl border border-slate-200 bg-white/95 shadow-lg backdrop-blur px-4 py-3 max-w-lg ml-auto" data-task-id="' + task.id + '">' +
+            '<div class="flex items-center justify-between gap-2 mb-1">' +
+            '<span class="text-sm font-medium text-slate-800 truncate">' + (task.label || 'Task').replace(/</g, '') + '</span>' +
+            '<span class="text-xs font-mono text-slate-500">' + pct + '%</span></div>' +
+            '<div class="h-2 w-full rounded-full bg-slate-100 overflow-hidden mb-1">' +
+            '<div class="h-full ' + barColor + ' transition-[width] duration-300" style="width:' + pct + '%"></div></div>' +
+            '<p class="text-xs text-slate-500 truncate">' + (msg || state) + (sub ? ' · ' + sub : '') + '</p>' +
+            '</div>'
+        );
+    }
+
+    function removeDone(taskId) {
+        setTimeout(function () {
+            var cur = loadTasks().filter(function (t) { return t.id !== taskId; });
+            saveTasks(cur);
+            var el = dock.querySelector('[data-task-id="' + taskId + '"]');
+            if (el) el.remove();
+            if (!loadTasks().length) dock.classList.add('hidden');
+        }, 2200);
+    }
+
+    function syncDock() {
+        mergeFromQuery();
+        var list = loadTasks();
+        var ids = {};
+        list.forEach(function (t) { ids[t.id] = true; });
+        Array.from(dock.children).forEach(function (ch) {
+            var tid = ch.getAttribute('data-task-id');
+            if (tid && !ids[tid]) ch.remove();
+        });
+        if (!list.length) {
+            dock.classList.add('hidden');
+            return;
+        }
+        dock.classList.remove('hidden');
+        list.forEach(function (task) {
+            var el = dock.querySelector('[data-task-id="' + task.id + '"]');
+            if (!el) {
+                el = document.createElement('div');
+                el.setAttribute('data-task-id', task.id);
+                el.className = 'pointer-events-auto mb-2 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 max-w-lg ml-auto text-sm text-slate-500';
+                el.textContent = 'Loading…';
+                dock.appendChild(el);
+            }
+            fetch(apiUrl(task.id), { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    var slot = dock.querySelector('[data-task-id="' + task.id + '"]');
+                    if (!slot) return;
+                    slot.outerHTML = renderCard(task, data);
+                    if (data.ready) removeDone(task.id);
+                })
+                .catch(function () {});
+        });
+    }
+
+    syncDock();
+    setInterval(syncDock, 2500);
+})();
+</script>
+{% endif %}
 {% block extra_js %}{% endblock %}
 
 </body>

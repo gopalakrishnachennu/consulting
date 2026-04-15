@@ -1,5 +1,7 @@
 from celery import shared_task
 from urllib.parse import urlparse, urlencode
+
+from core.task_progress import update_task_progress
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 import csv
@@ -283,8 +285,8 @@ def _check_url(url: str) -> bool:
         return False
 
 
-@shared_task
-def validate_company_links_task(batch_size: int = 50):
+@shared_task(bind=True)
+def validate_company_links_task(self, batch_size: int = 50):
     """
     Periodically validate Company.website and linkedin_url.
     Only checks companies that have never been checked or were last checked >24h ago.
@@ -308,8 +310,13 @@ def validate_company_links_task(batch_size: int = 50):
         linkedin_last_checked_at__isnull=True
     )
 
+    batch = list(qs[:batch_size])
+    total_n = len(batch)
+    if total_n:
+        update_task_progress(self, current=0, total=total_n, message="Validating company links…")
+
     processed = 0
-    for company in qs[:batch_size]:
+    for i, company in enumerate(batch, start=1):
         changed = False
         if company.website:
             company.website = _normalize_url(company.website)
@@ -335,6 +342,14 @@ def validate_company_links_task(batch_size: int = 50):
                 "linkedin_last_checked_at",
             ])
             processed += 1
+
+        if total_n:
+            update_task_progress(
+                self,
+                current=i,
+                total=total_n,
+                message=f"Links {i}/{total_n}",
+            )
 
     result = {"processed": processed}
     _log_pipeline_run("validate_company_links", result)
@@ -806,8 +821,8 @@ def _compute_data_quality_score(company: Company) -> int:
     return min(100, sum(fields) * 100 // n) if n else 0
 
 
-@shared_task
-def enrich_company_task(company_id: int) -> dict:
+@shared_task(bind=True)
+def enrich_company_task(self, company_id: int) -> dict:
     """
     Enrich a company: Clearbit logo + OG/meta scrape from website.
     Sets enrichment_status, enriched_at, enrichment_source, data_quality_score, description, logo_url.
@@ -817,11 +832,14 @@ def enrich_company_task(company_id: int) -> dict:
     except Company.DoesNotExist:
         return {"ok": False, "reason": "company_not_found"}
 
+    update_task_progress(self, current=0, total=4, message="Starting enrichment…")
+
     now = timezone.now()
     try:
         from .enrichment_helpers import apply_free_enrichment
 
         _, src_tags = apply_free_enrichment(company)
+        update_task_progress(self, current=1, total=4, message="Free enrichment & meta…")
 
         domain = _extract_domain_for_enrichment(company)
         if not domain and not company.website:
@@ -833,6 +851,7 @@ def enrich_company_task(company_id: int) -> dict:
                 "enrichment_status", "enriched_at", "enrichment_source", "data_quality_score",
             ])
             _log_enrichment(company.pk, "", [], success=False)
+            update_task_progress(self, current=4, total=4, message="Skipped — no domain or website")
             return {"ok": False, "reason": "no_domain_or_website"}
 
         sources = list(src_tags)
@@ -843,6 +862,7 @@ def enrich_company_task(company_id: int) -> dict:
         except Exception:
             config = None
         domain = _extract_domain_for_enrichment(company)
+        update_task_progress(self, current=2, total=4, message="APIs & classifiers…")
         if config:
             hunter_key = (getattr(config, "hunter_api_key", None) or "").strip()
             if hunter_key and domain:
@@ -890,6 +910,7 @@ def enrich_company_task(company_id: int) -> dict:
                     setattr(company, k, v)
 
         _apply_link_validation(company)
+        update_task_progress(self, current=3, total=4, message="Saving…")
 
         company.enrichment_status = Company.EnrichmentStatus.ENRICHED
         company.enriched_at = now
@@ -897,6 +918,7 @@ def enrich_company_task(company_id: int) -> dict:
         company.data_quality_score = _compute_data_quality_score(company)
         company.save()
         _log_enrichment(company.pk, company.enrichment_source, list(updates.keys()), success=True)
+        update_task_progress(self, current=4, total=4, message="Done")
         return {"ok": True, "enrichment_source": company.enrichment_source}
     except Exception:
         company.enrichment_status = Company.EnrichmentStatus.FAILED

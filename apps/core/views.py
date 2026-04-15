@@ -44,6 +44,92 @@ from .llm_pricing import PRICING_PER_1M
 from .feature_flags import feature_enabled_for, invalidate_feature_flag_cache
 
 
+class TaskProgressAPIView(LoginRequiredMixin, UserPassesTestMixin, View):
+    """
+    Poll Celery task state for the global progress bar (logged-in users).
+    GET /core/api/task-progress/<task_id>/
+    """
+
+    def test_func(self):
+        return self.request.user.is_authenticated
+
+    def get(self, request, task_id: str):
+        from celery.result import AsyncResult
+
+        from config.celery import app as celery_app
+
+        r = AsyncResult(task_id, app=celery_app)
+        state = r.state
+
+        if state == "PENDING":
+            return JsonResponse(
+                {
+                    "state": "PENDING",
+                    "ready": False,
+                    "percent": 0,
+                    "current": 0,
+                    "total": 0,
+                    "message": "Queued — waiting for worker",
+                }
+            )
+
+        if state == "PROGRESS":
+            meta = r.info or {}
+            if not isinstance(meta, dict):
+                meta = {}
+            return JsonResponse(
+                {
+                    "state": "PROGRESS",
+                    "ready": False,
+                    "percent": int(meta.get("percent") or 0),
+                    "current": int(meta.get("current") or 0),
+                    "total": int(meta.get("total") or 0),
+                    "message": meta.get("message") or "",
+                }
+            )
+
+        if state == "SUCCESS":
+            res = r.result
+            safe = res if isinstance(res, (dict, list, str, int, float, bool)) or res is None else None
+            return JsonResponse(
+                {
+                    "state": "SUCCESS",
+                    "ready": True,
+                    "percent": 100,
+                    "current": 1,
+                    "total": 1,
+                    "message": "Done",
+                    "result": safe,
+                }
+            )
+
+        if state == "FAILURE":
+            err = r.info
+            if err is not None and not isinstance(err, str):
+                err = repr(err)
+            return JsonResponse(
+                {
+                    "state": "FAILURE",
+                    "ready": True,
+                    "percent": 0,
+                    "current": 0,
+                    "total": 0,
+                    "message": (err or "Task failed")[:500],
+                }
+            )
+
+        return JsonResponse(
+            {
+                "state": state,
+                "ready": False,
+                "percent": 0,
+                "current": 0,
+                "total": 0,
+                "message": "Running…",
+            }
+        )
+
+
 class AdminRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
         return self.request.user.is_superuser or self.request.user.role == 'ADMIN'
@@ -1188,6 +1274,10 @@ class TaskRunNowView(AdminRequiredMixin, View):
             kwargs_dict = json.loads(task.kwargs) if task.kwargs and task.kwargs != "{}" else {}
             result = celery_task.delay(**kwargs_dict)
             messages.success(request, f"\U0001f680 Task '{task.name}' triggered! ID: {result.id[:8]}...")
+            from urllib.parse import urlencode
+
+            q = urlencode({"tp": result.id, "tpl": (task.name or "Scheduled task")[:120]})
+            return redirect(f"{reverse('task-scheduler')}?{q}")
         except Exception as e:
             messages.error(request, f"❌ Failed to trigger task: {e}")
 

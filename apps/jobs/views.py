@@ -935,10 +935,19 @@ class JobPoolRefreshLinksView(LoginRequiredMixin, EmployeeRequiredMixin, View):
 
             # Run async when Celery is up; fallback inline when queue unavailable.
             try:
-                validate_job_urls_task.delay(5000)
-                messages.success(request, "Started link status refresh in background. Reload in 30-60 seconds.")
+                r = validate_job_urls_task.delay(5000)
+                from urllib.parse import urlencode
+
+                from django.urls import reverse
+
+                q = urlencode({"tp": r.id, "tpl": "Job posting URL check"})
+                messages.success(
+                    request,
+                    "Started link status refresh in background. Watch the progress bar at the bottom.",
+                )
+                return redirect(f"{reverse('job-pool')}?{q}")
             except Exception:
-                result = validate_job_urls_task(5000)
+                result = validate_job_urls_task.apply(kwargs={"batch_size": 5000}).get()
                 messages.success(
                     request,
                     f"Link status refresh completed now. Checked {result.get('processed', 0)} jobs.",

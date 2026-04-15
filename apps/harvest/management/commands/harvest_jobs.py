@@ -16,9 +16,11 @@ class Command(BaseCommand):
         self.stdout.write(self.style.MIGRATE_HEADING(
             f"Harvesting jobs for {'all platforms' if not slug else slug}..."
         ))
-        result = harvest_jobs_task(
-            platform_slug=slug,
-            since_hours=options["since_hours"],
-            max_companies=options["max_companies"],
+        result = harvest_jobs_task.apply(
+            kwargs={
+                "platform_slug": slug,
+                "since_hours": options["since_hours"],
+                "max_companies": options["max_companies"],
+            }
         )
-        self.stdout.write(self.style.SUCCESS(f"Harvest complete: {result}"))
+        self.stdout.write(self.style.SUCCESS(f"Harvest complete: {result.result}"))

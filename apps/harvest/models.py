@@ -147,7 +147,11 @@ class CompanyPlatformLabel(models.Model):
 
 
 class HarvestRun(models.Model):
-    """Audit log for each harvest execution."""
+    """Audit log for each harvest or platform-detection execution."""
+
+    class RunType(models.TextChoices):
+        HARVEST = "HARVEST", "Harvest"
+        DETECTION = "DETECTION", "Platform detection"
 
     class TriggerType(models.TextChoices):
         SCHEDULED = "SCHEDULED", "Scheduled"
@@ -159,8 +163,17 @@ class HarvestRun(models.Model):
         PARTIAL = "PARTIAL", "Partial"
         FAILED = "FAILED", "Failed"
 
+    run_type = models.CharField(
+        max_length=12,
+        choices=RunType.choices,
+        default=RunType.HARVEST,
+    )
     platform = models.ForeignKey(
-        JobBoardPlatform, on_delete=models.CASCADE, related_name="harvest_runs"
+        JobBoardPlatform,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="harvest_runs",
     )
     triggered_by = models.CharField(
         max_length=10, choices=TriggerType.choices, default=TriggerType.SCHEDULED
@@ -182,6 +195,14 @@ class HarvestRun(models.Model):
     jobs_new = models.PositiveIntegerField(default=0)
     jobs_duplicate = models.PositiveIntegerField(default=0)
     jobs_failed = models.PositiveIntegerField(default=0)
+    detection_detected = models.PositiveIntegerField(
+        default=0,
+        help_text="Companies with a detected platform (detection runs only).",
+    )
+    detection_total = models.PositiveIntegerField(
+        default=0,
+        help_text="Companies processed in this detection run.",
+    )
     error_log = models.TextField(blank=True)
     celery_task_id = models.CharField(max_length=255, blank=True)
 
@@ -191,7 +212,10 @@ class HarvestRun(models.Model):
         verbose_name_plural = "Harvest Runs"
 
     def __str__(self):
-        return f"Run #{self.pk} – {self.platform.name} ({self.status})"
+        if self.run_type == self.RunType.DETECTION:
+            return f"Run #{self.pk} – Platform detection ({self.status})"
+        label = self.platform.name if self.platform else "—"
+        return f"Run #{self.pk} – {label} ({self.status})"
 
     @property
     def duration_seconds(self):
