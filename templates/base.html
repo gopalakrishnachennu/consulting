@@ -450,6 +450,10 @@
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'job-pool' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Pool</a>
                 <a href="{% url 'company-list' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'company-list' or url_name == 'company-detail' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Companies</a>
+                {% if request.user.is_superuser %}
+                <a href="{% url 'harvest-platforms' %}"
+                    class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if 'harvest' in url_name|default:'' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">🌾 Harvest</a>
+                {% endif %}
                 <a href="{% url 'submission-list' %}"
                     class="nav-link px-4 py-2.5 rounded-lg text-sm font-medium transition {% if url_name == 'submission-list' %}bg-white/20 text-white{% else %}text-blue-100 hover:text-white hover:bg-white/15{% endif %}">Applications</a>
                 <a href="{% url 'submission-quick-submit' %}"

@@ -1,0 +1,200 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8 max-w-2xl">
+
+  <!-- Breadcrumb -->
+  <div class="flex items-center gap-2 text-sm mb-6">
+    <a href="{% url 'harvest-platforms' %}" class="text-blue-600 hover:text-blue-800">🗂️ Platform Registry</a>
+    <span class="text-gray-300">/</span>
+    <span class="text-gray-600">{% if is_edit %}Edit {{ object.name }}{% else %}Add New Platform{% endif %}</span>
+  </div>
+
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+
+    <!-- Form Header -->
+    <div class="px-6 py-5 border-b border-gray-100 bg-gray-50/60">
+      <h1 class="text-lg font-bold text-gray-900">
+        {% if is_edit %}Edit Platform: {{ object.name }}{% else %}Add New Job Board Platform{% endif %}
+      </h1>
+      <p class="text-sm text-gray-500 mt-0.5">
+        {% if is_edit %}Update the platform's detection patterns and settings.{% else %}Add a new ATS or job board platform to the detection registry.{% endif %}
+      </p>
+    </div>
+
+    <div class="px-6 py-6">
+
+      {% if messages %}
+      {% for message in messages %}
+      <div class="mb-4 px-4 py-3 rounded-lg {% if message.tags == 'error' %}bg-red-50 border border-red-200 text-red-700{% else %}bg-green-50 border border-green-200 text-green-700{% endif %} text-sm">{{ message }}</div>
+      {% endfor %}
+      {% endif %}
+
+      <form method="post" novalidate>
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+        <div class="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{{ form.non_field_errors }}</div>
+        {% endif %}
+
+        <!-- Name + Slug -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">
+          <div>
+            <label for="{{ form.name.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-1">
+              Platform Name <span class="text-red-500">*</span>
+            </label>
+            <input type="text" name="name" id="{{ form.name.id_for_label }}" value="{{ form.name.value|default:'' }}"
+              placeholder="e.g. Workday"
+              class="w-full border {% if form.name.errors %}border-red-400{% else %}border-gray-300{% endif %} rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors">
+            {% if form.name.errors %}<p class="text-xs text-red-600 mt-1">{{ form.name.errors.0 }}</p>{% endif %}
+          </div>
+          <div>
+            <label for="{{ form.slug.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-1">
+              Slug <span class="text-red-500">*</span>
+            </label>
+            <input type="text" name="slug" id="{{ form.slug.id_for_label }}" value="{{ form.slug.value|default:'' }}"
+              placeholder="e.g. workday"
+              class="w-full border {% if form.slug.errors %}border-red-400{% else %}border-gray-300{% endif %} rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors">
+            {% if form.slug.errors %}<p class="text-xs text-red-600 mt-1">{{ form.slug.errors.0 }}</p>{% endif %}
+            <p class="text-xs text-gray-400 mt-1">Lowercase, no spaces. Used in code &amp; URLs.</p>
+          </div>
+        </div>
+
+        <!-- API Type -->
+        <div class="mb-5">
+          <label class="block text-sm font-semibold text-gray-700 mb-2">API Type <span class="text-red-500">*</span></label>
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {% for value, label in form.api_type.field.choices %}
+            <label class="flex items-center gap-2.5 p-3 border rounded-xl cursor-pointer transition-all hover:border-blue-300 hover:bg-blue-50/40
+              {% if form.api_type.value == value %}border-blue-500 bg-blue-50 shadow-sm{% else %}border-gray-200{% endif %}">
+              <input type="radio" name="api_type" value="{{ value }}"
+                {% if form.api_type.value == value %}checked{% endif %}
+                class="text-blue-600 focus:ring-blue-500/30">
+              <span class="text-sm text-gray-700">{{ label }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          {% if form.api_type.errors %}<p class="text-xs text-red-600 mt-1">{{ form.api_type.errors.0 }}</p>{% endif %}
+        </div>
+
+        <!-- URL Patterns -->
+        <div class="mb-5">
+          <label for="{{ form.url_patterns.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-1">
+            URL Patterns <span class="text-red-500">*</span>
+          </label>
+          <textarea name="url_patterns" id="{{ form.url_patterns.id_for_label }}" rows="3"
+            placeholder='["myworkdayjobs.com", "wd1.myworkday.com", "wd3.myworkday.com"]'
+            class="w-full border {% if form.url_patterns.errors %}border-red-400{% else %}border-gray-300{% endif %} rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors">{{ form.url_patterns.value|default:'' }}</textarea>
+          {% if form.url_patterns.errors %}<p class="text-xs text-red-600 mt-1">{{ form.url_patterns.errors.0 }}</p>{% endif %}
+          <p class="text-xs text-gray-400 mt-1">JSON array. These substrings are matched against company career URLs.</p>
+        </div>
+
+        <!-- Fetch Endpoint -->
+        <div class="mb-5">
+          <label for="{{ form.fetch_endpoint_tmpl.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-1">Fetch Endpoint Template</label>
+          <textarea name="fetch_endpoint_tmpl" id="{{ form.fetch_endpoint_tmpl.id_for_label }}" rows="2"
+            placeholder="https://{tenant}.myworkdayjobs.com/wday/cxs/{tenant}/External/jobs"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors">{{ form.fetch_endpoint_tmpl.value|default:'' }}</textarea>
+          <p class="text-xs text-gray-400 mt-1">Use <code class="font-mono bg-gray-100 px-1 rounded">{'{'}tenant{'}'}</code> as a placeholder for the company's ATS tenant/token. Leave blank for HTML scrape platforms.</p>
+        </div>
+
+        <!-- Headers JSON -->
+        <div class="mb-5">
+          <label for="{{ form.headers_json.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-1">Default Request Headers</label>
+          <textarea name="headers_json" id="{{ form.headers_json.id_for_label }}" rows="3"
+            placeholder='{"Accept": "application/json", "Content-Type": "application/json"}'
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors">{{ form.headers_json.value|default:'{}' }}</textarea>
+          <p class="text-xs text-gray-400 mt-1">JSON object of HTTP headers to send with harvest requests.</p>
+        </div>
+
+        <!-- Rate Limit + Color + Toggles -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
+          <div>
+            <label for="{{ form.rate_limit_per_min.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-1">Rate Limit</label>
+            <div class="flex items-center gap-2">
+              <input type="number" name="rate_limit_per_min" id="{{ form.rate_limit_per_min.id_for_label }}" min="1" max="120"
+                value="{{ form.rate_limit_per_min.value|default:'10' }}"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+            </div>
+            <p class="text-xs text-gray-400 mt-1">Requests per minute</p>
+          </div>
+          <div>
+            <label for="{{ form.color_hex.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-1">Badge Colour</label>
+            <input type="color" name="color_hex" id="{{ form.color_hex.id_for_label }}"
+              value="{{ form.color_hex.value|default:'#6B7280' }}"
+              class="h-10 w-full p-1 rounded-lg border border-gray-300 cursor-pointer">
+            <p class="text-xs text-gray-400 mt-1">Shown in company list</p>
+          </div>
+          <div class="flex flex-col justify-end gap-3 col-span-2">
+            <label class="flex items-center gap-3 p-3 border border-gray-200 rounded-xl hover:bg-gray-50 cursor-pointer">
+              <input type="checkbox" name="is_enabled" id="{{ form.is_enabled.id_for_label }}"
+                {% if form.is_enabled.value %}checked{% endif %}
+                class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500/30">
+              <div>
+                <span class="text-sm font-medium text-gray-700">Enabled</span>
+                <p class="text-xs text-gray-400">Platform is active for detection &amp; harvesting</p>
+              </div>
+            </label>
+            <label class="flex items-center gap-3 p-3 border border-gray-200 rounded-xl hover:bg-gray-50 cursor-pointer">
+              <input type="checkbox" name="requires_auth" id="{{ form.requires_auth.id_for_label }}"
+                {% if form.requires_auth.value %}checked{% endif %}
+                class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500/30">
+              <div>
+                <span class="text-sm font-medium text-gray-700">Requires Auth</span>
+                <p class="text-xs text-gray-400">Needs API key / token to access</p>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Notes -->
+        <div class="mb-6">
+          <label for="{{ form.notes.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-1">Notes</label>
+          <textarea name="notes" id="{{ form.notes.id_for_label }}" rows="3"
+            placeholder="Any important notes about this platform (API quirks, known limitations, etc.)"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors">{{ form.notes.value|default:'' }}</textarea>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex items-center gap-3 pt-5 border-t border-gray-100">
+          <button type="submit" class="px-6 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 shadow-sm transition-colors">
+            {% if is_edit %}💾 Save Changes{% else %}✅ Create Platform{% endif %}
+          </button>
+          <a href="{% url 'harvest-platforms' %}" class="px-5 py-2.5 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-50 transition-colors font-medium">
+            Cancel
+          </a>
+          {% if is_edit %}
+          <form method="post" action="{% url 'harvest-platform-delete' object.pk %}" class="ml-auto inline"
+            onsubmit="return confirm('Delete {{ object.name }}? This cannot be undone.');">
+            {% csrf_token %}
+            <button type="submit" class="px-4 py-2.5 rounded-lg bg-red-50 text-red-600 text-sm font-medium hover:bg-red-100 transition-colors border border-red-200">
+              🗑️ Delete Platform
+            </button>
+          </form>
+          {% endif %}
+        </div>
+
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+// Auto-generate slug from name (only if slug is empty and we're creating)
+const nameInput = document.querySelector('[name="name"]');
+const slugInput = document.querySelector('[name="slug"]');
+if (nameInput && slugInput) {
+  const originalSlug = slugInput.value;
+  nameInput.addEventListener('input', function() {
+    if (!originalSlug) {
+      slugInput.value = this.value
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+    }
+  });
+}
+</script>
+{% endblock %}

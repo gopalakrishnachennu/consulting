@@ -27,6 +27,7 @@ urlpatterns = [
     path("employees/", include("users.urls_employees")),
     path("analytics/", include("analytics.urls")),
     path("companies/", include("companies.urls")),
+    path("harvest/", include("harvest.urls")),
     path("core/", include("core.urls")),
     path("admin-dashboard/", AdminDashboardView.as_view(), name="admin-dashboard"),
     path("employee-dashboard/", EmployeeDashboardView.as_view(), name="employee-dashboard"),

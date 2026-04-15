@@ -1,0 +1,245 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8 max-w-7xl">
+
+  <!-- Header -->
+  <div class="flex items-start justify-between mb-6">
+    <div>
+      <div class="flex items-center gap-3 mb-1">
+        <span class="text-3xl">🌾</span>
+        <h1 class="text-2xl font-bold text-gray-900">Harvest Engine</h1>
+      </div>
+      <p class="text-sm text-gray-500 ml-10">Job Board Platform Detection &amp; Automated Job Harvesting Service</p>
+    </div>
+    <a href="{% url 'admin-dashboard' %}" class="text-sm text-blue-600 hover:text-blue-800 font-medium">&larr; Admin Dashboard</a>
+  </div>
+
+  <!-- Tab Nav -->
+  <div class="flex border-b border-gray-200 mb-6 overflow-x-auto">
+    <a href="{% url 'harvest-platforms' %}" class="px-5 py-3 text-sm font-medium whitespace-nowrap border-b-2 border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-300">🗂️ Platform Registry</a>
+    <a href="{% url 'harvest-schedule' %}" class="px-5 py-3 text-sm font-medium whitespace-nowrap border-b-2 border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-300">⏰ Schedule</a>
+    <a href="{% url 'harvest-monitor' %}" class="px-5 py-3 text-sm font-medium whitespace-nowrap border-b-2 border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-300">📊 Run Monitor</a>
+    <a href="{% url 'harvest-labels' %}" class="px-5 py-3 text-sm font-medium whitespace-nowrap border-b-2 border-blue-600 text-blue-600">🏷️ Company Labels</a>
+  </div>
+
+  {% if messages %}
+  {% for message in messages %}
+  <div class="mb-4 px-4 py-3 rounded-lg {% if message.tags == 'error' %}bg-red-50 border border-red-200 text-red-700{% else %}bg-green-50 border border-green-200 text-green-700{% endif %} text-sm">{{ message }}</div>
+  {% endfor %}
+  {% endif %}
+
+  <!-- Stats -->
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+    <div class="bg-green-50 rounded-xl border border-green-200 shadow-sm p-4">
+      <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Detected</p>
+      <p class="text-2xl font-bold text-green-700">{{ stat_labeled }}</p>
+      <p class="text-xs text-gray-400 mt-0.5">Platform identified</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+      <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Undetected</p>
+      <p class="text-2xl font-bold text-gray-500">{{ stat_undetected }}</p>
+      <p class="text-xs text-gray-400 mt-0.5">Custom or unknown ATS</p>
+    </div>
+    <div class="bg-amber-50 rounded-xl border border-amber-200 shadow-sm p-4">
+      <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Not Scanned</p>
+      <p class="text-2xl font-bold text-amber-600">{{ stat_unlabeled }}</p>
+      <p class="text-xs text-gray-400 mt-0.5">No label record yet</p>
+    </div>
+    <div class="bg-indigo-50 rounded-xl border border-indigo-200 shadow-sm p-4">
+      <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Verified</p>
+      <p class="text-2xl font-bold text-indigo-700">{{ stat_verified }}</p>
+      <p class="text-xs text-gray-400 mt-0.5">Manually confirmed</p>
+    </div>
+  </div>
+
+  <!-- Actions Row -->
+  <div class="flex flex-wrap items-center gap-3 mb-5">
+    <form method="post" action="{% url 'harvest-run-detect' %}">
+      {% csrf_token %}
+      <button type="submit" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 shadow-sm transition-colors inline-flex items-center gap-2">
+        🔍 Run Detection on Unlabeled
+      </button>
+    </form>
+    <p class="text-xs text-gray-500">{{ stat_unlabeled }} companies haven't been scanned yet.</p>
+  </div>
+
+  <!-- Filters -->
+  <form method="get" class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-5">
+    <div class="flex flex-wrap items-end gap-3">
+      <div class="flex-1 min-w-[160px]">
+        <label class="block text-xs text-gray-500 mb-1">Search Company</label>
+        <input type="text" name="q" value="{{ q }}" placeholder="Company name…"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+      </div>
+      <div class="w-44">
+        <label class="block text-xs text-gray-500 mb-1">Platform</label>
+        <select name="platform" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          <option value="">All Platforms</option>
+          {% for platform in platforms %}
+          <option value="{{ platform.slug }}" {% if selected_platform == platform.slug %}selected{% endif %}>
+            {{ platform.name }} ({{ platform.company_count }})
+          </option>
+          {% endfor %}
+          <option value="UNDETECTED" {% if selected_platform == 'UNDETECTED' %}selected{% endif %}>Undetected</option>
+        </select>
+      </div>
+      <div class="w-36">
+        <label class="block text-xs text-gray-500 mb-1">Confidence</label>
+        <select name="confidence" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          <option value="">All</option>
+          {% for val, label in confidence_choices %}
+          <option value="{{ val }}" {% if selected_confidence == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="w-48">
+        <label class="block text-xs text-gray-500 mb-1">Detection Method</label>
+        <select name="method" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          <option value="">All Methods</option>
+          {% for val, label in method_choices %}
+          <option value="{{ val }}" {% if selected_method == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700">Search</button>
+      <a href="{% url 'harvest-labels' %}" class="px-4 py-2 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50">Clear</a>
+    </div>
+  </form>
+
+  <!-- Labels Table -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+    {% if labels %}
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="border-b border-gray-200 bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wider">
+          <th class="px-4 py-3 text-left">Company</th>
+          <th class="px-4 py-3 text-left">Platform</th>
+          <th class="px-4 py-3 text-center hidden sm:table-cell">Confidence</th>
+          <th class="px-4 py-3 text-center hidden md:table-cell">Method</th>
+          <th class="px-4 py-3 text-center hidden lg:table-cell">Last Checked</th>
+          <th class="px-4 py-3 text-center">Verified</th>
+          <th class="px-4 py-3 text-right">Set Platform</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for label in labels %}
+        <tr class="border-b border-gray-100 hover:bg-gray-50/50 transition-colors">
+          <!-- Company -->
+          <td class="px-4 py-3">
+            <a href="{% url 'company-detail' label.company.pk %}" class="font-medium text-gray-900 hover:text-blue-600 hover:underline">
+              {{ label.company.name }}
+            </a>
+            {% if label.tenant_id %}
+            <p class="text-xs text-gray-400 font-mono mt-0.5">tenant: {{ label.tenant_id }}</p>
+            {% endif %}
+          </td>
+          <!-- Platform Badge -->
+          <td class="px-4 py-3">
+            {% if label.platform %}
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border"
+              style="background-color: {{ label.platform.color_hex }}18; color: {{ label.platform.color_hex }}; border-color: {{ label.platform.color_hex }}44;">
+              <span class="w-2 h-2 rounded-full flex-shrink-0" style="background-color: {{ label.platform.color_hex }};"></span>
+              {{ label.platform.name }}
+            </span>
+            {% elif label.detection_method == 'UNDETECTED' %}
+            <span class="text-xs text-gray-400 italic">No ATS detected</span>
+            {% else %}
+            <span class="text-xs text-gray-300">—</span>
+            {% endif %}
+          </td>
+          <!-- Confidence -->
+          <td class="px-4 py-3 text-center hidden sm:table-cell">
+            {% if label.confidence == 'HIGH' %}
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">High</span>
+            {% elif label.confidence == 'MEDIUM' %}
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Medium</span>
+            {% elif label.confidence == 'LOW' %}
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">Low</span>
+            {% else %}
+            <span class="text-xs text-gray-300">—</span>
+            {% endif %}
+          </td>
+          <!-- Method -->
+          <td class="px-4 py-3 text-center hidden md:table-cell">
+            <span class="text-xs text-gray-600">{{ label.get_detection_method_display }}</span>
+          </td>
+          <!-- Last Checked -->
+          <td class="px-4 py-3 text-center hidden lg:table-cell">
+            {% if label.last_checked_at %}
+            <span class="text-xs text-gray-500">{{ label.last_checked_at|timesince }} ago</span>
+            {% else %}
+            <span class="text-xs text-gray-300">—</span>
+            {% endif %}
+          </td>
+          <!-- Verified toggle -->
+          <td class="px-4 py-3 text-center">
+            <form method="post" action="{% url 'harvest-label-verify' label.pk %}" class="inline">
+              {% csrf_token %}
+              <button type="submit" title="{% if label.is_verified %}Verified by {{ label.verified_by }}. Click to unverify.{% else %}Click to verify{% endif %}"
+                class="text-lg transition-transform hover:scale-110 {% if not label.is_verified %}opacity-30 hover:opacity-60{% endif %}">
+                {% if label.is_verified %}✅{% else %}⬜{% endif %}
+              </button>
+            </form>
+          </td>
+          <!-- Set Platform -->
+          <td class="px-4 py-3 text-right">
+            <details class="relative group" style="list-style:none;">
+              <summary class="text-xs px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 cursor-pointer font-medium transition-colors" style="list-style:none;">
+                ✏️ Set
+              </summary>
+              <div class="absolute right-0 top-8 z-20 w-52 bg-white rounded-xl border border-gray-200 shadow-xl p-3">
+                <form method="post" action="{% url 'harvest-label-set-platform' label.pk %}">
+                  {% csrf_token %}
+                  <p class="text-xs font-semibold text-gray-700 mb-2">Set Platform for<br><span class="text-blue-600">{{ label.company.name }}</span></p>
+                  <select name="platform_id" class="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs mb-2 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                    {% for p in platforms %}
+                    <option value="{{ p.pk }}" {% if label.platform and label.platform.pk == p.pk %}selected{% endif %}>{{ p.name }}</option>
+                    {% endfor %}
+                  </select>
+                  <button type="submit" class="w-full px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition-colors">Save &amp; Verify</button>
+                </form>
+              </div>
+            </details>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <!-- Pagination -->
+    {% if is_paginated %}
+    <div class="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
+      <p class="text-xs text-gray-500">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }} · {{ page_obj.paginator.count }} results</p>
+      <div class="flex gap-2">
+        {% if page_obj.has_previous %}
+        <a href="?page={{ page_obj.previous_page_number }}&q={{ q }}&platform={{ selected_platform }}&confidence={{ selected_confidence }}&method={{ selected_method }}" class="px-3 py-1 rounded-lg border border-gray-300 text-xs text-gray-700 hover:bg-gray-50 transition-colors">← Prev</a>
+        {% endif %}
+        {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}&q={{ q }}&platform={{ selected_platform }}&confidence={{ selected_confidence }}&method={{ selected_method }}" class="px-3 py-1 rounded-lg border border-gray-300 text-xs text-gray-700 hover:bg-gray-50 transition-colors">Next →</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="p-16 text-center">
+      <span class="text-5xl mb-4 block">🏷️</span>
+      <h3 class="text-base font-semibold text-gray-700 mb-2">No labels found</h3>
+      <p class="text-sm text-gray-500 mb-5">
+        {% if q or selected_platform or selected_confidence or selected_method %}
+        No results match your filters. <a href="{% url 'harvest-labels' %}" class="text-blue-600 hover:underline">Clear filters</a>
+        {% else %}
+        Run detection to scan companies and generate platform labels.
+        {% endif %}
+      </p>
+      <form method="post" action="{% url 'harvest-run-detect' %}">
+        {% csrf_token %}
+        <button type="submit" class="px-5 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700">🔍 Run Detection Now</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

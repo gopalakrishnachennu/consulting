@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     'messaging.apps.MessagingConfig',
     'analytics.apps.AnalyticsConfig',
     'companies',
+    'harvest.apps.HarvestConfig',
     'interviews_app.apps.InterviewsAppConfig',
     'prompts_app.apps.PromptsAppConfig',  # kept for migration chain — UI/URLs fully removed
 ]

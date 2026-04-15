@@ -211,6 +211,9 @@
                 <a href="{% url 'job-list' %}" class="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700">Jobs</a>
                 <a href="{% url 'consultant-list' %}" class="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700">Consultants</a>
                 <a href="{% url 'settings-dashboard' %}" class="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700">Settings</a>
+                {% if request.user.is_superuser %}
+                <a href="{% url 'harvest-platforms' %}" class="inline-flex items-center gap-2 px-4 py-2.5 border border-green-300 bg-green-50 rounded-lg hover:bg-green-100 text-sm font-semibold text-green-700">🌾 Harvest Engine</a>
+                {% endif %}
             </div>
         </div>
     </div>

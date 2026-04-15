@@ -56,6 +56,12 @@ def _get_company_list_queryset(request):
         qs = qs.filter(website__isnull=False).exclude(website="").filter(website_is_valid=False)
     elif website_valid == "1":
         qs = qs.filter(website_is_valid=True)
+    platform_filter = request.GET.get("platform", "").strip()
+    if platform_filter == "UNDETECTED":
+        qs = qs.filter(platform_label__detection_method="UNDETECTED")
+    elif platform_filter:
+        qs = qs.filter(platform_label__platform__slug=platform_filter)
+    qs = qs.prefetch_related("platform_label__platform")
     sort = request.GET.get("sort", "name")
     if sort == "submissions":
         qs = qs.order_by("-total_submissions", "name")
@@ -97,6 +103,12 @@ class CompanyListView(AdminOrEmployeeRequiredMixin, ListView):
         context["selected_blacklisted"] = self.request.GET.get("blacklisted", "")
         context["selected_industry"] = self.request.GET.get("industry", "")
         context["selected_website_valid"] = self.request.GET.get("website_valid", "")
+        context["selected_platform"] = self.request.GET.get("platform", "")
+        try:
+            from harvest.models import JobBoardPlatform
+            context["platform_choices"] = JobBoardPlatform.objects.filter(is_enabled=True).order_by("name")
+        except Exception:
+            context["platform_choices"] = []
         context["relationship_statuses"] = (
             Company.objects.exclude(relationship_status="")
             .values_list("relationship_status", flat=True)

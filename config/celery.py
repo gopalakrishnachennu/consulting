@@ -15,5 +15,17 @@ app.conf.beat_schedule = {
         "task": "core.tasks.send_weekly_consultant_pipeline_digest_task",
         "schedule": crontab(hour=8, minute=0, day_of_week=1),  # Monday 08:00 UTC
     },
+    "harvest-detect-platforms-weekly": {
+        "task": "harvest.detect_company_platforms",
+        "schedule": crontab(hour=1, minute=0, day_of_week=1),  # Monday 01:00 UTC
+    },
+    "harvest-jobs-daily": {
+        "task": "harvest.harvest_jobs",
+        "schedule": crontab(hour=2, minute=0),  # Daily 02:00 UTC
+    },
+    "harvest-cleanup-daily": {
+        "task": "harvest.cleanup_harvested_jobs",
+        "schedule": crontab(hour=0, minute=0),  # Daily midnight UTC
+    },
 }
 

@@ -81,6 +81,16 @@
                     <option value="0" {% if selected_website_valid == '0' %}selected{% endif %}>Invalid</option>
                 </select>
             </div>
+            <div class="w-40">
+                <label class="block text-xs text-gray-500 mb-1">Platform</label>
+                <select name="platform" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                    <option value="">All platforms</option>
+                    {% for p in platform_choices %}
+                    <option value="{{ p.slug }}" {% if selected_platform == p.slug %}selected{% endif %}>{{ p.name }}</option>
+                    {% endfor %}
+                    <option value="UNDETECTED" {% if selected_platform == 'UNDETECTED' %}selected{% endif %}>Not detected</option>
+                </select>
+            </div>
             <div class="w-36">
                 <label class="block text-xs text-gray-500 mb-1">Records</label>
                 <select name="page_size" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
@@ -127,6 +137,7 @@
                     </th>
                     <th class="px-4 py-3 hidden md:table-cell">Industry</th>
                     <th class="px-4 py-3 hidden lg:table-cell">Website</th>
+                    <th class="px-4 py-3 hidden xl:table-cell">Platform</th>
                     <th class="px-4 py-3 text-right font-mono">
                         <a href="?{{ pagination_query }}&sort=submissions" class="hover:text-blue-600 inline-flex items-center justify-end gap-1">Submissions {% if selected_sort == 'submissions' %}<span class="text-blue-600">↓</span>{% endif %}</a>
                     </th>
@@ -177,6 +188,21 @@
                         {% else %}
                         <span class="text-gray-400 text-xs">—</span>
                         {% endif %}
+                    </td>
+                    <td class="px-4 py-3 hidden xl:table-cell">
+                        {% with label=company.platform_label %}
+                        {% if label and label.platform %}
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border"
+                            style="background-color:{{ label.platform.color_hex }}18;color:{{ label.platform.color_hex }};border-color:{{ label.platform.color_hex }}44;">
+                            <span class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background-color:{{ label.platform.color_hex }};"></span>
+                            {{ label.platform.name }}
+                        </span>
+                        {% elif label and label.detection_method == 'UNDETECTED' %}
+                        <span class="text-xs text-gray-400 italic">No ATS</span>
+                        {% else %}
+                        <span class="text-xs text-gray-300">—</span>
+                        {% endif %}
+                        {% endwith %}
                     </td>
                     <td class="px-4 py-3 text-right font-mono">{{ company.total_submissions }}</td>
                     <td class="px-4 py-3 text-right font-mono">{{ company.total_interviews }}</td>
