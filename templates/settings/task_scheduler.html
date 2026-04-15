@@ -1,0 +1,267 @@
+{% extends 'base.html' %}
+
+{% block title %}Task Scheduler — GoCareers{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8 max-w-7xl">
+
+  <!-- ── Header ─────────────────────────────────────────────────────────── -->
+  <div class="flex items-start justify-between mb-6">
+    <div>
+      <div class="flex items-center gap-3 mb-1">
+        <span class="text-3xl">⏰</span>
+        <h1 class="text-2xl font-bold text-gray-900">Task Scheduler</h1>
+      </div>
+      <p class="text-sm text-gray-500 ml-11">
+        All background tasks that run on the server — independent of the browser.
+        Changes take effect within <strong class="text-gray-700">~5 seconds</strong> without restarting anything.
+      </p>
+    </div>
+    <a href="{% url 'admin-dashboard' %}" class="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1">
+      ← Admin Dashboard
+    </a>
+  </div>
+
+  {% if messages %}
+  {% for message in messages %}
+  <div class="mb-4 px-4 py-3 rounded-lg text-sm font-medium
+    {% if message.tags == 'error' %}bg-red-50 border border-red-200 text-red-700
+    {% else %}bg-green-50 border border-green-200 text-green-700{% endif %}">
+    {{ message }}
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  <!-- ── Stats Row ──────────────────────────────────────────────────────── -->
+  <div class="grid grid-cols-3 gap-4 mb-8">
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex items-center gap-4">
+      <div class="w-11 h-11 rounded-full bg-blue-50 flex items-center justify-center text-xl">📋</div>
+      <div>
+        <p class="text-2xl font-bold text-gray-900">{{ total_tasks }}</p>
+        <p class="text-xs text-gray-500">Total Tasks</p>
+      </div>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex items-center gap-4">
+      <div class="w-11 h-11 rounded-full bg-green-50 flex items-center justify-center text-xl">✅</div>
+      <div>
+        <p class="text-2xl font-bold text-green-700">{{ active_tasks }}</p>
+        <p class="text-xs text-gray-500">Active</p>
+      </div>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex items-center gap-4">
+      <div class="w-11 h-11 rounded-full bg-gray-50 flex items-center justify-center text-xl">⏸️</div>
+      <div>
+        <p class="text-2xl font-bold text-gray-500">{{ paused_tasks }}</p>
+        <p class="text-xs text-gray-500">Paused</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── How it works callout ───────────────────────────────────────────── -->
+  <div class="bg-blue-50 border border-blue-200 rounded-xl px-5 py-4 mb-8 flex items-start gap-3">
+    <span class="text-xl flex-shrink-0 mt-0.5">ℹ️</span>
+    <div class="text-sm text-blue-800">
+      <strong>How it works:</strong> These tasks run inside the <code class="bg-blue-100 px-1 rounded font-mono text-xs">celery_worker</code>
+      and <code class="bg-blue-100 px-1 rounded font-mono text-xs">celery_beat</code> server processes — completely separate from the web server.
+      <strong>Closing the browser has zero effect.</strong> Toggling ON/OFF or editing a schedule here updates the database directly;
+      Celery Beat picks up the change within ~5 seconds with no restart needed.
+    </div>
+  </div>
+
+  <!-- ── Task Groups ────────────────────────────────────────────────────── -->
+  {% for group in task_groups %}
+
+  {% with color=group.color %}
+  <div class="mb-8">
+
+    <!-- Group header -->
+    <div class="flex items-center gap-2 mb-3">
+      <span class="text-lg">{{ group.icon }}</span>
+      <h2 class="text-base font-semibold text-gray-900">{{ group.label }}</h2>
+      <span class="ml-1 px-2 py-0.5 rounded-full text-xs font-medium
+        {% if color == 'blue' %}bg-blue-100 text-blue-700
+        {% elif color == 'purple' %}bg-purple-100 text-purple-700
+        {% elif color == 'yellow' %}bg-yellow-100 text-yellow-700
+        {% elif color == 'teal' %}bg-teal-100 text-teal-700
+        {% elif color == 'indigo' %}bg-indigo-100 text-indigo-700
+        {% elif color == 'green' %}bg-green-100 text-green-700
+        {% else %}bg-gray-100 text-gray-600{% endif %}">
+        {{ group.tasks|length }} task{{ group.tasks|length|pluralize }}
+      </span>
+    </div>
+
+    <!-- Tasks table -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            <th class="px-5 py-3 text-left w-8">Status</th>
+            <th class="px-5 py-3 text-left">Task Name</th>
+            <th class="px-5 py-3 text-left hidden lg:table-cell">Description</th>
+            <th class="px-5 py-3 text-center">Schedule</th>
+            <th class="px-5 py-3 text-right hidden md:table-cell">Last Run</th>
+            <th class="px-5 py-3 text-center">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for item in group.tasks %}
+          {% with task=item.obj %}
+          <tr class="hover:bg-gray-50/50 transition-colors {% if not task.enabled %}opacity-60{% endif %}">
+
+            <!-- Toggle -->
+            <td class="px-5 py-4">
+              <form method="post" action="{% url 'task-toggle' task.pk %}">
+                {% csrf_token %}
+                <button type="submit" title="{% if task.enabled %}Pause task{% else %}Enable task{% endif %}"
+                  class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent
+                    transition-colors duration-200 ease-in-out focus:outline-none
+                    {% if task.enabled %}bg-green-500{% else %}bg-gray-300{% endif %}">
+                  <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out
+                    {% if task.enabled %}translate-x-4{% else %}translate-x-0{% endif %}"></span>
+                </button>
+              </form>
+            </td>
+
+            <!-- Name -->
+            <td class="px-5 py-4">
+              <div class="font-medium text-gray-900">{{ task.name }}</div>
+              <div class="text-xs text-gray-400 font-mono mt-0.5">{{ task.task }}</div>
+            </td>
+
+            <!-- Description -->
+            <td class="px-5 py-4 text-xs text-gray-500 hidden lg:table-cell max-w-xs">
+              {{ task.description|default:"—" }}
+            </td>
+
+            <!-- Schedule + edit inline -->
+            <td class="px-5 py-4 text-center">
+              <div class="flex flex-col items-center gap-1">
+                <span class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-mono font-semibold
+                  {% if task.enabled %}bg-green-50 text-green-700 border border-green-200{% else %}bg-gray-100 text-gray-500 border border-gray-200{% endif %}">
+                  {{ item.schedule_label }}
+                </span>
+                <!-- Edit schedule dropdown -->
+                <details class="relative w-full">
+                  <summary class="text-xs text-blue-500 hover:text-blue-700 cursor-pointer list-none text-center mt-0.5">✏️ Edit</summary>
+                  <div class="absolute z-20 left-1/2 -translate-x-1/2 mt-2 w-64 bg-white border border-gray-200 rounded-xl shadow-xl p-4">
+                    <p class="text-xs font-semibold text-gray-700 mb-3">Edit Cron Schedule</p>
+                    <form method="post" action="{% url 'task-edit-schedule' task.pk %}">
+                      {% csrf_token %}
+                      <div class="grid grid-cols-5 gap-1 mb-3">
+                        {% if task.crontab %}
+                        <div class="flex flex-col">
+                          <label class="text-xs text-gray-400 mb-1">Min</label>
+                          <input name="minute" value="{{ task.crontab.minute }}"
+                            class="border border-gray-300 rounded px-1 py-1 text-xs font-mono w-full focus:ring-1 focus:ring-blue-400 focus:outline-none">
+                        </div>
+                        <div class="flex flex-col">
+                          <label class="text-xs text-gray-400 mb-1">Hour</label>
+                          <input name="hour" value="{{ task.crontab.hour }}"
+                            class="border border-gray-300 rounded px-1 py-1 text-xs font-mono w-full focus:ring-1 focus:ring-blue-400 focus:outline-none">
+                        </div>
+                        <div class="flex flex-col">
+                          <label class="text-xs text-gray-400 mb-1">DoW</label>
+                          <input name="day_of_week" value="{{ task.crontab.day_of_week }}"
+                            class="border border-gray-300 rounded px-1 py-1 text-xs font-mono w-full focus:ring-1 focus:ring-blue-400 focus:outline-none">
+                        </div>
+                        <div class="flex flex-col">
+                          <label class="text-xs text-gray-400 mb-1">DoM</label>
+                          <input name="day_of_month" value="{{ task.crontab.day_of_month }}"
+                            class="border border-gray-300 rounded px-1 py-1 text-xs font-mono w-full focus:ring-1 focus:ring-blue-400 focus:outline-none">
+                        </div>
+                        <div class="flex flex-col">
+                          <label class="text-xs text-gray-400 mb-1">Mo</label>
+                          <input name="month_of_year" value="{{ task.crontab.month_of_year }}"
+                            class="border border-gray-300 rounded px-1 py-1 text-xs font-mono w-full focus:ring-1 focus:ring-blue-400 focus:outline-none">
+                        </div>
+                        {% else %}
+                        <div class="col-span-5">
+                          <input name="minute" placeholder="*" value="0"
+                            class="border border-gray-300 rounded px-1 py-1 text-xs font-mono w-full">
+                        </div>
+                        {% endif %}
+                      </div>
+                      <p class="text-xs text-gray-400 mb-3">
+                        Format: <code class="font-mono">minute hour day-of-week day-of-month month</code><br>
+                        Use <code class="font-mono">*</code> for "any", <code class="font-mono">*/5</code> for "every 5"
+                      </p>
+                      <button type="submit"
+                        class="w-full px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors">
+                        💾 Save Schedule
+                      </button>
+                    </form>
+                  </div>
+                </details>
+              </div>
+            </td>
+
+            <!-- Last Run -->
+            <td class="px-5 py-4 text-right text-xs text-gray-500 hidden md:table-cell">
+              {% if task.last_run_at %}
+                <span title="{{ task.last_run_at }}">{{ task.last_run_at|timesince }} ago</span>
+              {% else %}
+                <span class="text-gray-300">Never run</span>
+              {% endif %}
+            </td>
+
+            <!-- Run Now -->
+            <td class="px-5 py-4 text-center">
+              <form method="post" action="{% url 'task-run-now' task.pk %}">
+                {% csrf_token %}
+                <button type="submit"
+                  class="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors
+                    {% if task.enabled %}bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400
+                    {% else %}bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed{% endif %}"
+                  {% if not task.enabled %}disabled title="Enable task first"{% endif %}>
+                  ▶ Run Now
+                </button>
+              </form>
+            </td>
+
+          </tr>
+          {% endwith %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endwith %}
+  {% endfor %}
+
+  <!-- ── Footer info ────────────────────────────────────────────────────── -->
+  <div class="mt-4 p-5 bg-gray-50 rounded-xl border border-gray-200">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
+      <div class="flex items-start gap-2">
+        <span class="text-base flex-shrink-0">🔄</span>
+        <div>
+          <p class="font-medium text-gray-800">Beat picks up changes in ~5 sec</p>
+          <p class="text-xs text-gray-500">No restart needed — scheduler polls the DB continuously.</p>
+        </div>
+      </div>
+      <div class="flex items-start gap-2">
+        <span class="text-base flex-shrink-0">🖥️</span>
+        <div>
+          <p class="font-medium text-gray-800">Django Admin for advanced edits</p>
+          <p class="text-xs text-gray-500">
+            <a href="/admin/django_celery_beat/periodictask/" class="text-blue-500 hover:underline">
+              /admin/django_celery_beat/periodictask/ →
+            </a>
+          </p>
+        </div>
+      </div>
+      <div class="flex items-start gap-2">
+        <span class="text-base flex-shrink-0">📜</span>
+        <div>
+          <p class="font-medium text-gray-800">Task results in Django Admin</p>
+          <p class="text-xs text-gray-500">
+            <a href="/admin/django_celery_results/taskresult/" class="text-blue-500 hover:underline">
+              /admin/django_celery_results/taskresult/ →
+            </a>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

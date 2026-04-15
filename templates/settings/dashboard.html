@@ -211,6 +211,19 @@
             </a>
         </div>
 
+        <!-- Task Scheduler -->
+        <div class="bg-white rounded-lg shadow-sm p-6 border-l-4 border-indigo-400 hover:shadow-sm transition">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-bold text-gray-800">⏰ Task Scheduler</h2>
+                <span class="bg-indigo-100 text-indigo-800 text-xs font-semibold px-2.5 py-0.5 rounded">13 tasks</span>
+            </div>
+            <p class="text-gray-600 mb-4 h-12">Toggle background tasks on/off and edit their cron schedules. Changes apply in ~5 sec — no restart needed.</p>
+            <a href="{% url 'task-scheduler' %}"
+                class="block text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded transition">
+                Manage Tasks
+            </a>
+        </div>
+
         <!-- Help & Guides -->
         <div class="bg-white rounded-lg shadow-sm p-6 border-l-4 border-gray-500 hover:shadow-sm transition">
             <div class="flex items-center justify-between mb-4">

@@ -26,6 +26,11 @@ from .views import (
     BroadcastDetailView,
     FeatureControlCenterView,
     MyFeaturesJsonView,
+    # Task Scheduler
+    TaskSchedulerView,
+    TaskToggleView,
+    TaskEditScheduleView,
+    TaskRunNowView,
 )
 
 urlpatterns = [
@@ -58,4 +63,10 @@ urlpatterns = [
 
     path('feature-control/', FeatureControlCenterView.as_view(), name='feature-control-center'),
     path('api/my-features/', MyFeaturesJsonView.as_view(), name='api-my-features'),
+
+    # Task Scheduler
+    path('task-scheduler/', TaskSchedulerView.as_view(), name='task-scheduler'),
+    path('task-scheduler/<int:pk>/toggle/', TaskToggleView.as_view(), name='task-toggle'),
+    path('task-scheduler/<int:pk>/edit/', TaskEditScheduleView.as_view(), name='task-edit-schedule'),
+    path('task-scheduler/<int:pk>/run/', TaskRunNowView.as_view(), name='task-run-now'),
 ]

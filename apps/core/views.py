@@ -1009,3 +1009,184 @@ class MyFeaturesJsonView(LoginRequiredMixin, View):
         keys = FeatureFlag.objects.values_list('key', flat=True)
         data = {k: feature_enabled_for(request.user, k) for k in keys}
         return JsonResponse(data)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TASK SCHEDULER GUI
+# Full GUI to view, toggle, edit, and manually trigger all periodic tasks.
+# Changes take effect immediately — Celery Beat polls the DB every ~5 seconds.
+# ─────────────────────────────────────────────────────────────────────────────
+
+TASK_CATEGORY_META = {
+    "email":       {"label": "Email",        "icon": "✉️",  "color": "blue"},
+    "submissions": {"label": "Submissions",  "icon": "📋",  "color": "purple"},
+    "jobs":        {"label": "Jobs",         "icon": "💼",  "color": "yellow"},
+    "companies":   {"label": "Companies",    "icon": "🏢",  "color": "teal"},
+    "reports":     {"label": "Reports",      "icon": "📊",  "color": "indigo"},
+    "harvest":     {"label": "Harvest",      "icon": "🌾",  "color": "green"},
+}
+
+TASK_NAME_TO_CATEGORY = {
+    "Email Ingest — IMAP poll":                  "email",
+    "Follow-up Reminders — send":                "submissions",
+    "Stale Submissions — detect":                "submissions",
+    "Job URLs — validate":                       "jobs",
+    "Stale Jobs — auto-close":                   "jobs",
+    "Company Links — validate":                  "companies",
+    "Companies — re-enrich stale":               "companies",
+    "Digest — weekly consultant pipeline":        "reports",
+    "Report — weekly executive summary":         "reports",
+    "Harvest — detect company platforms":        "harvest",
+    "Harvest — fetch new jobs":                  "harvest",
+    "Harvest — sync to job pool":                "harvest",
+    "Harvest — cleanup expired jobs":            "harvest",
+}
+
+
+def _get_schedule_label(task):
+    """Return a human-readable schedule string for a PeriodicTask."""
+    if task.crontab:
+        c = task.crontab
+        m, h, dow, dom, moy = c.minute, c.hour, c.day_of_week, c.day_of_month, c.month_of_year
+        if m.startswith("*/"):
+            return f"Every {m[2:]} min"
+        if h.startswith("*/"):
+            return f"Every {h[2:]} hours"
+        day_map = {"0": "Sun", "1": "Mon", "2": "Tue", "3": "Wed", "4": "Thu", "5": "Fri", "6": "Sat"}
+        if dow != "*":
+            return f"{day_map.get(dow, dow)} {h.zfill(2)}:{m.zfill(2)} UTC"
+        return f"Daily {h.zfill(2)}:{m.zfill(2)} UTC"
+    if task.interval:
+        return f"Every {task.interval}"
+    return "—"
+
+
+class TaskSchedulerView(AdminRequiredMixin, TemplateView):
+    template_name = "settings/task_scheduler.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        from django_celery_beat.models import PeriodicTask
+
+        tasks = PeriodicTask.objects.select_related("crontab", "interval").order_by("name")
+
+        # Annotate with category + schedule label
+        enriched = []
+        for t in tasks:
+            cat_key = TASK_NAME_TO_CATEGORY.get(t.name, "other")
+            cat = TASK_CATEGORY_META.get(cat_key, {"label": "Other", "icon": "⚙️", "color": "gray"})
+            enriched.append({
+                "obj": t,
+                "category_key": cat_key,
+                "category_label": cat["label"],
+                "category_icon": cat["icon"],
+                "category_color": cat["color"],
+                "schedule_label": _get_schedule_label(t),
+                "kwargs_pretty": t.kwargs if t.kwargs and t.kwargs != "{}" else "—",
+            })
+
+        # Group by category
+        from collections import defaultdict
+        groups = defaultdict(list)
+        for item in enriched:
+            groups[item["category_key"]].append(item)
+
+        ordered_groups = []
+        for key in ["email", "submissions", "jobs", "companies", "reports", "harvest"]:
+            if key in groups:
+                meta = TASK_CATEGORY_META[key]
+                ordered_groups.append({
+                    "key": key,
+                    "label": meta["label"],
+                    "icon": meta["icon"],
+                    "color": meta["color"],
+                    "tasks": groups[key],
+                })
+
+        context["task_groups"] = ordered_groups
+        context["total_tasks"] = tasks.count()
+        context["active_tasks"] = tasks.filter(enabled=True).count()
+        context["paused_tasks"] = tasks.filter(enabled=False).count()
+        return context
+
+
+class TaskToggleView(AdminRequiredMixin, View):
+    """POST → toggle a periodic task on/off. Returns immediately (Beat re-reads within ~5s)."""
+
+    def post(self, request, pk, *args, **kwargs):
+        from django_celery_beat.models import PeriodicTask
+        task = get_object_or_404(PeriodicTask, pk=pk)
+        task.enabled = not task.enabled
+        task.save(update_fields=["enabled"])
+        status = "enabled" if task.enabled else "paused"
+        messages.success(request, f"\u2705 Task '{task.name}' is now {status}.")
+        return redirect("task-scheduler")
+
+
+class TaskEditScheduleView(AdminRequiredMixin, View):
+    """POST → update the crontab schedule for a periodic task."""
+
+    def post(self, request, pk, *args, **kwargs):
+        from django_celery_beat.models import PeriodicTask, CrontabSchedule
+        task = get_object_or_404(PeriodicTask, pk=pk)
+
+        minute       = request.POST.get("minute", "0").strip() or "0"
+        hour         = request.POST.get("hour", "*").strip() or "*"
+        day_of_week  = request.POST.get("day_of_week", "*").strip() or "*"
+        day_of_month = request.POST.get("day_of_month", "*").strip() or "*"
+        month_of_year = request.POST.get("month_of_year", "*").strip() or "*"
+
+        crontab, _ = CrontabSchedule.objects.get_or_create(
+            minute=minute,
+            hour=hour,
+            day_of_week=day_of_week,
+            day_of_month=day_of_month,
+            month_of_year=month_of_year,
+        )
+        task.crontab = crontab
+        task.interval = None
+        task.save(update_fields=["crontab", "interval"])
+        messages.success(request, f"\u2705 Schedule updated for '{task.name}'.")
+        return redirect("task-scheduler")
+
+
+class TaskRunNowView(AdminRequiredMixin, View):
+    """POST → trigger the Celery task immediately (one-off, off-schedule)."""
+
+    TASK_MAP = {
+        "core.tasks.poll_email_ingest_task":                   ("core.tasks", "poll_email_ingest_task"),
+        "submissions.tasks.send_followup_reminders":            ("submissions.tasks", "send_followup_reminders"),
+        "submissions.tasks.detect_stale_submissions":           ("submissions.tasks", "detect_stale_submissions"),
+        "jobs.tasks.validate_job_urls_task":                    ("jobs.tasks", "validate_job_urls_task"),
+        "jobs.tasks.auto_close_jobs_task":                      ("jobs.tasks", "auto_close_jobs_task"),
+        "companies.tasks.validate_company_links_task":          ("companies.tasks", "validate_company_links_task"),
+        "companies.tasks.re_enrich_stale_companies_task":       ("companies.tasks", "re_enrich_stale_companies_task"),
+        "core.tasks.send_weekly_consultant_pipeline_digest_task": ("core.tasks", "send_weekly_consultant_pipeline_digest_task"),
+        "core.tasks.send_weekly_executive_report_task":         ("core.tasks", "send_weekly_executive_report_task"),
+        "harvest.detect_company_platforms":                     ("harvest.tasks", "detect_company_platforms_task"),
+        "harvest.harvest_jobs":                                 ("harvest.tasks", "harvest_jobs_task"),
+        "harvest.sync_harvested_to_pool":                       ("harvest.tasks", "sync_harvested_to_pool_task"),
+        "harvest.cleanup_harvested_jobs":                       ("harvest.tasks", "cleanup_harvested_jobs_task"),
+    }
+
+    def post(self, request, pk, *args, **kwargs):
+        from django_celery_beat.models import PeriodicTask
+        import importlib
+        task = get_object_or_404(PeriodicTask, pk=pk)
+
+        mapping = self.TASK_MAP.get(task.task)
+        if not mapping:
+            messages.error(request, f"⚠️ No run-now mapping for task: {task.task}")
+            return redirect("task-scheduler")
+
+        module_path, func_name = mapping
+        try:
+            module = importlib.import_module(module_path)
+            celery_task = getattr(module, func_name)
+            kwargs_dict = json.loads(task.kwargs) if task.kwargs and task.kwargs != "{}" else {}
+            result = celery_task.delay(**kwargs_dict)
+            messages.success(request, f"\U0001f680 Task '{task.name}' triggered! ID: {result.id[:8]}...")
+        except Exception as e:
+            messages.error(request, f"❌ Failed to trigger task: {e}")
+
+        return redirect("task-scheduler")
