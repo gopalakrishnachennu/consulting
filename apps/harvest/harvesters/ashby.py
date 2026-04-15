@@ -1,3 +1,17 @@
+"""
+AshbyHarvester — Public Ashby GraphQL API
+
+Ashby exposes a publicly accessible GraphQL endpoint used by their own
+job board widgets. It returns only published, public-facing postings.
+
+Endpoint: https://jobs.ashbyhq.com/api/non-user-graphql
+
+Compliance:
+  - Honest User-Agent (inherited from BaseHarvester)
+  - 1-second minimum delay (BaseHarvester rate limit)
+  - Retry + backoff on server errors (BaseHarvester)
+  - Only queries `jobPostingsForOrganization` — public data only
+"""
 from typing import Any
 
 from .base import BaseHarvester
@@ -6,7 +20,9 @@ GQL_URL = "https://jobs.ashbyhq.com/api/non-user-graphql"
 
 ASHBY_QUERY = """
 query ApiJobBoardJobPostingsForOrganization($organizationHostedJobsPageName: String!) {
-  jobBoard: jobPostingsForOrganization(organizationHostedJobsPageName: $organizationHostedJobsPageName) {
+  jobBoard: jobPostingsForOrganization(
+    organizationHostedJobsPageName: $organizationHostedJobsPageName
+  ) {
     jobPostings {
       id
       title
@@ -24,19 +40,21 @@ query ApiJobBoardJobPostingsForOrganization($organizationHostedJobsPageName: Str
 """
 
 ETYPE_MAP = {
-    "FullTime": "FULL_TIME",
-    "PartTime": "PART_TIME",
-    "Contract": "CONTRACT",
+    "FullTime":   "FULL_TIME",
+    "PartTime":   "PART_TIME",
+    "Contract":   "CONTRACT",
     "Internship": "INTERNSHIP",
 }
 
 
 class AshbyHarvester(BaseHarvester):
-    """Harvests jobs from Ashby GraphQL API."""
+    """Harvests jobs from Ashby public GraphQL API."""
 
     platform_slug = "ashby"
 
-    def fetch_jobs(self, company, tenant_id: str, since_hours: int = 24) -> list[dict[str, Any]]:
+    def fetch_jobs(
+        self, company, tenant_id: str, since_hours: int = 24
+    ) -> list[dict[str, Any]]:
         if not tenant_id:
             return []
 
@@ -51,15 +69,16 @@ class AshbyHarvester(BaseHarvester):
             return []
 
         postings = (
-            (data.get("data") or {})
-            .get("jobBoard", {})
-            .get("jobPostings", [])
-        ) or []
+            ((data.get("data") or {}).get("jobBoard") or {}).get("jobPostings") or []
+        )
 
         results = []
         for job in postings:
             job_id = job.get("id", "")
-            job_url = job.get("externalLink") or f"https://jobs.ashbyhq.com/{tenant_id}/{job_id}"
+            job_url = (
+                job.get("externalLink")
+                or f"https://jobs.ashbyhq.com/{tenant_id}/{job_id}"
+            )
             dept = (job.get("department") or {}).get("name", "")
 
             results.append({

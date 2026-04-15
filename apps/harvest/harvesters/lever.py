@@ -1,3 +1,18 @@
+"""
+LeverHarvester — Public Lever Posting API
+
+Lever exposes a publicly documented API at:
+  https://api.lever.co/v0/postings/{company}
+
+This is their official public posting endpoint — no auth required.
+Documentation: https://hire.lever.co/developer/postings
+
+Compliance:
+  - Honest User-Agent (inherited from BaseHarvester)
+  - 1-second minimum delay (BaseHarvester rate limit)
+  - Retry + backoff on server errors (BaseHarvester)
+  - date filtering — only returns jobs created within since_hours window
+"""
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -11,12 +26,15 @@ class LeverHarvester(BaseHarvester):
 
     platform_slug = "lever"
 
-    def fetch_jobs(self, company, tenant_id: str, since_hours: int = 24) -> list[dict[str, Any]]:
+    def fetch_jobs(
+        self, company, tenant_id: str, since_hours: int = 24
+    ) -> list[dict[str, Any]]:
         if not tenant_id:
             return []
 
         cutoff_ms = int(
-            (datetime.now(tz=timezone.utc) - timedelta(hours=since_hours)).timestamp() * 1000
+            (datetime.now(tz=timezone.utc) - timedelta(hours=since_hours)).timestamp()
+            * 1000
         )
         url = BASE_URL.format(company=tenant_id)
         data = self._get(url)

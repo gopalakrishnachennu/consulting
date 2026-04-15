@@ -1,9 +1,22 @@
 import logging
+import time
 from datetime import timedelta
 
 from celery import shared_task
 from django.db import transaction
 from django.utils import timezone
+
+# ─── Harvest compliance constants ────────────────────────────────────────────
+# Delay between processing each company within a platform run.
+# Applies on top of the per-request delay inside each harvester.
+INTER_COMPANY_DELAY_API = 1.5        # seconds — API platforms (GH, Lever, Ashby, Workday)
+INTER_COMPANY_DELAY_SCRAPE = 5.0     # seconds — HTML scrape platforms
+HTML_SCRAPE_PLATFORMS = {"html_scrape", "icims", "taleo", "jobvite", "ultipro",
+                         "applicantpro", "applytojob", "theapplicantmanager",
+                         "zoho", "recruitee"}
+
+# Circuit breaker — skip a company after this many consecutive fetch failures
+MAX_CONSECUTIVE_FAILURES = 3
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +147,9 @@ def detect_company_platforms_task(self, batch_size: int = 200, force_recheck: bo
         except Exception as e:
             logger.error(f"Detection failed for company {company.id}: {e}")
 
+        # Respectful delay — detection pipeline may issue HTTP requests
+        time.sleep(2.0)
+
     logger.info(f"Detection done: {detected}/{len(company_ids)} detected.")
     return {"detected": detected, "total": len(company_ids)}
 
@@ -171,14 +187,35 @@ def harvest_jobs_task(
         )
 
         harvester = get_harvester(platform.slug)
+        is_scraper = platform.slug in HTML_SCRAPE_PLATFORMS
+        inter_delay = INTER_COMPANY_DELAY_SCRAPE if is_scraper else INTER_COMPANY_DELAY_API
+
         jobs_new = jobs_dup = jobs_fail = 0
         errors: list[str] = []
+        consecutive_failures = 0
 
         for label in labels:
+            # Circuit breaker — stop hammering after repeated failures
+            if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                logger.warning(
+                    "[HARVEST] Circuit breaker: %d consecutive failures on %s — stopping run",
+                    consecutive_failures, platform.name,
+                )
+                errors.append(
+                    f"Circuit breaker tripped after {consecutive_failures} consecutive failures"
+                )
+                break
+
             company = label.company
             tenant_id = label.tenant_id or ""
             try:
                 raw_jobs = harvester.fetch_jobs(company, tenant_id, since_hours=since_hours)
+
+                if not raw_jobs:
+                    consecutive_failures += 1
+                else:
+                    consecutive_failures = 0   # reset on success
+
                 for raw in raw_jobs:
                     try:
                         normalized = normalize_job_data(raw, platform, company, run)
@@ -203,9 +240,14 @@ def harvest_jobs_task(
                     except Exception as e:
                         jobs_fail += 1
                         errors.append(str(e)[:200])
+
             except Exception as e:
                 jobs_fail += 1
+                consecutive_failures += 1
                 errors.append(f"Company {company.id} ({company.name}): {str(e)[:150]}")
+
+            # Respectful inter-company delay regardless of success/failure
+            time.sleep(inter_delay)
 
         run.finished_at = timezone.now()
         run.status = "SUCCESS" if not errors else ("PARTIAL" if jobs_new > 0 else "FAILED")
