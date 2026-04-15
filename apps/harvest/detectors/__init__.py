@@ -7,7 +7,11 @@ URL_PATTERNS: dict[str, list[str]] = {
         "wd3.myworkday.com",
         "wd5.myworkday.com",
     ],
-    "greenhouse": ["boards.greenhouse.io", "greenhouse.io/jobs"],
+    "greenhouse": [
+        "boards.greenhouse.io",
+        "job-boards.greenhouse.io",
+        "greenhouse.io/jobs",
+    ],
     "lever": ["jobs.lever.co", "lever.co"],
     "ashby": ["ashbyhq.com", "jobs.ashbyhq.com"],
     "jobvite": ["jobs.jobvite.com", "jobvite.com"],
@@ -19,22 +23,72 @@ URL_PATTERNS: dict[str, list[str]] = {
     "applicantpro": ["applicantpro.com"],
     "applytojob": ["applytojob.com"],
     "theapplicantmanager": ["theapplicantmanager.com"],
+    # ── New platforms discovered from real job URL analysis ───────────────────
+    "workable": ["apply.workable.com", "workable.com/j/"],
+    "bamboohr": ["bamboohr.com"],
+    "smartrecruiters": ["jobs.smartrecruiters.com", "smartrecruiters.com/jobs"],
+    "dayforce": ["jobs.dayforcehcm.com", "dayforcehcm.com"],
+    "adp": ["workforcenow.adp.com", "myjobs.adp.com"],
+    "oracle": ["oraclecloud.com/hcmUI", "fa.ocs.oraclecloud.com", "fa.us2.oraclecloud.com"],
 }
 
 TENANT_EXTRACTORS: dict[str, re.Pattern] = {
-    "workday": re.compile(r"https?://([^.]+)\.myworkdayjobs\.com", re.I),
-    "greenhouse": re.compile(r"boards\.greenhouse\.io/([^/?#\s]+)", re.I),
+    # ── Fixed: Workday uses {tenant}.wd5.myworkdayjobs.com format ────────────
+    "workday": re.compile(
+        r"([^./]+)\.(?:wd\d+\.)?myworkdayjobs\.com"
+        r"|(?:wd\d+\.myworkday\.com)/wday/cxs/([^/?]+)",
+        re.I,
+    ),
+    # ── Greenhouse: boards.greenhouse.io/{tenant} or job-boards.greenhouse.io/{tenant}
+    "greenhouse": re.compile(r"(?:job-)?boards\.greenhouse\.io/([^/?#\s]+)", re.I),
+    # ── Lever: jobs.lever.co/{tenant}
     "lever": re.compile(r"jobs\.lever\.co/([^/?#\s]+)", re.I),
-    "ashby": re.compile(r"jobs\.ashbyhq\.com/([^/?#\s]+)", re.I),
+    # ── Ashby: jobs.ashbyhq.com/{tenant}
+    "ashby": re.compile(r"(?:jobs\.)?ashbyhq\.com/([^/?#\s]+)", re.I),
+    # ── Jobvite: jobs.jobvite.com/careers/{tenant} or jobs.jobvite.com/{tenant}
+    "jobvite": re.compile(r"jobs\.jobvite\.com/(?:careers/)?([^/?#\s]+)", re.I),
+    # ── iCIMS: {tenant}.icims.com (tenant often prefixed careers-)
+    "icims": re.compile(r"([^.]+)\.icims\.com", re.I),
+    # ── Recruitee: {tenant}.recruitee.com
+    "recruitee": re.compile(r"([^.]+)\.recruitee\.com", re.I),
+    # ── Taleo: {tenant}.taleo.net
+    "taleo": re.compile(r"([^.]+)\.taleo\.net", re.I),
+    # ── UltiPro/UKG: recruiting.ultipro.com/{TENANT_CODE}/JobBoard/...
+    "ultipro": re.compile(
+        r"(?:recruiting\d*\.ultipro\.com|recruiting\.ukg\.net)/([^/?#\s]+)", re.I
+    ),
+    # ── ApplicantPro: {tenant}.applicantpro.com
+    "applicantpro": re.compile(r"([^.]+)\.applicantpro\.com", re.I),
+    # ── ApplyToJob: {tenant}.applytojob.com
+    "applytojob": re.compile(r"([^.]+)\.applytojob\.com", re.I),
+    # ── The Applicant Manager: hire.theapplicantmanager.com?org={tenant}
+    "theapplicantmanager": re.compile(r"org=([^&\s]+)", re.I),
+    # ── Workable: apply.workable.com/{tenant}/j/{id}
+    "workable": re.compile(r"(?:apply\.workable\.com|workable\.com/j)/([^/?#\s]+)", re.I),
+    # ── BambooHR: {tenant}.bamboohr.com
+    "bamboohr": re.compile(r"([^.]+)\.bamboohr\.com", re.I),
+    # ── SmartRecruiters: jobs.smartrecruiters.com/{Tenant}/...
+    "smartrecruiters": re.compile(r"(?:jobs\.)?smartrecruiters\.com/([^/?#\s]+)", re.I),
+    # ── Dayforce HCM: jobs.dayforcehcm.com/en-US/{tenant}/CANDIDATEPORTAL/...
+    "dayforce": re.compile(r"dayforcehcm\.com/[^/]+/([^/?#\s]+)", re.I),
+    # ── ADP: myjobs.adp.com/{tenant}/cx or workforcenow has cid param only
+    "adp": re.compile(r"myjobs\.adp\.com/([^/?#\s]+)/cx", re.I),
+    # ── Oracle HCM: subdomain varies widely; extract site name from path
+    "oracle": re.compile(r"oraclecloud\.com/hcmUI/CandidateExperience/[^/]+/sites/([^/?#\s]+)", re.I),
 }
 
 
 def extract_tenant(platform_slug: str, url: str) -> str:
     extractor = TENANT_EXTRACTORS.get(platform_slug)
-    if extractor and url:
-        m = extractor.search(url)
-        if m:
-            return m.group(1)
+    if not extractor or not url:
+        return ""
+    m = extractor.search(url)
+    if not m:
+        return ""
+    # Some patterns have two capture groups (e.g. Workday); return first non-empty
+    for g in m.groups():
+        if g:
+            return g
     return ""
 
 
