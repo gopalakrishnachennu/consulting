@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'django_extensions',
     'widget_tweaks',
     'django_celery_beat',
+    'django_celery_results',
     
     # Local Apps
     'users.apps.UsersConfig',
@@ -169,10 +170,30 @@ TAILWIND_APP_NAME = 'theme'
 INTERNAL_IPS = ["127.0.0.1"]
 NPM_BIN_PATH = "npm"
 
-# Celery
+# ── Celery ────────────────────────────────────────────────────────────────────
 CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://localhost:6379/0')
-CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://localhost:6379/0')
+# Store task results in DB (django-celery-results) so they survive restarts.
+# Override via env: CELERY_RESULT_BACKEND=django-db (Docker) or redis://... (local)
+CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='django-db')
 CELERY_TASK_ALWAYS_EAGER = config('CELERY_TASK_ALWAYS_EAGER', default=False, cast=bool)
+CELERY_CACHE_BACKEND = 'django-cache'
+CELERY_RESULT_EXTENDED = True
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_SEND_SENT_EVENT = True
+
+# Serialization
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+
+# Task time limits
+CELERY_TASK_SOFT_TIME_LIMIT = 300   # 5 min soft limit
+CELERY_TASK_TIME_LIMIT = 600        # 10 min hard kill
+
+# Concurrency (set via env in production)
+CELERY_WORKER_CONCURRENCY = config('CELERY_WORKER_CONCURRENCY', default=2, cast=int)
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 100  # restart worker after 100 tasks to prevent memory leaks
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1    # fair task distribution
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

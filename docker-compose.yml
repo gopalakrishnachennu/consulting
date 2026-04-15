@@ -1,60 +1,126 @@
 version: '3.8'
 
+# ─────────────────────────────────────────────────────────────────────────────
+# GoCareers – Docker Compose
+# Services: web + celery_worker + celery_beat + redis + db
+# Tasks run 24/7 in worker/beat processes — independent of the web server.
+# Browser closing does NOT affect background task execution.
+# ─────────────────────────────────────────────────────────────────────────────
+
+x-app-env: &app-env
+  DATABASE_URL: postgres://postgres:postgres@db:5432/gocareers
+  CELERY_BROKER_URL: redis://redis:6379/0
+  CELERY_RESULT_BACKEND: django-db
+  CELERY_TASK_ALWAYS_EAGER: "False"
+  DJANGO_SETTINGS_MODULE: config.settings
+  PYTHONPATH: /app/apps
+  DEBUG: "0"
+
 services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
   db:
-    image: postgres:15
+    image: postgres:15-alpine
+    restart: unless-stopped
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
-      - POSTGRES_DB=education_consulting
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
+      POSTGRES_DB: gocareers
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+  # ── Redis (Celery broker + cache) ──────────────────────────────────────────
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+  # ── Django Web Server ──────────────────────────────────────────────────────
   web:
     build: .
-    command: python manage.py runserver 0.0.0.0:8000
+    restart: unless-stopped
+    entrypoint: ["/app/scripts/entrypoint.sh"]
     volumes:
       - .:/app
+      - static_files:/app/staticfiles
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgres://postgres:postgres@db:5432/education_consulting
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - DEBUG=1
+      <<: *app-env
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
+  # ── Celery Worker ─────────────────────────────────────────────────────────
+  # Picks up tasks from Redis queue and executes them.
+  # Runs 24/7 — completely independent of the web server.
+  # Closing the browser does NOT affect this process.
   celery_worker:
     build: .
-    command: celery -A config worker -l info
+    restart: unless-stopped
+    command: >
+      celery -A config worker
+      --loglevel=info
+      --concurrency=2
+      --max-tasks-per-child=100
+      --queues=celery,high_priority
     volumes:
       - .:/app
     environment:
-      - DATABASE_URL=postgres://postgres:postgres@db:5432/education_consulting
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      <<: *app-env
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
-  # Node service for Tailwind CSS watching
+  # ── Celery Beat (Scheduler) ───────────────────────────────────────────────
+  # Fires periodic tasks on the defined schedule (see config/celery.py).
+  # ONLY ONE beat instance should run at a time to avoid duplicate task firing.
+  celery_beat:
+    build: .
+    restart: unless-stopped
+    command: >
+      celery -A config beat
+      --loglevel=info
+      --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+      - .:/app
+    environment:
+      <<: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      web:
+        condition: service_started
+
+  # ── Tailwind CSS Watcher (dev only) ───────────────────────────────────────
   theme:
     image: node:18-alpine
     working_dir: /app/theme/static_src
     volumes:
       - .:/app
     command: npm run watch
-    depends_on:
-      - web
+    profiles:
+      - dev
 
 volumes:
   postgres_data:
+  static_files:
