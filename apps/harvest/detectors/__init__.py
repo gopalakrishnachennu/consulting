@@ -33,12 +33,9 @@ URL_PATTERNS: dict[str, list[str]] = {
 }
 
 TENANT_EXTRACTORS: dict[str, re.Pattern] = {
-    # ── Fixed: Workday uses {tenant}.wd5.myworkdayjobs.com format ────────────
-    "workday": re.compile(
-        r"([^./]+)\.(?:wd\d+\.)?myworkdayjobs\.com"
-        r"|(?:wd\d+\.myworkday\.com)/wday/cxs/([^/?]+)",
-        re.I,
-    ),
+    # Workday is handled by _extract_workday_tenant() — not a simple regex.
+    # Stored as "{tenant}|{jobboard}" e.g. "inotivco|EXT", "godirect|voya_jobs"
+    "workday": re.compile(r"([^./]+)\.(?:wd\d+\.)?myworkdayjobs\.com", re.I),
     # ── Greenhouse: boards.greenhouse.io/{tenant} or job-boards.greenhouse.io/{tenant}
     "greenhouse": re.compile(r"(?:job-)?boards\.greenhouse\.io/([^/?#\s]+)", re.I),
     # ── Lever: jobs.lever.co/{tenant}
@@ -78,14 +75,42 @@ TENANT_EXTRACTORS: dict[str, re.Pattern] = {
 }
 
 
+def _extract_workday_tenant(url: str) -> str:
+    """
+    Return "{tenant}|{jobboard}" for a Workday URL, e.g. "inotivco|EXT".
+
+    Workday URLs follow: {tenant}.wd{N}.myworkdayjobs.com/{locale?}/{jobboard}/job/...
+    Both pieces are needed to build the API endpoint correctly.
+    """
+    tenant_m = re.search(r"([^./]+)\.(?:wd\d+\.)?myworkdayjobs\.com", url, re.I)
+    if not tenant_m:
+        return ""
+    tenant = tenant_m.group(1)
+
+    # Path after the host — skip optional locale (en-US, en-GB, de-DE …)
+    path_m = re.search(
+        r"myworkdayjobs\.com/(?:[a-zA-Z]{2}-[a-zA-Z]{2}/)?([^/?#\s]+)",
+        url, re.I,
+    )
+    if path_m:
+        jobboard = path_m.group(1)
+        # "job" means we hit the job-detail segment — no board name in URL
+        if jobboard.lower() != "job":
+            return f"{tenant}|{jobboard}"
+
+    return tenant
+
+
 def extract_tenant(platform_slug: str, url: str) -> str:
+    if platform_slug == "workday":
+        return _extract_workday_tenant(url)
+
     extractor = TENANT_EXTRACTORS.get(platform_slug)
     if not extractor or not url:
         return ""
     m = extractor.search(url)
     if not m:
         return ""
-    # Some patterns have two capture groups (e.g. Workday); return first non-empty
     for g in m.groups():
         if g:
             return g

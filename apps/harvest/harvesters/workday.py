@@ -19,10 +19,14 @@ from typing import Any
 
 from .base import BaseHarvester, MIN_DELAY_API
 
-# Workday tenant-specific career page path names to try (most common first)
-WORKDAY_PATHS = [
+# Generic Workday job-board path fallbacks (used only when no specific path
+# is stored in tenant_id). Real paths are highly company-specific.
+WORKDAY_PATHS_FALLBACK = [
     "External",
+    "EXT",
+    "External_Career_Site",
     "Careers",
+    "Search",
     "US",
     "All",
     "US-External",
@@ -42,10 +46,22 @@ class WorkdayHarvester(BaseHarvester):
         if not tenant_id:
             return []
 
-        for path in WORKDAY_PATHS:
+        # tenant_id is stored as "{tenant}|{jobboard}" (e.g. "inotivco|EXT")
+        # Fall back to bare tenant name for older records or unknown boards.
+        if "|" in tenant_id:
+            tenant, jobboard = tenant_id.split("|", 1)
+            paths_to_try = [jobboard] + [
+                p for p in WORKDAY_PATHS_FALLBACK if p.lower() != jobboard.lower()
+            ]
+        else:
+            tenant = tenant_id
+            # Also try the tenant name itself — many companies use it as path
+            paths_to_try = [tenant] + WORKDAY_PATHS_FALLBACK
+
+        for path in paths_to_try:
             url = (
-                f"https://{tenant_id}.myworkdayjobs.com"
-                f"/wday/cxs/{tenant_id}/{path}/jobs"
+                f"https://{tenant}.myworkdayjobs.com"
+                f"/wday/cxs/{tenant}/{path}/jobs"
             )
             payload = {
                 "appliedFacets": {},
@@ -63,7 +79,7 @@ class WorkdayHarvester(BaseHarvester):
                     for job in postings:
                         ext_path = job.get("externalPath", "")
                         job_url = (
-                            f"https://{tenant_id}.myworkdayjobs.com{ext_path}"
+                            f"https://{tenant}.myworkdayjobs.com{ext_path}"
                             if ext_path
                             else ""
                         )
