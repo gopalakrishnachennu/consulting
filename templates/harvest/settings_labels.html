@@ -128,7 +128,13 @@
         🔍 Run Detection on Unlabeled
       </button>
     </form>
-    <p class="text-xs text-gray-500">Backfill reads existing job URLs to label companies instantly · Detection crawls career pages for the {{ stat_unlabeled }} not yet scanned.</p>
+    <form method="post" action="{% url 'harvest-run-verify-portals' %}">
+      {% csrf_token %}
+      <button type="submit" class="px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-semibold hover:bg-purple-700 shadow-sm transition-colors inline-flex items-center gap-2">
+        🩺 Verify Portal Health
+      </button>
+    </form>
+    <p class="text-xs text-gray-500">Backfill reads existing job URLs to label companies instantly · Detection crawls career pages for the {{ stat_unlabeled }} not yet scanned · Verify does live HTTP checks on all career portal URLs.</p>
   </div>
 
   <!-- Filters -->
@@ -237,20 +243,28 @@
           <!-- Scrape Status -->
           <td class="px-4 py-3 text-center">
             {% with s=label.scrape_status %}
-            {% if s == 'ready' %}
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
-              <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span> Active
+            {% if s == 'verified' %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700" title="HTTP check confirmed portal is live">
+              <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span> Live ✓
+            </span>
+            {% elif s == 'down' %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700" title="HTTP check returned error — portal may be down or URL is wrong">
+              <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> Down ✗
+            </span>
+            {% elif s == 'ready' %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700" title="URL built — click 🩺 Verify Portal Health to check">
+              <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span> Active
             </span>
             {% elif s == 'needs_backfill' %}
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700" title="Tenant ID has bad prefix — run Backfill to fix">
               <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Fix needed
             </span>
             {% elif s == 'no_tenant' %}
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700" title="Platform detected but no tenant ID extracted yet">
               <span class="w-1.5 h-1.5 rounded-full bg-yellow-400"></span> No tenant
             </span>
             {% elif s == 'no_ats' %}
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500" title="No ATS detected for this company">
               <span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span> No ATS
             </span>
             {% else %}

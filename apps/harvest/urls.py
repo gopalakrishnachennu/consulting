@@ -15,6 +15,7 @@ from .views import (
     RunHarvestNowView,
     RunMonitorView,
     RunSyncNowView,
+    RunVerifyPortalsView,
     ScheduleConfigView,
 )
 
@@ -39,4 +40,5 @@ urlpatterns = [
     path("run/sync/", RunSyncNowView.as_view(), name="harvest-run-sync"),
     path("run/cleanup/", RunCleanupNowView.as_view(), name="harvest-run-cleanup"),
     path("run/backfill/", RunBackfillNowView.as_view(), name="harvest-run-backfill"),
+    path("run/verify-portals/", RunVerifyPortalsView.as_view(), name="harvest-run-verify-portals"),
 ]

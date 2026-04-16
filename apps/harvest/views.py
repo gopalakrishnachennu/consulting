@@ -283,3 +283,15 @@ class RunBackfillNowView(SuperuserRequiredMixin, View):
         task = backfill_platform_labels_from_jobs_task.delay()
         messages.success(request, f"Backfill started — scanning all job URLs to detect platforms (Task: {task.id[:8]}...)")
         return redirect_with_task_progress("harvest-labels", task.id, "Platform backfill from job URLs")
+
+
+class RunVerifyPortalsView(SuperuserRequiredMixin, View):
+    """Queue async HTTP health checks for all career portal URLs."""
+    def post(self, request):
+        from .tasks import verify_all_portals_task
+        task = verify_all_portals_task.delay()
+        messages.success(
+            request,
+            f"Portal verification started — checking all career URLs in the background (Task: {task.id[:8]}...)"
+        )
+        return redirect_with_task_progress("harvest-labels", task.id, "Verifying career portal health")

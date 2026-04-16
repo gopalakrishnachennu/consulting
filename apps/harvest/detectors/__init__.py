@@ -69,10 +69,14 @@ TENANT_EXTRACTORS: dict[str, re.Pattern] = {
     "smartrecruiters": re.compile(r"(?:jobs\.)?smartrecruiters\.com/([^/?#\s]+)", re.I),
     # ── Dayforce HCM: jobs.dayforcehcm.com/en-US/{tenant}/CANDIDATEPORTAL/...
     "dayforce": re.compile(r"dayforcehcm\.com/[^/]+/([^/?#\s]+)", re.I),
-    # ── ADP: myjobs.adp.com/{tenant}/cx or workforcenow has cid param only
+    # ── ADP: myjobs.adp.com/{tenant}/cx  (workforcenow.adp.com has no reusable tenant)
     "adp": re.compile(r"myjobs\.adp\.com/([^/?#\s]+)/cx", re.I),
-    # ── Oracle HCM: subdomain varies widely; extract site name from path
-    "oracle": re.compile(r"oraclecloud\.com/hcmUI/CandidateExperience/[^/]+/sites/([^/?#\s]+)", re.I),
+    # ── Oracle HCM: stored as "{subdomain}|{sites_id}"
+    # e.g. "eeho.fa.us2|CX" from https://eeho.fa.us2.oraclecloud.com/hcmUI/.../sites/CX
+    "oracle": re.compile(
+        r"([^/.]+\.fa\.[^/.]+)\.oraclecloud\.com/hcmUI/CandidateExperience/[^/]+/sites/([^/?#\s]+)",
+        re.I,
+    ),
 }
 
 
@@ -106,6 +110,18 @@ def extract_tenant(platform_slug: str, url: str) -> str:
     if platform_slug == "workday":
         return _extract_workday_tenant(url)
 
+    # ── Greenhouse: handle embed format boards.greenhouse.io/embed/job_board?for=SLUG
+    if platform_slug == "greenhouse":
+        embed_m = re.search(r"greenhouse\.io/embed[^?]*\?.*?for=([^&\s]+)", url, re.I)
+        if embed_m:
+            return embed_m.group(1)
+        m = TENANT_EXTRACTORS["greenhouse"].search(url)
+        if m:
+            slug = m.group(1)
+            if slug.lower() not in ("embed", "job_board"):
+                return slug
+        return ""
+
     extractor = TENANT_EXTRACTORS.get(platform_slug)
     if not extractor or not url:
         return ""
@@ -119,6 +135,15 @@ def extract_tenant(platform_slug: str, url: str) -> str:
         section = m.group(2) or ""
         if subdomain and section:
             return f"{subdomain}|{section}"
+        return subdomain
+
+    # Oracle HCM: groups = (subdomain, sites_id) → store as "subdomain|sites_id"
+    # e.g. "eeho.fa.us2|CX"
+    if platform_slug == "oracle":
+        subdomain = m.group(1) or ""
+        sites_id = m.group(2) or ""
+        if subdomain and sites_id:
+            return f"{subdomain}|{sites_id}"
         return subdomain
 
     for g in m.groups():

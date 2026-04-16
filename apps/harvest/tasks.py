@@ -412,6 +412,101 @@ def harvest_jobs_task(
     return {"status": "complete"}
 
 
+@shared_task(bind=True, name="harvest.check_portal_health")
+def check_portal_health_task(self, label_pk: int):
+    """
+    HTTP-check a single career portal URL and update portal_alive + portal_last_verified.
+    Called individually per label — queue many at once via verify_all_portals_task.
+    """
+    import requests
+    from .models import CompanyPlatformLabel
+
+    try:
+        label = CompanyPlatformLabel.objects.select_related("platform").get(pk=label_pk)
+    except CompanyPlatformLabel.DoesNotExist:
+        return
+
+    from .career_url import build_career_url
+    url = build_career_url(
+        label.platform.slug if label.platform else "",
+        label.tenant_id or "",
+    )
+    if not url:
+        return
+
+    alive = False
+    try:
+        resp = requests.head(
+            url,
+            timeout=12,
+            allow_redirects=True,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (compatible; GoCareers-PortalBot/1.0; "
+                    "+https://chennu.co)"
+                )
+            },
+        )
+        # Treat 2xx and 3xx (after redirect) as alive; 4xx/5xx as down
+        if resp.status_code >= 400:
+            # Some ATS block HEAD — retry with GET (just first bytes)
+            resp = requests.get(
+                url,
+                timeout=15,
+                stream=True,
+                allow_redirects=True,
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (compatible; GoCareers-PortalBot/1.0)"
+                    )
+                },
+            )
+            resp.close()
+        alive = resp.status_code < 400
+    except Exception:
+        alive = False
+
+    label.portal_alive = alive
+    label.portal_last_verified = timezone.now()
+    label.save(update_fields=["portal_alive", "portal_last_verified"])
+
+
+@shared_task(bind=True, name="harvest.verify_all_portals")
+def verify_all_portals_task(self):
+    """
+    Queue HTTP health checks for all CompanyPlatformLabels that have a career URL.
+    Each check runs asynchronously via check_portal_health_task.
+    """
+    from .models import CompanyPlatformLabel
+
+    update_task_progress(self, current=0, total=0, message="Queuing portal health checks…")
+
+    label_pks = list(
+        CompanyPlatformLabel.objects.filter(
+            platform__isnull=False,
+        ).exclude(tenant_id="").exclude(tenant_id__isnull=True)
+        .values_list("pk", flat=True)
+    )
+
+    total = len(label_pks)
+    update_task_progress(self, current=0, total=total, message=f"Queuing {total} checks…")
+
+    for i, pk in enumerate(label_pks, start=1):
+        check_portal_health_task.apply_async(
+            args=[pk],
+            countdown=i * 0.3,   # stagger by 0.3s each to avoid hammering
+        )
+        if i % 50 == 0:
+            update_task_progress(
+                self, current=i, total=total,
+                message=f"Queued {i}/{total} checks…",
+            )
+
+    update_task_progress(self, current=total, total=total,
+                         message=f"✅ All {total} portal checks queued!")
+    return {"queued": total}
+
+
 @shared_task(name="harvest.cleanup_harvested_jobs")
 def cleanup_harvested_jobs_task():
     """Delete expired HarvestedJobs and old HarvestRun records."""

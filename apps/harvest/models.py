@@ -130,6 +130,16 @@ class CompanyPlatformLabel(models.Model):
     verified_at = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True)
 
+    # ── Portal health (set by check_portal_health_task) ──────────────────────
+    portal_alive = models.BooleanField(
+        null=True, blank=True,
+        help_text="True=HTTP 2xx/3xx, False=4xx/5xx/timeout, None=not yet checked.",
+    )
+    portal_last_verified = models.DateTimeField(
+        null=True, blank=True,
+        help_text="When the portal URL was last HTTP-checked.",
+    )
+
     class Meta:
         ordering = ["company__name"]
         verbose_name = "Company Platform Label"
@@ -157,19 +167,26 @@ class CompanyPlatformLabel(models.Model):
     def scrape_status(self) -> str:
         """
         Returns one of:
-          'ready'   — platform + clean tenant set, URL constructible
-          'no_tenant' — platform detected but no tenant extracted yet
-          'no_ats'  — explicitly detected as no ATS
-          'unknown' — not scanned yet
+          'verified'      — HTTP check confirmed portal is alive (2xx/3xx)
+          'down'          — HTTP check confirmed portal is unreachable (4xx/5xx/timeout)
+          'ready'         — platform + clean tenant, URL built but not yet HTTP-checked
+          'needs_backfill'— tenant has https:// prefix (old bug), backfill will fix
+          'no_tenant'     — platform detected but no tenant extracted yet
+          'no_ats'        — explicitly detected as having no ATS
+          'unknown'       — not scanned yet
         """
         if self.detection_method == self.DetectionMethod.UNDETECTED:
             return "no_ats"
         if not self.platform:
             return "unknown"
         if self.tenant_id and not self.tenant_id.startswith("https://"):
+            # Has valid tenant — use HTTP health result if available
+            if self.portal_alive is True:
+                return "verified"
+            if self.portal_alive is False:
+                return "down"
             return "ready"
         if self.tenant_id:
-            # Has tenant but it has bad prefix — backfill will fix it
             return "needs_backfill"
         return "no_tenant"
 
