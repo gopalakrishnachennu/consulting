@@ -90,6 +90,6 @@ def _oracle(tenant_id: str) -> str:
     if "|" in t:
         subdomain, sites_id = t.split("|", 1)
         subdomain = _clean(subdomain)
-        return f"https://{subdomain}.oraclecloud.com/hcmUI/CandidateExperience/en/sites/{sites_id}"
+        return f"https://{subdomain}.oraclecloud.com/hcmUI/CandidateExperience/en/sites/{sites_id}/jobs?mode=location"
     # Old format — just a sites_id with no subdomain, can't build URL
     return ""
