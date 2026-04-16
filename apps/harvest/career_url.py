@@ -57,10 +57,17 @@ def build_career_url(platform_slug: str, tenant_id: str) -> str:
 
 
 def _workday(tenant_id: str) -> str:
+    """
+    Build Workday career page URL.
+    tenant_id stored as "{full_subdomain}|{jobboard}"
+    e.g. "inotivco.wd5|EXT" → https://inotivco.wd5.myworkdayjobs.com/en-US/EXT
+    Legacy format "{company}|{jobboard}" (no wd prefix) still produces a URL
+    but backfill should fix those to include the wd{N} part.
+    """
     t = _clean(tenant_id)
     if "|" in t:
-        tenant, jobboard = t.split("|", 1)
-        return f"https://{tenant}.myworkdayjobs.com/en-US/{jobboard}"
+        full_subdomain, jobboard = t.split("|", 1)
+        return f"https://{full_subdomain}.myworkdayjobs.com/en-US/{jobboard}"
     return f"https://{t}.myworkdayjobs.com"
 
 

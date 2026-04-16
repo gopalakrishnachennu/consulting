@@ -82,15 +82,20 @@ TENANT_EXTRACTORS: dict[str, re.Pattern] = {
 
 def _extract_workday_tenant(url: str) -> str:
     """
-    Return "{tenant}|{jobboard}" for a Workday URL, e.g. "inotivco|EXT".
+    Return "{full_subdomain}|{jobboard}" for a Workday URL.
 
-    Workday URLs follow: {tenant}.wd{N}.myworkdayjobs.com/{locale?}/{jobboard}/job/...
-    Both pieces are needed to build the API endpoint correctly.
+    Workday URLs: {company}.wd{N}.myworkdayjobs.com/{locale?}/{jobboard}/job/...
+    We store the FULL subdomain including wd{N} so the career page URL is correct.
+    e.g. "inotivco.wd5|EXT", "3m.wd1|Search", "hamiltonlane.wd108|Search"
+    The harvester strips the .wd{N} suffix to get the API tenant.
     """
-    tenant_m = re.search(r"([^./]+)\.(?:wd\d+\.)?myworkdayjobs\.com", url, re.I)
-    if not tenant_m:
+    # Capture company name AND optional .wd{N} part
+    m = re.search(r"([^./]+)(\.wd\d+)?\.myworkdayjobs\.com", url, re.I)
+    if not m:
         return ""
-    tenant = tenant_m.group(1)
+    company = m.group(1)
+    wd_part = m.group(2) or ""          # e.g. ".wd5" or "" for bare myworkdayjobs.com
+    full_subdomain = company + wd_part  # e.g. "inotivco.wd5"
 
     # Path after the host — skip optional locale (en-US, en-GB, de-DE …)
     path_m = re.search(
@@ -101,9 +106,9 @@ def _extract_workday_tenant(url: str) -> str:
         jobboard = path_m.group(1)
         # "job" means we hit the job-detail segment — no board name in URL
         if jobboard.lower() != "job":
-            return f"{tenant}|{jobboard}"
+            return f"{full_subdomain}|{jobboard}"
 
-    return tenant
+    return full_subdomain
 
 
 def extract_tenant(platform_slug: str, url: str) -> str:

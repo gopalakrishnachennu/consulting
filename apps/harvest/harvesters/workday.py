@@ -46,16 +46,19 @@ class WorkdayHarvester(BaseHarvester):
         if not tenant_id:
             return []
 
-        # tenant_id is stored as "{tenant}|{jobboard}" (e.g. "inotivco|EXT")
-        # Fall back to bare tenant name for older records or unknown boards.
+        # tenant_id stored as "{full_subdomain}|{jobboard}"
+        # e.g. "inotivco.wd5|EXT" or legacy "inotivco|EXT"
+        # API uses bare company name (strip .wd{N} suffix for the CXS endpoint).
+        import re as _re
         if "|" in tenant_id:
-            tenant, jobboard = tenant_id.split("|", 1)
+            full_subdomain, jobboard = tenant_id.split("|", 1)
+            # Strip .wd{N} to get bare company name for API path
+            tenant = _re.sub(r"\.wd\d+$", "", full_subdomain, flags=_re.I)
             paths_to_try = [jobboard] + [
                 p for p in WORKDAY_PATHS_FALLBACK if p.lower() != jobboard.lower()
             ]
         else:
-            tenant = tenant_id
-            # Also try the tenant name itself — many companies use it as path
+            tenant = _re.sub(r"\.wd\d+$", "", tenant_id, flags=_re.I)
             paths_to_try = [tenant] + WORKDAY_PATHS_FALLBACK
 
         for path in paths_to_try:
@@ -78,8 +81,10 @@ class WorkdayHarvester(BaseHarvester):
                     results = []
                     for job in postings:
                         ext_path = job.get("externalPath", "")
+                        # Use full_subdomain (with .wd{N}) for the public job URL
+                        job_domain = full_subdomain if "|" in tenant_id else tenant
                         job_url = (
-                            f"https://{tenant}.myworkdayjobs.com{ext_path}"
+                            f"https://{job_domain}.myworkdayjobs.com{ext_path}"
                             if ext_path
                             else ""
                         )
