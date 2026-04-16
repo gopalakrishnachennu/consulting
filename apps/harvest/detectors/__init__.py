@@ -48,8 +48,9 @@ TENANT_EXTRACTORS: dict[str, re.Pattern] = {
     "icims": re.compile(r"([^.]+)\.icims\.com", re.I),
     # ── Recruitee: {tenant}.recruitee.com
     "recruitee": re.compile(r"([^.]+)\.recruitee\.com", re.I),
-    # ── Taleo: {tenant}.taleo.net
-    "taleo": re.compile(r"([^.]+)\.taleo\.net", re.I),
+    # ── Taleo: {subdomain}.taleo.net/careersection/{section}/...
+    # Stored as "{subdomain}|{career_section}" e.g. "aa224|ex", "uhg|10000"
+    "taleo": re.compile(r"([^.]+)\.taleo\.net(?:/careersection/([^/?#\s]+))?", re.I),
     # ── UltiPro/UKG: recruiting.ultipro.com/{TENANT_CODE}/JobBoard/...
     "ultipro": re.compile(
         r"(?:recruiting\d*\.ultipro\.com|recruiting\.ukg\.net)/([^/?#\s]+)", re.I
@@ -111,6 +112,15 @@ def extract_tenant(platform_slug: str, url: str) -> str:
     m = extractor.search(url)
     if not m:
         return ""
+
+    # Taleo: groups = (subdomain, career_section) → store as "subdomain|section"
+    if platform_slug == "taleo":
+        subdomain = m.group(1) or ""
+        section = m.group(2) or ""
+        if subdomain and section:
+            return f"{subdomain}|{section}"
+        return subdomain
+
     for g in m.groups():
         if g:
             return g

@@ -2,6 +2,9 @@ from .workday import WorkdayHarvester
 from .greenhouse import GreenhouseHarvester
 from .lever import LeverHarvester
 from .ashby import AshbyHarvester
+from .icims import IcimsHarvester
+from .jobvite import JobviteHarvester
+from .taleo import TaleoHarvester
 from .html_scraper import HTMLScrapeHarvester
 
 HARVESTER_MAP: dict[str, type] = {
@@ -9,6 +12,9 @@ HARVESTER_MAP: dict[str, type] = {
     "greenhouse": GreenhouseHarvester,
     "lever": LeverHarvester,
     "ashby": AshbyHarvester,
+    "icims": IcimsHarvester,
+    "jobvite": JobviteHarvester,
+    "taleo": TaleoHarvester,
 }
 
 
@@ -20,5 +26,6 @@ def get_harvester(platform_slug: str):
 
 __all__ = [
     "WorkdayHarvester", "GreenhouseHarvester", "LeverHarvester",
-    "AshbyHarvester", "HTMLScrapeHarvester", "get_harvester", "HARVESTER_MAP",
+    "AshbyHarvester", "IcimsHarvester", "JobviteHarvester", "TaleoHarvester",
+    "HTMLScrapeHarvester", "get_harvester", "HARVESTER_MAP",
 ]
