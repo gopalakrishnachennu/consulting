@@ -8,7 +8,7 @@ version: '3.8'
 # ─────────────────────────────────────────────────────────────────────────────
 
 x-app-env: &app-env
-  DATABASE_URL: postgres://consulting:consulting@db:5432/consulting
+  DATABASE_URL: postgres://consulting:ConsultingDbPass2026@db:5432/consulting
   CELERY_BROKER_URL: redis://redis:6379/0
   CELERY_RESULT_BACKEND: django-db
   CELERY_TASK_ALWAYS_EAGER: "False"
@@ -29,7 +29,7 @@ services:
     environment:
       POSTGRES_DB: consulting
       POSTGRES_USER: consulting
-      POSTGRES_PASSWORD: consulting
+      POSTGRES_PASSWORD: ConsultingDbPass2026
     ports:
       - "5432:5432"
     healthcheck:
