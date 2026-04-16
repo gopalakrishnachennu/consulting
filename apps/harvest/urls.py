@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     CompanyLabelListView,
     LabelManualSetView,
+    LabelUpdateTenantView,
     LabelVerifyView,
     PlatformCreateView,
     PlatformDeleteView,
@@ -34,6 +35,7 @@ urlpatterns = [
     path("labels/", CompanyLabelListView.as_view(), name="harvest-labels"),
     path("labels/<int:pk>/verify/", LabelVerifyView.as_view(), name="harvest-label-verify"),
     path("labels/<int:pk>/set-platform/", LabelManualSetView.as_view(), name="harvest-label-set-platform"),
+    path("labels/<int:pk>/update-tenant/", LabelUpdateTenantView.as_view(), name="harvest-label-update-tenant"),
     # Trigger actions
     path("run/detect/", RunDetectNowView.as_view(), name="harvest-run-detect"),
     path("run/harvest/", RunHarvestNowView.as_view(), name="harvest-run-harvest"),

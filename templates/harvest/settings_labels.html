@@ -1,22 +1,21 @@
 {% extends 'base.html' %}
-
 {% block content %}
-<div class="container mx-auto px-4 py-8 max-w-7xl">
+<div class="container mx-auto px-4 py-6 max-w-full">
 
   <!-- Header -->
-  <div class="flex items-start justify-between mb-6">
+  <div class="flex items-start justify-between mb-5">
     <div>
       <div class="flex items-center gap-3 mb-1">
         <span class="text-3xl">🌾</span>
         <h1 class="text-2xl font-bold text-gray-900">Harvest Engine</h1>
       </div>
-      <p class="text-sm text-gray-500 ml-10">Job Board Platform Detection &amp; Automated Job Harvesting Service</p>
+      <p class="text-sm text-gray-500 ml-10">Job Board Platform Detection &amp; Career Portal Management</p>
     </div>
     <a href="{% url 'admin-dashboard' %}" class="text-sm text-blue-600 hover:text-blue-800 font-medium">&larr; Admin Dashboard</a>
   </div>
 
   <!-- Tab Nav -->
-  <div class="flex border-b border-gray-200 mb-6 overflow-x-auto">
+  <div class="flex border-b border-gray-200 mb-5 overflow-x-auto">
     <a href="{% url 'harvest-platforms' %}" class="px-5 py-3 text-sm font-medium whitespace-nowrap border-b-2 border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-300">🗂️ Platform Registry</a>
     <a href="{% url 'harvest-schedule' %}" class="px-5 py-3 text-sm font-medium whitespace-nowrap border-b-2 border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-300">⏰ Schedule</a>
     <a href="{% url 'harvest-monitor' %}" class="px-5 py-3 text-sm font-medium whitespace-nowrap border-b-2 border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-300">📊 Run Monitor</a>
@@ -29,318 +28,322 @@
   {% endfor %}
   {% endif %}
 
-  <!-- Stats -->
-  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-    <div class="bg-green-50 rounded-xl border border-green-200 shadow-sm p-4">
-      <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Detected</p>
-      <p class="text-2xl font-bold text-green-700">{{ stat_labeled }}</p>
-      <p class="text-xs text-gray-400 mt-0.5">Platform identified</p>
-    </div>
-    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-      <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Undetected</p>
-      <p class="text-2xl font-bold text-gray-500">{{ stat_undetected }}</p>
-      <p class="text-xs text-gray-400 mt-0.5">Custom or unknown ATS</p>
-    </div>
-    <div class="bg-amber-50 rounded-xl border border-amber-200 shadow-sm p-4">
-      <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Not Scanned</p>
-      <p class="text-2xl font-bold text-amber-600">{{ stat_unlabeled }}</p>
-      <p class="text-xs text-gray-400 mt-0.5">No label record yet</p>
-    </div>
-    <div class="bg-indigo-50 rounded-xl border border-indigo-200 shadow-sm p-4">
-      <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Verified</p>
-      <p class="text-2xl font-bold text-indigo-700">{{ stat_verified }}</p>
-      <p class="text-xs text-gray-400 mt-0.5">Manually confirmed</p>
-    </div>
+  <!-- Stats Row -->
+  <div class="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-5">
+    <a href="{% url 'harvest-labels' %}" class="bg-white rounded-xl border border-gray-200 shadow-sm p-3 text-center hover:border-gray-300 transition-colors">
+      <p class="text-xs text-gray-400 mb-0.5">Total</p>
+      <p class="text-xl font-bold text-gray-700">{{ stat_labeled|add:stat_undetected }}</p>
+    </a>
+    <a href="{% url 'harvest-labels' %}?status=" class="bg-green-50 rounded-xl border border-green-200 shadow-sm p-3 text-center hover:border-green-300 transition-colors">
+      <p class="text-xs text-gray-400 mb-0.5">Detected</p>
+      <p class="text-xl font-bold text-green-700">{{ stat_labeled }}</p>
+    </a>
+    <a href="{% url 'harvest-labels' %}?status=verified" class="bg-emerald-50 rounded-xl border border-emerald-200 shadow-sm p-3 text-center hover:border-emerald-300 transition-colors">
+      <p class="text-xs text-gray-400 mb-0.5">Live ✓</p>
+      <p class="text-xl font-bold text-emerald-700">{{ stat_live }}</p>
+    </a>
+    <a href="{% url 'harvest-labels' %}?status=down" class="bg-red-50 rounded-xl border border-red-200 shadow-sm p-3 text-center hover:border-red-300 transition-colors">
+      <p class="text-xs text-gray-400 mb-0.5">Down ✗</p>
+      <p class="text-xl font-bold text-red-600">{{ stat_down }}</p>
+    </a>
+    <a href="{% url 'harvest-labels' %}?verified=yes" class="bg-indigo-50 rounded-xl border border-indigo-200 shadow-sm p-3 text-center hover:border-indigo-300 transition-colors">
+      <p class="text-xs text-gray-400 mb-0.5">Verified</p>
+      <p class="text-xl font-bold text-indigo-700">{{ stat_verified }}</p>
+    </a>
+    <a href="{% url 'harvest-labels' %}?status=no_ats" class="bg-gray-50 rounded-xl border border-gray-200 shadow-sm p-3 text-center hover:border-gray-300 transition-colors">
+      <p class="text-xs text-gray-400 mb-0.5">No ATS</p>
+      <p class="text-xl font-bold text-gray-500">{{ stat_undetected }}</p>
+    </a>
   </div>
 
   <!-- Platform Distribution Chart -->
   {% if platforms_chart %}
-  <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 mb-6">
-    <div class="flex items-center justify-between mb-4">
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-5">
+    <div class="flex items-center justify-between mb-3">
       <h2 class="text-sm font-semibold text-gray-700">Platform Distribution</h2>
-      <span class="text-xs text-gray-400">{{ stat_labeled }} companies labeled</span>
+      <span class="text-xs text-gray-400">{{ stat_labeled }} labeled</span>
     </div>
-    <div class="space-y-2.5" id="platform-chart">
+    <div class="space-y-2" id="platform-chart">
       {% for platform in platforms_chart %}
-      <a href="{% url 'harvest-labels' %}?platform={{ platform.slug }}"
-         title="Filter to {{ platform.name }} companies"
-         class="flex items-center gap-3 group rounded-lg px-1 py-0.5 -mx-1 hover:bg-gray-50 transition-colors cursor-pointer">
+      <a href="{% url 'harvest-labels' %}?platform={{ platform.slug }}" class="flex items-center gap-3 group rounded-lg px-1 py-0.5 -mx-1 hover:bg-gray-50 transition-colors">
         <div class="w-28 flex-shrink-0 flex items-center justify-end gap-1.5">
-          <span class="w-2 h-2 rounded-full flex-shrink-0" style="background-color: {{ platform.color_hex }};"></span>
+          <span class="w-2 h-2 rounded-full" style="background-color:{{ platform.color_hex }};"></span>
           <span class="text-xs text-gray-700 font-medium truncate group-hover:underline">{{ platform.name }}</span>
         </div>
-        <div class="flex-1 h-4 bg-gray-100 rounded-full overflow-hidden">
-          <div class="h-full rounded-full transition-all duration-700 ease-out group-hover:brightness-110"
-               style="background-color: {{ platform.color_hex }}; width: 0%;"
-               data-count="{{ platform.company_count }}"
-               data-bar></div>
+        <div class="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
+          <div class="h-full rounded-full transition-all duration-700 ease-out" style="background-color:{{ platform.color_hex }};width:0%;" data-count="{{ platform.company_count }}" data-bar></div>
         </div>
-        <div class="w-10 text-xs text-right font-semibold flex-shrink-0" style="color: {{ platform.color_hex }};">{{ platform.company_count }}</div>
+        <div class="w-8 text-xs text-right font-semibold" style="color:{{ platform.color_hex }};">{{ platform.company_count }}</div>
       </a>
       {% endfor %}
-      {% if stat_unlabeled > 0 %}
-      <a href="{% url 'harvest-labels' %}?platform=UNDETECTED"
-         title="Filter to undetected companies"
-         class="flex items-center gap-3 group rounded-lg px-1 py-0.5 -mx-1 hover:bg-gray-50 transition-colors cursor-pointer">
-        <div class="w-28 flex-shrink-0 flex items-center justify-end gap-1.5">
-          <span class="w-2 h-2 rounded-full flex-shrink-0 bg-gray-300"></span>
-          <span class="text-xs text-gray-400 font-medium truncate group-hover:underline">Not scanned</span>
-        </div>
-        <div class="flex-1 h-4 bg-gray-100 rounded-full overflow-hidden">
-          <div class="h-full rounded-full bg-gray-300 transition-all duration-700 ease-out group-hover:brightness-110"
-               data-count="{{ stat_unlabeled }}"
-               data-bar></div>
-        </div>
-        <div class="w-10 text-xs text-right font-semibold text-gray-400 flex-shrink-0">{{ stat_unlabeled }}</div>
-      </a>
-      {% endif %}
     </div>
   </div>
   <script>
-  (function () {
-    var bars = document.querySelectorAll('[data-bar]');
-    var max = 0;
-    bars.forEach(function (b) { max = Math.max(max, parseInt(b.dataset.count, 10) || 0); });
-    if (!max) return;
-    requestAnimationFrame(function () {
-      setTimeout(function () {
-        bars.forEach(function (b) {
-          var pct = Math.round((parseInt(b.dataset.count, 10) / max) * 100);
-          b.style.width = pct + '%';
-        });
-      }, 80);
-    });
-  })();
+  (function(){var b=document.querySelectorAll('[data-bar]'),m=0;b.forEach(function(x){m=Math.max(m,+x.dataset.count||0)});if(!m)return;requestAnimationFrame(function(){setTimeout(function(){b.forEach(function(x){x.style.width=Math.round((+x.dataset.count/m)*100)+'%'})},80)})})();
   </script>
   {% endif %}
 
-  <!-- Actions Row -->
-  <div class="flex flex-wrap items-center gap-3 mb-5">
-    <form method="post" action="{% url 'harvest-run-backfill' %}">
-      {% csrf_token %}
-      <button type="submit" class="px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700 shadow-sm transition-colors inline-flex items-center gap-2">
-        ⚡ Backfill Labels from Job URLs
-      </button>
+  <!-- Actions -->
+  <div class="flex flex-wrap items-center gap-2 mb-4">
+    <form method="post" action="{% url 'harvest-run-backfill' %}">{% csrf_token %}
+      <button type="submit" class="px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700 shadow-sm transition-colors">⚡ Backfill Labels</button>
     </form>
-    <form method="post" action="{% url 'harvest-run-detect' %}">
-      {% csrf_token %}
-      <button type="submit" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 shadow-sm transition-colors inline-flex items-center gap-2">
-        🔍 Run Detection on Unlabeled
-      </button>
+    <form method="post" action="{% url 'harvest-run-detect' %}">{% csrf_token %}
+      <button type="submit" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 shadow-sm transition-colors">🔍 Run Detection</button>
     </form>
-    <form method="post" action="{% url 'harvest-run-verify-portals' %}">
-      {% csrf_token %}
-      <button type="submit" class="px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-semibold hover:bg-purple-700 shadow-sm transition-colors inline-flex items-center gap-2">
-        🩺 Verify Portal Health
-      </button>
+    <form method="post" action="{% url 'harvest-run-verify-portals' %}">{% csrf_token %}
+      <button type="submit" class="px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-semibold hover:bg-purple-700 shadow-sm transition-colors">🩺 Verify Portals</button>
     </form>
-    <p class="text-xs text-gray-500">Backfill reads existing job URLs to label companies instantly · Detection crawls career pages for the {{ stat_unlabeled }} not yet scanned · Verify does live HTTP checks on all career portal URLs.</p>
   </div>
 
   <!-- Filters -->
-  <form method="get" class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-5">
-    <div class="flex flex-wrap items-end gap-3">
-      <div class="flex-1 min-w-[160px]">
-        <label class="block text-xs text-gray-500 mb-1">Search Company</label>
+  <form method="get" id="filter-form" class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-4">
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div class="col-span-2 sm:col-span-3 lg:col-span-2">
+        <label class="block text-xs text-gray-500 mb-1 font-medium">Search Company</label>
         <input type="text" name="q" value="{{ q }}" placeholder="Company name…"
           class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
       </div>
-      <div class="w-44">
-        <label class="block text-xs text-gray-500 mb-1">Platform</label>
-        <select name="platform" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+      <div>
+        <label class="block text-xs text-gray-500 mb-1 font-medium">Platform</label>
+        <select name="platform" class="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm">
           <option value="">All Platforms</option>
           {% for platform in platforms %}
-          <option value="{{ platform.slug }}" {% if selected_platform == platform.slug %}selected{% endif %}>
-            {{ platform.name }} ({{ platform.company_count }})
-          </option>
+          <option value="{{ platform.slug }}" {% if selected_platform == platform.slug %}selected{% endif %}>{{ platform.name }} ({{ platform.company_count }})</option>
           {% endfor %}
           <option value="UNDETECTED" {% if selected_platform == 'UNDETECTED' %}selected{% endif %}>Undetected</option>
         </select>
       </div>
-      <div class="w-36">
-        <label class="block text-xs text-gray-500 mb-1">Confidence</label>
-        <select name="confidence" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+      <div>
+        <label class="block text-xs text-gray-500 mb-1 font-medium">Portal Status</label>
+        <select name="status" class="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm">
+          <option value="">All Statuses</option>
+          <option value="verified" {% if selected_status == 'verified' %}selected{% endif %}>🟢 Live ✓</option>
+          <option value="down" {% if selected_status == 'down' %}selected{% endif %}>🔴 Down ✗</option>
+          <option value="unchecked" {% if selected_status == 'unchecked' %}selected{% endif %}>🔵 Not Checked</option>
+          <option value="no_tenant" {% if selected_status == 'no_tenant' %}selected{% endif %}>🟡 No Tenant</option>
+          <option value="no_ats" {% if selected_status == 'no_ats' %}selected{% endif %}>⚫ No ATS</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1 font-medium">Confidence</label>
+        <select name="confidence" class="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm">
           <option value="">All</option>
           {% for val, label in confidence_choices %}
           <option value="{{ val }}" {% if selected_confidence == val %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
       </div>
-      <div class="w-48">
-        <label class="block text-xs text-gray-500 mb-1">Detection Method</label>
-        <select name="method" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+      <div>
+        <label class="block text-xs text-gray-500 mb-1 font-medium">Verified</label>
+        <select name="verified" class="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm">
+          <option value="">All</option>
+          <option value="yes" {% if selected_verified == 'yes' %}selected{% endif %}>✅ Verified</option>
+          <option value="no" {% if selected_verified == 'no' %}selected{% endif %}>⬜ Unverified</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1 font-medium">Method</label>
+        <select name="method" class="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm">
           <option value="">All Methods</option>
           {% for val, label in method_choices %}
           <option value="{{ val }}" {% if selected_method == val %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
       </div>
+    </div>
+    <div class="flex items-center gap-2 mt-3">
       <button type="submit" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700">Search</button>
       <a href="{% url 'harvest-labels' %}" class="px-4 py-2 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50">Clear</a>
+      {% if is_paginated %}
+      <span class="ml-auto text-xs text-gray-400">{{ page_obj.paginator.count }} results · page {{ page_obj.number }}/{{ page_obj.paginator.num_pages }}</span>
+      {% endif %}
     </div>
   </form>
 
-  <!-- Labels Table -->
-  <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+  <!-- Table -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm">
     {% if labels %}
-    <table class="w-full text-sm">
-      <thead>
-        <tr class="border-b border-gray-200 bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wider">
-          <th class="px-4 py-3 text-left">Company</th>
-          <th class="px-4 py-3 text-left">Platform</th>
-          <th class="px-4 py-3 text-left">Career Link</th>
-          <th class="px-4 py-3 text-center">Status</th>
-          <th class="px-4 py-3 text-center">Confidence</th>
-          <th class="px-4 py-3 text-center">Method</th>
-          <th class="px-4 py-3 text-center">Last Checked</th>
-          <th class="px-4 py-3 text-center">Verified</th>
-          <th class="px-4 py-3 text-right">Set Platform</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for label in labels %}
-        <tr class="border-b border-gray-100 hover:bg-gray-50/50 transition-colors">
-          <!-- Company -->
-          <td class="px-4 py-3">
-            <a href="{% url 'company-detail' label.company.pk %}" class="font-medium text-gray-900 hover:text-blue-600 hover:underline">
-              {{ label.company.name }}
-            </a>
-            {% if label.tenant_id %}
-            <p class="text-xs text-gray-400 font-mono mt-0.5">tenant: {{ label.tenant_id }}</p>
-            {% endif %}
-          </td>
-          <!-- Platform Badge -->
-          <td class="px-4 py-3">
-            {% if label.platform %}
-            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border"
-              style="background-color: {{ label.platform.color_hex }}18; color: {{ label.platform.color_hex }}; border-color: {{ label.platform.color_hex }}44;">
-              <span class="w-2 h-2 rounded-full flex-shrink-0" style="background-color: {{ label.platform.color_hex }};"></span>
-              {{ label.platform.name }}
-            </span>
-            {% elif label.detection_method == 'UNDETECTED' %}
-            <span class="text-xs text-gray-400 italic">No ATS detected</span>
-            {% else %}
-            <span class="text-xs text-gray-300">—</span>
-            {% endif %}
-          </td>
-          <!-- Career Link -->
-          <td class="px-4 py-3">
-            {% with url=label.career_page_url %}
-            {% if url %}
-            <a href="{{ url }}" target="_blank" rel="noopener noreferrer"
-               class="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline font-mono max-w-[200px] truncate"
-               title="{{ url }}">
-              <svg class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
-              {{ url|slice:"8:" }}
-            </a>
-            {% elif label.platform %}
-            <span class="text-xs text-amber-500">tenant missing</span>
-            {% else %}
-            <span class="text-xs text-gray-300">—</span>
-            {% endif %}
-            {% endwith %}
-          </td>
-          <!-- Scrape Status -->
-          <td class="px-4 py-3 text-center">
-            {% with s=label.scrape_status %}
-            {% if s == 'verified' %}
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700" title="HTTP check confirmed portal is live">
-              <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span> Live ✓
-            </span>
-            {% elif s == 'down' %}
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700" title="HTTP check returned error — portal may be down or URL is wrong">
-              <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> Down ✗
-            </span>
-            {% elif s == 'ready' %}
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700" title="URL built — click 🩺 Verify Portal Health to check">
-              <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span> Active
-            </span>
-            {% elif s == 'needs_backfill' %}
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700" title="Tenant ID has bad prefix — run Backfill to fix">
-              <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Fix needed
-            </span>
-            {% elif s == 'no_tenant' %}
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700" title="Platform detected but no tenant ID extracted yet">
-              <span class="w-1.5 h-1.5 rounded-full bg-yellow-400"></span> No tenant
-            </span>
-            {% elif s == 'no_ats' %}
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500" title="No ATS detected for this company">
-              <span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span> No ATS
-            </span>
-            {% else %}
-            <span class="text-xs text-gray-300">—</span>
-            {% endif %}
-            {% endwith %}
-          </td>
-          <!-- Confidence -->
-          <td class="px-4 py-3 text-center">
-            {% if label.confidence == 'HIGH' %}
-            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">High</span>
-            {% elif label.confidence == 'MEDIUM' %}
-            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Medium</span>
-            {% elif label.confidence == 'LOW' %}
-            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">Low</span>
-            {% else %}
-            <span class="text-xs text-gray-300">—</span>
-            {% endif %}
-          </td>
-          <!-- Method -->
-          <td class="px-4 py-3 text-center">
-            <span class="text-xs text-gray-600">{{ label.get_detection_method_display }}</span>
-          </td>
-          <!-- Last Checked -->
-          <td class="px-4 py-3 text-center">
-            {% if label.last_checked_at %}
-            <span class="text-xs text-gray-500">{{ label.last_checked_at|timesince }} ago</span>
-            {% else %}
-            <span class="text-xs text-gray-300">—</span>
-            {% endif %}
-          </td>
-          <!-- Verified toggle -->
-          <td class="px-4 py-3 text-center">
-            <form method="post" action="{% url 'harvest-label-verify' label.pk %}" class="inline">
-              {% csrf_token %}
-              <button type="submit" title="{% if label.is_verified %}Verified by {{ label.verified_by }}. Click to unverify.{% else %}Click to verify{% endif %}"
-                class="text-lg transition-transform hover:scale-110 {% if not label.is_verified %}opacity-30 hover:opacity-60{% endif %}">
+    <!-- Horizontal + vertical scroll wrapper -->
+    <div class="overflow-x-auto overflow-y-auto" style="max-height:72vh;">
+      <table class="w-full text-sm" style="min-width:960px;">
+        <thead class="sticky top-0 z-10">
+          <tr class="border-b border-gray-200 bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            <th class="px-4 py-3 text-left sticky left-0 bg-gray-50 z-20 min-w-[200px]">Company</th>
+            <th class="px-4 py-3 text-left min-w-[130px]">Platform</th>
+            <th class="px-4 py-3 text-left min-w-[240px]">Tenant ID</th>
+            <th class="px-4 py-3 text-left min-w-[260px]">Career Link</th>
+            <th class="px-4 py-3 text-center min-w-[110px]">Status</th>
+            <th class="px-4 py-3 text-center min-w-[90px]">Confidence</th>
+            <th class="px-4 py-3 text-center min-w-[80px]">Verified</th>
+            <th class="px-4 py-3 text-center min-w-[130px]">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="labels-tbody">
+          {% for label in labels %}
+          <tr class="border-b border-gray-100 hover:bg-blue-50/30 transition-colors group" data-pk="{{ label.pk }}" data-platform-pk="{{ label.platform.pk|default:'' }}">
+
+            <!-- Company (sticky left) -->
+            <td class="px-4 py-2.5 sticky left-0 bg-white group-hover:bg-blue-50/30 z-10">
+              <a href="{% url 'company-detail' label.company.pk %}" class="font-semibold text-gray-900 hover:text-blue-600 hover:underline text-sm">{{ label.company.name }}</a>
+              <p class="text-xs text-gray-400 mt-0.5">ID: {{ label.company.pk }}</p>
+            </td>
+
+            <!-- Platform -->
+            <td class="px-4 py-2.5 min-w-[130px]">
+              {% if label.platform %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border"
+                style="background-color:{{ label.platform.color_hex }}18;color:{{ label.platform.color_hex }};border-color:{{ label.platform.color_hex }}44;">
+                <span class="w-1.5 h-1.5 rounded-full" style="background-color:{{ label.platform.color_hex }};"></span>
+                {{ label.platform.name }}
+              </span>
+              {% else %}
+              <span class="text-xs text-gray-400 italic">No ATS</span>
+              {% endif %}
+            </td>
+
+            <!-- Tenant ID (inline editable) -->
+            <td class="px-4 py-2.5 min-w-[240px]">
+              <div class="tenant-display flex items-center gap-1" id="tenant-display-{{ label.pk }}">
+                {% if label.tenant_id %}
+                <span class="font-mono text-xs text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded max-w-[180px] truncate block" title="{{ label.tenant_id }}">{{ label.tenant_id }}</span>
+                {% else %}
+                <span class="text-xs text-amber-500 italic">missing</span>
+                {% endif %}
+                <button onclick="startEditTenant({{ label.pk }}, '{{ label.tenant_id|escapejs }}')"
+                  class="opacity-0 group-hover:opacity-100 ml-1 text-gray-400 hover:text-blue-600 transition-all flex-shrink-0" title="Edit tenant ID">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                </button>
+              </div>
+              <div class="tenant-edit hidden items-center gap-1" id="tenant-edit-{{ label.pk }}">
+                <input type="text" id="tenant-input-{{ label.pk }}" value="{{ label.tenant_id|default:'' }}"
+                  class="font-mono text-xs border border-blue-400 rounded px-1.5 py-0.5 w-36 focus:ring-1 focus:ring-blue-400 focus:outline-none"
+                  onkeydown="handleTenantKey(event, {{ label.pk }})">
+                <button onclick="saveTenant({{ label.pk }})" class="text-green-600 hover:text-green-700" title="Save">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                </button>
+                <button onclick="cancelEditTenant({{ label.pk }})" class="text-gray-400 hover:text-gray-600" title="Cancel">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+              </div>
+            </td>
+
+            <!-- Career Link -->
+            <td class="px-4 py-2.5 min-w-[260px]" id="career-link-{{ label.pk }}">
+              {% with url=label.career_page_url %}
+              {% if url %}
+              <a href="{{ url }}" target="_blank" rel="noopener noreferrer"
+                class="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline font-mono max-w-[230px] truncate"
+                title="{{ url }}">
+                <svg class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+                {{ url|slice:"8:" }}
+              </a>
+              {% elif label.platform %}
+              <span class="text-xs text-amber-500">— tenant needed</span>
+              {% else %}
+              <span class="text-xs text-gray-300">—</span>
+              {% endif %}
+              {% endwith %}
+            </td>
+
+            <!-- Status -->
+            <td class="px-4 py-2.5 text-center min-w-[110px]" id="status-cell-{{ label.pk }}">
+              {% with s=label.scrape_status %}
+              {% if s == 'verified' %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>Live ✓
+              </span>
+              {% elif s == 'down' %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>Down ✗
+              </span>
+              {% elif s == 'ready' %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>Active
+              </span>
+              {% elif s == 'needs_backfill' %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>Fix
+              </span>
+              {% elif s == 'no_tenant' %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+                <span class="w-1.5 h-1.5 rounded-full bg-yellow-400"></span>No tenant
+              </span>
+              {% elif s == 'no_ats' %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+                <span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>No ATS
+              </span>
+              {% else %}
+              <span class="text-xs text-gray-300">—</span>
+              {% endif %}
+              {% endwith %}
+            </td>
+
+            <!-- Confidence -->
+            <td class="px-4 py-2.5 text-center min-w-[90px]">
+              {% if label.confidence == 'HIGH' %}
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">High</span>
+              {% elif label.confidence == 'MEDIUM' %}
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Med</span>
+              {% elif label.confidence == 'LOW' %}
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">Low</span>
+              {% else %}
+              <span class="text-xs text-gray-300">—</span>
+              {% endif %}
+            </td>
+
+            <!-- Verified toggle (AJAX) -->
+            <td class="px-4 py-2.5 text-center min-w-[80px]">
+              <button onclick="toggleVerify({{ label.pk }}, this)"
+                data-verified="{{ label.is_verified|yesno:'true,false' }}"
+                class="text-xl transition-transform hover:scale-110 {% if not label.is_verified %}opacity-30 hover:opacity-70{% endif %}"
+                title="{% if label.is_verified %}Verified by {{ label.verified_by }}. Click to unverify.{% else %}Click to verify{% endif %}">
                 {% if label.is_verified %}✅{% else %}⬜{% endif %}
               </button>
-            </form>
-          </td>
-          <!-- Set Platform -->
-          <td class="px-4 py-3 text-right">
-            <details class="relative group" style="list-style:none;">
-              <summary class="text-xs px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 cursor-pointer font-medium transition-colors" style="list-style:none;">
-                ✏️ Set
-              </summary>
-              <div class="absolute right-0 top-8 z-20 w-52 bg-white rounded-xl border border-gray-200 shadow-xl p-3">
-                <form method="post" action="{% url 'harvest-label-set-platform' label.pk %}">
-                  {% csrf_token %}
-                  <p class="text-xs font-semibold text-gray-700 mb-2">Set Platform for<br><span class="text-blue-600">{{ label.company.name }}</span></p>
-                  <select name="platform_id" class="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs mb-2 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
-                    {% for p in platforms %}
-                    <option value="{{ p.pk }}" {% if label.platform and label.platform.pk == p.pk %}selected{% endif %}>{{ p.name }}</option>
-                    {% endfor %}
-                  </select>
-                  <button type="submit" class="w-full px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition-colors">Save &amp; Verify</button>
-                </form>
-              </div>
-            </details>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+            </td>
+
+            <!-- Actions: Set Platform -->
+            <td class="px-4 py-2.5 text-center min-w-[130px]">
+              <button onclick="openSetPlatform({{ label.pk }}, {{ label.platform.pk|default:'null' }})"
+                class="px-2.5 py-1.5 rounded-lg bg-gray-100 text-gray-700 text-xs font-medium hover:bg-gray-200 transition-colors border border-gray-200">
+                ✏️ Set Platform
+              </button>
+            </td>
+
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
 
     <!-- Pagination -->
     {% if is_paginated %}
-    <div class="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
-      <p class="text-xs text-gray-500">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }} · {{ page_obj.paginator.count }} results</p>
-      <div class="flex gap-2">
+    <div class="px-5 py-3 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3 bg-gray-50 rounded-b-xl">
+      <p class="text-xs text-gray-500">
+        Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ page_obj.paginator.count }} companies
+      </p>
+      <div class="flex items-center gap-1 flex-wrap">
         {% if page_obj.has_previous %}
-        <a href="?page={{ page_obj.previous_page_number }}&q={{ q }}&platform={{ selected_platform }}&confidence={{ selected_confidence }}&method={{ selected_method }}" class="px-3 py-1 rounded-lg border border-gray-300 text-xs text-gray-700 hover:bg-gray-50 transition-colors">← Prev</a>
+        <a href="?page=1&q={{ q }}&platform={{ selected_platform }}&confidence={{ selected_confidence }}&method={{ selected_method }}&status={{ selected_status }}&verified={{ selected_verified }}"
+          class="px-2.5 py-1 rounded border border-gray-300 text-xs text-gray-700 hover:bg-gray-100">«</a>
+        <a href="?page={{ page_obj.previous_page_number }}&q={{ q }}&platform={{ selected_platform }}&confidence={{ selected_confidence }}&method={{ selected_method }}&status={{ selected_status }}&verified={{ selected_verified }}"
+          class="px-2.5 py-1 rounded border border-gray-300 text-xs text-gray-700 hover:bg-gray-100">‹ Prev</a>
         {% endif %}
+
+        {% for num in page_obj.paginator.page_range %}
+          {% if num == page_obj.number %}
+          <span class="px-2.5 py-1 rounded border border-blue-500 bg-blue-600 text-white text-xs font-semibold">{{ num }}</span>
+          {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+          <a href="?page={{ num }}&q={{ q }}&platform={{ selected_platform }}&confidence={{ selected_confidence }}&method={{ selected_method }}&status={{ selected_status }}&verified={{ selected_verified }}"
+            class="px-2.5 py-1 rounded border border-gray-300 text-xs text-gray-700 hover:bg-gray-100">{{ num }}</a>
+          {% endif %}
+        {% endfor %}
+
         {% if page_obj.has_next %}
-        <a href="?page={{ page_obj.next_page_number }}&q={{ q }}&platform={{ selected_platform }}&confidence={{ selected_confidence }}&method={{ selected_method }}" class="px-3 py-1 rounded-lg border border-gray-300 text-xs text-gray-700 hover:bg-gray-50 transition-colors">Next →</a>
+        <a href="?page={{ page_obj.next_page_number }}&q={{ q }}&platform={{ selected_platform }}&confidence={{ selected_confidence }}&method={{ selected_method }}&status={{ selected_status }}&verified={{ selected_verified }}"
+          class="px-2.5 py-1 rounded border border-gray-300 text-xs text-gray-700 hover:bg-gray-100">Next ›</a>
+        <a href="?page={{ page_obj.paginator.num_pages }}&q={{ q }}&platform={{ selected_platform }}&confidence={{ selected_confidence }}&method={{ selected_method }}&status={{ selected_status }}&verified={{ selected_verified }}"
+          class="px-2.5 py-1 rounded border border-gray-300 text-xs text-gray-700 hover:bg-gray-100">»</a>
         {% endif %}
       </div>
     </div>
@@ -351,19 +354,235 @@
       <span class="text-5xl mb-4 block">🏷️</span>
       <h3 class="text-base font-semibold text-gray-700 mb-2">No labels found</h3>
       <p class="text-sm text-gray-500 mb-5">
-        {% if q or selected_platform or selected_confidence or selected_method %}
+        {% if q or selected_platform or selected_confidence or selected_method or selected_status %}
         No results match your filters. <a href="{% url 'harvest-labels' %}" class="text-blue-600 hover:underline">Clear filters</a>
         {% else %}
         Run detection to scan companies and generate platform labels.
         {% endif %}
       </p>
-      <form method="post" action="{% url 'harvest-run-detect' %}">
-        {% csrf_token %}
-        <button type="submit" class="px-5 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700">🔍 Run Detection Now</button>
-      </form>
     </div>
     {% endif %}
   </div>
-
 </div>
+
+<!-- ── Set Platform Modal ───────────────────────────────────────────────────── -->
+<div id="set-platform-modal" class="fixed inset-0 z-50 hidden" aria-modal="true">
+  <div class="fixed inset-0 bg-black/40 backdrop-blur-sm" onclick="closeSetPlatform()"></div>
+  <div class="fixed inset-0 flex items-center justify-center p-4 pointer-events-none">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md pointer-events-auto p-6">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="text-base font-bold text-gray-900">✏️ Set Platform</h3>
+        <button onclick="closeSetPlatform()" class="text-gray-400 hover:text-gray-600">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <p class="text-sm text-gray-500 mb-4">Company: <span id="modal-company-name" class="font-semibold text-gray-800"></span></p>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1.5">Platform</label>
+          <select id="modal-platform-select" class="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500">
+            <option value="">— None / Unknown —</option>
+            {% for p in platforms %}
+            <option value="{{ p.pk }}" data-slug="{{ p.slug }}" data-color="{{ p.color_hex }}">{{ p.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1.5">Tenant ID <span class="text-gray-400 font-normal">(optional — leave blank to keep existing)</span></label>
+          <input type="text" id="modal-tenant-input" placeholder="e.g. acmecorp or acmecorp.wd5|External"
+            class="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm font-mono focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500">
+        </div>
+      </div>
+      <div class="flex gap-3 mt-6">
+        <button onclick="saveSetPlatform()" class="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors">
+          Save &amp; Verify
+        </button>
+        <button onclick="closeSetPlatform()" class="px-4 py-2.5 rounded-xl border border-gray-300 text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+          Cancel
+        </button>
+      </div>
+      <div id="modal-error" class="mt-3 text-xs text-red-600 hidden"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast notification -->
+<div id="toast" class="fixed bottom-6 right-6 z-50 hidden">
+  <div id="toast-inner" class="px-4 py-3 rounded-xl shadow-lg text-sm font-medium text-white flex items-center gap-2"></div>
+</div>
+
+<script>
+const CSRF = '{{ csrf_token }}';
+let currentPk = null;
+
+// ── Toast ──────────────────────────────────────────────────────────────────
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  const ti = document.getElementById('toast-inner');
+  ti.textContent = msg;
+  ti.className = 'px-4 py-3 rounded-xl shadow-lg text-sm font-medium text-white flex items-center gap-2';
+  ti.classList.add(type === 'error' ? 'bg-red-600' : 'bg-gray-900');
+  t.classList.remove('hidden');
+  setTimeout(() => t.classList.add('hidden'), 3000);
+}
+
+// ── Verify Toggle ──────────────────────────────────────────────────────────
+function toggleVerify(pk, btn) {
+  fetch(`/harvest/labels/${pk}/verify/`, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' }
+  })
+  .then(r => r.json())
+  .then(data => {
+    const verified = data.verified;
+    btn.dataset.verified = verified;
+    btn.textContent = verified ? '✅' : '⬜';
+    btn.className = btn.className.replace(/opacity-\d+/g, '');
+    if (!verified) btn.classList.add('opacity-30', 'hover:opacity-70');
+    btn.title = verified ? 'Verified. Click to unverify.' : 'Click to verify';
+    showToast(verified ? '✅ Marked as verified' : '⬜ Unverified', 'success');
+  })
+  .catch(() => showToast('Failed to update', 'error'));
+}
+
+// ── Inline Tenant Edit ─────────────────────────────────────────────────────
+function startEditTenant(pk, current) {
+  document.getElementById('tenant-display-' + pk).classList.add('hidden');
+  const editDiv = document.getElementById('tenant-edit-' + pk);
+  editDiv.classList.remove('hidden');
+  editDiv.classList.add('flex');
+  const inp = document.getElementById('tenant-input-' + pk);
+  inp.value = current;
+  inp.focus();
+  inp.select();
+}
+
+function cancelEditTenant(pk) {
+  document.getElementById('tenant-display-' + pk).classList.remove('hidden');
+  const editDiv = document.getElementById('tenant-edit-' + pk);
+  editDiv.classList.add('hidden');
+  editDiv.classList.remove('flex');
+}
+
+function handleTenantKey(e, pk) {
+  if (e.key === 'Enter') saveTenant(pk);
+  if (e.key === 'Escape') cancelEditTenant(pk);
+}
+
+function saveTenant(pk) {
+  const val = document.getElementById('tenant-input-' + pk).value.trim();
+  fetch(`/harvest/labels/${pk}/update-tenant/`, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest',
+               'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'tenant_id=' + encodeURIComponent(val)
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (!data.ok) { showToast('Save failed', 'error'); return; }
+    // Update display
+    const disp = document.getElementById('tenant-display-' + pk);
+    disp.innerHTML = val
+      ? `<span class="font-mono text-xs text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded max-w-[180px] truncate block" title="${escHtml(val)}">${escHtml(val)}</span>
+         <button onclick="startEditTenant(${pk}, '${val.replace(/'/g,"\\'")}')
+         " class="opacity-0 group-hover:opacity-100 ml-1 text-gray-400 hover:text-blue-600 transition-all flex-shrink-0" title="Edit tenant ID">
+           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+         </button>`
+      : `<span class="text-xs text-amber-500 italic">missing</span>
+         <button onclick="startEditTenant(${pk},'')" class="opacity-0 group-hover:opacity-100 ml-1 text-gray-400 hover:text-blue-600 transition-all flex-shrink-0" title="Edit tenant ID">
+           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+         </button>`;
+    // Update career link cell
+    updateCareerLink(pk, data.career_url);
+    cancelEditTenant(pk);
+    showToast('✓ Tenant saved', 'success');
+  })
+  .catch(() => showToast('Save failed', 'error'));
+}
+
+// ── Set Platform Modal ─────────────────────────────────────────────────────
+function openSetPlatform(pk, platformPk) {
+  currentPk = pk;
+  const row = document.querySelector(`tr[data-pk="${pk}"]`);
+  const companyName = row ? row.querySelector('td:first-child a').textContent.trim() : '';
+  document.getElementById('modal-company-name').textContent = companyName;
+  document.getElementById('modal-tenant-input').value = '';
+  document.getElementById('modal-error').classList.add('hidden');
+  const sel = document.getElementById('modal-platform-select');
+  sel.value = platformPk || '';
+  document.getElementById('set-platform-modal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeSetPlatform() {
+  document.getElementById('set-platform-modal').classList.add('hidden');
+  document.body.style.overflow = '';
+  currentPk = null;
+}
+
+function saveSetPlatform() {
+  if (!currentPk) return;
+  const platformId = document.getElementById('modal-platform-select').value;
+  const tenantId = document.getElementById('modal-tenant-input').value.trim();
+  const errEl = document.getElementById('modal-error');
+  errEl.classList.add('hidden');
+
+  const body = new URLSearchParams();
+  if (platformId) body.append('platform_id', platformId);
+  if (tenantId) body.append('tenant_id', tenantId);
+
+  fetch(`/harvest/labels/${currentPk}/set-platform/`, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest',
+               'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString()
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (!data.ok) { errEl.textContent = data.error || 'Save failed'; errEl.classList.remove('hidden'); return; }
+    const pk = data.pk;
+    const row = document.querySelector(`tr[data-pk="${pk}"]`);
+    if (row) {
+      // Update platform badge
+      const platCell = row.querySelector('td:nth-child(2)');
+      if (data.platform_name) {
+        const c = data.platform_color;
+        platCell.innerHTML = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border" style="background-color:${c}18;color:${c};border-color:${c}44;"><span class="w-1.5 h-1.5 rounded-full" style="background-color:${c};"></span>${escHtml(data.platform_name)}</span>`;
+      }
+      // Update tenant if provided
+      if (tenantId) {
+        document.getElementById('tenant-input-' + pk) && (document.getElementById('tenant-input-' + pk).value = data.tenant_id);
+      }
+      // Update career link
+      updateCareerLink(pk, data.career_url);
+    }
+    closeSetPlatform();
+    showToast(`✓ Platform set to ${data.platform_name || 'None'}`, 'success');
+  })
+  .catch(() => { errEl.textContent = 'Network error'; errEl.classList.remove('hidden'); });
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function updateCareerLink(pk, url) {
+  const cell = document.getElementById('career-link-' + pk);
+  if (!cell) return;
+  if (url) {
+    const display = url.replace(/^https?:\/\//, '');
+    cell.innerHTML = `<a href="${escAttr(url)}" target="_blank" rel="noopener noreferrer"
+      class="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline font-mono max-w-[230px] truncate" title="${escAttr(url)}">
+      <svg class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+      ${escHtml(display)}</a>`;
+  } else {
+    cell.innerHTML = '<span class="text-xs text-amber-500">— tenant needed</span>';
+  }
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escAttr(s) { return escHtml(s); }
+
+// Close modal on Escape key
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSetPlatform(); });
+</script>
 {% endblock %}

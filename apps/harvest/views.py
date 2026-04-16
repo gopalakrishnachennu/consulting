@@ -133,7 +133,7 @@ class RunMonitorView(SuperuserRequiredMixin, ListView):
 class CompanyLabelListView(SuperuserRequiredMixin, ListView):
     template_name = "harvest/settings_labels.html"
     context_object_name = "labels"
-    paginate_by = 50
+    paginate_by = 100
 
     def get_queryset(self):
         qs = CompanyPlatformLabel.objects.select_related(
@@ -141,7 +141,9 @@ class CompanyLabelListView(SuperuserRequiredMixin, ListView):
         ).order_by("company__name")
 
         platform_f = self.request.GET.get("platform", "").strip()
-        if platform_f:
+        if platform_f == "UNDETECTED":
+            qs = qs.filter(detection_method="UNDETECTED")
+        elif platform_f:
             qs = qs.filter(platform__slug=platform_f)
 
         confidence_f = self.request.GET.get("confidence", "").strip()
@@ -151,6 +153,24 @@ class CompanyLabelListView(SuperuserRequiredMixin, ListView):
         method_f = self.request.GET.get("method", "").strip()
         if method_f:
             qs = qs.filter(detection_method=method_f)
+
+        status_f = self.request.GET.get("status", "").strip()
+        if status_f == "verified":
+            qs = qs.filter(portal_alive=True)
+        elif status_f == "down":
+            qs = qs.filter(portal_alive=False)
+        elif status_f == "unchecked":
+            qs = qs.filter(portal_alive__isnull=True, platform__isnull=False)
+        elif status_f == "no_tenant":
+            qs = qs.filter(platform__isnull=False, tenant_id="")
+        elif status_f == "no_ats":
+            qs = qs.filter(detection_method="UNDETECTED")
+
+        verified_f = self.request.GET.get("verified", "").strip()
+        if verified_f == "yes":
+            qs = qs.filter(is_verified=True)
+        elif verified_f == "no":
+            qs = qs.filter(is_verified=False)
 
         q = self.request.GET.get("q", "").strip()
         if q:
@@ -179,42 +199,87 @@ class CompanyLabelListView(SuperuserRequiredMixin, ListView):
             platform_label__isnull=False
         ).count()
         ctx["stat_verified"] = CompanyPlatformLabel.objects.filter(is_verified=True).count()
+        ctx["stat_live"] = CompanyPlatformLabel.objects.filter(portal_alive=True).count()
+        ctx["stat_down"] = CompanyPlatformLabel.objects.filter(portal_alive=False).count()
         ctx["confidence_choices"] = CompanyPlatformLabel.Confidence.choices
         ctx["method_choices"] = CompanyPlatformLabel.DetectionMethod.choices
         ctx["selected_platform"] = self.request.GET.get("platform", "")
         ctx["selected_confidence"] = self.request.GET.get("confidence", "")
         ctx["selected_method"] = self.request.GET.get("method", "")
+        ctx["selected_status"] = self.request.GET.get("status", "")
+        ctx["selected_verified"] = self.request.GET.get("verified", "")
         ctx["q"] = self.request.GET.get("q", "")
         return ctx
 
 
 class LabelVerifyView(SuperuserRequiredMixin, View):
+    """Toggle verified status — returns JSON for AJAX or redirects for plain POST."""
     def post(self, request, pk):
         label = get_object_or_404(CompanyPlatformLabel, pk=pk)
         label.is_verified = not label.is_verified
         label.verified_by = request.user if label.is_verified else None
         label.verified_at = timezone.now() if label.is_verified else None
         label.save(update_fields=["is_verified", "verified_by", "verified_at"])
-        return JsonResponse({"verified": label.is_verified})
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JsonResponse({"verified": label.is_verified, "pk": pk})
+        return redirect(request.META.get("HTTP_REFERER") or "harvest-labels")
 
 
 class LabelManualSetView(SuperuserRequiredMixin, View):
+    """Set platform + optional tenant for a label — returns JSON for AJAX."""
     def post(self, request, pk):
         label = get_object_or_404(CompanyPlatformLabel, pk=pk)
-        platform_id = request.POST.get("platform_id", "")
-        platform = get_object_or_404(JobBoardPlatform, pk=platform_id) if platform_id else None
+        platform_id = request.POST.get("platform_id", "").strip()
+        tenant_id = request.POST.get("tenant_id", "").strip()
+        platform = None
+        if platform_id:
+            platform = get_object_or_404(JobBoardPlatform, pk=platform_id)
         label.platform = platform
         label.detection_method = "MANUAL"
         label.confidence = "HIGH"
         label.is_verified = True
         label.verified_by = request.user
         label.verified_at = timezone.now()
+        if tenant_id:
+            label.tenant_id = tenant_id
         label.save()
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            from .career_url import build_career_url
+            url = build_career_url(platform.slug if platform else "", label.tenant_id)
+            return JsonResponse({
+                "ok": True,
+                "pk": pk,
+                "platform_name": platform.name if platform else "",
+                "platform_color": platform.color_hex if platform else "#6B7280",
+                "tenant_id": label.tenant_id,
+                "career_url": url,
+                "scrape_status": label.scrape_status,
+            })
         messages.success(
             request,
-            f"Set {label.company.name} to {platform.name if platform else 'None'}",
+            f"Set {label.company.name} → {platform.name if platform else 'None'}",
         )
-        return redirect(request.META.get("HTTP_REFERER", "harvest-labels"))
+        return redirect(request.META.get("HTTP_REFERER") or "harvest-labels")
+
+
+class LabelUpdateTenantView(SuperuserRequiredMixin, View):
+    """Inline update of tenant_id only — AJAX only."""
+    def post(self, request, pk):
+        label = get_object_or_404(CompanyPlatformLabel, pk=pk)
+        tenant_id = request.POST.get("tenant_id", "").strip()
+        label.tenant_id = tenant_id
+        label.portal_alive = None   # reset health — needs re-check
+        label.portal_last_verified = None
+        label.save(update_fields=["tenant_id", "portal_alive", "portal_last_verified"])
+        from .career_url import build_career_url
+        url = build_career_url(label.platform.slug if label.platform else "", tenant_id)
+        return JsonResponse({
+            "ok": True,
+            "pk": pk,
+            "tenant_id": tenant_id,
+            "career_url": url,
+            "scrape_status": label.scrape_status,
+        })
 
 
 # ── Trigger Actions ────────────────────────────────────────────────────────────
