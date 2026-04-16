@@ -145,6 +145,34 @@ class CompanyPlatformLabel(models.Model):
             self.confidence, "gray"
         )
 
+    @property
+    def career_page_url(self) -> str:
+        """Constructed public job board URL for this company."""
+        from .career_url import build_career_url
+        if not self.platform:
+            return ""
+        return build_career_url(self.platform.slug, self.tenant_id)
+
+    @property
+    def scrape_status(self) -> str:
+        """
+        Returns one of:
+          'ready'   — platform + clean tenant set, URL constructible
+          'no_tenant' — platform detected but no tenant extracted yet
+          'no_ats'  — explicitly detected as no ATS
+          'unknown' — not scanned yet
+        """
+        if self.detection_method == self.DetectionMethod.UNDETECTED:
+            return "no_ats"
+        if not self.platform:
+            return "unknown"
+        if self.tenant_id and not self.tenant_id.startswith("https://"):
+            return "ready"
+        if self.tenant_id:
+            # Has tenant but it has bad prefix — backfill will fix it
+            return "needs_backfill"
+        return "no_tenant"
+
 
 class HarvestRun(models.Model):
     """Audit log for each harvest or platform-detection execution."""

@@ -44,27 +44,27 @@ TENANT_EXTRACTORS: dict[str, re.Pattern] = {
     "ashby": re.compile(r"(?:jobs\.)?ashbyhq\.com/([^/?#\s]+)", re.I),
     # ── Jobvite: jobs.jobvite.com/careers/{tenant} or jobs.jobvite.com/{tenant}
     "jobvite": re.compile(r"jobs\.jobvite\.com/(?:careers/)?([^/?#\s]+)", re.I),
-    # ── iCIMS: {tenant}.icims.com (tenant often prefixed careers-)
-    "icims": re.compile(r"([^.]+)\.icims\.com", re.I),
+    # ── iCIMS: {tenant}.icims.com  ([^/.] prevents capturing https:// prefix)
+    "icims": re.compile(r"([^/.]+)\.icims\.com", re.I),
     # ── Recruitee: {tenant}.recruitee.com
-    "recruitee": re.compile(r"([^.]+)\.recruitee\.com", re.I),
+    "recruitee": re.compile(r"([^/.]+)\.recruitee\.com", re.I),
     # ── Taleo: {subdomain}.taleo.net/careersection/{section}/...
     # Stored as "{subdomain}|{career_section}" e.g. "aa224|ex", "uhg|10000"
-    "taleo": re.compile(r"([^.]+)\.taleo\.net(?:/careersection/([^/?#\s]+))?", re.I),
+    "taleo": re.compile(r"([^/.]+)\.taleo\.net(?:/careersection/([^/?#\s]+))?", re.I),
     # ── UltiPro/UKG: recruiting.ultipro.com/{TENANT_CODE}/JobBoard/...
     "ultipro": re.compile(
         r"(?:recruiting\d*\.ultipro\.com|recruiting\.ukg\.net)/([^/?#\s]+)", re.I
     ),
     # ── ApplicantPro: {tenant}.applicantpro.com
-    "applicantpro": re.compile(r"([^.]+)\.applicantpro\.com", re.I),
+    "applicantpro": re.compile(r"([^/.]+)\.applicantpro\.com", re.I),
     # ── ApplyToJob: {tenant}.applytojob.com
-    "applytojob": re.compile(r"([^.]+)\.applytojob\.com", re.I),
+    "applytojob": re.compile(r"([^/.]+)\.applytojob\.com", re.I),
     # ── The Applicant Manager: hire.theapplicantmanager.com?org={tenant}
     "theapplicantmanager": re.compile(r"org=([^&\s]+)", re.I),
     # ── Workable: apply.workable.com/{tenant}/j/{id}
     "workable": re.compile(r"(?:apply\.workable\.com|workable\.com/j)/([^/?#\s]+)", re.I),
     # ── BambooHR: {tenant}.bamboohr.com
-    "bamboohr": re.compile(r"([^.]+)\.bamboohr\.com", re.I),
+    "bamboohr": re.compile(r"([^/.]+)\.bamboohr\.com", re.I),
     # ── SmartRecruiters: jobs.smartrecruiters.com/{Tenant}/...
     "smartrecruiters": re.compile(r"(?:jobs\.)?smartrecruiters\.com/([^/?#\s]+)", re.I),
     # ── Dayforce HCM: jobs.dayforcehcm.com/en-US/{tenant}/CANDIDATEPORTAL/...
