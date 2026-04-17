@@ -207,6 +207,26 @@
           <!-- Start New Batch -->
           <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;">
             <h2 style="font-size:13px;font-weight:700;color:#1e293b;margin:0 0 12px;">Start New Batch</h2>
+
+            <!-- ██ BIG RED FETCH ALL BUTTON ██ -->
+            <form method="POST" action="{% url 'harvest-run-fetch-batch' %}" id="fetch-all-form" style="margin-bottom:14px;">
+              {% csrf_token %}
+              <input type="hidden" name="platform_slug" value="">
+              <input type="hidden" name="batch_name" value="FETCH ALL — {{ "now"|date:"Y-m-d H:i" }}">
+              <button type="button" onclick="confirmFetchAll()"
+                style="width:100%;padding:14px;background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:800;cursor:pointer;letter-spacing:.3px;box-shadow:0 4px 14px rgba(220,38,38,.35);display:flex;align-items:center;justify-content:center;gap:10px;transition:all .2s;"
+                onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 6px 20px rgba(220,38,38,.45)';"
+                onmouseout="this.style.transform='';this.style.boxShadow='0 4px 14px rgba(220,38,38,.35)';">
+                <span style="font-size:20px;">⚡</span>
+                <span>FETCH ALL JOBS — Every Platform, Every Company</span>
+              </button>
+            </form>
+
+            <div style="position:relative;margin-bottom:14px;">
+              <div style="border-top:1px solid #e2e8f0;"></div>
+              <span style="position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:#fff;padding:0 10px;font-size:11px;color:#94a3b8;font-weight:500;">or filter by platform</span>
+            </div>
+
             <form method="POST" action="{% url 'harvest-run-fetch-batch' %}" id="batch-form">
               {% csrf_token %}
               <div style="margin-bottom:10px;">
@@ -222,8 +242,8 @@
                 <label style="display:block;font-size:11px;font-weight:600;color:#64748b;margin-bottom:4px;">Batch Name (optional)</label>
                 <input type="text" name="batch_name" placeholder="Auto-generated if empty" style="width:100%;padding:7px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;color:#374151;box-sizing:border-box;">
               </div>
-              <button type="submit" style="width:100%;padding:9px;background:#0f172a;color:#f8fafc;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s;" onmouseover="this.style.background='#1e293b';" onmouseout="this.style.background='#0f172a';">
-                🚀 Start Batch Fetch
+              <button type="submit" style="width:100%;padding:9px;background:#0f172a;color:#f8fafc;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;" onmouseover="this.style.background='#1e293b';" onmouseout="this.style.background='#0f172a';">
+                🚀 Start Filtered Batch
               </button>
             </form>
           </div>
@@ -677,6 +697,33 @@ function escHtml(s) {
   const d = document.createElement('div');
   d.appendChild(document.createTextNode(s || ''));
   return d.innerHTML;
+}
+
+// ─── Fetch ALL confirmation ────────────────────────────────────────────────
+function confirmFetchAll() {
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:16px;padding:32px;max-width:420px;width:90%;box-shadow:0 24px 48px rgba(0,0,0,.2);text-align:center;">
+      <div style="font-size:48px;margin-bottom:12px;">⚡</div>
+      <h2 style="font-size:18px;font-weight:800;color:#0f172a;margin:0 0 10px;">Fetch ALL Jobs?</h2>
+      <p style="font-size:13px;color:#64748b;line-height:1.6;margin:0 0 24px;">
+        This will queue a background fetch for <strong>every live portal</strong> across all platforms and companies.<br><br>
+        Jobs will stream in as Celery workers process each company. You can monitor progress live on this page.
+      </p>
+      <div style="display:flex;gap:10px;justify-content:center;">
+        <button onclick="this.closest('[style*=fixed]').remove();"
+          style="padding:10px 24px;background:#f1f5f9;color:#374151;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">
+          Cancel
+        </button>
+        <button onclick="document.getElementById('fetch-all-form').submit();this.closest('[style*=fixed]').remove();"
+          style="padding:10px 28px;background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 4px 12px rgba(220,38,38,.3);">
+          ⚡ Yes, Fetch Everything!
+        </button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
 }
 
 function showToast(msg, type='success') {
