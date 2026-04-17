@@ -463,6 +463,9 @@
 </style>
 
 <script>
+// Pre-computed Django URL constants (avoids escaped-quote issues in JS strings)
+const _URL_COMPANY_STATUS = "{% url 'harvest-rawjobs-company-status' %}";
+const _URL_BATCHES        = "{% url 'harvest-rawjobs-batches' %}";
 // ─── Sub-tab switching ─────────────────────────────────────────────────────
 const PANELS = ['overview','companies','jobs','batches'];
 
@@ -508,7 +511,7 @@ function loadCompanyData() {
     .catch(() => {
       // Fall back: redirect to full table
       document.getElementById('company-table-body').innerHTML =
-        '<tr><td colspan="7" style="padding:20px;text-align:center;"><a href="{% url \'harvest-rawjobs-company-status\' %}" style="color:#3b82f6;">Open full company status table →</a></td></tr>';
+        '<tr><td colspan="7" style="padding:20px;text-align:center;"><a href="' + _URL_COMPANY_STATUS + '" style="color:#3b82f6;">Open full company status table →</a></td></tr>';
     });
 }
 
@@ -574,7 +577,7 @@ function loadBatchHistory() {
     .then(data => renderBatchHistory(data.batches || []))
     .catch(() => {
       document.getElementById('batch-history-body').innerHTML =
-        '<tr><td colspan="9" style="padding:20px;text-align:center;"><a href="{% url \'harvest-rawjobs-batches\' %}" style="color:#3b82f6;">Open batch history page →</a></td></tr>';
+        '<tr><td colspan="9" style="padding:20px;text-align:center;"><a href="' + _URL_BATCHES + '" style="color:#3b82f6;">Open batch history page →</a></td></tr>';
     });
 }
 
