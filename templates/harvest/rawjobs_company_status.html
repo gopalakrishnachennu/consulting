@@ -84,7 +84,7 @@
             {% for run in runs %}
             <tr style="border-bottom:1px solid #f1f5f9;{% cycle '' 'background:#fafafa;' %}">
               <td style="padding:10px 16px;">
-                <a href="{% url 'company-detail' run.label.company.pk %}" style="font-weight:600;color:#1e293b;text-decoration:none;">{{ run.label.company.name }}</a>
+                {% if run.label and run.label.company_id %}<a href="{% url 'company-detail' run.label.company.pk %}" style="font-weight:600;color:#1e293b;text-decoration:none;">{{ run.label.company.name }}</a>{% else %}<span style="font-weight:600;color:#1e293b;">{{ run.label.company.name|default:"—" }}</span>{% endif %}
               </td>
               <td style="padding:10px 16px;">
                 {% if run.label.platform %}
