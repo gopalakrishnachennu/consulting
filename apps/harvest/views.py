@@ -591,11 +591,21 @@ class TriggerBatchFetchView(SuperuserRequiredMixin, View):
         from .tasks import fetch_raw_jobs_batch_task
         platform_slug = request.POST.get("platform_slug", "").strip() or None
         batch_name = request.POST.get("batch_name", "").strip() or None
+        test_mode = request.POST.get("test_mode", "") in ("1", "true", "True", "yes")
+        test_max_jobs = int(request.POST.get("test_max_jobs", "10") or "10")
         task = fetch_raw_jobs_batch_task.delay(
             platform_slug=platform_slug,
             batch_name=batch_name,
             triggered_user_id=request.user.id,
+            test_mode=test_mode,
+            test_max_jobs=test_max_jobs,
         )
+        if test_mode:
+            messages.success(
+                request,
+                f"Test fetch started — 1 company per platform, up to {test_max_jobs} jobs each (Task: {task.id[:8]}…)",
+            )
+            return redirect_with_task_progress("harvest-rawjobs", task.id, f"Test fetch ({test_max_jobs} jobs/platform)")
         messages.success(
             request,
             f"Raw jobs batch fetch started"

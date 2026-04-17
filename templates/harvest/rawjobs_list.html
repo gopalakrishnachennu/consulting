@@ -218,6 +218,20 @@
           <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;">
             <h2 style="font-size:13px;font-weight:700;color:#1e293b;margin:0 0 12px;">Start New Batch</h2>
 
+            <!-- ██ TEST FETCH BUTTON ██ -->
+            <form method="POST" action="{% url 'harvest-run-fetch-batch' %}" id="test-fetch-form" style="margin-bottom:10px;">
+              {% csrf_token %}
+              <input type="hidden" name="test_mode" value="1">
+              <input type="hidden" name="test_max_jobs" value="10">
+              <button type="button" onclick="confirmTestFetch()"
+                style="width:100%;padding:11px;background:linear-gradient(135deg,#0891b2,#0e7490);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:.3px;box-shadow:0 3px 10px rgba(8,145,178,.30);display:flex;align-items:center;justify-content:center;gap:8px;transition:all .2s;"
+                onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 5px 16px rgba(8,145,178,.40)';"
+                onmouseout="this.style.transform='';this.style.boxShadow='0 3px 10px rgba(8,145,178,.30)';">
+                <span style="font-size:16px;">🧪</span>
+                <span>TEST FETCH — 10 Jobs Per Platform</span>
+              </button>
+            </form>
+
             <!-- ██ BIG RED FETCH ALL BUTTON ██ -->
             <form method="POST" action="{% url 'harvest-run-fetch-batch' %}" id="fetch-all-form" style="margin-bottom:14px;">
               {% csrf_token %}
@@ -710,6 +724,38 @@ function escHtml(s) {
   const d = document.createElement('div');
   d.appendChild(document.createTextNode(s || ''));
   return d.innerHTML;
+}
+
+// ─── Test Fetch confirmation ────────────────────────────────────────────────
+function confirmTestFetch() {
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:16px;padding:32px;max-width:460px;width:90%;box-shadow:0 24px 48px rgba(0,0,0,.2);text-align:center;">
+      <div style="font-size:48px;margin-bottom:12px;">🧪</div>
+      <h2 style="font-size:18px;font-weight:800;color:#0f172a;margin:0 0 10px;">Test Fetch — 10 Jobs / Platform</h2>
+      <p style="font-size:13px;color:#64748b;line-height:1.6;margin:0 0 16px;">
+        Picks <strong>1 company per platform</strong> and fetches up to <strong>10 jobs each</strong>.<br><br>
+        This is a quick smoke test — fast, low-impact, and won't full-paginate any platform.
+        Results appear in Raw Jobs Browser and Batch History below.
+      </p>
+      <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px 14px;margin:0 0 20px;text-align:left;">
+        <p style="margin:0;font-size:12px;color:#0369a1;font-weight:600;">What gets tested:</p>
+        <p style="margin:4px 0 0;font-size:12px;color:#0c4a6e;">Workday · Greenhouse · Lever · Ashby · iCIMS · Taleo · Jobvite · HTML Scraper</p>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:center;">
+        <button onclick="this.closest('[style*=fixed]').remove();"
+          style="padding:10px 24px;background:#f1f5f9;color:#374151;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">
+          Cancel
+        </button>
+        <button onclick="document.getElementById('test-fetch-form').submit();this.closest('[style*=fixed]').remove();"
+          style="padding:10px 28px;background:linear-gradient(135deg,#0891b2,#0e7490);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(8,145,178,.3);">
+          🧪 Run Test Fetch
+        </button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
 }
 
 // ─── Stop Batch ────────────────────────────────────────────────────────────

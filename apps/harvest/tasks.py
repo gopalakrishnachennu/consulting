@@ -513,6 +513,7 @@ def fetch_raw_jobs_for_company_task(
     label_pk: int,
     batch_id: int = None,
     triggered_by: str = "MANUAL",
+    max_jobs: int | None = None,
 ):
     """
     Fetch ALL jobs for a single CompanyPlatformLabel and upsert into RawJob.
@@ -573,11 +574,13 @@ def fetch_raw_jobs_for_company_task(
         return
 
     # ── Fetch ─────────────────────────────────────────────────────────────────
+    # test_mode passes max_jobs — skip full pagination to stay fast + respectful
+    use_fetch_all = max_jobs is None
     try:
         raw_jobs = harvester.fetch_jobs(
             label.company,
             label.tenant_id,
-            fetch_all=True,
+            fetch_all=use_fetch_all,
         )
     except requests.exceptions.Timeout as exc:
         run.status = CompanyFetchRun.Status.FAILED
@@ -616,6 +619,10 @@ def fetch_raw_jobs_for_company_task(
 
     # ── Upsert jobs ───────────────────────────────────────────────────────────
     jobs_new = jobs_updated = jobs_duplicate = jobs_failed = 0
+
+    # In test mode, cap to max_jobs so we don't write hundreds of rows
+    if max_jobs and len(raw_jobs) > max_jobs:
+        raw_jobs = raw_jobs[:max_jobs]
 
     for job_dict in raw_jobs:
         try:
@@ -744,9 +751,15 @@ def fetch_raw_jobs_batch_task(
     label_pks: list = None,
     batch_name: str = None,
     triggered_user_id: int = None,
+    test_mode: bool = False,
+    test_max_jobs: int = 10,
 ):
     """
     Create a FetchBatch and dispatch fetch_raw_jobs_for_company_task for every matching label.
+
+    test_mode=True — picks only 1 company per platform (first alphabetically by company name),
+    passes max_jobs=test_max_jobs to each per-company task, skips full pagination.
+    Useful for smoke-testing all platforms without a full run.
     """
     from django.contrib.auth import get_user_model
     from .models import CompanyPlatformLabel, FetchBatch
@@ -759,7 +772,9 @@ def fetch_raw_jobs_batch_task(
     # Build batch name
     if not batch_name:
         ts = timezone.now().strftime("%Y-%m-%d %H:%M")
-        if platform_slug:
+        if test_mode:
+            batch_name = f"TEST FETCH ({test_max_jobs} jobs/platform) — {ts}"
+        elif platform_slug:
             batch_name = f"{platform_slug.title()} batch — {ts}"
         else:
             batch_name = f"Full batch — {ts}"
@@ -777,7 +792,7 @@ def fetch_raw_jobs_batch_task(
     qs = CompanyPlatformLabel.objects.filter(
         portal_alive=True,
         platform__isnull=False,
-    ).exclude(tenant_id="").select_related("platform")
+    ).exclude(tenant_id="").select_related("platform", "company").order_by("company__name")
 
     if platform_slug:
         qs = qs.filter(platform__slug=platform_slug)
@@ -785,7 +800,22 @@ def fetch_raw_jobs_batch_task(
     if label_pks:
         qs = qs.filter(pk__in=label_pks)
 
-    label_list = list(qs.values_list("pk", flat=True))
+    if test_mode:
+        # Pick exactly 1 company per platform slug (first alphabetically)
+        seen_platforms: set[str] = set()
+        label_list = []
+        for label in qs.iterator():
+            slug = label.platform.slug if label.platform else ""
+            if slug and slug not in seen_platforms:
+                seen_platforms.add(slug)
+                label_list.append(label.pk)
+        logger.info(
+            "fetch_raw_jobs_batch TEST MODE: %d platforms, %d companies selected",
+            len(seen_platforms), len(label_list),
+        )
+    else:
+        label_list = list(qs.values_list("pk", flat=True))
+
     total = len(label_list)
 
     batch.total_companies = total
@@ -794,9 +824,11 @@ def fetch_raw_jobs_batch_task(
     update_task_progress(self, current=0, total=total, message=f"Dispatching {total} company fetches…")
 
     for i, label_pk in enumerate(label_list, start=1):
+        kwargs = {"max_jobs": test_max_jobs} if test_mode else {}
         fetch_raw_jobs_for_company_task.apply_async(
             args=[label_pk, batch.pk, "BATCH"],
-            countdown=i * 0.2,  # stagger slightly
+            kwargs=kwargs,
+            countdown=i * 0.3,  # slightly longer stagger for test mode clarity
         )
         if i % 50 == 0:
             update_task_progress(
@@ -807,8 +839,8 @@ def fetch_raw_jobs_batch_task(
     update_task_progress(self, current=total, total=total,
                          message=f"All {total} fetches queued for batch #{batch.pk}")
 
-    logger.info("fetch_raw_jobs_batch: queued %d companies (batch #%d)", total, batch.pk)
-    return {"batch_id": batch.pk, "total_companies": total}
+    logger.info("fetch_raw_jobs_batch: queued %d companies (batch #%d, test=%s)", total, batch.pk, test_mode)
+    return {"batch_id": batch.pk, "total_companies": total, "test_mode": test_mode}
 
 
 @shared_task(bind=True, name="harvest.retry_failed_raw_jobs")
