@@ -625,7 +625,11 @@ class TriggerBatchFetchView(SuperuserRequiredMixin, View):
 
 
 class StopBatchView(SuperuserRequiredMixin, View):
-    """POST — cancels the running (or a specific) FetchBatch and revokes pending Celery tasks."""
+    """GET — redirect to batch list. POST — cancel a running FetchBatch and revoke its tasks."""
+
+    def get(self, request):
+        """Direct browser navigation → just go to the batch list page."""
+        return redirect("harvest-rawjobs")
 
     def post(self, request):
         from celery import current_app
