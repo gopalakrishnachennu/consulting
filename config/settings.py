@@ -221,6 +221,11 @@ CELERY_WORKER_CONCURRENCY = config('CELERY_WORKER_CONCURRENCY', default=2, cast=
 CELERY_WORKER_MAX_TASKS_PER_CHILD = 100  # restart worker after 100 tasks to prevent memory leaks
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1    # fair task distribution
 
+# Route all tasks to "default" queue so the worker (-Q default,batches,harvest)
+# always picks them up.  Without this, Celery uses the queue named "celery"
+# by default which the worker doesn't listen to.
+CELERY_TASK_DEFAULT_QUEUE = "default"
+
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
