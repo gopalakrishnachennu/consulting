@@ -35,7 +35,9 @@ services:
       - db
       - redis
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"   # localhost only — nginx proxies, never expose to internet
+    volumes:
+      - media_files:/app/media   # persist user uploads across deploys
     restart: unless-stopped
 
   celery_worker:
@@ -74,4 +76,5 @@ services:
 
 volumes:
   postgres_data:
+  media_files:    # user-uploaded files — persists across container rebuilds
 
