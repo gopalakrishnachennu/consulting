@@ -41,7 +41,9 @@ services:
   celery_worker:
     build: .
     image: ${IMAGE_WORKER:-consulting-worker:local}
-    command: celery -A config worker -l info
+    # --concurrency=10: 10 parallel company fetches (all I/O-bound HTTP requests).
+    # Safe on 4 GB RAM — each prefork process uses ~200 MB → ~2 GB total for workers.
+    command: celery -A config worker -l info --concurrency=10 -Q default,batches,harvest
     environment:
       DEBUG: "0"
       SECRET_KEY: ${SECRET_KEY:-}

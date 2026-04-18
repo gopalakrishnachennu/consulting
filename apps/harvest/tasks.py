@@ -514,6 +514,7 @@ def fetch_raw_jobs_for_company_task(
     batch_id: int = None,
     triggered_by: str = "MANUAL",
     max_jobs: int | None = None,
+    since_hours: int | None = None,
 ):
     """
     Fetch ALL jobs for a single CompanyPlatformLabel and upsert into RawJob.
@@ -574,14 +575,33 @@ def fetch_raw_jobs_for_company_task(
         return
 
     # ── Fetch ─────────────────────────────────────────────────────────────────
-    # test_mode passes max_jobs — skip full pagination to stay fast + respectful
-    use_fetch_all = max_jobs is None
+    # Scraper platforms (HTML-based) can't filter by date — always fetch all.
+    # API platforms support since_hours for incremental fetches (default: 25h window).
+    # test_mode passes max_jobs — skip full pagination to stay fast + respectful.
+    SCRAPER_SLUGS = {"jobvite", "icims", "taleo", "applicantpro", "applytojob",
+                     "theapplicantmanager", "zoho", "breezy", "teamtailor"}
+    platform_slug_val = label.platform.slug if label.platform else ""
+    is_scraper_platform = platform_slug_val in SCRAPER_SLUGS
+
+    # fetch_all=True for scrapers (no date filter available), False for API platforms
+    # (they use since_hours window instead — much faster on daily runs).
+    use_fetch_all = is_scraper_platform or (max_jobs is not None)
+    effective_since_hours = since_hours if since_hours is not None else 25
+
     try:
-        raw_jobs = harvester.fetch_jobs(
-            label.company,
-            label.tenant_id,
-            fetch_all=use_fetch_all,
-        )
+        if is_scraper_platform:
+            raw_jobs = harvester.fetch_jobs(
+                label.company,
+                label.tenant_id,
+                fetch_all=True,
+            )
+        else:
+            raw_jobs = harvester.fetch_jobs(
+                label.company,
+                label.tenant_id,
+                since_hours=effective_since_hours,
+                fetch_all=use_fetch_all,
+            )
         # Capture API-reported total (even when we only fetched a subset)
         run.jobs_total_available = getattr(harvester, "last_total_available", 0) or len(raw_jobs)
     except requests.exceptions.Timeout as exc:
@@ -757,6 +777,7 @@ def fetch_raw_jobs_batch_task(
     test_max_jobs: int = 10,
     companies_per_platform: int = 1,
     skip_platforms: list = None,
+    min_hours_since_fetch: int = 6,
 ):
     """
     Create a FetchBatch and dispatch fetch_raw_jobs_for_company_task for every matching label.
@@ -764,9 +785,12 @@ def fetch_raw_jobs_batch_task(
     test_mode=True — picks up to `companies_per_platform` companies per platform,
     passes max_jobs=test_max_jobs (no full pagination). Useful for smoke-testing.
     skip_platforms — list of platform slugs to exclude (e.g. ["greenhouse","lever"]).
+    min_hours_since_fetch — skip labels that were successfully fetched within this many
+    hours (default 6). Prevents re-hammering the same API on repeated daily runs.
+    Pass 0 to disable (force re-fetch everything).
     """
     from django.contrib.auth import get_user_model
-    from .models import CompanyPlatformLabel, FetchBatch
+    from .models import CompanyPlatformLabel, CompanyFetchRun, FetchBatch
 
     User = get_user_model()
     triggered_user = None
@@ -809,6 +833,24 @@ def fetch_raw_jobs_batch_task(
     if skip_platforms:
         qs = qs.exclude(platform__slug__in=skip_platforms)
 
+    # ── Build skip-if-fresh set ───────────────────────────────────────────────
+    # Labels with a successful/partial run completed within min_hours_since_fetch
+    # are skipped — no point re-fetching the same jobs minutes/hours later.
+    fresh_label_pks: set[int] = set()
+    if min_hours_since_fetch > 0 and not test_mode:
+        fresh_cutoff = timezone.now() - timedelta(hours=min_hours_since_fetch)
+        fresh_label_pks = set(
+            CompanyFetchRun.objects.filter(
+                status__in=[CompanyFetchRun.Status.SUCCESS, CompanyFetchRun.Status.PARTIAL],
+                completed_at__gte=fresh_cutoff,
+            ).values_list("label_id", flat=True)
+        )
+        if fresh_label_pks:
+            logger.info(
+                "fetch_raw_jobs_batch: skipping %d labels fetched within last %dh",
+                len(fresh_label_pks), min_hours_since_fetch,
+            )
+
     if test_mode:
         # Pick up to `companies_per_platform` companies per platform slug
         per_plat = max(1, companies_per_platform)
@@ -827,7 +869,14 @@ def fetch_raw_jobs_batch_task(
             len(seen_platforms), len(label_list), per_plat,
         )
     else:
-        label_list = list(qs.values_list("pk", flat=True))
+        all_pks = list(qs.values_list("pk", flat=True))
+        label_list = [pk for pk in all_pks if pk not in fresh_label_pks]
+        skipped_fresh = len(all_pks) - len(label_list)
+        if skipped_fresh:
+            logger.info(
+                "fetch_raw_jobs_batch: %d/%d labels skipped (fresh <%dh), %d queued",
+                skipped_fresh, len(all_pks), min_hours_since_fetch, len(label_list),
+            )
 
     total = len(label_list)
 
@@ -836,19 +885,38 @@ def fetch_raw_jobs_batch_task(
 
     update_task_progress(self, current=0, total=total, message=f"Dispatching {total} company fetches…")
 
-    for i, label_pk in enumerate(label_list, start=1):
+    # Stagger by platform type: API platforms get a tighter stagger (0.1s),
+    # HTML scrapers get a wider one (1.0s) to avoid hammering slow targets.
+    SCRAPER_SLUGS = {"jobvite", "icims", "taleo", "ultipro", "applicantpro",
+                     "applytojob", "theapplicantmanager", "zoho", "breezy", "teamtailor"}
+
+    # Fetch label→platform slug mapping once to decide stagger
+    label_platform_map: dict[int, str] = {}
+    if label_list:
+        for row in CompanyPlatformLabel.objects.filter(pk__in=label_list).values("pk", "platform__slug"):
+            label_platform_map[row["pk"]] = row["platform__slug"] or ""
+
+    api_offset = 0
+    scraper_offset = 0
+    for label_pk in label_list:
+        slug = label_platform_map.get(label_pk, "")
+        is_scraper = slug in SCRAPER_SLUGS
+        if is_scraper:
+            countdown = scraper_offset
+            scraper_offset += 1.5   # 1.5s between scraper tasks
+        else:
+            countdown = api_offset
+            api_offset += 0.1       # 0.1s between API tasks (they throttle internally)
+
         kwargs = {"max_jobs": test_max_jobs} if test_mode else {}
         fetch_raw_jobs_for_company_task.apply_async(
             args=[label_pk, batch.pk, "BATCH"],
             kwargs=kwargs,
-            countdown=i * 0.3,  # slightly longer stagger for test mode clarity
+            countdown=countdown,
         )
-        if i % 50 == 0:
-            update_task_progress(
-                self, current=i, total=total,
-                message=f"Queued {i}/{total} company fetches…",
-            )
 
+    if label_list and label_list[0] % 50 == 0:
+        pass  # progress update already at end
     update_task_progress(self, current=total, total=total,
                          message=f"All {total} fetches queued for batch #{batch.pk}")
 
