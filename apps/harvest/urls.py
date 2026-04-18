@@ -4,6 +4,9 @@ from .views import (
     CompanyFetchStatusView,
     CompanyLabelListView,
     FetchBatchListView,
+    JarvisReScrapeView,
+    JarvisStatusView,
+    JarvisView,
     LabelManualSetView,
     LabelUpdateTenantView,
     LabelVerifyView,
@@ -60,4 +63,8 @@ urlpatterns = [
     path("run/fetch-company/", TriggerCompanyFetchView.as_view(), name="harvest-run-fetch-company"),
     path("run/fetch-batch/", TriggerBatchFetchView.as_view(), name="harvest-run-fetch-batch"),
     path("run/stop-batch/", StopBatchView.as_view(), name="harvest-run-stop-batch"),
+    # Job Jarvis — paste-any-URL ingestion
+    path("jarvis/", JarvisView.as_view(), name="harvest-jarvis"),
+    path("jarvis/status/", JarvisStatusView.as_view(), name="harvest-jarvis-status"),
+    path("jarvis/rescrape/", JarvisReScrapeView.as_view(), name="harvest-jarvis-rescrape"),
 ]

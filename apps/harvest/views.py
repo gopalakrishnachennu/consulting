@@ -767,3 +767,143 @@ class RawJobStatsView(SuperuserRequiredMixin, View):
                 .values("platform_slug", "count")
             ),
         })
+
+
+# ── Job Jarvis ─────────────────────────────────────────────────────────────────
+
+class JarvisView(SuperuserRequiredMixin, TemplateView):
+    """
+    GET  → show paste form
+    POST → queue jarvis_ingest_task, return JSON {"task_id": "..."}
+    """
+    template_name = "harvest/jarvis.html"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["active_tab"] = "jarvis"
+        ctx["recent_jarvis"] = (
+            RawJob.objects.filter(platform_slug="jarvis")
+            .select_related("company")
+            .order_by("-fetched_at")[:10]
+        )
+        ctx["platforms_supported"] = [
+            "Greenhouse", "Lever", "Ashby", "Workday", "Workable",
+            "LinkedIn", "Indeed", "SmartRecruiters", "BambooHR", "Any career page",
+        ]
+        return ctx
+
+    def post(self, request, *args, **kwargs):
+        from .tasks import jarvis_ingest_task
+        url = request.POST.get("url", "").strip()
+        if not url:
+            return JsonResponse({"ok": False, "error": "Please paste a job URL."}, status=400)
+        if not url.startswith(("http://", "https://")):
+            return JsonResponse({"ok": False, "error": "URL must start with http:// or https://"}, status=400)
+
+        task = jarvis_ingest_task.delay(url, request.user.id)
+        return JsonResponse({"ok": True, "task_id": task.id, "url": url})
+
+
+class JarvisStatusView(SuperuserRequiredMixin, View):
+    """
+    GET ?task_id=xxx → poll task state.
+
+    Returns JSON:
+      { state, percent, message, result }   # while running
+      { state:"SUCCESS", result:{...} }     # when done
+      { state:"FAILURE", error:"..." }      # on error
+    """
+
+    def get(self, request, *args, **kwargs):
+        from celery.result import AsyncResult
+        task_id = request.GET.get("task_id", "").strip()
+        if not task_id:
+            return JsonResponse({"error": "Missing task_id"}, status=400)
+
+        res = AsyncResult(task_id)
+        state = res.state  # PENDING / PROGRESS / SUCCESS / FAILURE
+
+        if state == "PENDING":
+            return JsonResponse({"state": "PENDING", "percent": 0, "message": "Queued…"})
+
+        if state == "PROGRESS":
+            meta = res.info or {}
+            return JsonResponse({
+                "state": "PROGRESS",
+                "percent": meta.get("percent", 0),
+                "message": meta.get("message", "Working…"),
+            })
+
+        if state == "SUCCESS":
+            result = res.result or {}
+            if not isinstance(result, dict):
+                result = {"ok": False, "error": str(result)}
+            # Fetch fresh raw_job data if saved
+            raw_job_data = None
+            if result.get("raw_job_id"):
+                try:
+                    job = RawJob.objects.select_related("company", "job_platform").get(
+                        pk=result["raw_job_id"]
+                    )
+                    raw_job_data = {
+                        "id": job.pk,
+                        "title": job.title,
+                        "company_name": job.company_name,
+                        "company_id": job.company_id,
+                        "location_raw": job.location_raw,
+                        "is_remote": job.is_remote,
+                        "location_type": job.location_type,
+                        "employment_type": job.get_employment_type_display(),
+                        "experience_level": job.get_experience_level_display(),
+                        "department": job.department,
+                        "salary_raw": job.salary_raw,
+                        "salary_min": str(job.salary_min) if job.salary_min else None,
+                        "salary_max": str(job.salary_max) if job.salary_max else None,
+                        "salary_currency": job.salary_currency,
+                        "salary_period": job.salary_period,
+                        "description": (job.description or "")[:3000],
+                        "platform_slug": job.platform_slug,
+                        "platform_name": job.job_platform.name if job.job_platform else (job.raw_payload.get("jarvis_detected_ats") or job.platform_slug).title(),
+                        "detected_ats": job.raw_payload.get("jarvis_detected_ats", ""),
+                        "original_url": job.original_url,
+                        "apply_url": job.apply_url,
+                        "posted_date": job.posted_date.isoformat() if job.posted_date else "",
+                        "sync_status": job.sync_status,
+                        "detail_url": f"/harvest/raw-jobs/{job.pk}/",
+                    }
+                except RawJob.DoesNotExist:
+                    pass
+            return JsonResponse({
+                "state": "SUCCESS",
+                "result": result,
+                "raw_job": raw_job_data,
+            })
+
+        if state == "FAILURE":
+            return JsonResponse({
+                "state": "FAILURE",
+                "error": str(res.result) if res.result else "Task failed",
+            })
+
+        # REVOKED or other
+        return JsonResponse({"state": state})
+
+
+class JarvisReScrapeView(SuperuserRequiredMixin, View):
+    """POST { url } → re-run Jarvis on a fresh URL without saving (preview only)."""
+
+    def post(self, request, *args, **kwargs):
+        """Synchronous quick-preview — no DB write, just extract + return JSON."""
+        from .jarvis import JobJarvis
+        url = request.POST.get("url", "").strip()
+        if not url:
+            return JsonResponse({"ok": False, "error": "Missing URL"}, status=400)
+
+        try:
+            data = JobJarvis().ingest(url)
+        except Exception as exc:
+            return JsonResponse({"ok": False, "error": str(exc)}, status=500)
+
+        # Strip raw_payload (too large) from response
+        data.pop("raw_payload", None)
+        return JsonResponse({"ok": not bool(data.get("error")), "data": data})

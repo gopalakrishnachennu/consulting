@@ -1,0 +1,450 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+/* ── Jarvis-specific animations & overrides ─────────────────────── */
+@keyframes jarvis-pulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(56,189,248,.4); }
+  50%     { box-shadow: 0 0 0 14px rgba(56,189,248,0); }
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes fade-in-up {
+  from { opacity:0; transform:translateY(20px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+@keyframes progress-slide {
+  from { width:0; }
+  to   { width:var(--pct); }
+}
+#jarvis-input:focus {
+  outline:none;
+  border-color:#38bdf8;
+  box-shadow:0 0 0 3px rgba(56,189,248,.25);
+}
+#jarvis-btn:not(:disabled):hover {
+  background:linear-gradient(135deg,#0ea5e9,#6366f1);
+  transform:translateY(-1px);
+  box-shadow:0 6px 20px rgba(56,189,248,.45);
+}
+#jarvis-btn:disabled { opacity:.6; cursor:not-allowed; }
+.result-card { animation: fade-in-up .4s ease both; }
+.platform-badge {
+  display:inline-flex;align-items:center;gap:5px;
+  padding:3px 10px;border-radius:20px;
+  font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;
+}
+.platform-greenhouse { background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7; }
+.platform-lever      { background:#f3e5f5;color:#6a1b9a;border:1px solid #ce93d8; }
+.platform-ashby      { background:#fff3e0;color:#e65100;border:1px solid #ffcc80; }
+.platform-workday    { background:#e3f2fd;color:#1565c0;border:1px solid #90caf9; }
+.platform-linkedin   { background:#e3f2fd;color:#0a66c2;border:1px solid #90caf9; }
+.platform-indeed     { background:#fff8e1;color:#795548;border:1px solid #ffe082; }
+.platform-jarvis     { background:#f0fdf4;color:#166534;border:1px solid #86efac; }
+.platform-default    { background:#f1f5f9;color:#475569;border:1px solid #cbd5e1; }
+.strategy-badge {
+  font-size:10px;padding:2px 7px;border-radius:4px;
+  background:#1e293b;color:#94a3b8;font-weight:500;
+  letter-spacing:.3px;
+}
+</style>
+
+<div style="min-height:100vh;background:#0b1120;">
+
+  <!-- ── Header ─────────────────────────────────────────────────────────── -->
+  <div style="background:#0f172a;border-bottom:1px solid #1e293b;">
+    <div style="max-width:1100px;margin:0 auto;padding:0 24px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 0 0;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#38bdf8,#6366f1);display:flex;align-items:center;justify-content:center;font-size:18px;">🤖</div>
+          <div>
+            <h1 style="color:#f8fafc;font-size:20px;font-weight:700;margin:0;">Harvest Engine</h1>
+            <p style="color:#64748b;font-size:12px;margin:2px 0 0;">Job Jarvis</p>
+          </div>
+        </div>
+        <a href="{% url 'harvest-rawjobs' %}" style="color:#94a3b8;font-size:12px;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid #1e293b;">← Raw Jobs</a>
+      </div>
+
+      <!-- Tabs -->
+      <div style="display:flex;margin-top:20px;border-bottom:1px solid #1e293b;overflow-x:auto;">
+        <a href="{% url 'harvest-platforms' %}"    style="padding:10px 20px;font-size:13px;color:#64748b;text-decoration:none;border-bottom:2px solid transparent;white-space:nowrap;">🗂 Platforms</a>
+        <a href="{% url 'harvest-schedule' %}"     style="padding:10px 20px;font-size:13px;color:#64748b;text-decoration:none;border-bottom:2px solid transparent;white-space:nowrap;">⏰ Schedule</a>
+        <a href="{% url 'harvest-monitor' %}"      style="padding:10px 20px;font-size:13px;color:#64748b;text-decoration:none;border-bottom:2px solid transparent;white-space:nowrap;">📊 Monitor</a>
+        <a href="{% url 'harvest-labels' %}"       style="padding:10px 20px;font-size:13px;color:#64748b;text-decoration:none;border-bottom:2px solid transparent;white-space:nowrap;">🏷 Labels</a>
+        <a href="{% url 'harvest-rawjobs' %}"      style="padding:10px 20px;font-size:13px;color:#64748b;text-decoration:none;border-bottom:2px solid transparent;white-space:nowrap;">📋 Raw Jobs</a>
+        <a href="{% url 'harvest-jarvis' %}"       style="padding:10px 20px;font-size:13px;font-weight:700;color:#38bdf8;text-decoration:none;border-bottom:2px solid #38bdf8;white-space:nowrap;">🤖 Jarvis</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Hero section ───────────────────────────────────────────────────── -->
+  <div style="max-width:700px;margin:0 auto;padding:56px 24px 40px;">
+
+    <!-- Title -->
+    <div style="text-align:center;margin-bottom:40px;">
+      <div style="width:64px;height:64px;border-radius:18px;background:linear-gradient(135deg,#38bdf8,#6366f1);display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 16px;animation:jarvis-pulse 2.5s infinite;">🤖</div>
+      <h2 style="color:#f8fafc;font-size:28px;font-weight:800;margin:0 0 8px;letter-spacing:-.5px;">Job Jarvis</h2>
+      <p style="color:#94a3b8;font-size:15px;margin:0;line-height:1.6;">Paste any job link — I'll spider, scrape, and extract<br>everything into your system automatically.</p>
+    </div>
+
+    <!-- URL Input Card -->
+    <div style="background:#0f172a;border:1px solid #1e3a5f;border-radius:16px;padding:28px;box-shadow:0 8px 40px rgba(0,0,0,.5);">
+      <form id="jarvis-form" style="display:flex;flex-direction:column;gap:16px;">
+        {% csrf_token %}
+        <div>
+          <label style="display:block;font-size:12px;font-weight:600;color:#94a3b8;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px;">Job URL</label>
+          <input
+            id="jarvis-input"
+            name="url"
+            type="url"
+            placeholder="https://boards.greenhouse.io/acme/jobs/123  or  https://jobs.lever.co/stripe/abc-123  or any URL"
+            style="width:100%;box-sizing:border-box;background:#0b1120;border:1.5px solid #1e3a5f;border-radius:10px;padding:14px 16px;font-size:14px;color:#e2e8f0;font-family:inherit;transition:border-color .2s,box-shadow .2s;"
+            required
+          />
+        </div>
+
+        <button
+          id="jarvis-btn"
+          type="submit"
+          style="background:linear-gradient(135deg,#38bdf8,#6366f1);color:#fff;border:none;border-radius:10px;padding:14px 28px;font-size:15px;font-weight:700;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:10px;">
+          <span id="jarvis-btn-icon">🔍</span>
+          <span id="jarvis-btn-text">Analyze Job</span>
+        </button>
+      </form>
+
+      <!-- Progress bar (hidden by default) -->
+      <div id="jarvis-progress" style="display:none;margin-top:20px;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+          <span id="progress-msg" style="font-size:13px;color:#94a3b8;">Working…</span>
+          <span id="progress-pct" style="font-size:13px;color:#38bdf8;font-weight:600;">0%</span>
+        </div>
+        <div style="background:#1e293b;border-radius:6px;height:6px;overflow:hidden;">
+          <div id="progress-bar" style="height:100%;background:linear-gradient(90deg,#38bdf8,#6366f1);border-radius:6px;width:0%;transition:width .4s ease;"></div>
+        </div>
+      </div>
+
+      <!-- Error message (hidden by default) -->
+      <div id="jarvis-error" style="display:none;margin-top:16px;background:#450a0a;border:1px solid #7f1d1d;border-radius:8px;padding:12px 16px;">
+        <p id="jarvis-error-msg" style="margin:0;color:#fca5a5;font-size:14px;">Error message here</p>
+      </div>
+    </div>
+
+    <!-- Supported platforms hint -->
+    <div style="text-align:center;margin-top:20px;display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">
+      {% for label in platforms_supported %}
+      <span style="background:#0f172a;border:1px solid #1e293b;color:#64748b;font-size:11px;padding:4px 10px;border-radius:20px;">{{ label }}</span>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ── Result card (shown after extraction) ───────────────────────────── -->
+  <div id="jarvis-result" style="display:none;max-width:700px;margin:0 auto 60px;padding:0 24px;">
+    <div class="result-card" style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.4);">
+
+      <!-- Result header -->
+      <div style="padding:24px 24px 16px;border-bottom:1px solid #1e293b;">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px;">
+          <h3 id="r-title" style="color:#f8fafc;font-size:20px;font-weight:700;margin:0;line-height:1.3;"></h3>
+          <div style="display:flex;gap:6px;flex-shrink:0;align-items:center;">
+            <span id="r-remote-badge" style="display:none;background:#052e16;color:#22c55e;border:1px solid #166534;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:700;">🌐 Remote</span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span id="r-company" style="color:#38bdf8;font-size:14px;font-weight:600;"></span>
+          <span id="r-platform-badge" class="platform-badge platform-default"></span>
+          <span id="r-strategy-badge" class="strategy-badge"></span>
+          <span id="r-location" style="color:#64748b;font-size:13px;"></span>
+        </div>
+      </div>
+
+      <!-- Key details grid -->
+      <div id="r-details-grid" style="display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid #1e293b;">
+        <!-- populated by JS -->
+      </div>
+
+      <!-- Description preview -->
+      <div style="padding:20px 24px;">
+        <p style="font-size:11px;text-transform:uppercase;color:#475569;font-weight:600;margin:0 0 10px;letter-spacing:.5px;">Description Preview</p>
+        <div id="r-desc" style="font-size:13px;color:#94a3b8;line-height:1.7;max-height:200px;overflow:hidden;position:relative;">
+          <div id="r-desc-inner"></div>
+          <div style="position:absolute;bottom:0;left:0;right:0;height:60px;background:linear-gradient(transparent,#0f172a);"></div>
+        </div>
+      </div>
+
+      <!-- Action buttons -->
+      <div style="padding:16px 24px 24px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;border-top:1px solid #1e293b;">
+        <a id="r-view-btn" href="#" target="_blank"
+          style="background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;text-decoration:none;padding:11px 22px;border-radius:8px;font-size:14px;font-weight:700;display:inline-flex;align-items:center;gap:7px;transition:all .2s;">
+          ✅ View in System
+        </a>
+        <a id="r-apply-btn" href="#" target="_blank" rel="noopener"
+          style="background:#1e293b;color:#94a3b8;text-decoration:none;border:1px solid #334155;padding:11px 22px;border-radius:8px;font-size:14px;font-weight:500;display:inline-flex;align-items:center;gap:7px;">
+          🔗 Original Posting
+        </a>
+        <button onclick="resetJarvis()"
+          style="background:transparent;color:#64748b;border:1px solid #1e293b;padding:11px 22px;border-radius:8px;font-size:14px;cursor:pointer;transition:color .2s;">
+          + Analyze Another
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Recent Jarvis imports ──────────────────────────────────────────── -->
+  {% if recent_jarvis %}
+  <div style="max-width:700px;margin:0 auto 60px;padding:0 24px;">
+    <h3 style="color:#64748b;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin:0 0 12px;">Recent Jarvis Imports</h3>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      {% for job in recent_jarvis %}
+      <a href="{% url 'harvest-rawjob-detail' job.pk %}" style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:12px 16px;text-decoration:none;display:flex;align-items:center;justify-content:space-between;gap:12px;transition:border-color .2s;" onmouseover="this.style.borderColor='#334155'" onmouseout="this.style.borderColor='#1e293b'">
+        <div>
+          <p style="color:#e2e8f0;font-size:14px;font-weight:600;margin:0 0 3px;">{{ job.title|truncatechars:60 }}</p>
+          <p style="color:#64748b;font-size:12px;margin:0;">{{ job.company_name }} {% if job.location_raw %}· {{ job.location_raw|truncatechars:40 }}{% endif %}</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+          <span style="background:#1e293b;color:#64748b;font-size:10px;padding:3px 8px;border-radius:4px;">{{ job.fetched_at|date:"M j" }}</span>
+          {% if job.sync_status == 'SYNCED' %}
+          <span style="background:#052e16;color:#22c55e;font-size:10px;padding:3px 8px;border-radius:4px;">Synced</span>
+          {% else %}
+          <span style="background:#1e293b;color:#94a3b8;font-size:10px;padding:3px 8px;border-radius:4px;">Pending</span>
+          {% endif %}
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+</div><!-- end page wrapper -->
+
+<script>
+(function () {
+  'use strict';
+
+  const form       = document.getElementById('jarvis-form');
+  const input      = document.getElementById('jarvis-input');
+  const btn        = document.getElementById('jarvis-btn');
+  const btnIcon    = document.getElementById('jarvis-btn-icon');
+  const btnText    = document.getElementById('jarvis-btn-text');
+  const progressEl = document.getElementById('jarvis-progress');
+  const progressBar= document.getElementById('progress-bar');
+  const progressMsg= document.getElementById('progress-msg');
+  const progressPct= document.getElementById('progress-pct');
+  const errorEl    = document.getElementById('jarvis-error');
+  const errorMsg   = document.getElementById('jarvis-error-msg');
+  const resultEl   = document.getElementById('jarvis-result');
+
+  let pollTimer = null;
+
+  // ── Submit ──────────────────────────────────────────────────────────────
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const url = input.value.trim();
+    if (!url) return;
+
+    setLoading(true);
+    hideError();
+    resultEl.style.display = 'none';
+
+    try {
+      const body = new FormData(form);
+      const resp = await fetch('{% url "harvest-jarvis" %}', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': getCsrf() },
+        body,
+      });
+      const json = await resp.json();
+      if (!json.ok) {
+        showError(json.error || 'Unknown error');
+        setLoading(false);
+        return;
+      }
+      // Start polling
+      pollStatus(json.task_id);
+    } catch (err) {
+      showError('Request failed: ' + err.message);
+      setLoading(false);
+    }
+  });
+
+  // ── Polling ─────────────────────────────────────────────────────────────
+  function pollStatus(taskId) {
+    clearInterval(pollTimer);
+    pollTimer = setInterval(async () => {
+      try {
+        const resp = await fetch(`{% url "harvest-jarvis-status" %}?task_id=${taskId}`);
+        const json = await resp.json();
+
+        if (json.state === 'PENDING' || json.state === 'PROGRESS') {
+          const pct = json.percent || 0;
+          progressBar.style.width = pct + '%';
+          progressPct.textContent = pct + '%';
+          progressMsg.textContent = json.message || 'Working…';
+          return; // keep polling
+        }
+
+        clearInterval(pollTimer);
+        setLoading(false);
+
+        if (json.state === 'SUCCESS') {
+          const result = json.result || {};
+          if (!result.ok) {
+            showError(result.error || 'Extraction failed — could not read job data from this URL.');
+            return;
+          }
+          renderResult(json.raw_job || {}, result);
+        } else if (json.state === 'FAILURE') {
+          showError(json.error || 'Task failed unexpectedly.');
+        } else {
+          showError('Unexpected task state: ' + json.state);
+        }
+      } catch (err) {
+        clearInterval(pollTimer);
+        setLoading(false);
+        showError('Poll failed: ' + err.message);
+      }
+    }, 1800);
+  }
+
+  // ── Render result ────────────────────────────────────────────────────────
+  function renderResult(job, result) {
+    // Title
+    document.getElementById('r-title').textContent = job.title || result.title || 'Untitled';
+
+    // Company
+    document.getElementById('r-company').textContent = job.company_name || result.company_name || '';
+
+    // Remote badge
+    const remoteBadge = document.getElementById('r-remote-badge');
+    remoteBadge.style.display = job.is_remote ? 'inline-flex' : 'none';
+
+    // Location
+    const locEl = document.getElementById('r-location');
+    const locText = job.location_raw || '';
+    locEl.textContent = locText ? '📍 ' + locText : '';
+
+    // Platform badge — prefer the detected ATS over "jarvis"
+    const slug = (job.detected_ats || job.platform_slug || result.platform_slug || 'jarvis').toLowerCase();
+    const platBadge = document.getElementById('r-platform-badge');
+    const platformLabels = {
+      greenhouse: 'Greenhouse', lever: 'Lever', ashby: 'Ashby',
+      workday: 'Workday', linkedin: 'LinkedIn', indeed: 'Indeed',
+      workable: 'Workable', smartrecruiters: 'SmartRecruiters',
+      jarvis: 'Jarvis', bamboohr: 'BambooHR',
+    };
+    platBadge.textContent = platformLabels[slug] || (job.platform_name || slug);
+    platBadge.className = 'platform-badge platform-' + slug;
+    if (!platBadge.classList.contains('platform-' + slug)) {
+      platBadge.className = 'platform-badge platform-default';
+    }
+
+    // Strategy badge
+    const strat = result.strategy || '';
+    const stratBadge = document.getElementById('r-strategy-badge');
+    if (strat) {
+      stratBadge.textContent = strat.replace('api:', '').replace('_', '-');
+      stratBadge.style.display = 'inline-block';
+    } else {
+      stratBadge.style.display = 'none';
+    }
+
+    // Details grid
+    const grid = document.getElementById('r-details-grid');
+    const cells = [];
+    if (job.employment_type && job.employment_type !== 'Unknown') {
+      cells.push({ label: 'Job Type', value: job.employment_type });
+    }
+    if (job.experience_level && job.experience_level !== 'Unknown') {
+      cells.push({ label: 'Level', value: job.experience_level });
+    }
+    if (job.department) {
+      cells.push({ label: 'Department', value: job.department });
+    }
+    if (job.salary_raw || job.salary_min) {
+      const sal = job.salary_raw || (
+        job.salary_min && job.salary_max
+          ? `${job.salary_currency} ${Number(job.salary_min).toLocaleString()} – ${Number(job.salary_max).toLocaleString()} / ${(job.salary_period || 'yr').toLowerCase()}`
+          : ''
+      );
+      if (sal) cells.push({ label: 'Salary', value: sal, green: true });
+    }
+    if (job.posted_date) {
+      cells.push({ label: 'Posted', value: new Date(job.posted_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) });
+    }
+    grid.innerHTML = cells.map((c, i) => `
+      <div style="padding:14px 16px;${i < cells.length - 1 ? 'border-right:1px solid #1e293b;' : ''}${i >= 3 ? 'border-top:1px solid #1e293b;' : ''}">
+        <p style="font-size:10px;text-transform:uppercase;color:#475569;font-weight:600;margin:0 0 4px;letter-spacing:.4px;">${c.label}</p>
+        <p style="font-size:13px;font-weight:600;color:${c.green ? '#22c55e' : '#e2e8f0'};margin:0;">${c.value}</p>
+      </div>
+    `).join('');
+
+    // Description
+    const descInner = document.getElementById('r-desc-inner');
+    const rawDesc = job.description || '';
+    if (rawDesc) {
+      // Strip HTML tags for safe preview
+      const tmp = document.createElement('div');
+      tmp.innerHTML = rawDesc;
+      const text = tmp.textContent || tmp.innerText || '';
+      descInner.textContent = text.trim().slice(0, 800) + (text.length > 800 ? '…' : '');
+    } else {
+      descInner.textContent = '(no description extracted)';
+    }
+
+    // Action buttons
+    if (job.id) {
+      const viewBtn = document.getElementById('r-view-btn');
+      viewBtn.href = job.detail_url || `/harvest/raw-jobs/${job.id}/`;
+      viewBtn.style.display = 'inline-flex';
+    }
+    const applyBtn = document.getElementById('r-apply-btn');
+    applyBtn.href = job.apply_url || job.original_url || '';
+
+    // Show result card
+    resultEl.style.display = 'block';
+    resultEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  function setLoading(on) {
+    btn.disabled = on;
+    input.disabled = on;
+    if (on) {
+      btnIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" style="animation:spin .8s linear infinite;"><circle cx="8" cy="8" r="6" stroke="#fff" stroke-width="2" fill="none" stroke-dasharray="20 15"/></svg>';
+      btnText.textContent = 'Analyzing…';
+      progressEl.style.display = 'block';
+      progressBar.style.width = '5%';
+      progressMsg.textContent = 'Fetching page…';
+      progressPct.textContent = '5%';
+    } else {
+      btnIcon.textContent = '🔍';
+      btnText.textContent = 'Analyze Job';
+      progressEl.style.display = 'none';
+    }
+  }
+
+  function showError(msg) {
+    errorMsg.textContent = msg;
+    errorEl.style.display = 'block';
+  }
+
+  function hideError() {
+    errorEl.style.display = 'none';
+  }
+
+  function getCsrf() {
+    const el = document.querySelector('[name=csrfmiddlewaretoken]');
+    return el ? el.value : '';
+  }
+
+  // Exposed globally for "Analyze Another" button
+  window.resetJarvis = function () {
+    resultEl.style.display = 'none';
+    hideError();
+    input.value = '';
+    input.focus();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Auto-focus URL input
+  input.focus();
+})();
+</script>
+{% endblock %}

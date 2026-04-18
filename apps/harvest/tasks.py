@@ -1186,3 +1186,181 @@ def sync_harvested_to_pool_task(self, max_jobs: int = 100):
 
     logger.info(f"Sync: {synced} synced, {skipped} skipped, {failed} failed.")
     return {"synced": synced, "skipped": skipped, "failed": failed}
+
+
+# ─── Job Jarvis — single-URL ingestion ───────────────────────────────────────
+
+@shared_task(bind=True, name="harvest.jarvis_ingest")
+def jarvis_ingest_task(self, url: str, user_id: int | None = None):
+    """
+    Fetch *url* with JobJarvis, extract all job fields, find-or-create the
+    Company, and persist a RawJob (platform_slug="jarvis" or detected slug).
+
+    Returns a dict with the extracted data plus ``raw_job_id`` when saved
+    successfully, or ``error`` on failure.
+    """
+    from .jarvis import JobJarvis
+    from .models import RawJob, JobBoardPlatform
+
+    update_task_progress(self, current=0, total=3, message="Fetching job page…")
+
+    jarvis = JobJarvis()
+    try:
+        data = jarvis.ingest(url)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "url": url}
+
+    if data.get("error"):
+        return {"ok": False, "error": data["error"], "url": url, "data": data}
+
+    update_task_progress(self, current=2, total=3, message="Saving to database…")
+
+    # ── Resolve Company ───────────────────────────────────────────────────────
+    from companies.models import Company
+    company_name = (data.get("company_name") or "").strip()
+    if not company_name:
+        company_name = _extract_company_from_url(url)
+
+    company, _ = Company.objects.get_or_create(
+        name=company_name or "Unknown (Jarvis Import)",
+        defaults={"website": _root_url(url)},
+    )
+
+    # ── Resolve platform ──────────────────────────────────────────────────────
+    # Always tag Jarvis imports as platform_slug="jarvis" so they form their
+    # own namespace and the recent-imports list is easy to filter.
+    # The real detected ATS (greenhouse, lever, etc.) is stored in raw_payload.
+    platform_slug = "jarvis"
+    detected_ats = data.get("platform_slug") or ""
+    job_platform = None
+    if detected_ats:
+        try:
+            job_platform = JobBoardPlatform.objects.get(slug=detected_ats)
+        except JobBoardPlatform.DoesNotExist:
+            pass
+
+    # ── Build RawJob ──────────────────────────────────────────────────────────
+    import hashlib
+    from datetime import timedelta
+    original_url = data.get("original_url") or url
+    url_hash = hashlib.sha256(original_url.strip().encode()).hexdigest()
+
+    # Parse posted_date
+    posted_date = _jarvis_parse_date(data.get("posted_date_raw", ""))
+    closing_date = _jarvis_parse_date(data.get("closing_date_raw", ""))
+
+    # Truncate description to avoid DB limits (TEXT is fine but be safe)
+    description = (data.get("description") or "")[:20000]
+    requirements = (data.get("requirements") or "")[:5000]
+    benefits = (data.get("benefits") or "")[:5000]
+
+    # Enrich raw_payload with Jarvis metadata
+    raw_payload = data.get("raw_payload") or {}
+    raw_payload["jarvis_detected_ats"] = detected_ats
+    raw_payload["jarvis_strategy"] = data.get("strategy", "")
+    raw_payload["jarvis_source_url"] = url
+
+    raw_job, created = RawJob.objects.update_or_create(
+        url_hash=url_hash,
+        defaults={
+            "company": company,
+            "job_platform": job_platform,
+            "platform_slug": platform_slug,
+            "external_id": (data.get("external_id") or "")[:512],
+            "original_url": original_url[:1024],
+            "apply_url": (data.get("apply_url") or original_url)[:1024],
+            "title": (data.get("title") or "Untitled")[:512],
+            "company_name": company_name[:256] if company_name else "",
+            "department": (data.get("department") or "")[:256],
+            "team": (data.get("team") or "")[:256],
+            "location_raw": (data.get("location_raw") or "")[:512],
+            "city": (data.get("city") or "")[:128],
+            "state": (data.get("state") or "")[:128],
+            "country": (data.get("country") or "")[:128],
+            "is_remote": bool(data.get("is_remote")),
+            "location_type": data.get("location_type") or "UNKNOWN",
+            "employment_type": data.get("employment_type") or "UNKNOWN",
+            "experience_level": data.get("experience_level") or "UNKNOWN",
+            "salary_min": data.get("salary_min"),
+            "salary_max": data.get("salary_max"),
+            "salary_currency": (data.get("salary_currency") or "USD")[:8],
+            "salary_period": (data.get("salary_period") or "")[:16],
+            "salary_raw": (data.get("salary_raw") or "")[:256],
+            "description": description,
+            "requirements": requirements,
+            "benefits": benefits,
+            "posted_date": posted_date,
+            "closing_date": closing_date,
+            "raw_payload": raw_payload,
+            "sync_status": "PENDING",
+            "is_active": True,
+            "expires_at": timezone.now() + timedelta(days=30),
+        },
+    )
+
+    update_task_progress(self, current=3, total=3, message="Done ✓")
+
+    logger.info(
+        "Jarvis ingested: %s | %s | raw_job_id=%d (%s)",
+        data.get("title"), company_name, raw_job.pk,
+        "created" if created else "updated",
+    )
+
+    return {
+        "ok": True,
+        "raw_job_id": raw_job.pk,
+        "created": created,
+        "title": data.get("title", ""),
+        "company_name": company_name,
+        "platform_slug": platform_slug,
+        "strategy": data.get("strategy", ""),
+        "data": {k: v for k, v in data.items() if k != "raw_payload"},
+    }
+
+
+def _extract_company_from_url(url: str) -> str:
+    """Best-effort: pull a human-readable company name from the URL hostname."""
+    from urllib.parse import urlparse
+    try:
+        host = urlparse(url).netloc.lower()
+        # Strip www. / jobs. / careers. prefixes
+        for prefix in ("www.", "jobs.", "careers.", "boards."):
+            if host.startswith(prefix):
+                host = host[len(prefix):]
+        # Remove known ATS domains: greenhouse.io, lever.co, etc.
+        for suffix in (
+            ".greenhouse.io", ".lever.co", ".ashbyhq.com",
+            ".myworkdayjobs.com", ".workable.com", ".bamboohr.com",
+        ):
+            if host.endswith(suffix):
+                host = host[: -len(suffix)]
+        # Convert hyphens/dots to spaces, title-case
+        company = host.replace("-", " ").replace(".", " ").title()
+        return company.strip() or "Unknown"
+    except Exception:
+        return "Unknown"
+
+
+def _root_url(url: str) -> str:
+    from urllib.parse import urlparse
+    try:
+        p = urlparse(url)
+        return f"{p.scheme}://{p.netloc}"
+    except Exception:
+        return ""
+
+
+def _jarvis_parse_date(raw: str):
+    """Parse an ISO-8601 or YYYY-MM-DD string into a date object (or None)."""
+    if not raw:
+        return None
+    import re as _re
+    from datetime import date
+    # Extract YYYY-MM-DD from strings like "2026-04-15T00:00:00Z"
+    m = _re.search(r"(\d{4})-(\d{2})-(\d{2})", raw)
+    if m:
+        try:
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            pass
+    return None
