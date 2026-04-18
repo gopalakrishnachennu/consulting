@@ -239,15 +239,22 @@
     const url = input.value.trim();
     if (!url) return;
 
+    // ⚠️ Capture FormData & CSRF BEFORE disabling the input.
+    // Disabled fields are excluded from FormData, so we must snapshot now.
+    const csrf = getCsrf();
+    const body = new URLSearchParams({ url, csrfmiddlewaretoken: csrf });
+
     setLoading(true);
     hideError();
     resultEl.style.display = 'none';
 
     try {
-      const body = new FormData(form);
       const resp = await fetch('{% url "harvest-jarvis" %}', {
         method: 'POST',
-        headers: { 'X-CSRFToken': getCsrf() },
+        headers: {
+          'X-CSRFToken': csrf,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
         body,
       });
       const json = await resp.json();

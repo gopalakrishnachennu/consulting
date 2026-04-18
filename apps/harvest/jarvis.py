@@ -460,53 +460,124 @@ def _parse_jsonld(d: dict) -> dict:
 # ── HTML scrape fallback ──────────────────────────────────────────────────────
 
 def _try_html_scrape(html: str, page_url: str = "") -> Optional[dict]:
+    """
+    Best-effort extraction from any career page HTML.
+    Works on iCIMS, Taleo, SuccessFactors, ADP, and custom career sites
+    that embed job data in the DOM without JSON-LD.
+    """
     soup = BeautifulSoup(html, "html.parser")
 
-    # Title
+    # ── Title ────────────────────────────────────────────────────────────────
     title = ""
-    for sel in [
-        "h1.job-title", "h1[class*='title']", ".posting-headline h2",
-        "h1[itemprop='title']", ".job-header h1", "h1",
-    ]:
-        el = soup.select_one(sel)
+    # Priority order: specific job-title elements → any prominent h1 → page <title>
+    title_selectors = [
+        # iCIMS
+        "h1.iCIMS_JobTitle", "[class*='job-title']", "[id*='job-title']",
+        # Taleo / Oracle
+        "[class*='JobTitle']", "[id*='JobTitle']",
+        # SuccessFactors
+        "[class*='jobTitle']", "[id*='jobTitle']",
+        # ADP
+        "[data-automation='job-title']",
+        # Generic
+        "h1[itemprop='title']", "h1[class*='title']", ".posting-headline h2",
+        ".job-header h1", "header h1", "h1",
+    ]
+    for sel in title_selectors:
+        try:
+            el = soup.select_one(sel)
+        except Exception:
+            continue
         if el:
             t = el.get_text(" ", strip=True)
-            if t:
+            if t and len(t) < 250:
                 title = t
                 break
 
+    # <title> tag fallback — strip the company/site suffix
     if not title:
         tag = soup.find("title")
         if tag:
             raw = tag.get_text(" ", strip=True)
-            # Strip common suffixes: " | Company" / " - Careers"
             parts = re.split(r"\s*[|\-–—]\s*", raw)
             title = parts[0].strip()
+            # Discard if title looks like a generic page name
+            if title.lower() in ("jobs", "careers", "job search", "open positions", ""):
+                title = parts[-1].strip() if len(parts) > 1 else ""
 
-    # Company name — open graph site_name is usually cleanest
+    # og:title as last resort for title
+    if not title:
+        og = soup.find("meta", attrs={"property": "og:title"})
+        if og and og.get("content"):
+            title = og["content"].split("|")[0].split(" - ")[0].strip()
+
+    # ── Company name ──────────────────────────────────────────────────────────
     company_name = ""
-    for prop in ("og:site_name", "og:title"):
-        meta = soup.find("meta", attrs={"property": prop})
-        if meta and meta.get("content"):
-            company_name = meta["content"]
-            if prop == "og:title":
-                # "Job at Company" → keep only company part
-                parts = re.split(r"\s*(at|@)\s*", company_name, maxsplit=1)
-                company_name = parts[-1].strip() if len(parts) > 1 else ""
-            if company_name:
+    # 1. og:site_name is the cleanest signal
+    og_site = soup.find("meta", attrs={"property": "og:site_name"})
+    if og_site and og_site.get("content"):
+        company_name = og_site["content"].strip()
+
+    # 2. Try <title> tag — last segment usually has company name
+    if not company_name:
+        tag = soup.find("title")
+        if tag:
+            raw = tag.get_text(" ", strip=True)
+            parts = re.split(r"\s*[|\-–—]\s*", raw)
+            if len(parts) >= 2:
+                # Last part is often company or "Careers at Company"
+                last = parts[-1].strip()
+                last = re.sub(r"^(careers at |jobs at |careers - |jobs - )", "", last, flags=re.I).strip()
+                if last and last.lower() not in ("careers", "jobs", "job search"):
+                    company_name = last
+
+    # 3. meta name="author" / application-name
+    if not company_name:
+        for attr_name in ("application-name", "author"):
+            m = soup.find("meta", attrs={"name": attr_name})
+            if m and m.get("content"):
+                company_name = m["content"].strip()
                 break
 
-    # Description — look for large text block
+    # ── Location ──────────────────────────────────────────────────────────────
+    location_raw = ""
+    loc_selectors = [
+        "[class*='location']", "[id*='location']",
+        "[itemprop='jobLocation']", "[class*='Location']",
+        "[data-automation='job-location']",
+    ]
+    for sel in loc_selectors:
+        try:
+            el = soup.select_one(sel)
+        except Exception:
+            continue
+        if el:
+            t = el.get_text(" ", strip=True)
+            if t and len(t) < 200:
+                location_raw = t
+                break
+
+    # ── Description ───────────────────────────────────────────────────────────
     description = ""
-    for sel in [
+    desc_selectors = [
         "[class*='job-description']", "[id*='job-description']",
-        "[class*='description']", "[id*='description']",
-        "[class*='job-detail']", ".content", "article", "main",
-    ]:
-        el = soup.select_one(sel)
+        "[class*='jobDescription']", "[id*='jobDescription']",
+        "[class*='job_description']",
+        "[class*='description-content']",
+        "[itemprop='description']",
+        "[class*='job-detail']", "[id*='job-detail']",
+        "[class*='requisition']",
+        "article.job", ".job-content", "#job-content",
+        "article", "main",
+    ]
+    for sel in desc_selectors:
+        try:
+            el = soup.select_one(sel)
+        except Exception:
+            continue
         if el:
             text = el.get_text(" ", strip=True)
-            if len(text) > 200:
+            if len(text) > 150:
                 description = str(el)
                 break
 
@@ -516,8 +587,11 @@ def _try_html_scrape(html: str, page_url: str = "") -> Optional[dict]:
     return {
         "title": title,
         "company_name": company_name,
+        "location_raw": location_raw,
+        "is_remote": "remote" in location_raw.lower(),
+        "location_type": _infer_location_type(location_raw),
         "description": description,
-        "raw_payload": {"scrape_url": page_url},
+        "raw_payload": {"scrape_url": page_url, "strategy": "html_scrape"},
     }
 
 
