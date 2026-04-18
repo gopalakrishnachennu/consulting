@@ -475,7 +475,7 @@
       </div>
       <!-- Sentinel: IntersectionObserver watches this — when visible → load next page -->
       <div id="infinite-sentinel" style="height:1px;margin-bottom:40px;"
-           data-next-page="{{ page_obj.next_page_number|default:'' }}"
+           data-next-page="{% if page_obj.has_next %}{{ page_obj.next_page_number }}{% endif %}"
            data-has-next="{% if page_obj.has_next %}1{% else %}0{% endif %}"
            data-total="{{ page_obj.paginator.count }}">
       </div>
