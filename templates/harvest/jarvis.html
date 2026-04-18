@@ -315,8 +315,14 @@
     // Title
     document.getElementById('r-title').textContent = job.title || result.title || 'Untitled';
 
-    // Company
-    document.getElementById('r-company').textContent = job.company_name || result.company_name || '';
+    // Company — link to existing company profile if we matched one
+    const companyEl = document.getElementById('r-company');
+    const compName = job.company_name || result.company_name || '';
+    if (job.company_url) {
+      companyEl.innerHTML = `<a href="${job.company_url}" style="color:#38bdf8;text-decoration:none;" target="_blank">${compName}</a>`;
+    } else {
+      companyEl.textContent = compName;
+    }
 
     // Remote badge
     const remoteBadge = document.getElementById('r-remote-badge');

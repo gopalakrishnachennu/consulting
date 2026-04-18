@@ -848,8 +848,9 @@ class JarvisStatusView(SuperuserRequiredMixin, View):
                     raw_job_data = {
                         "id": job.pk,
                         "title": job.title,
-                        "company_name": job.company_name,
+                        "company_name": job.company.name if job.company else job.company_name,
                         "company_id": job.company_id,
+                        "company_url": f"/companies/{job.company_id}/" if job.company_id else "",
                         "location_raw": job.location_raw,
                         "is_remote": job.is_remote,
                         "location_type": job.location_type,

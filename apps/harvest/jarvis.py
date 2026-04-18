@@ -156,9 +156,90 @@ class JobJarvis:
             "lever": self._lever,
             "ashby": self._ashby,
             "workable": self._workable,
+            "workday": self._workday,
         }
         fn = dispatch.get(slug)
         return fn(url) if fn else None
+
+    # ── Workday ───────────────────────────────────────────────────────────────
+
+    def _workday(self, url: str) -> Optional[dict]:
+        """
+        Extract a single Workday job via the CXS search API.
+
+        Workday detail page URLs look like:
+          https://{sub}.myworkdayjobs.com/{locale}/{jobboard}/details/{title}_{jobId}
+          https://{sub}.myworkdayjobs.com/{jobboard}/job/{loc}/{title}_{jobId}
+
+        We extract (subdomain, tenant, jobboard, jobId) then POST to the
+        search API filtering by the job ID — same endpoint used by the
+        bulk harvester, but limited to 1 result.
+        """
+        # Pattern A: /details/{title}_{jobId}  (new-style)
+        # Pattern B: /job/{loc}/{title}_{jobId}  (old-style)
+        m = re.search(
+            r"([\w-]+)\.myworkdayjobs\.com"
+            r"/(?:[a-z]{2}-[A-Z]{2}/)?"          # optional locale: en-US/
+            r"([^/]+)"                             # jobboard
+            r"/(?:details|job)/[^_]*"              # /details/ or /job/{loc}/
+            r"_(R[\w-]+)",                         # _{jobId}  e.g. _R01162544
+            url, re.I,
+        )
+        if not m:
+            return None
+
+        full_subdomain = m.group(1)
+        jobboard = m.group(2)
+        job_id = m.group(3)
+
+        # tenant = subdomain minus .wd1/.wd5 suffix
+        tenant = re.sub(r"\.wd\d+$", "", full_subdomain, flags=re.I)
+
+        api_url = (
+            f"https://{full_subdomain}.myworkdayjobs.com"
+            f"/wday/cxs/{tenant}/{jobboard}/jobs"
+        )
+        payload = {
+            "appliedFacets": {},
+            "limit": 5,
+            "offset": 0,
+            "searchText": job_id,   # search by job ID — Workday returns exact match
+        }
+        try:
+            resp = self._session.post(api_url, json=payload, timeout=self.timeout)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception:
+            return None
+
+        postings = data.get("jobPostings") or []
+        if not postings:
+            return None
+
+        # Find the posting that matches our job_id
+        job = next(
+            (j for j in postings if job_id.lower() in (j.get("externalPath") or "").lower()),
+            postings[0],
+        )
+
+        ext_path = job.get("externalPath", "")
+        job_url = f"https://{full_subdomain}.myworkdayjobs.com/{jobboard}{ext_path}" if ext_path else url
+
+        loc = job.get("locationsText", "")
+        bullet = job.get("bulletFields") or []
+        ext_id = bullet[0] if bullet else job_id
+
+        return {
+            "title": job.get("title", ""),
+            "company_name": full_subdomain.split(".")[0].replace("-", " ").title(),
+            "location_raw": loc,
+            "is_remote": "remote" in loc.lower(),
+            "location_type": _infer_location_type(loc),
+            "external_id": ext_id,
+            "original_url": job_url,
+            "apply_url": job_url,
+            "raw_payload": job,
+        }
 
     # ── Greenhouse ────────────────────────────────────────────────────────────
 

@@ -1215,16 +1215,13 @@ def jarvis_ingest_task(self, url: str, user_id: int | None = None):
 
     update_task_progress(self, current=2, total=3, message="Saving to database…")
 
-    # ── Resolve Company ───────────────────────────────────────────────────────
+    # ── Resolve Company (smart matching) ─────────────────────────────────────
     from companies.models import Company
     company_name = (data.get("company_name") or "").strip()
     if not company_name:
         company_name = _extract_company_from_url(url)
 
-    company, _ = Company.objects.get_or_create(
-        name=company_name or "Unknown (Jarvis Import)",
-        defaults={"website": _root_url(url)},
-    )
+    company = _jarvis_resolve_company(company_name, url)
 
     # ── Resolve platform ──────────────────────────────────────────────────────
     # Always tag Jarvis imports as platform_slug="jarvis" so they form their
@@ -1311,7 +1308,8 @@ def jarvis_ingest_task(self, url: str, user_id: int | None = None):
         "raw_job_id": raw_job.pk,
         "created": created,
         "title": data.get("title", ""),
-        "company_name": company_name,
+        "company_name": company.name,             # actual matched company name
+        "company_id": company.pk,
         "platform_slug": platform_slug,
         "strategy": data.get("strategy", ""),
         "data": {k: v for k, v in data.items() if k != "raw_payload"},
@@ -1364,3 +1362,102 @@ def _jarvis_parse_date(raw: str):
         except ValueError:
             pass
     return None
+
+
+def _jarvis_resolve_company(company_name: str, job_url: str):
+    """
+    Smart company lookup for Jarvis imports.
+
+    Priority:
+      1. Domain match   — extract root domain from URL, look for company with
+                          matching .domain or .website (most reliable)
+      2. Exact name     — Company.name == company_name
+      3. Fuzzy contains — one name is a substring of the other
+                          e.g. "Bayview" ↔ "Bayview Asset Management"
+      4. Create new     — only when all matching strategies fail
+    """
+    from urllib.parse import urlparse
+    from django.db.models import Q
+    from companies.models import Company
+
+    # ── 1. Domain match ──────────────────────────────────────────────────────
+    root_domain = ""
+    try:
+        host = urlparse(job_url).netloc.lower()
+        # Strip well-known ATS/career subdomains
+        for sub in ("careers.", "jobs.", "boards.", "apply.", "recruiting.",
+                    "career.", "job.", "hire.", "talent.", "work."):
+            if host.startswith(sub):
+                host = host[len(sub):]
+                break
+        # Remove known ATS root domains entirely (they are not the company domain)
+        ATS_DOMAINS = (
+            ".greenhouse.io", ".lever.co", ".ashbyhq.com",
+            ".myworkdayjobs.com", ".workable.com", ".bamboohr.com",
+            ".icims.com", ".taleo.net", ".jobvite.com", ".smartrecruiters.com",
+        )
+        for ats in ATS_DOMAINS:
+            if host.endswith(ats):
+                host = ""
+                break
+        if host:
+            parts = host.split(".")
+            root_domain = ".".join(parts[-2:]) if len(parts) >= 2 else host
+    except Exception:
+        pass
+
+    if root_domain:
+        match = Company.objects.filter(
+            Q(domain__iexact=root_domain) |
+            Q(domain__iendswith="." + root_domain) |
+            Q(website__icontains=root_domain)
+        ).first()
+        if match:
+            logger.info("Jarvis company match by domain: %s → %s", root_domain, match.name)
+            return match
+
+    # ── 2. Exact name ────────────────────────────────────────────────────────
+    if company_name:
+        try:
+            company = Company.objects.get(name__iexact=company_name)
+            logger.info("Jarvis company match by exact name: %s", company.name)
+            return company
+        except Company.DoesNotExist:
+            pass
+        except Company.MultipleObjectsReturned:
+            return Company.objects.filter(name__iexact=company_name).first()
+
+    # ── 3. Fuzzy contains ────────────────────────────────────────────────────
+    # "Bayview Asset Management" ↔ "Bayview"
+    # "3M" ↔ "3M Company"
+    if company_name:
+        name_lower = company_name.lower()
+        # Find companies whose name overlaps significantly
+        first_word = company_name.split()[0] if company_name.split() else ""
+        candidates = Company.objects.filter(
+            Q(name__icontains=first_word)
+        )[:20]
+
+        best = None
+        for cand in candidates:
+            cn = cand.name.lower()
+            # One name is fully contained in the other
+            if cn in name_lower or name_lower in cn:
+                # Prefer the shorter/existing name (avoid replacing "3M" with "3M Company")
+                if best is None or len(cand.name) < len(best.name):
+                    best = cand
+        if best:
+            logger.info(
+                "Jarvis company fuzzy match: '%s' → '%s'",
+                company_name, best.name,
+            )
+            return best
+
+    # ── 4. Create new ────────────────────────────────────────────────────────
+    company, created = Company.objects.get_or_create(
+        name=company_name or "Unknown (Jarvis Import)",
+        defaults={"website": _root_url(job_url)},
+    )
+    if created:
+        logger.info("Jarvis created new company: %s", company.name)
+    return company
