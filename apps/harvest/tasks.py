@@ -641,6 +641,7 @@ def fetch_raw_jobs_for_company_task(
 
     # ── Upsert jobs ───────────────────────────────────────────────────────────
     jobs_new = jobs_updated = jobs_duplicate = jobs_failed = 0
+    upsert_errors: list[str] = []
 
     # In test mode, cap to max_jobs so we don't write hundreds of rows
     if max_jobs and len(raw_jobs) > max_jobs:
@@ -721,7 +722,10 @@ def fetch_raw_jobs_for_company_task(
 
         except Exception as exc:
             jobs_failed += 1
-            logger.error("RawJob upsert failed for label %s: %s", label_pk, exc)
+            err_str = f"{type(exc).__name__}: {exc}"
+            logger.error("RawJob upsert failed for label %s: %s", label_pk, err_str)
+            if len(upsert_errors) < 5:
+                upsert_errors.append(err_str[:300])
 
     # ── Update run record ─────────────────────────────────────────────────────
     run.status = (
@@ -735,12 +739,15 @@ def fetch_raw_jobs_for_company_task(
     run.jobs_duplicate = jobs_duplicate
     run.jobs_failed = jobs_failed
     run.completed_at = timezone.now()
+    if upsert_errors and not run.error_message:
+        run.error_message = "Upsert errors: " + " | ".join(upsert_errors)
+        run.error_type = CompanyFetchRun.ErrorType.PARSE_ERROR
     run.save(update_fields=[
         "status", "jobs_found", "jobs_total_available", "jobs_new", "jobs_updated",
-        "jobs_duplicate", "jobs_failed", "completed_at",
+        "jobs_duplicate", "jobs_failed", "completed_at", "error_message", "error_type",
     ])
 
-    # ── Update batch counters ─────────────────────────────────────────────────
+    # ── Update batch counters + auto-complete ────────────────────────────────
     if batch:
         if run.status in (CompanyFetchRun.Status.SUCCESS, CompanyFetchRun.Status.PARTIAL):
             FetchBatch.objects.filter(pk=batch.pk).update(
@@ -752,6 +759,23 @@ def fetch_raw_jobs_for_company_task(
             FetchBatch.objects.filter(pk=batch.pk).update(
                 failed_companies=models.F("failed_companies") + 1,
             )
+
+        # Auto-complete the batch when every child task has reported back
+        refreshed = FetchBatch.objects.filter(pk=batch.pk).values(
+            "total_companies", "completed_companies", "failed_companies"
+        ).first()
+        if refreshed:
+            done = refreshed["completed_companies"] + refreshed["failed_companies"]
+            total_co = refreshed["total_companies"]
+            if total_co > 0 and done >= total_co:
+                final_status = (
+                    FetchBatch.Status.COMPLETED
+                    if refreshed["failed_companies"] == 0
+                    else FetchBatch.Status.PARTIAL
+                )
+                FetchBatch.objects.filter(
+                    pk=batch.pk, status=FetchBatch.Status.RUNNING
+                ).update(status=final_status, completed_at=timezone.now())
 
     logger.info(
         "fetch_raw_jobs: label=%s new=%d updated=%d failed=%d",
@@ -819,8 +843,10 @@ def fetch_raw_jobs_batch_task(
     )
 
     # ── Build label queryset ──────────────────────────────────────────────────
+    # Include portal_alive=True (confirmed up) AND portal_alive=None (never checked).
+    # Exclude portal_alive=False (confirmed down — no point hammering dead portals).
     qs = CompanyPlatformLabel.objects.filter(
-        portal_alive=True,
+        portal_alive__in=[True, None],
         platform__isnull=False,
     ).exclude(tenant_id="").select_related("platform", "company").order_by("company__name")
 

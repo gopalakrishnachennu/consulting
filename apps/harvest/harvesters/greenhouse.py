@@ -64,7 +64,10 @@ def _parse_salary(text: str):
     return sal_min, sal_max, period
 
 
-def _detect_location_type(location_raw: str) -> tuple[str, bool]:
+def _detect_location_type(location_raw) -> tuple[str, bool]:
+    # Defensively coerce to str — Greenhouse API occasionally returns list/bool/dict
+    if not isinstance(location_raw, str):
+        location_raw = str(location_raw) if location_raw else ""
     loc_lower = location_raw.lower()
     if "remote" in loc_lower:
         return "REMOTE", True
@@ -146,8 +149,12 @@ class GreenhouseHarvester(BaseHarvester):
                 except Exception:
                     pass
 
-            loc = job.get("location", {})
-            location_raw = loc.get("name", "") if isinstance(loc, dict) else str(loc)
+            loc = job.get("location") or {}
+            if isinstance(loc, dict):
+                name = loc.get("name") or ""
+                location_raw = name if isinstance(name, str) else (str(name) if name else "")
+            else:
+                location_raw = str(loc) if loc else ""
 
             dept = ""
             depts = job.get("departments", [])
