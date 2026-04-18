@@ -33,3 +33,4 @@ logs/
 
 # Media uploads
 media/
+.env
