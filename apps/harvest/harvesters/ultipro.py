@@ -126,7 +126,7 @@ class UltiProHarvester(BaseHarvester):
                 break
 
             for j in jobs:
-                results.append(self._normalize_api(j, company_code, company_name))
+                results.append(self._normalize_api(j, company_code, jobboard_id, company_name))
 
             total = int(data.get("totalCount") or 0)
             if total:
@@ -138,7 +138,7 @@ class UltiProHarvester(BaseHarvester):
 
         return results
 
-    def _normalize_api(self, j: dict, company_code: str, company_name: str) -> dict:
+    def _normalize_api(self, j: dict, company_code: str, jobboard_id: str, company_name: str) -> dict:
         # LoadSearchResults response: PascalCase keys
         # {"Id": uuid, "Title": str, "FullTime": bool, "Locations": [{"LocalizedName": ...}], ...}
         job_id = j.get("Id") or j.get("id") or j.get("requisitionId") or j.get("jobId") or ""
@@ -192,11 +192,17 @@ class UltiProHarvester(BaseHarvester):
             }
             employment_type = emp_map.get(emp_raw, "UNKNOWN")
 
-        # OpportunityDetail link from Links dict
+        # Build OpportunityDetail URL using job Id + board GUID.
+        # Format: /{company_code}/JobBoard/{board_guid}/OpportunityDetail?opportunityId={job_id}
         links = j.get("Links") or {}
         opp_detail = links.get("OpportunityDetail") or ""
         if opp_detail and not opp_detail.startswith("http"):
             opp_detail = f"https://recruiting.ultipro.com{opp_detail}"
+        if not opp_detail and jobboard_id and job_id:
+            opp_detail = (
+                f"https://recruiting.ultipro.com/{company_code}/JobBoard/{jobboard_id}"
+                f"/OpportunityDetail?opportunityId={job_id}"
+            )
         job_url = (
             opp_detail
             or j.get("applyUrl")
@@ -205,7 +211,7 @@ class UltiProHarvester(BaseHarvester):
         )
 
         return {
-            "external_id": str(job_id),
+            "external_id": j.get("RequisitionNumber") or str(job_id),
             "original_url": job_url,
             "apply_url": job_url,
             "title": title,
