@@ -515,6 +515,7 @@ def fetch_raw_jobs_for_company_task(
     triggered_by: str = "MANUAL",
     max_jobs: int | None = None,
     since_hours: int | None = None,
+    fetch_all: bool = False,
 ):
     """
     Fetch ALL jobs for a single CompanyPlatformLabel and upsert into RawJob.
@@ -583,24 +584,37 @@ def fetch_raw_jobs_for_company_task(
     platform_slug_val = label.platform.slug if label.platform else ""
     is_scraper_platform = platform_slug_val in SCRAPER_SLUGS
 
-    # fetch_all=True for scrapers (no date filter available), False for API platforms
-    # (they use since_hours window instead — much faster on daily runs).
-    use_fetch_all = is_scraper_platform or (max_jobs is not None)
+    # fetch_all logic:
+    #   fetch_all=True  → always paginate through ALL pages, ignore since_hours filter
+    #                     (used by FETCH ALL button for initial/full crawl)
+    #   fetch_all=False → use since_hours window (fast daily incremental)
+    #   scrapers        → always fetch_all (no date filter exists in HTML)
+    #   test mode       → fetch_all so we get real data, but capped by max_jobs
+    use_fetch_all = fetch_all or is_scraper_platform or (max_jobs is not None)
     effective_since_hours = since_hours if since_hours is not None else 25
 
     try:
         if is_scraper_platform:
+            # HTML scrapers have no date filter — always fetch everything
+            raw_jobs = harvester.fetch_jobs(
+                label.company,
+                label.tenant_id,
+                fetch_all=True,
+            )
+        elif use_fetch_all:
+            # Full crawl: get ALL jobs from this company, all pages, ignore time filter
             raw_jobs = harvester.fetch_jobs(
                 label.company,
                 label.tenant_id,
                 fetch_all=True,
             )
         else:
+            # Incremental: only jobs updated in the last N hours (fast daily run)
             raw_jobs = harvester.fetch_jobs(
                 label.company,
                 label.tenant_id,
                 since_hours=effective_since_hours,
-                fetch_all=use_fetch_all,
+                fetch_all=False,
             )
         # Capture API-reported total (even when we only fetched a subset)
         run.jobs_total_available = getattr(harvester, "last_total_available", 0) or len(raw_jobs)
@@ -802,6 +816,7 @@ def fetch_raw_jobs_batch_task(
     companies_per_platform: int = 1,
     skip_platforms: list = None,
     min_hours_since_fetch: int = 6,
+    fetch_all: bool = False,
 ):
     """
     Create a FetchBatch and dispatch fetch_raw_jobs_for_company_task for every matching label.
@@ -935,6 +950,8 @@ def fetch_raw_jobs_batch_task(
             api_offset += 0.1       # 0.1s between API tasks (they throttle internally)
 
         kwargs = {"max_jobs": test_max_jobs} if test_mode else {}
+        if fetch_all and not test_mode:
+            kwargs["fetch_all"] = True   # pass full-crawl flag to child tasks
         fetch_raw_jobs_for_company_task.apply_async(
             args=[label_pk, batch.pk, "BATCH"],
             kwargs=kwargs,

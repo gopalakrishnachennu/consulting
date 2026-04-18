@@ -607,6 +607,9 @@ class TriggerBatchFetchView(SuperuserRequiredMixin, View):
             test_max_jobs=test_max_jobs,
             companies_per_platform=companies_per_platform,
             skip_platforms=skip_platforms or None,
+            # Full batch (non-test) fetches ALL jobs from all pages for every company.
+            # Scheduled incremental runs don't pass fetch_all, so they use since_hours=25.
+            fetch_all=not test_mode,
         )
         if test_mode:
             skip_note = f", skip: {', '.join(skip_platforms)}" if skip_platforms else ""
