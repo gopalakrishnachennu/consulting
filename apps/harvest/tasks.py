@@ -996,6 +996,102 @@ def retry_failed_raw_jobs_task(self):
     return {"queued": queued}
 
 
+@shared_task(bind=True, name="harvest.validate_raw_job_urls")
+def validate_raw_job_urls_task(
+    self,
+    platform_slug: str | None = None,
+    batch_size: int = 200,
+    concurrency: int = 20,
+    max_jobs: int | None = None,
+):
+    """
+    HEAD-check raw job URLs and mark is_active=False for ones that return 4xx/5xx.
+
+    Runs after every FETCH ALL batch (or on a schedule) to surface broken links
+    before a human ever sees them. Results are visible in the Jobs Browser
+    (SYNC column stays PENDING; is_active=False jobs are hidden from candidates).
+
+    Uses a thread pool for concurrency — HEAD requests are I/O bound so
+    parallelism is safe and fast.
+
+    platform_slug — limit to one platform (e.g. "workday")
+    batch_size    — DB fetch chunk size (memory control)
+    concurrency   — parallel HTTP threads
+    max_jobs      — cap total checked (for quick spot-checks)
+    """
+    import requests
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from .models import RawJob
+
+    qs = RawJob.objects.filter(is_active=True).exclude(original_url="")
+    if platform_slug:
+        qs = qs.filter(platform_slug=platform_slug)
+    if max_jobs:
+        qs = qs[:max_jobs]
+
+    total = qs.count()
+    update_task_progress(self, current=0, total=total, message=f"Checking {total:,} URLs…")
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (compatible; GoCareers-UrlValidator/1.0; +https://chennu.co)"
+        )
+    }
+
+    checked = alive = dead = errors = 0
+
+    def check_url(job_id: int, url: str) -> tuple[int, bool]:
+        """Returns (job_id, is_alive)."""
+        try:
+            r = requests.head(url, timeout=10, allow_redirects=True, headers=headers)
+            if r.status_code == 405:
+                # HEAD blocked — try GET streaming (just headers)
+                r = requests.get(url, timeout=12, stream=True, allow_redirects=True, headers=headers)
+                r.close()
+            return job_id, r.status_code < 400
+        except Exception:
+            return job_id, False  # treat network errors as dead
+
+    offset = 0
+    while True:
+        chunk = list(qs.values("id", "original_url")[offset: offset + batch_size])
+        if not chunk:
+            break
+        if max_jobs and offset >= max_jobs:
+            break
+
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            futures = {
+                pool.submit(check_url, row["id"], row["original_url"]): row["id"]
+                for row in chunk
+            }
+            dead_ids = []
+            for future in as_completed(futures):
+                job_id, is_alive = future.result()
+                checked += 1
+                if is_alive:
+                    alive += 1
+                else:
+                    dead += 1
+                    dead_ids.append(job_id)
+
+            # Mark dead jobs inactive in one batch update
+            if dead_ids:
+                RawJob.objects.filter(pk__in=dead_ids).update(is_active=False)
+
+        offset += batch_size
+        update_task_progress(
+            self, current=checked, total=total,
+            message=f"Checked {checked:,}/{total:,} — {alive:,} alive, {dead:,} dead",
+        )
+
+    logger.info(
+        "validate_raw_job_urls: checked=%d alive=%d dead=%d errors=%d",
+        checked, alive, dead, errors,
+    )
+    return {"checked": checked, "alive": alive, "dead": dead}
+
+
 @shared_task(name="harvest.cleanup_harvested_jobs")
 def cleanup_harvested_jobs_task():
     """Delete expired HarvestedJobs and old HarvestRun records."""

@@ -39,14 +39,18 @@ WORKDAY_PATHS_FALLBACK = [
 PAGE_SIZE = 20
 
 
-def _normalize_workday_job(job: dict, job_domain: str, company_name: str) -> dict:
+def _normalize_workday_job(job: dict, job_domain: str, company_name: str, jobboard: str = "") -> dict:
     """Normalize a single Workday job posting dict to the canonical RawJob schema."""
     ext_path = job.get("externalPath", "")
-    job_url = (
-        f"https://{job_domain}.myworkdayjobs.com{ext_path}"
-        if ext_path
-        else ""
-    )
+    # Correct Workday URL format: https://{subdomain}.myworkdayjobs.com/{jobboard}/job/...
+    # Without the jobboard prefix the URL 404s — Workday requires it.
+    if ext_path:
+        if jobboard:
+            job_url = f"https://{job_domain}.myworkdayjobs.com/{jobboard}{ext_path}"
+        else:
+            job_url = f"https://{job_domain}.myworkdayjobs.com{ext_path}"
+    else:
+        job_url = ""
 
     location_raw = job.get("locationsText", "")
     loc_lower = location_raw.lower()
@@ -173,7 +177,8 @@ class WorkdayHarvester(BaseHarvester):
                 continue
 
             # Found a valid path — collect results
-            results = [_normalize_workday_job(j, job_domain, company.name) for j in postings]
+            # `path` is the jobboard (e.g. "Search", "External") needed for valid URLs
+            results = [_normalize_workday_job(j, job_domain, company.name, jobboard=path) for j in postings]
             self.last_total_available = int(data.get("total") or len(postings))
 
             if fetch_all:
@@ -194,7 +199,7 @@ class WorkdayHarvester(BaseHarvester):
                     if not page_postings:
                         break
                     results.extend(
-                        _normalize_workday_job(j, job_domain, company.name)
+                        _normalize_workday_job(j, job_domain, company.name, jobboard=path)
                         for j in page_postings
                     )
                     offset += PAGE_SIZE
