@@ -521,7 +521,7 @@ class RawJobListView(SuperuserRequiredMixin, ListView):
 class RawJobDetailView(SuperuserRequiredMixin, DetailView):
     model = RawJob
     template_name = "harvest/rawjob_detail.html"
-    context_object_name = "job"
+    context_object_name = "rawjob"  # template uses {{ rawjob.* }}
 
     def get_queryset(self):
         return RawJob.objects.select_related("company", "job_platform", "platform_label")

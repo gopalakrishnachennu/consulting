@@ -68,7 +68,17 @@ def _normalize_workday_job(job: dict, job_domain: str, company_name: str, jobboa
         location_type = "UNKNOWN"
 
     title = job.get("title", "")
-    exp_level = _detect_experience_level(title, "")
+
+    # Workday search API sometimes includes a short description or full body
+    description = (
+        job.get("jobDescription", {}).get("content", "")
+        or job.get("jobPostingDescription", {}).get("content", "")
+        or job.get("shortDescription", "")
+        or ""
+    )
+    if isinstance(description, dict):
+        description = description.get("content", "") or ""
+    exp_level = _detect_experience_level(title, description[:500])
 
     # Workday bullet fields sometimes contain the req ID
     ext_id = ""
@@ -76,13 +86,22 @@ def _normalize_workday_job(job: dict, job_domain: str, company_name: str, jobboa
     if bullet:
         ext_id = bullet[0] if bullet else ""
 
+    # Department from jobFamily or jobFamilyGroup
+    dept = (
+        (job.get("jobFamilyGroup") or [{}])[0].get("jobFamilyGroupName", "")
+        if isinstance(job.get("jobFamilyGroup"), list)
+        else job.get("jobFamilyGroup", "")
+        if isinstance(job.get("jobFamilyGroup"), str)
+        else ""
+    )
+
     return {
         "external_id": ext_id,
         "original_url": job_url,
         "apply_url": job_url,
         "title": title,
         "company_name": company_name,
-        "department": "",
+        "department": dept,
         "team": "",
         "location_raw": location_raw,
         "city": "",
@@ -97,7 +116,7 @@ def _normalize_workday_job(job: dict, job_domain: str, company_name: str, jobboa
         "salary_currency": "USD",
         "salary_period": "",
         "salary_raw": "",
-        "description": "",
+        "description": description,
         "requirements": "",
         "benefits": "",
         "posted_date_raw": job.get("postedOn", ""),
