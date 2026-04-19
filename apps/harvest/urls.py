@@ -18,6 +18,7 @@ from .views import (
     RawJobDetailView,
     RawJobListView,
     RawJobStatsView,
+    RunBackfillDescriptionsView,
     RunBackfillNowView,
     RunCleanupNowView,
     RunDetectNowView,
@@ -63,6 +64,7 @@ urlpatterns = [
     path("run/fetch-company/", TriggerCompanyFetchView.as_view(), name="harvest-run-fetch-company"),
     path("run/fetch-batch/", TriggerBatchFetchView.as_view(), name="harvest-run-fetch-batch"),
     path("run/stop-batch/", StopBatchView.as_view(), name="harvest-run-stop-batch"),
+    path("run/backfill-descriptions/", RunBackfillDescriptionsView.as_view(), name="harvest-run-backfill-descriptions"),
     # Job Jarvis — paste-any-URL ingestion
     path("jarvis/", JarvisView.as_view(), name="harvest-jarvis"),
     path("jarvis/status/", JarvisStatusView.as_view(), name="harvest-jarvis-status"),

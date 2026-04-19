@@ -730,6 +730,29 @@ class StopBatchView(SuperuserRequiredMixin, View):
         return redirect("harvest-rawjobs")
 
 
+class RunBackfillDescriptionsView(SuperuserRequiredMixin, View):
+    """POST — launch backfill_descriptions_task to fetch JDs for jobs that have none."""
+
+    def post(self, request):
+        from .tasks import backfill_descriptions_task
+
+        platform_slug = request.POST.get("platform_slug", "").strip() or None
+        batch_size = int(request.POST.get("batch_size", "200") or "200")
+        offset = int(request.POST.get("offset", "0") or "0")
+
+        task = backfill_descriptions_task.delay(
+            batch_size=batch_size,
+            platform_slug=platform_slug,
+            offset=offset,
+        )
+        label = f"platform={platform_slug}" if platform_slug else "all platforms"
+        messages.success(
+            request,
+            f"Description backfill started ({label}, batch={batch_size}) — Task {task.id[:8]}…",
+        )
+        return redirect_with_task_progress("harvest-rawjobs", task.id, f"Backfill descriptions ({label})")
+
+
 class RawJobStatsView(SuperuserRequiredMixin, View):
     """JSON endpoint — live stats for dashboard polling."""
     def get(self, request):

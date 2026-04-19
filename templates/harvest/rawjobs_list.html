@@ -264,6 +264,19 @@
               </button>
             </form>
 
+            <!-- ██ BACKFILL DESCRIPTIONS BUTTON ██ -->
+            <form method="POST" action="{% url 'harvest-run-backfill-descriptions' %}" id="backfill-desc-form" style="margin-bottom:10px;">
+              {% csrf_token %}
+              <input type="hidden" name="batch_size" value="200">
+              <button type="button" onclick="confirmBackfillDesc()"
+                style="width:100%;padding:11px;background:linear-gradient(135deg,#0d9488,#0f766e);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:.3px;box-shadow:0 3px 10px rgba(13,148,136,.30);display:flex;align-items:center;justify-content:center;gap:8px;transition:all .2s;"
+                onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 5px 16px rgba(13,148,136,.40)';"
+                onmouseout="this.style.transform='';this.style.boxShadow='0 3px 10px rgba(13,148,136,.30)';">
+                <span style="font-size:16px;">📝</span>
+                <span>BACKFILL JOB DESCRIPTIONS — Fetch JDs for jobs missing them</span>
+              </button>
+            </form>
+
             <div style="position:relative;margin-bottom:14px;">
               <div style="border-top:1px solid #e2e8f0;"></div>
               <span style="position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:#fff;padding:0 10px;font-size:11px;color:#94a3b8;font-weight:500;">or filter by platform</span>
@@ -861,6 +874,41 @@ function confirmFetchAll() {
         <button onclick="document.getElementById('fetch-all-form').submit();this.closest('[style*=fixed]').remove();"
           style="padding:10px 28px;background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 4px 12px rgba(220,38,38,.3);">
           ⚡ Yes, Fetch Everything!
+        </button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+}
+
+function confirmBackfillDesc() {
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:16px;padding:32px;max-width:460px;width:90%;box-shadow:0 24px 48px rgba(0,0,0,.2);text-align:center;">
+      <div style="font-size:48px;margin-bottom:12px;">📝</div>
+      <h2 style="font-size:18px;font-weight:800;color:#0f172a;margin:0 0 10px;">Backfill Job Descriptions?</h2>
+      <p style="font-size:13px;color:#64748b;line-height:1.6;margin:0 0 6px;">
+        This will fetch full descriptions for every job that currently has none.
+      </p>
+      <p style="font-size:12px;color:#94a3b8;margin:0 0 20px;">
+        Processes <strong>200 jobs per run</strong> at ~0.6 s/job (polite rate). For 100k jobs, run it multiple times or schedule it. Progress shows live.
+      </p>
+      <div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px;padding:10px 14px;margin-bottom:20px;text-align:left;">
+        <p style="font-size:12px;color:#134e4a;margin:0;line-height:1.6;">
+          ✅ Workday, iCIMS, Ashby, SmartRecruiters → scraped via JSON-LD<br>
+          ✅ Safe to run multiple times (skips jobs that already have descriptions)<br>
+          ✅ Runs in background — won't block your browser
+        </p>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:center;">
+        <button onclick="this.closest('[style*=fixed]').remove();"
+          style="padding:10px 24px;background:#f1f5f9;color:#374151;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">
+          Cancel
+        </button>
+        <button onclick="document.getElementById('backfill-desc-form').submit();this.closest('[style*=fixed]').remove();"
+          style="padding:10px 28px;background:linear-gradient(135deg,#0d9488,#0f766e);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(13,148,136,.3);">
+          📝 Yes, Start Backfill
         </button>
       </div>
     </div>`;

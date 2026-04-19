@@ -1479,3 +1479,131 @@ def _jarvis_resolve_company(company_name: str, job_url: str):
     if created:
         logger.info("Jarvis created new company: %s", company.name)
     return company
+
+
+# ─── Description Backfill ────────────────────────────────────────────────────
+
+@shared_task(bind=True, name="harvest.backfill_descriptions")
+def backfill_descriptions_task(
+    self,
+    batch_size: int = 200,
+    platform_slug: str | None = None,
+    offset: int = 0,
+):
+    """
+    For every RawJob that has no description, fetch the original_url with
+    the Jarvis engine (JSON-LD → HTML scrape) and save the extracted fields:
+    description, requirements, benefits, salary_min/max, employment_type,
+    experience_level, department, city, state, country, skills.
+
+    Safe to run multiple times (idempotent — skips jobs that already have
+    a description). Can be targeted at a single platform_slug.
+
+    Progress is streamed to the task-progress widget.
+    """
+    import time as _time
+    from .jarvis import JobJarvis
+    from .models import RawJob
+
+    DELAY_BETWEEN = 0.6  # seconds between requests — polite rate
+
+    qs = RawJob.objects.filter(description="").exclude(original_url="")
+    if platform_slug:
+        qs = qs.filter(platform_slug=platform_slug)
+
+    total = qs.count()
+    if total == 0:
+        return {"message": "All jobs already have descriptions.", "updated": 0}
+
+    update_task_progress(self, current=0, total=total,
+                         message=f"Found {total} jobs without description…")
+
+    jarvis = JobJarvis()
+    updated = skipped = failed = 0
+
+    jobs = list(qs.order_by("id")[offset: offset + batch_size])
+
+    for idx, job in enumerate(jobs, start=1):
+        try:
+            data = jarvis.ingest(job.original_url)
+        except Exception as exc:
+            logger.warning("Backfill failed for job %s (%s): %s", job.pk, job.original_url, exc)
+            failed += 1
+            _time.sleep(DELAY_BETWEEN)
+            continue
+
+        if not data:
+            skipped += 1
+            _time.sleep(DELAY_BETWEEN)
+            continue
+
+        update_fields = {}
+
+        desc = (data.get("description") or "").strip()
+        if desc:
+            update_fields["description"] = desc[:50000]
+
+        req = (data.get("requirements") or "").strip()
+        if req:
+            update_fields["requirements"] = req[:20000]
+
+        ben = (data.get("benefits") or "").strip()
+        if ben:
+            update_fields["benefits"] = ben[:10000]
+
+        for field in ("salary_min", "salary_max"):
+            v = data.get(field)
+            if v is not None:
+                update_fields[field] = v
+
+        for field in ("salary_currency", "salary_period", "salary_raw"):
+            v = (data.get(field) or "").strip()
+            if v:
+                update_fields[field] = v[:256]
+
+        for field in ("employment_type", "experience_level"):
+            v = (data.get(field) or "").strip()
+            if v and v != "UNKNOWN":
+                update_fields[field] = v
+
+        for field in ("department", "city", "state", "country", "location_raw"):
+            v = (data.get(field) or "").strip()
+            if v:
+                update_fields[field] = v[:256]
+
+        for field in ("is_remote", "location_type"):
+            v = data.get(field)
+            if v is not None and v not in ("", "UNKNOWN"):
+                update_fields[field] = v
+
+        # Merge any new keys into raw_payload without overwriting existing ones
+        if data.get("raw_payload"):
+            merged = dict(data["raw_payload"])
+            merged.update(job.raw_payload or {})  # existing wins
+            update_fields["raw_payload"] = merged
+
+        if update_fields:
+            RawJob.objects.filter(pk=job.pk).update(**update_fields)
+            updated += 1
+            logger.info("Backfill updated job %s (%s)", job.pk, job.title[:60])
+        else:
+            skipped += 1
+
+        update_task_progress(
+            self,
+            current=idx,
+            total=len(jobs),
+            message=f"Updated {updated} / {idx} processed (failed {failed})",
+        )
+        _time.sleep(DELAY_BETWEEN)
+
+    result = {
+        "updated": updated,
+        "skipped": skipped,
+        "failed": failed,
+        "total_processed": len(jobs),
+        "total_without_desc": total,
+        "remaining": max(0, total - (offset + len(jobs))),
+    }
+    logger.info("Backfill descriptions complete: %s", result)
+    return result
