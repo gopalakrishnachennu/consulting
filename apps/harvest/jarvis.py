@@ -491,6 +491,12 @@ def _parse_jsonld(d: dict) -> dict:
         city    = _str_val(addr.get("addressLocality", ""))
         state   = _str_val(addr.get("addressRegion", ""))
         country = _str_val(addr.get("addressCountry", ""))
+        # Some publishers (e.g. Microsoft) put "WA,US" in addressRegion —
+        # strip any trailing country code suffix after a comma
+        if "," in state and not country:
+            state, country = [p.strip() for p in state.split(",", 1)]
+        elif "," in state:
+            state = state.split(",")[0].strip()
         location_raw = ", ".join(p for p in [city, state, country] if p)
 
     # Remote
