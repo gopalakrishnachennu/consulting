@@ -56,6 +56,7 @@ PLATFORM_PATTERNS: dict[str, list[str]] = {
     "smartrecruiters": ["smartrecruiters.com/jobs", "jobs.smartrecruiters.com"],
     "workable":        ["apply.workable.com", "jobs.workable.com"],
     "bamboohr":        ["bamboohr.com/careers", "bamboohr.com/jobs"],
+    "recruitee":       [".recruitee.com/o/", "recruitee.com/o/"],
     "icims":           ["careers.icims.com", "icims.com/jobs"],
     "jobvite":         ["jobs.jobvite.com", "jobvite.com/company"],
     "taleo":           ["taleo.net/careersection"],
@@ -140,6 +141,10 @@ class JobJarvis:
             return result
 
         # ── Strategy 2: JSON-LD structured data ───────────────────────────────
+        # Many career sites emit JobPosting JSON-LD with title/location but an empty
+        # or useless description. We used to return immediately after JSON-LD, which
+        # skipped HTML scrape — backfill then left those jobs blank while Greenhouse /
+        # Lever (API-first with full body) looked fine.
         jsonld = _try_jsonld(html)
         if jsonld:
             # Merge: API metadata wins for non-empty fields; JSON-LD fills gaps.
@@ -148,7 +153,7 @@ class JobJarvis:
             for k, v in jsonld.items():
                 cur = result.get(k)
                 if k == "description":
-                    # Always take description from JSON-LD (it's the whole point)
+                    # Always take description from JSON-LD when it has real content
                     if v:
                         result[k] = v
                 elif v not in _EMPTY and cur in _EMPTY:
@@ -158,11 +163,17 @@ class JobJarvis:
             else:
                 result["strategy"] = "jsonld"
             _enrich_inferred(result)
-            return result
+            desc = (result.get("description") or "").strip()
+            if desc:
+                return result
+            logger.debug(
+                "Jarvis: JSON-LD matched but no description — falling through to HTML scrape (%s)",
+                platform_slug or "unknown",
+            )
 
         # ── Strategy 3: HTML scrape fallback ──────────────────────────────────
         scraped = _try_html_scrape(html, final_url)
-        if scraped and scraped.get("title"):
+        if scraped and (scraped.get("title") or scraped.get("description")):
             _EMPTY = ("", "UNKNOWN", None, [], {})
             for k, v in scraped.items():
                 cur = result.get(k)
@@ -173,6 +184,8 @@ class JobJarvis:
                     result[k] = v
             if result.get("strategy", "").startswith("api:"):
                 result["strategy"] = f"{result['strategy']}+html"
+            elif jsonld:
+                result["strategy"] = "jsonld+html"
             else:
                 result["strategy"] = "html_scrape"
             _enrich_inferred(result)
@@ -209,6 +222,9 @@ class JobJarvis:
             "ashby": self._ashby,
             "workable": self._workable,
             "workday": self._workday,
+            "bamboohr": self._bamboohr,
+            "smartrecruiters": self._smartrecruiters,
+            "recruitee": self._recruitee,
         }
         fn = dispatch.get(slug)
         return fn(url) if fn else None
@@ -281,12 +297,24 @@ class JobJarvis:
         bullet = job.get("bulletFields") or []
         ext_id = bullet[0] if bullet else job_id
 
+        # Same body extraction as WorkdayHarvester._normalize_workday_job — search hits
+        # often include full HTML here; Jarvis previously omitted it so backfill stayed empty.
+        description = (
+            (job.get("jobDescription") or {}).get("content", "")
+            or (job.get("jobPostingDescription") or {}).get("content", "")
+            or job.get("shortDescription", "")
+            or ""
+        )
+        if isinstance(description, dict):
+            description = description.get("content", "") or ""
+
         return {
             "title": job.get("title", ""),
             "company_name": full_subdomain.split(".")[0].replace("-", " ").title(),
             "location_raw": loc,
             "is_remote": "remote" in loc.lower(),
             "location_type": _infer_location_type(loc),
+            "description": description,
             "external_id": ext_id,
             "original_url": job_url,
             "apply_url": job_url,
@@ -474,6 +502,173 @@ class JobJarvis:
             "apply_url": url,
             "original_url": url,
             "raw_payload": data,
+        }
+
+    def _bamboohr(self, url: str) -> Optional[dict]:
+        """
+        BambooHR public job JSON — same /careers/{id}/detail endpoint as BambooHRHarvester.
+
+        Raw jobs store URLs like https://{tenant}.bamboohr.com/careers/{id} (no HTML body).
+        """
+        m = re.search(
+            r"https?://([^/?#\s]+)\.bamboohr\.com/careers/(\d+)",
+            url,
+            re.I,
+        )
+        if not m:
+            return None
+        host_slug, job_id = m.group(1), m.group(2)
+        detail_url = f"https://{host_slug}.bamboohr.com/careers/{job_id}/detail"
+        try:
+            resp = self._session.get(
+                detail_url,
+                timeout=self.timeout,
+                headers={
+                    "User-Agent": _JARVIS_UA,
+                    "Accept": "application/json, text/javascript, */*; q=0.01",
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+        except Exception:
+            return None
+
+        jo = (payload.get("result") or {}).get("jobOpening") or {}
+        desc = (jo.get("description") or "").strip()
+        title = (
+            (jo.get("jobTitle") or jo.get("title") or jo.get("jobOpeningName") or "")
+        ).strip()
+        dloc = jo.get("location") or {}
+        city = (dloc.get("city") or "").strip()
+        state = (dloc.get("state") or "").strip()
+        country = (dloc.get("addressCountry") or dloc.get("country") or "").strip()
+        loc = ", ".join(p for p in (city, state, country) if p)
+
+        return {
+            "title": title,
+            "company_name": host_slug.replace("-", " ").title(),
+            "location_raw": loc or "",
+            "city": city,
+            "state": state,
+            "country": country,
+            "description": desc,
+            "department": (jo.get("departmentLabel") or jo.get("department") or "")[:256],
+            "external_id": str(job_id),
+            "original_url": url.strip(),
+            "apply_url": url.strip(),
+            "raw_payload": payload,
+        }
+
+    def _smartrecruiters(self, url: str) -> Optional[dict]:
+        """
+        SmartRecruiters public posting detail API (same as SmartRecruitersHarvester).
+
+        URLs: https://jobs.smartrecruiters.com/{companySlug}/{postingId}
+        """
+        m = re.search(
+            r"https?://(?:jobs\.)?smartrecruiters\.com/([^/?#]+)/([^/?#]+)",
+            url,
+            re.I,
+        )
+        if not m:
+            return None
+        slug, job_id = m.group(1), m.group(2)
+        detail_url = f"https://api.smartrecruiters.com/v1/companies/{slug}/postings/{job_id}"
+        try:
+            resp = self._session.get(detail_url, timeout=self.timeout)
+            resp.raise_for_status()
+            detail = resp.json()
+        except Exception:
+            return None
+
+        if not isinstance(detail, dict) or "error" in detail:
+            return None
+
+        sections = (detail.get("jobAd") or {}).get("sections") or {}
+        description = (sections.get("jobDescription") or {}).get("text") or ""
+        requirements = (sections.get("qualifications") or {}).get("text") or ""
+        benefits = (sections.get("additionalInformation") or {}).get("text") or ""
+
+        loc = (detail.get("location") or {}) if isinstance(detail.get("location"), dict) else {}
+        city = (loc.get("city") or "") if isinstance(loc, dict) else ""
+        state = (loc.get("region") or "") if isinstance(loc, dict) else ""
+        country = (loc.get("country") or "") if isinstance(loc, dict) else ""
+        location_raw = ", ".join(x for x in (city, state, country) if x)
+
+        ref = detail.get("ref") or url
+        title = (detail.get("name") or "")[:512]
+
+        return {
+            "title": title,
+            "company_name": slug.replace("-", " ").title(),
+            "location_raw": location_raw,
+            "city": city,
+            "state": state,
+            "country": country,
+            "description": description,
+            "requirements": requirements,
+            "benefits": benefits,
+            "external_id": job_id,
+            "original_url": ref,
+            "apply_url": ref,
+            "raw_payload": detail,
+        }
+
+    def _recruitee(self, url: str) -> Optional[dict]:
+        """
+        Recruitee public offers API — match one offer by /o/{slug} path.
+
+        List endpoint returns descriptions (same as RecruiteeHarvester).
+        """
+        m = re.search(
+            r"https?://([\w-]+)\.recruitee\.com/o/([^/?#]+)",
+            url,
+            re.I,
+        )
+        if not m:
+            return None
+        tenant, opening_slug = m.group(1), m.group(2)
+        api_url = f"https://{tenant}.recruitee.com/api/offers/"
+        try:
+            resp = self._session.get(api_url, timeout=self.timeout)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception:
+            return None
+
+        if not isinstance(data, dict):
+            return None
+        offers = data.get("offers") or []
+        offer = next(
+            (
+                o
+                for o in offers
+                if (o.get("slug") or "") == opening_slug
+                or str(o.get("id") or "") == opening_slug
+                or (opening_slug in (o.get("careers_url") or ""))
+            ),
+            None,
+        )
+        if not offer:
+            return None
+
+        city = offer.get("city") or ""
+        country = offer.get("country") or ""
+        location_raw = ", ".join(x for x in (city, country) if x)
+
+        return {
+            "title": offer.get("title") or "",
+            "company_name": tenant.replace("-", " ").title(),
+            "location_raw": location_raw,
+            "city": city,
+            "country": country,
+            "description": offer.get("description") or "",
+            "requirements": offer.get("requirements") or "",
+            "external_id": str(offer.get("id") or ""),
+            "original_url": url.strip(),
+            "apply_url": (offer.get("careers_url") or url).strip(),
+            "raw_payload": offer,
         }
 
 
@@ -708,9 +903,12 @@ def _try_html_scrape(html: str, page_url: str = "") -> Optional[dict]:
         "[itemprop='description']",
         "[class*='job-detail']", "[id*='job-detail']",
         "[class*='requisition']",
+        "[class*='posting-description']", "[id*='posting-description']",
+        "[data-testid*='description']", "[data-automation*='description']",
         "article.job", ".job-content", "#job-content",
         "article", "main",
     ]
+    _MIN_DESC_CHARS = 72
     for sel in desc_selectors:
         try:
             el = soup.select_one(sel)
@@ -718,12 +916,15 @@ def _try_html_scrape(html: str, page_url: str = "") -> Optional[dict]:
             continue
         if el:
             text = el.get_text(" ", strip=True)
-            if len(text) > 150:
+            if len(text) >= _MIN_DESC_CHARS:
                 description = str(el)
                 break
 
-    if not title:
+    # Title is nice-to-have for display; description is what backfill cares about.
+    if not title and not description:
         return None
+    if not title:
+        title = "Job posting"
 
     return {
         "title": title,

@@ -1535,6 +1535,8 @@ def backfill_descriptions_task(
     batch_size: int = 200,
     platform_slug: str | None = None,
     offset: int = 0,
+    _chain_depth: int = 0,
+    _skip_streak: int = 0,
 ):
     """
     For every RawJob that has no description, fetch the original_url with
@@ -1548,26 +1550,51 @@ def backfill_descriptions_task(
     Progress is streamed to the task-progress widget.
     """
     import time as _time
+    from django.db.models import Value
+    from django.db.models.functions import Coalesce, Trim
+
     from .jarvis import JobJarvis
     from .models import RawJob
 
     DELAY_BETWEEN = 0.6  # seconds between requests — polite rate
+    MAX_CHAIN_DEPTH = 600  # safety cap (~120k jobs at batch_size 200)
 
-    qs = RawJob.objects.filter(description="").exclude(original_url="")
-    if platform_slug:
-        qs = qs.filter(platform_slug=platform_slug)
+    if offset:
+        logger.warning(
+            "backfill_descriptions_task: offset=%s is ignored (queryset shrinks as rows are updated). "
+            "Use batch_size + auto-chaining only.",
+            offset,
+        )
 
+    def _qs_missing_description():
+        q = (
+            RawJob.objects.annotate(
+                _desc_stripped=Coalesce(Trim("description"), Value("")),
+            )
+            .filter(_desc_stripped="")
+            .exclude(original_url="")
+        )
+        if platform_slug:
+            q = q.filter(platform_slug=platform_slug)
+        return q
+
+    qs = _qs_missing_description()
     total = qs.count()
     if total == 0:
         return {"message": "All jobs already have descriptions.", "updated": 0}
 
-    update_task_progress(self, current=0, total=total,
-                         message=f"Found {total} jobs without description…")
+    update_task_progress(
+        self,
+        current=0,
+        total=min(batch_size, total),
+        message=f"Found {total} jobs without description (batch {batch_size}, chain depth {_chain_depth})…",
+    )
 
     jarvis = JobJarvis()
     updated = skipped = failed = 0
 
-    jobs = list(qs.order_by("id")[offset: offset + batch_size])
+    # Always slice from the start: rows leave this queryset as soon as description is set.
+    jobs = list(qs.order_by("pk")[:batch_size])
 
     for idx, job in enumerate(jobs, start=1):
         try:
@@ -1578,7 +1605,7 @@ def backfill_descriptions_task(
             _time.sleep(DELAY_BETWEEN)
             continue
 
-        if not data:
+        if (data.get("error") or "").strip() and not (data.get("description") or "").strip():
             skipped += 1
             _time.sleep(DELAY_BETWEEN)
             continue
@@ -1657,18 +1684,51 @@ def backfill_descriptions_task(
             self,
             current=idx,
             total=len(jobs),
-            message=f"Updated {updated} / {idx} processed (failed {failed})",
+            message=f"Updated {updated} / {idx} processed (failed {failed}, skipped {skipped})",
         )
         _time.sleep(DELAY_BETWEEN)
 
+    remaining_n = _qs_missing_description().count()
+    skip_streak_next = _skip_streak + 1 if (updated == 0 and failed == 0) else 0
     result = {
         "updated": updated,
         "skipped": skipped,
         "failed": failed,
         "total_processed": len(jobs),
-        "total_without_desc": total,
-        "remaining": max(0, total - (offset + len(jobs))),
+        "total_without_desc_start": total,
+        "remaining": remaining_n,
+        "chain_depth": _chain_depth,
+        "skip_streak": skip_streak_next,
     }
+
+    # Queue next chunk without offset (rows already updated drop out of the queryset).
+    # Stop after many consecutive no-progress rounds to avoid an infinite Celery loop
+    # when every URL is blocked or unsupported.
+    should_chain = (
+        remaining_n > 0
+        and _chain_depth < MAX_CHAIN_DEPTH
+        and len(jobs) > 0
+        and skip_streak_next < 20
+    )
+    if should_chain:
+        try:
+            backfill_descriptions_task.apply_async(
+                kwargs={
+                    "batch_size": batch_size,
+                    "platform_slug": platform_slug,
+                    "offset": 0,
+                    "_chain_depth": _chain_depth + 1,
+                    "_skip_streak": skip_streak_next,
+                },
+                countdown=2,
+            )
+            result["chained_next"] = True
+        except Exception as exc:
+            logger.warning("Could not chain backfill_descriptions_task: %s", exc)
+            result["chained_next"] = False
+    else:
+        result["chained_next"] = False
+
     logger.info("Backfill descriptions complete: %s", result)
     return result
 

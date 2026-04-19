@@ -941,12 +941,13 @@ function confirmBackfillDesc() {
         This will fetch full descriptions for every job that currently has none.
       </p>
       <p style="font-size:12px;color:#94a3b8;margin:0 0 20px;">
-        Processes <strong>200 jobs per run</strong> at ~0.6 s/job (polite rate). For 100k jobs, run it multiple times or schedule it. Progress shows live.
+        Each Celery task processes <strong>200 jobs</strong> (~0.6 s between requests). When more rows still need a JD, the task <strong>auto-queues the next chunk</strong> until done or Celery hits a safety cap — one click can drain a large backlog.
       </p>
       <div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px;padding:10px 14px;margin-bottom:20px;text-align:left;">
         <p style="font-size:12px;color:#134e4a;margin:0;line-height:1.6;">
-          ✅ Workday, iCIMS, Ashby, SmartRecruiters → scraped via JSON-LD<br>
-          ✅ Safe to run multiple times (skips jobs that already have descriptions)<br>
+          ✅ Greenhouse / Lever use public APIs; other boards use JSON-LD + HTML + platform JSON where available (e.g. BambooHR <code>/careers/&lt;id&gt;/detail</code>)<br>
+          ✅ Safe to run multiple times (whitespace-only descriptions count as empty)<br>
+          ✅ <strong>Sync status</strong> (PENDING/SYNCED) is separate — use &quot;Sync to Pool&quot; to publish into the main job list<br>
           ✅ Runs in background — won't block your browser
         </p>
       </div>
