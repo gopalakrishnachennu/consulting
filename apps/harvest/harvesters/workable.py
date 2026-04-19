@@ -3,7 +3,11 @@ WorkableHarvester — Public Workable Jobs API
 
 Workable exposes a public undocumented but stable REST API:
   List:   POST https://apply.workable.com/api/v3/accounts/{company}/jobs
-  Detail: GET  https://apply.workable.com/api/v1/widget/accounts/{company}/jobs/{shortcode}
+  Detail: GET  https://apply.workable.com/api/v1/accounts/{company}/jobs/{shortcode}
+
+NOTE: The old detail URL included "/widget/" in the path which Workable removed.
+  Broken:  api/v1/widget/accounts/{slug}/jobs/{shortcode}  → 404 (2025+)
+  Working: api/v1/accounts/{slug}/jobs/{shortcode}          → 200
 
 Pagination via paging.next token field.
 No authentication required for published postings.
@@ -15,7 +19,7 @@ from typing import Any
 from .base import BaseHarvester, MIN_DELAY_API
 
 PAGE_SIZE = 100
-DETAIL_URL = "https://apply.workable.com/api/v1/widget/accounts/{slug}/jobs/{shortcode}"
+DETAIL_URL = "https://apply.workable.com/api/v1/accounts/{slug}/jobs/{shortcode}"
 
 
 class WorkableHarvester(BaseHarvester):

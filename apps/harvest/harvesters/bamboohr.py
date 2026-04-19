@@ -2,11 +2,12 @@
 BambooHRHarvester — Public BambooHR Jobs API
 
 BambooHR exposes a public JSON API for career listings:
-  GET https://{company}.bamboohr.com/careers/list
+  List:   GET https://{company}.bamboohr.com/careers/list
+  Detail: GET https://{company}.bamboohr.com/careers/{job_id}/detail
 
-The endpoint returns a JSON array (no auth required for published jobs).
-Each object has: id, title, jobOpeningName, locationCity, locationState,
-locationCountry, department, employmentStatusLabel, isRemote, link.
+The list endpoint returns structured metadata (no description).
+The detail endpoint returns the full job description HTML in:
+  result.jobOpening.description
 
 tenant_id = subdomain slug e.g. "netflix", "acme"
 """
@@ -15,7 +16,13 @@ import re
 from typing import Any
 from urllib.parse import urljoin
 
-from .base import BaseHarvester, MIN_DELAY_SCRAPE, DEFAULT_TIMEOUT, BOT_USER_AGENT
+from .base import BaseHarvester, MIN_DELAY_API, MIN_DELAY_SCRAPE, DEFAULT_TIMEOUT, BOT_USER_AGENT
+
+_DETAIL_HEADERS = {
+    "User-Agent": BOT_USER_AGENT,
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "X-Requested-With": "XMLHttpRequest",
+}
 
 
 class BambooHRHarvester(BaseHarvester):
@@ -76,7 +83,39 @@ class BambooHRHarvester(BaseHarvester):
             else:
                 return []
 
-            return [self._normalize_list(j, slug, company_name) for j in items]
+            results: list[dict] = []
+            for j in items:
+                record = self._normalize_list(j, slug, company_name)
+                # Fetch full description from detail endpoint
+                job_id = j.get("id") or ""
+                if job_id:
+                    try:
+                        detail_url = f"https://{slug}.bamboohr.com/careers/{job_id}/detail"
+                        dr = self._session.get(
+                            detail_url,
+                            timeout=DEFAULT_TIMEOUT,
+                            headers=_DETAIL_HEADERS,
+                        )
+                        self._last_request_at = _time.monotonic()
+                        if dr.ok:
+                            d = dr.json()
+                            jo = (d.get("result") or {}).get("jobOpening") or {}
+                            record["description"] = jo.get("description") or ""
+                            # Better location from detail if missing
+                            if not record["city"]:
+                                dloc = jo.get("location") or {}
+                                record["city"]    = dloc.get("city") or ""
+                                record["state"]   = dloc.get("state") or ""
+                                record["country"] = dloc.get("addressCountry") or ""
+                                if not record["location_raw"]:
+                                    record["location_raw"] = ", ".join(
+                                        x for x in [record["city"], record["state"], record["country"]] if x
+                                    )
+                    except Exception:
+                        pass
+                    _time.sleep(MIN_DELAY_API)
+                results.append(record)
+            return results
 
         except Exception:
             return []
