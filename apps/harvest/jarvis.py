@@ -23,6 +23,23 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
+
+def _str_val(val) -> str:
+    """
+    Safely coerce a JSON-LD value to a plain string.
+
+    JSON-LD fields like addressCountry / addressRegion can be either:
+      - a plain string:  "US"
+      - a schema.org object:  {"@type": "Country", "name": "United States"}
+    This helper extracts the "name" key for objects, or returns str(val).
+    """
+    if not val:
+        return ""
+    if isinstance(val, dict):
+        return str(val.get("name") or val.get("@id") or "")
+    return str(val)
+
+
 # Use an honest, human-readable UA — same policy as the bulk harvesters.
 _JARVIS_UA = (
     "Mozilla/5.0 (compatible; GoCareers-Jarvis/1.0; "
@@ -469,9 +486,11 @@ def _parse_jsonld(d: dict) -> dict:
         location_raw = addr
         city = state = country = ""
     else:
-        city    = addr.get("addressLocality", "")
-        state   = addr.get("addressRegion", "")
-        country = addr.get("addressCountry", "")
+        # addressLocality / addressRegion / addressCountry can each be a
+        # plain string OR a schema.org object {"@type": "...", "name": "..."}
+        city    = _str_val(addr.get("addressLocality", ""))
+        state   = _str_val(addr.get("addressRegion", ""))
+        country = _str_val(addr.get("addressCountry", ""))
         location_raw = ", ".join(p for p in [city, state, country] if p)
 
     # Remote
