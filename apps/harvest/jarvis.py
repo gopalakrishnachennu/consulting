@@ -99,7 +99,11 @@ PLATFORM_PATTERNS: dict[str, list[str]] = {
     "lever":           ["jobs.lever.co"],
     "ashby":           ["jobs.ashbyhq.com", "ashbyhq.com/jobs"],
     "workday":         ["myworkdayjobs.com"],
-    "smartrecruiters": ["smartrecruiters.com/jobs", "jobs.smartrecruiters.com"],
+    "smartrecruiters": [
+        "smartrecruiters.com/jobs",
+        "jobs.smartrecruiters.com",
+        "careers.smartrecruiters.com",
+    ],
     "workable":        ["apply.workable.com", "jobs.workable.com"],
     "bamboohr":        ["bamboohr.com/careers", "bamboohr.com/jobs"],
     "recruitee":       [".recruitee.com/o/", "recruitee.com/o/"],
@@ -120,6 +124,31 @@ PLATFORM_PATTERNS: dict[str, list[str]] = {
     "dice":            ["dice.com/jobs"],
     "ziprecruiter":    ["ziprecruiter.com/jobs"],
 }
+
+
+def _smartrecruiters_normalize_posting_id(path_segment: str) -> str:
+    """
+    Extract SmartRecruiters posting id from the second URL path segment.
+
+    Segments are often ``{id}`` or ``{id}-{seo-slug}`` (sometimes with a trailing
+    dash). The public API accepts the numeric id or posting UUID only.
+    """
+    raw = (path_segment or "").strip().strip("-")
+    if not raw:
+        return ""
+    # UUID (may be followed by extra path noise)
+    um = re.match(
+        r"^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+        raw,
+        re.I,
+    )
+    if um:
+        return um.group(1)
+    # Long numeric id; strip SEO slug after first hyphen
+    nm = re.match(r"^(\d{6,})", raw)
+    if nm:
+        return nm.group(1)
+    return raw
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -688,19 +717,38 @@ class JobJarvis:
         """
         SmartRecruiters public posting detail API (same as SmartRecruitersHarvester).
 
-        URLs: https://jobs.smartrecruiters.com/{companySlug}/{postingId}
+        URLs:
+          https://jobs.smartrecruiters.com/{companySlug}/{postingId}
+          https://careers.smartrecruiters.com/...
+
+        Public job links often append an SEO slug to the posting id segment, e.g.
+        ``744000121421842-mgr-title-here-``. The REST API expects only the numeric id
+        (or UUID), not the suffix — otherwise the API returns 400 and we fall back
+        to HTML (which may be a thin page or blocked for bots).
         """
         m = re.search(
-            r"https?://(?:jobs\.)?smartrecruiters\.com/([^/?#]+)/([^/?#]+)",
+            r"https?://(?:(?:www|jobs|careers)\.)?smartrecruiters\.com/([^/?#]+)/([^/?#]+)",
             url,
             re.I,
         )
         if not m:
             return None
-        slug, job_id = m.group(1), m.group(2)
-        detail_url = f"https://api.smartrecruiters.com/v1/companies/{slug}/postings/{job_id}"
+        slug, raw_segment = m.group(1), m.group(2)
+        posting_id = _smartrecruiters_normalize_posting_id(raw_segment)
+        if not posting_id:
+            return None
+        detail_url = (
+            f"https://api.smartrecruiters.com/v1/companies/{slug}/postings/{posting_id}"
+        )
         try:
-            resp = self._http_get(detail_url, timeout=self.timeout)
+            resp = self._http_get(
+                detail_url,
+                timeout=self.timeout,
+                headers={
+                    "Accept": "application/json",
+                    "User-Agent": _JARVIS_UA,
+                },
+            )
             resp.raise_for_status()
             detail = resp.json()
         except Exception:
@@ -722,6 +770,7 @@ class JobJarvis:
 
         ref = detail.get("ref") or url
         title = (detail.get("name") or "")[:512]
+        ext = str(detail.get("id") or posting_id)
 
         return {
             "title": title,
@@ -733,7 +782,7 @@ class JobJarvis:
             "description": description,
             "requirements": requirements,
             "benefits": benefits,
-            "external_id": job_id,
+            "external_id": ext,
             "original_url": ref,
             "apply_url": ref,
             "raw_payload": detail,
@@ -1550,6 +1599,10 @@ def _try_html_scrape(html: str, page_url: str = "") -> Optional[dict]:
     # ── Description ───────────────────────────────────────────────────────────
     description = ""
     desc_selectors = [
+        # SmartRecruiters public job pages (microdata JobPosting; no JSON-LD script)
+        "#st-jobDescription .wysiwyg",
+        "section#st-jobDescription",
+        "[itemprop='responsibilities']",
         "[class*='job-description']", "[id*='job-description']",
         "[class*='jobDescription']", "[id*='jobDescription']",
         "[class*='job_description']",

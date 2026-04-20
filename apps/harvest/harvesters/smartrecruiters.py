@@ -8,6 +8,7 @@ SmartRecruiters provides a documented public REST API for job postings:
 No authentication required for published postings.
 Detail endpoint returns jobAd.sections with full description HTML.
 """
+import re
 import time
 from typing import Any
 
@@ -15,6 +16,24 @@ from .base import BaseHarvester, MIN_DELAY_API
 
 PAGE_SIZE = 100
 DETAIL_URL = "https://api.smartrecruiters.com/v1/companies/{slug}/postings/{job_id}"
+
+
+def _normalize_posting_id_for_api(raw: str) -> str:
+    """Strip SEO slug from a path segment; must match :func:`jarvis._smartrecruiters_normalize_posting_id`."""
+    s = (raw or "").strip().strip("-")
+    if not s:
+        return ""
+    um = re.match(
+        r"^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+        s,
+        re.I,
+    )
+    if um:
+        return um.group(1)
+    nm = re.match(r"^(\d{6,})", s)
+    if nm:
+        return nm.group(1)
+    return s
 
 
 def _detect_experience_level(title: str, description: str) -> str:
@@ -118,12 +137,13 @@ class SmartRecruitersHarvester(BaseHarvester):
             p.get("ref")
             or f"https://jobs.smartrecruiters.com/{slug}/{job_id}"
         )
+        api_posting_id = _normalize_posting_id_for_api(str(job_id)) if job_id else ""
 
         # ── Fetch full description from detail endpoint ────────────────────
         description = requirements = benefits = ""
-        if job_id:
+        if api_posting_id:
             try:
-                detail = self._get(DETAIL_URL.format(slug=slug, job_id=job_id))
+                detail = self._get(DETAIL_URL.format(slug=slug, job_id=api_posting_id))
                 if isinstance(detail, dict) and "error" not in detail:
                     sections = (detail.get("jobAd") or {}).get("sections") or {}
                     description  = (sections.get("jobDescription") or {}).get("text") or ""

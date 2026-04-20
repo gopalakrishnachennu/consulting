@@ -142,6 +142,55 @@ class JarvisPlatformApiExtractionTests(SimpleTestCase):
         self.assertIsNotNone(out)
         self.assertIn("Full Workday JD", out.get("description", ""))
 
+    def test_smartrecruiters_normalize_posting_id_strips_seo_slug(self):
+        from apps.harvest.jarvis import _smartrecruiters_normalize_posting_id
+
+        self.assertEqual(
+            _smartrecruiters_normalize_posting_id(
+                "744000121421842-mgr-strategic-rebids-930951-",
+            ),
+            "744000121421842",
+        )
+        self.assertEqual(
+            _smartrecruiters_normalize_posting_id("111222333"),
+            "111222333",
+        )
+
+    def test_smartrecruiters_api_request_strips_seo_slug_from_url(self):
+        """Detail API must receive numeric id only, not ``744...-title-slug``."""
+        from apps.harvest.jarvis import _smartrecruiters_normalize_posting_id
+
+        jarvis = JobJarvis()
+        url = "https://jobs.smartrecruiters.com/DemoCo/744000121421842-mgr-title-"
+        captured = {}
+
+        def fake_get(u, **kwargs):
+            captured["detail_url"] = u
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            resp.json.return_value = {
+                "id": "744000121421842",
+                "name": "Role",
+                "ref": url,
+                "jobAd": {
+                    "sections": {
+                        "jobDescription": {"text": "<p>Body</p>"},
+                    }
+                },
+            }
+            return resp
+
+        with patch.object(jarvis, "_http_get", side_effect=fake_get):
+            out = jarvis._smartrecruiters(url)
+        self.assertIsNotNone(out)
+        self.assertIn("/postings/744000121421842", captured.get("detail_url", ""))
+        self.assertNotIn("mgr-title", captured.get("detail_url", ""))
+        self.assertIn("Body", out.get("description", ""))
+        self.assertEqual(
+            _smartrecruiters_normalize_posting_id("744000121421842-mgr-title-"),
+            "744000121421842",
+        )
+
     def test_smartrecruiters_detail_maps_sections(self):
         jarvis = JobJarvis()
         url = "https://jobs.smartrecruiters.com/DemoCo/111222333"
@@ -159,7 +208,7 @@ class JarvisPlatformApiExtractionTests(SimpleTestCase):
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
         mock_resp.json.return_value = detail
-        with patch.object(jarvis._session, "get", return_value=mock_resp):
+        with patch.object(jarvis, "_http_get", return_value=mock_resp):
             out = jarvis._smartrecruiters(url)
         self.assertIsNotNone(out)
         self.assertIn("SR JD", out.get("description", ""))
