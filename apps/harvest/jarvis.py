@@ -57,9 +57,15 @@ PLATFORM_PATTERNS: dict[str, list[str]] = {
     "workable":        ["apply.workable.com", "jobs.workable.com"],
     "bamboohr":        ["bamboohr.com/careers", "bamboohr.com/jobs"],
     "recruitee":       [".recruitee.com/o/", "recruitee.com/o/"],
-    "icims":           ["careers.icims.com", "icims.com/jobs"],
-    "jobvite":         ["jobs.jobvite.com", "jobvite.com/company"],
+    "icims":           [".icims.com/jobs/", "icims.com/jobs"],
+    "jobvite":         ["jobs.jobvite.com"],
     "taleo":           ["taleo.net/careersection"],
+    "oracle":          [".oraclecloud.com/hcmUI/CandidateExperience"],
+    "ultipro":         ["recruiting.ultipro.com"],
+    "dayforce":        ["jobs.dayforcehcm.com"],
+    "breezy":          [".breezy.hr/p/"],
+    "teamtailor":      [".teamtailor.com/jobs/"],
+    "zoho":            ["jobs.zoho.com/portal/", ".zohorecruit.com/jobs/"],
     "linkedin":        ["linkedin.com/jobs"],
     "indeed":          ["indeed.com/viewjob", "indeed.com/jobs"],
     "glassdoor":       ["glassdoor.com/job-listing"],
@@ -225,6 +231,15 @@ class JobJarvis:
             "bamboohr": self._bamboohr,
             "smartrecruiters": self._smartrecruiters,
             "recruitee": self._recruitee,
+            "icims": self._icims,
+            "jobvite": self._jobvite,
+            "taleo": self._taleo,
+            "oracle": self._oracle,
+            "ultipro": self._ultipro,
+            "dayforce": self._dayforce,
+            "breezy": self._breezy,
+            "teamtailor": self._teamtailor,
+            "zoho": self._zoho,
         }
         fn = dispatch.get(slug)
         return fn(url) if fn else None
@@ -470,7 +485,7 @@ class JobJarvis:
         if not m:
             return None
         company_slug, job_shortcode = m.group(1), m.group(2)
-        api_url = f"https://apply.workable.com/api/v1/widget/accounts/{company_slug}/jobs/{job_shortcode}"
+        api_url = f"https://apply.workable.com/api/v1/accounts/{company_slug}/jobs/{job_shortcode}"
         try:
             resp = self._session.get(api_url, timeout=self.timeout)
             resp.raise_for_status()
@@ -669,6 +684,517 @@ class JobJarvis:
             "original_url": url.strip(),
             "apply_url": (offer.get("careers_url") or url).strip(),
             "raw_payload": offer,
+        }
+
+    # ── iCIMS ─────────────────────────────────────────────────────────────────
+
+    def _icims(self, url: str) -> Optional[dict]:
+        """
+        iCIMS job detail pages are server-rendered HTML.
+        URLs: https://{tenant}.icims.com/jobs/{id}/job
+        Fetch the detail page and scrape the description container.
+        """
+        m = re.search(r"([\w-]+)\.icims\.com/jobs/(\d+)", url, re.I)
+        if not m:
+            return None
+        tenant, job_id = m.group(1), m.group(2)
+        detail_url = f"https://{tenant}.icims.com/jobs/{job_id}/job"
+        try:
+            resp = self._session.get(
+                detail_url, timeout=self.timeout,
+                headers={
+                    "Accept": "text/html,application/xhtml+xml",
+                    "Accept-Language": "en-US,en;q=0.9",
+                },
+            )
+            resp.raise_for_status()
+            html = resp.text
+        except Exception:
+            return None
+
+        soup = BeautifulSoup(html, "html.parser")
+        title = ""
+        el = soup.select_one("h1.iCIMS_JobTitle") or soup.select_one("h1")
+        if el:
+            title = el.get_text(" ", strip=True)
+
+        desc_parts = []
+        for sel in (
+            ".iCIMS_JobContent", ".iCIMS_InfoMsg_Job",
+            "[class*='job-description']", "[class*='jobDescription']",
+            "[itemprop='description']", "article", "main",
+        ):
+            el = soup.select_one(sel)
+            if el and len(el.get_text(" ", strip=True)) >= 72:
+                desc_parts.append(str(el))
+                break
+
+        location_raw = ""
+        for sel in (".iCIMS_JobHeaderData", "[class*='location']"):
+            el = soup.select_one(sel)
+            if el:
+                location_raw = el.get_text(" ", strip=True)[:200]
+                break
+
+        return {
+            "title": title,
+            "company_name": tenant.replace("-", " ").replace("careers", "").strip().title(),
+            "location_raw": location_raw,
+            "description": "\n".join(desc_parts),
+            "external_id": job_id,
+            "original_url": detail_url,
+            "apply_url": detail_url,
+            "raw_payload": {"source": "icims_scrape"},
+        }
+
+    # ── Jobvite ───────────────────────────────────────────────────────────────
+
+    def _jobvite(self, url: str) -> Optional[dict]:
+        """
+        Jobvite detail pages: https://jobs.jobvite.com/{company}/job/{id}
+        Server-rendered HTML with job description in the page body.
+        """
+        m = re.search(
+            r"jobs\.jobvite\.com/([^/?#]+)/job/([^/?#]+)", url, re.I,
+        )
+        if not m:
+            return None
+        company_slug, job_id = m.group(1), m.group(2)
+        detail_url = f"https://jobs.jobvite.com/{company_slug}/job/{job_id}"
+        try:
+            resp = self._session.get(
+                detail_url, timeout=self.timeout,
+                headers={"Accept": "text/html,application/xhtml+xml"},
+            )
+            resp.raise_for_status()
+            html = resp.text
+        except Exception:
+            return None
+
+        soup = BeautifulSoup(html, "html.parser")
+        title = ""
+        el = soup.select_one("h2.jv-header") or soup.select_one("h1") or soup.select_one("h2")
+        if el:
+            title = el.get_text(" ", strip=True)
+
+        description = ""
+        for sel in (".jv-job-detail-description", ".jv-job-detail", "[class*='job-description']", "article", "main"):
+            el = soup.select_one(sel)
+            if el and len(el.get_text(" ", strip=True)) >= 72:
+                description = str(el)
+                break
+
+        location_raw = ""
+        el = soup.select_one(".jv-job-detail-meta .location") or soup.select_one("[class*='location']")
+        if el:
+            location_raw = el.get_text(" ", strip=True)
+
+        return {
+            "title": title,
+            "company_name": company_slug.replace("-", " ").title(),
+            "location_raw": location_raw,
+            "description": description,
+            "external_id": job_id,
+            "original_url": detail_url,
+            "apply_url": detail_url,
+            "raw_payload": {"source": "jobvite_scrape"},
+        }
+
+    # ── Taleo ─────────────────────────────────────────────────────────────────
+
+    def _taleo(self, url: str) -> Optional[dict]:
+        """
+        Taleo detail pages: .../careersection/{section}/jobdetail.ftl?job={id}
+        Server-rendered HTML (FTL template).
+        """
+        m = re.search(
+            r"([\w-]+)\.taleo\.net/careersection/([^/]+)/jobdetail\.ftl\?.*?job=([^&]+)",
+            url, re.I,
+        )
+        if not m:
+            return None
+        subdomain, section, job_ref = m.group(1), m.group(2), m.group(3)
+        detail_url = (
+            f"https://{subdomain}.taleo.net/careersection/{section}"
+            f"/jobdetail.ftl?job={job_ref}&lang=en"
+        )
+        try:
+            resp = self._session.get(
+                detail_url, timeout=self.timeout,
+                headers={"Accept": "text/html,application/xhtml+xml", "User-Agent": _JARVIS_UA},
+            )
+            resp.raise_for_status()
+            html = resp.text
+        except Exception:
+            return None
+
+        soup = BeautifulSoup(html, "html.parser")
+        title = ""
+        for sel in ("#requisitionDescriptionInterface\\.reqTitleLinkAction\\.row1", "h1", ".pageTitle"):
+            el = soup.select_one(sel)
+            if el:
+                title = el.get_text(" ", strip=True)
+                if title:
+                    break
+
+        description = ""
+        for sel in (
+            "#requisitionDescriptionInterface\\.ID1702\\.row1",
+            "[id*='requisitionDescription']",
+            ".contentlinepanel",
+            "[class*='job-description']",
+            "article", "main",
+        ):
+            el = soup.select_one(sel)
+            if el and len(el.get_text(" ", strip=True)) >= 72:
+                description = str(el)
+                break
+
+        location_raw = ""
+        for sel in ("[id*='locationDescription']", "[class*='location']"):
+            el = soup.select_one(sel)
+            if el:
+                location_raw = el.get_text(" ", strip=True)[:200]
+                break
+
+        return {
+            "title": title,
+            "company_name": subdomain.replace("-", " ").title(),
+            "location_raw": location_raw,
+            "description": description,
+            "external_id": job_ref,
+            "original_url": detail_url,
+            "apply_url": detail_url,
+            "raw_payload": {"source": "taleo_scrape"},
+        }
+
+    # ── Oracle HCM CE ─────────────────────────────────────────────────────────
+
+    def _oracle(self, url: str) -> Optional[dict]:
+        """
+        Oracle HCM Candidate Experience — single-requisition REST API.
+        URL: https://{sub}.oraclecloud.com/hcmUI/CandidateExperience/en/sites/{site}/job/{reqId}
+        API: GET .../hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails?...
+        """
+        m = re.search(
+            r"([\w.-]+)\.oraclecloud\.com/hcmUI/CandidateExperience"
+            r"/\w+/sites/([^/]+)/job/(\d+)",
+            url, re.I,
+        )
+        if not m:
+            return None
+        subdomain, site_id, req_id = m.group(1), m.group(2), m.group(3)
+
+        api_url = (
+            f"https://{subdomain}.oraclecloud.com"
+            f"/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails"
+        )
+        params = {
+            "onlyData": "true",
+            "expand": "all",
+            "finder": f"findReqDetails;Id={req_id},siteNumber={site_id}",
+        }
+        try:
+            resp = self._session.get(
+                api_url, params=params, timeout=self.timeout,
+                headers={"Accept": "application/json"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception:
+            return None
+
+        items = data.get("items") or []
+        if not items:
+            return None
+        req = items[0]
+
+        title = req.get("Title") or ""
+        desc = req.get("ExternalDescriptionStr") or req.get("ShortDescriptionStr") or ""
+        loc_raw = req.get("PrimaryLocation") or ""
+
+        return {
+            "title": title,
+            "company_name": subdomain.split(".")[0].replace("-", " ").title(),
+            "location_raw": loc_raw,
+            "description": desc,
+            "department": req.get("Organization") or "",
+            "external_id": req_id,
+            "original_url": url,
+            "apply_url": url,
+            "raw_payload": req,
+        }
+
+    # ── UltiPro / UKG ────────────────────────────────────────────────────────
+
+    def _ultipro(self, url: str) -> Optional[dict]:
+        """
+        UltiPro OpportunityDetail — fetch single-job HTML or JSON.
+        URL: .../recruiting.ultipro.com/{code}/JobBoard/{guid}/OpportunityDetail?opportunityId={id}
+        """
+        m = re.search(
+            r"recruiting\.ultipro\.com/([^/]+)/JobBoard/([^/]+)"
+            r"/OpportunityDetail\?opportunityId=([^&#]+)",
+            url, re.I,
+        )
+        if not m:
+            return None
+        company_code, board_guid, opp_id = m.group(1), m.group(2), m.group(3)
+
+        detail_api = (
+            f"https://recruiting.ultipro.com/{company_code}/JobBoard/{board_guid}"
+            f"/OpportunityDetail/GetOpportunityDetail?opportunityId={opp_id}"
+        )
+        try:
+            resp = self._session.get(
+                detail_api, timeout=self.timeout,
+                headers={
+                    "Accept": "application/json, text/plain, */*",
+                    "User-Agent": _JARVIS_UA,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception:
+            return self._ultipro_html_fallback(url)
+
+        if not isinstance(data, dict):
+            return self._ultipro_html_fallback(url)
+
+        title = data.get("Title") or data.get("title") or ""
+        desc = data.get("Description") or data.get("description") or ""
+        loc = data.get("Location") or data.get("location") or ""
+
+        if not desc:
+            return self._ultipro_html_fallback(url)
+
+        return {
+            "title": title,
+            "company_name": company_code.replace("-", " ").title(),
+            "location_raw": loc if isinstance(loc, str) else "",
+            "description": desc,
+            "external_id": opp_id,
+            "original_url": url,
+            "apply_url": url,
+            "raw_payload": data,
+        }
+
+    def _ultipro_html_fallback(self, url: str) -> Optional[dict]:
+        """Fetch the OpportunityDetail page and scrape HTML."""
+        try:
+            resp = self._session.get(
+                url, timeout=self.timeout,
+                headers={"Accept": "text/html,application/xhtml+xml"},
+            )
+            resp.raise_for_status()
+        except Exception:
+            return None
+        return None  # let generic HTML scrape handle it
+
+    # ── Dayforce ──────────────────────────────────────────────────────────────
+
+    def _dayforce(self, url: str) -> Optional[dict]:
+        """
+        Dayforce job detail via GEO API.
+        URL: .../jobs.dayforcehcm.com/en-US/{slug}/CANDIDATEPORTAL/jobs/{id}
+        API: GET .../api/geo/{slug}/jobposting/{id}
+        """
+        m = re.search(
+            r"jobs\.dayforcehcm\.com/(?:[a-z]{2}-[A-Z]{2}/)?([^/]+)/([^/]+)/jobs/(\d+)",
+            url, re.I,
+        )
+        if not m:
+            return None
+        slug, portal, job_id = m.group(1), m.group(2), m.group(3)
+
+        detail_url = f"https://jobs.dayforcehcm.com/api/geo/{slug}/jobposting/{job_id}"
+        try:
+            resp = self._session.get(
+                detail_url, timeout=self.timeout,
+                headers={
+                    "Accept": "application/json, text/plain, */*",
+                    "Referer": url,
+                    "User-Agent": (
+                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/124.0.0.0 Safari/537.36"
+                    ),
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception:
+            return None
+
+        if not isinstance(data, dict):
+            return None
+
+        title = data.get("JobTitle") or data.get("title") or ""
+        desc = data.get("Description") or data.get("description") or ""
+        loc = data.get("JobLocation") or data.get("location") or ""
+
+        return {
+            "title": title,
+            "company_name": slug.replace("-", " ").title(),
+            "location_raw": loc,
+            "description": desc,
+            "external_id": job_id,
+            "original_url": url,
+            "apply_url": url,
+            "raw_payload": data,
+        }
+
+    # ── Breezy HR ─────────────────────────────────────────────────────────────
+
+    def _breezy(self, url: str) -> Optional[dict]:
+        """
+        Breezy detail pages: https://{sub}.breezy.hr/p/{slug}
+        Server-rendered HTML.
+        """
+        m = re.search(r"([\w-]+)\.breezy\.hr/p/([^/?#]+)", url, re.I)
+        if not m:
+            return None
+        tenant, position_slug = m.group(1), m.group(2)
+        detail_url = f"https://{tenant}.breezy.hr/p/{position_slug}"
+        try:
+            resp = self._session.get(
+                detail_url, timeout=self.timeout,
+                headers={"Accept": "text/html,application/xhtml+xml"},
+            )
+            resp.raise_for_status()
+            html = resp.text
+        except Exception:
+            return None
+
+        soup = BeautifulSoup(html, "html.parser")
+        title = ""
+        el = soup.select_one("h1") or soup.select_one("h2")
+        if el:
+            title = el.get_text(" ", strip=True)
+
+        description = ""
+        for sel in (".description", "[class*='job-description']", "[class*='posting']", "article", "main"):
+            el = soup.select_one(sel)
+            if el and len(el.get_text(" ", strip=True)) >= 72:
+                description = str(el)
+                break
+
+        location_raw = ""
+        el = soup.select_one("[class*='location']")
+        if el:
+            location_raw = el.get_text(" ", strip=True)[:200]
+
+        return {
+            "title": title,
+            "company_name": tenant.replace("-", " ").title(),
+            "location_raw": location_raw,
+            "description": description,
+            "external_id": position_slug,
+            "original_url": detail_url,
+            "apply_url": detail_url,
+            "raw_payload": {"source": "breezy_scrape"},
+        }
+
+    # ── Teamtailor ────────────────────────────────────────────────────────────
+
+    def _teamtailor(self, url: str) -> Optional[dict]:
+        """
+        Teamtailor detail pages: https://{sub}.teamtailor.com/jobs/{id}-{slug}
+        Server-rendered HTML with job description.
+        """
+        m = re.search(r"([\w-]+)\.teamtailor\.com/jobs/(\d+[^?#]*)", url, re.I)
+        if not m:
+            return None
+        tenant = m.group(1)
+        try:
+            resp = self._session.get(
+                url, timeout=self.timeout,
+                headers={"Accept": "text/html,application/xhtml+xml"},
+            )
+            resp.raise_for_status()
+            html = resp.text
+        except Exception:
+            return None
+
+        soup = BeautifulSoup(html, "html.parser")
+        title = ""
+        el = soup.select_one("h1") or soup.select_one("[class*='title']")
+        if el:
+            title = el.get_text(" ", strip=True)
+
+        description = ""
+        for sel in (
+            "[class*='job-description']", "[class*='jobDescription']",
+            "[itemprop='description']", ".content", "article", "main",
+        ):
+            el = soup.select_one(sel)
+            if el and len(el.get_text(" ", strip=True)) >= 72:
+                description = str(el)
+                break
+
+        location_raw = ""
+        el = soup.select_one("[class*='location']")
+        if el:
+            location_raw = el.get_text(" ", strip=True)[:200]
+
+        return {
+            "title": title,
+            "company_name": tenant.replace("-", " ").title(),
+            "location_raw": location_raw,
+            "description": description,
+            "original_url": url,
+            "apply_url": url,
+            "raw_payload": {"source": "teamtailor_scrape"},
+        }
+
+    # ── Zoho Recruit ──────────────────────────────────────────────────────────
+
+    def _zoho(self, url: str) -> Optional[dict]:
+        """
+        Zoho job detail pages come in two shapes:
+        - https://jobs.zoho.com/portal/{slug}/apply/{id}
+        - https://{sub}.zohorecruit.com/jobs/Careers/{id}/{title}
+        Fetch and scrape the server-rendered HTML.
+        """
+        try:
+            resp = self._session.get(
+                url, timeout=self.timeout,
+                headers={"Accept": "text/html,application/xhtml+xml"},
+            )
+            resp.raise_for_status()
+            html = resp.text
+        except Exception:
+            return None
+
+        soup = BeautifulSoup(html, "html.parser")
+        title = ""
+        el = soup.select_one("h1") or soup.select_one("[class*='title']")
+        if el:
+            title = el.get_text(" ", strip=True)
+
+        description = ""
+        for sel in (
+            "[class*='job-description']", "[class*='jobDescription']",
+            "[itemprop='description']", ".careers-jobdetail-desc",
+            ".jobDetail", "article", "main",
+        ):
+            el = soup.select_one(sel)
+            if el and len(el.get_text(" ", strip=True)) >= 72:
+                description = str(el)
+                break
+
+        location_raw = ""
+        el = soup.select_one("[class*='location']")
+        if el:
+            location_raw = el.get_text(" ", strip=True)[:200]
+
+        return {
+            "title": title,
+            "description": description,
+            "location_raw": location_raw,
+            "original_url": url,
+            "apply_url": url,
+            "raw_payload": {"source": "zoho_scrape"},
         }
 
 
