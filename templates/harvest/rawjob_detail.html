@@ -86,7 +86,7 @@
         </div>
 
         <!-- Description -->
-        {% if rawjob.description %}
+        {% if rawjob.has_meaningful_description %}
         <div style="padding:20px 24px;border-bottom:1px solid #f1f5f9;">
           <h3 style="font-size:13px;font-weight:700;color:#374151;margin:0 0 12px;text-transform:uppercase;letter-spacing:.4px;">Description</h3>
           <div id="job-description" style="font-size:13px;color:#374151;line-height:1.8;max-height:600px;overflow-y:auto;padding-right:4px;">
@@ -104,12 +104,27 @@
           </div>
           {% endif %}
         </div>
+        {% elif rawjob.is_expired_listing %}
+        <div style="padding:20px 24px;border-bottom:1px solid #f1f5f9;background:#fffbeb;">
+          <h3 style="font-size:13px;font-weight:700;color:#374151;margin:0 0 8px;text-transform:uppercase;letter-spacing:.4px;">Description</h3>
+          <p style="font-size:14px;font-weight:700;color:#92400e;margin:0 0 10px;">expireddd</p>
+          <p style="font-size:12px;color:#78716c;margin:0 0 10px;">This listing appears closed or past its closing/expiry date — the description was not retained.</p>
+          {% if rawjob.apply_url %}
+          <a href="{{ rawjob.apply_url }}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#2563eb;text-decoration:none;padding:8px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;">
+            Try original posting →
+          </a>
+          {% elif rawjob.original_url %}
+          <a href="{{ rawjob.original_url }}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#2563eb;text-decoration:none;padding:8px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;">
+            Try original posting →
+          </a>
+          {% endif %}
+        </div>
         {% else %}
         {# No description stored — show a helpful note #}
         <div style="padding:20px 24px;border-bottom:1px solid #f1f5f9;background:#fafbfc;">
           <h3 style="font-size:13px;font-weight:700;color:#374151;margin:0 0 8px;text-transform:uppercase;letter-spacing:.4px;">Description</h3>
           <p style="font-size:13px;color:#94a3b8;margin:0 0 10px;">
-            Description not stored for <strong>{{ rawjob.platform_slug|upper|default:"this platform" }}</strong> jobs — the bulk harvester collects job listings only.
+            Description not stored for <strong>{{ rawjob.platform_slug|upper|default:"this platform" }}</strong> jobs — run JD backfill or open the original posting.
           </p>
           {% if rawjob.original_url %}
           <a href="{{ rawjob.original_url }}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#2563eb;text-decoration:none;padding:8px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;">

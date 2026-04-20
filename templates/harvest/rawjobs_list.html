@@ -35,7 +35,7 @@
       </div>
 
       <!-- Stat cards -->
-      <div style="display:grid;grid-template-columns:repeat(8,1fr);gap:10px;padding:20px 0 24px;" id="stat-cards">
+      <div style="display:grid;grid-template-columns:repeat(9,1fr);gap:10px;padding:20px 0 24px;" id="stat-cards">
 
         <a href="{% url 'harvest-rawjobs' %}" style="text-decoration:none;background:#1e293b;border:1px solid #334155;border-top:3px solid #64748b;border-radius:10px;padding:12px 14px;display:block;">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
@@ -93,12 +93,20 @@
           <p style="color:#f1f5f9;font-size:22px;font-weight:800;margin:0;letter-spacing:-1px;" id="stat-active">{{ active_jobs }}</p>
         </div>
 
-        <div style="background:#1e293b;border:1px solid #334155;border-top:3px solid #f97316;border-radius:10px;padding:12px 14px;" title="Rows backfill still needs to fill (empty description, has URL). Updates every ~10s.">
+        <div style="background:#1e293b;border:1px solid #334155;border-top:3px solid #f97316;border-radius:10px;padding:12px 14px;" title="No meaningful description text (same rule as Jobs Browser). Updates every ~10s.">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
             <span style="font-size:12px;">📄</span>
-            <span style="color:#fdba74;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;">No JD yet</span>
+            <span style="color:#fdba74;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Missing JD</span>
           </div>
           <p style="color:#f1f5f9;font-size:22px;font-weight:800;margin:0;letter-spacing:-1px;" id="stat-missing-jd">{{ missing_description_jobs }}</p>
+        </div>
+
+        <div style="background:#1e293b;border:1px solid #334155;border-top:3px solid #a855f7;border-radius:10px;padding:12px 14px;" title="Missing JD and listing looks closed (expiry / closing date / inactive).">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+            <span style="font-size:12px;">⏱</span>
+            <span style="color:#d8b4fe;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;">No JD · expired</span>
+          </div>
+          <p style="color:#f1f5f9;font-size:22px;font-weight:800;margin:0;letter-spacing:-1px;" id="stat-missing-jd-expired">{{ missing_jd_expired_jobs }}</p>
         </div>
 
       </div>
@@ -554,8 +562,10 @@
                 </td>
                 <td style="padding:9px 14px;color:#94a3b8;white-space:nowrap;">{{ job.posted_date|default:"—" }}</td>
                 <td style="padding:9px 14px;text-align:center;">
-                  {% if job.description and job.description|length > 1 %}
+                  {% if job.jd_browser_label == 'yes' %}
                   <span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:#d1fae5;color:#065f46;">✓ Yes</span>
+                  {% elif job.jd_browser_label == 'expired' %}
+                  <span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;" title="Listing appears closed / expired">expireddd</span>
                   {% else %}
                   <span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:#fee2e2;color:#991b1b;">✗ No</span>
                   {% endif %}
@@ -824,6 +834,7 @@ function pollStats() {
       setText('stat-remote', data.remote_jobs);
       setText('stat-active', data.active_jobs);
       setText('stat-missing-jd', data.missing_description_jobs);
+      setText('stat-missing-jd-expired', data.missing_jd_expired_jobs);
 
       // Update batch progress
       const card = document.getElementById('batch-progress-card');
@@ -1141,7 +1152,7 @@ function showToast(msg, type='success') {
       <td style="padding:9px 14px;white-space:nowrap;">${j.experience_level && j.experience_level !== 'UNKNOWN' ? `<span style="padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;background:#f1f5f9;color:#374151;">${j.experience_level}</span>` : '<span style="color:#94a3b8;">—</span>'}</td>
       <td style="padding:9px 14px;color:#64748b;white-space:nowrap;">${salary}</td>
       <td style="padding:9px 14px;color:#94a3b8;white-space:nowrap;">${j.posted_date || '—'}</td>
-      <td style="padding:9px 14px;text-align:center;">${j.has_jd ? '<span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:#d1fae5;color:#065f46;">✓ Yes</span>' : '<span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:#fee2e2;color:#991b1b;">✗ No</span>'}</td>
+      <td style="padding:9px 14px;text-align:center;">${(() => { const lb = j.jd_label || (j.has_jd ? 'yes' : 'no'); if (lb === 'yes') return '<span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:#d1fae5;color:#065f46;">✓ Yes</span>'; if (lb === 'expired') return '<span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;" title="Listing appears closed / expired">expireddd</span>'; return '<span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:#fee2e2;color:#991b1b;">✗ No</span>'; })()}</td>
       <td style="padding:9px 14px;text-align:center;"><span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;${sync}">${j.sync_status}</span></td>
       <td style="padding:9px 14px;text-align:center;">${extLink}</td>`;
     return tr;

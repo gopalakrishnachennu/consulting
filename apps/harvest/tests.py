@@ -156,6 +156,35 @@ class JarvisPlatformApiExtractionTests(SimpleTestCase):
             "111222333",
         )
 
+    def test_smartrecruiters_accepts_rest_api_url(self):
+        """Apply links sometimes store api.smartrecruiters.com/v1/companies/.../postings/id."""
+        jarvis = JobJarvis()
+        url = "https://api.smartrecruiters.com/v1/companies/WesternDigital/postings/744000112340137"
+        captured = {}
+
+        def fake_get(u, **kwargs):
+            captured["u"] = u
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            resp.json.return_value = {
+                "id": "744000112340137",
+                "name": "Engineer",
+                "ref": "https://jobs.smartrecruiters.com/WesternDigital/744000112340137",
+                "jobAd": {
+                    "sections": {
+                        "jobDescription": {"text": "<p>API body</p>"},
+                    }
+                },
+            }
+            return resp
+
+        with patch.object(jarvis, "_http_get", side_effect=fake_get):
+            out = jarvis._smartrecruiters(url)
+        self.assertIsNotNone(out)
+        self.assertIn("WesternDigital", captured.get("u", ""))
+        self.assertIn("/postings/744000112340137", captured.get("u", ""))
+        self.assertIn("API body", out.get("description", ""))
+
     def test_smartrecruiters_api_request_strips_seo_slug_from_url(self):
         """Detail API must receive numeric id only, not ``744...-title-slug``."""
         from apps.harvest.jarvis import _smartrecruiters_normalize_posting_id

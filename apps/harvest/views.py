@@ -3,7 +3,8 @@ import logging
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q, Value
+from django.db.models.functions import Coalesce, Length, Trim
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
@@ -28,25 +29,39 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 
-def raw_jobs_missing_description_count() -> int:
-    """Count jobs with empty/null description that have a URL (backfill candidates).
-
-    Rows actively claimed by parallel backfill (recent ``jd_backfill_locked_at``) are
-    excluded so the stat does not flicker during a run.
-    """
-    from django.db.models import Q
-
+def _raw_jobs_missing_jd_base_qs():
+    """Rows with no real JD text (same rule as Jobs Browser ``has_jd``)."""
     from .tasks import BACKFILL_LOCK_STALE_MINUTES
 
     stale_before = timezone.now() - timedelta(minutes=BACKFILL_LOCK_STALE_MINUTES)
     return (
-        RawJob.objects.filter(
-            Q(description="") | Q(description__isnull=True),
+        RawJob.objects.annotate(
+            _jd_len=Length(Trim(Coalesce(F("description"), Value("")))),
         )
+        .filter(_jd_len__lte=1)
         .exclude(original_url="")
         .filter(
             Q(jd_backfill_locked_at__isnull=True)
             | Q(jd_backfill_locked_at__lt=stale_before),
+        )
+    )
+
+
+def raw_jobs_missing_description_count() -> int:
+    """Count jobs with empty/trivial description that have a URL (backfill candidates)."""
+    return _raw_jobs_missing_jd_base_qs().count()
+
+
+def raw_jobs_missing_jd_expired_count() -> int:
+    """Subset of missing-JD rows that look expired (closed/delisted)."""
+    today = timezone.now().date()
+    now = timezone.now()
+    return (
+        _raw_jobs_missing_jd_base_qs()
+        .filter(
+            Q(expires_at__lt=now)
+            | Q(closing_date__lt=today)
+            | Q(is_active=False),
         )
         .count()
     )
@@ -434,7 +449,8 @@ class RawJobListView(SuperuserRequiredMixin, ListView):
                     "salary_raw": (job.salary_raw or "")[:20],
                     "posted_date": str(job.posted_date) if job.posted_date else "",
                     "sync_status": job.sync_status or "",
-                    "has_jd": bool(job.description and len(job.description.strip()) > 1),
+                    "has_jd": job.has_meaningful_description(),
+                    "jd_label": job.jd_browser_label(),
                     "detail_url": reverse("harvest-rawjob-detail", args=[job.pk]),
                 })
 
@@ -483,10 +499,14 @@ class RawJobListView(SuperuserRequiredMixin, ListView):
             qs = qs.filter(is_remote=False)
 
         jd_f = self.request.GET.get("has_jd", "").strip()
-        if jd_f == "1":
-            qs = qs.exclude(Q(description="") | Q(description__isnull=True) | Q(description=" "))
-        elif jd_f == "0":
-            qs = qs.filter(Q(description="") | Q(description__isnull=True) | Q(description=" "))
+        if jd_f in ("0", "1"):
+            qs = qs.annotate(
+                _jd_len=Length(Trim(Coalesce(F("description"), Value("")))),
+            )
+            if jd_f == "1":
+                qs = qs.filter(_jd_len__gt=1)
+            else:
+                qs = qs.filter(_jd_len__lte=1)
 
         date_from = self.request.GET.get("date_from", "").strip()
         if date_from:
@@ -510,6 +530,7 @@ class RawJobListView(SuperuserRequiredMixin, ListView):
         ctx["pending_jobs"] = RawJob.objects.filter(sync_status="PENDING").count()
         ctx["failed_jobs"] = RawJob.objects.filter(sync_status="FAILED").count()
         ctx["missing_description_jobs"] = raw_jobs_missing_description_count()
+        ctx["missing_jd_expired_jobs"] = raw_jobs_missing_jd_expired_count()
 
         from django.utils.timezone import now
         from datetime import timedelta
@@ -846,6 +867,7 @@ class RawJobStatsView(SuperuserRequiredMixin, View):
             "failed_jobs": RawJob.objects.filter(sync_status="FAILED").count(),
             "new_today": RawJob.objects.filter(fetched_at__date=today).count(),
             "missing_description_jobs": raw_jobs_missing_description_count(),
+            "missing_jd_expired_jobs": raw_jobs_missing_jd_expired_count(),
             "running_batch": batch_data,
             "platform_stats": list(
                 RawJob.objects.values("platform_slug")

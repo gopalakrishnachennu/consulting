@@ -103,6 +103,7 @@ PLATFORM_PATTERNS: dict[str, list[str]] = {
         "smartrecruiters.com/jobs",
         "jobs.smartrecruiters.com",
         "careers.smartrecruiters.com",
+        "api.smartrecruiters.com/v1/companies",
     ],
     "workable":        ["apply.workable.com", "jobs.workable.com"],
     "bamboohr":        ["bamboohr.com/careers", "bamboohr.com/jobs"],
@@ -720,20 +721,30 @@ class JobJarvis:
         URLs:
           https://jobs.smartrecruiters.com/{companySlug}/{postingId}
           https://careers.smartrecruiters.com/...
+          https://api.smartrecruiters.com/v1/companies/{slug}/postings/{id}
+            (stored on RawJob when the apply link points at the REST endpoint)
 
         Public job links often append an SEO slug to the posting id segment, e.g.
         ``744000121421842-mgr-title-here-``. The REST API expects only the numeric id
         (or UUID), not the suffix — otherwise the API returns 400 and we fall back
         to HTML (which may be a thin page or blocked for bots).
         """
-        m = re.search(
-            r"https?://(?:(?:www|jobs|careers)\.)?smartrecruiters\.com/([^/?#]+)/([^/?#]+)",
+        api_m = re.search(
+            r"https?://api\.smartrecruiters\.com/v1/companies/([^/?#]+)/postings/([^/?#]+)",
             url,
             re.I,
         )
-        if not m:
-            return None
-        slug, raw_segment = m.group(1), m.group(2)
+        if api_m:
+            slug, raw_segment = api_m.group(1), api_m.group(2)
+        else:
+            m = re.search(
+                r"https?://(?:(?:www|jobs|careers)\.)?smartrecruiters\.com/([^/?#]+)/([^/?#]+)",
+                url,
+                re.I,
+            )
+            if not m:
+                return None
+            slug, raw_segment = m.group(1), m.group(2)
         posting_id = _smartrecruiters_normalize_posting_id(raw_segment)
         if not posting_id:
             return None

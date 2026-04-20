@@ -695,5 +695,34 @@ class RawJob(models.Model):
         verbose_name = "Raw Job"
         verbose_name_plural = "Raw Jobs"
 
+    def has_meaningful_description(self) -> bool:
+        """True when stored description has more than trivial whitespace (matches Jobs Browser)."""
+        return len((self.description or "").strip()) > 1
+
+    def is_expired_listing(self) -> bool:
+        """
+        Best-effort: job is no longer open (closed date passed, explicit expiry, or delisted).
+        Used to label missing JD rows as expired instead of a generic 'No'.
+        """
+        from django.utils import timezone
+
+        now = timezone.now()
+        today = now.date()
+        if self.expires_at and self.expires_at < now:
+            return True
+        if self.closing_date and self.closing_date < today:
+            return True
+        if not self.is_active:
+            return True
+        return False
+
+    def jd_browser_label(self) -> str:
+        """Badge key for harvest UI: 'yes' | 'no' | 'expired'."""
+        if self.has_meaningful_description():
+            return "yes"
+        if self.is_expired_listing():
+            return "expired"
+        return "no"
+
     def __str__(self):
         return f"{self.title} @ {self.company_name}"
