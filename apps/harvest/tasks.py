@@ -1592,21 +1592,57 @@ def backfill_descriptions_task(
 
     jarvis = JobJarvis()
     updated = skipped = failed = 0
+    recent_log: list[dict] = []  # last N items for live UI feed
+    _LOG_MAX = 12
+
+    def _push_log(entry: dict) -> None:
+        recent_log.append(entry)
+        if len(recent_log) > _LOG_MAX:
+            recent_log.pop(0)
 
     # Always slice from the start: rows leave this queryset as soon as description is set.
     jobs = list(qs.order_by("pk")[:batch_size])
 
     for idx, job in enumerate(jobs, start=1):
+        _push_log({
+            "pk": job.pk,
+            "title": (job.title or "")[:60],
+            "company": (job.company_name or "")[:40],
+            "platform": job.platform_slug or "",
+            "status": "processing",
+        })
+        update_task_progress(
+            self,
+            current=idx - 1,
+            total=len(jobs),
+            message=f"Fetching JD for: {(job.title or 'Untitled')[:50]} ({job.platform_slug or 'unknown'})",
+            detail={
+                "updated": updated, "skipped": skipped, "failed": failed,
+                "remaining_global": total - idx + 1,
+                "chain_depth": _chain_depth,
+                "current_job": {
+                    "pk": job.pk,
+                    "title": (job.title or "")[:60],
+                    "company": (job.company_name or "")[:40],
+                    "platform": job.platform_slug or "",
+                    "url": (job.original_url or "")[:120],
+                },
+                "log": list(recent_log),
+            },
+        )
+
         try:
             data = jarvis.ingest(job.original_url)
         except Exception as exc:
             logger.warning("Backfill failed for job %s (%s): %s", job.pk, job.original_url, exc)
             failed += 1
+            recent_log[-1]["status"] = "failed"
             _time.sleep(DELAY_BETWEEN)
             continue
 
         if (data.get("error") or "").strip() and not (data.get("description") or "").strip():
             skipped += 1
+            recent_log[-1]["status"] = "skipped"
             _time.sleep(DELAY_BETWEEN)
             continue
 
@@ -1649,14 +1685,12 @@ def backfill_descriptions_task(
             if v is not None and v not in ("", "UNKNOWN"):
                 update_fields[field] = v
 
-        # Merge any new keys into raw_payload without overwriting existing ones
         if data.get("raw_payload"):
             merged = dict(data["raw_payload"])
-            merged.update(job.raw_payload or {})  # existing wins
+            merged.update(job.raw_payload or {})
             update_fields["raw_payload"] = merged
 
         if update_fields:
-            # Run enrichment on the freshly fetched content
             from .enrichments import extract_enrichments
             merged_for_enrich = {
                 "title": job.title,
@@ -1676,15 +1710,25 @@ def backfill_descriptions_task(
 
             RawJob.objects.filter(pk=job.pk).update(**update_fields)
             updated += 1
+            recent_log[-1]["status"] = "updated"
+            recent_log[-1]["desc_len"] = len(desc)
+            recent_log[-1]["strategy"] = (data.get("strategy") or "")[:30]
             logger.info("Backfill updated job %s (%s)", job.pk, job.title[:60])
         else:
             skipped += 1
+            recent_log[-1]["status"] = "skipped"
 
         update_task_progress(
             self,
             current=idx,
             total=len(jobs),
             message=f"Updated {updated} / {idx} processed (failed {failed}, skipped {skipped})",
+            detail={
+                "updated": updated, "skipped": skipped, "failed": failed,
+                "remaining_global": total - idx,
+                "chain_depth": _chain_depth,
+                "log": list(recent_log),
+            },
         )
         _time.sleep(DELAY_BETWEEN)
 

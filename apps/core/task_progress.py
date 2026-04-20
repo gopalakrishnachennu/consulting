@@ -14,6 +14,7 @@ def update_task_progress(
     current: int,
     total: int,
     message: str = "",
+    detail: dict | None = None,
 ) -> None:
     """Publish PROGRESS for :class:`celery.result.AsyncResult` / task progress API."""
     total_i = max(int(total), 0)
@@ -23,12 +24,12 @@ def update_task_progress(
         pct = int(100 * current_i / total_i)
     else:
         pct = 100 if current_i else 0
-    task_self.update_state(
-        state="PROGRESS",
-        meta={
-            "current": current_i,
-            "total": total_i,
-            "percent": pct,
-            "message": (message or "")[:500],
-        },
-    )
+    meta = {
+        "current": current_i,
+        "total": total_i,
+        "percent": pct,
+        "message": (message or "")[:500],
+    }
+    if detail:
+        meta["detail"] = detail
+    task_self.update_state(state="PROGRESS", meta=meta)

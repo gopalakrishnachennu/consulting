@@ -154,6 +154,56 @@
         </div>
       </div>
 
+      <!-- ── Live Backfill JD Progress ─────────────────────────────────── -->
+      <div id="backfill-live-panel" style="display:none;background:#fff;border:1px solid #99f6e4;border-left:4px solid #0d9488;border-radius:10px;padding:16px 20px;margin-bottom:20px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <span style="font-size:13px;font-weight:700;color:#0f766e;">📝 Backfill JD in Progress</span>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <span style="font-size:11px;color:#6b7280;" id="bf-status-label">Starting…</span>
+            <span id="bf-chain-badge" style="display:none;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:#dbeafe;color:#1d4ed8;"></span>
+          </div>
+        </div>
+        <!-- Progress bar -->
+        <div style="background:#ccfbf1;border-radius:20px;height:8px;overflow:hidden;margin-bottom:10px;">
+          <div id="bf-progress-bar" style="background:linear-gradient(90deg,#0d9488,#06b6d4);height:100%;width:0%;transition:width .5s;border-radius:20px;"></div>
+        </div>
+        <!-- Stats row -->
+        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px;">
+          <span style="font-size:11px;color:#6b7280;">✅ Updated: <strong id="bf-updated" style="color:#059669;">0</strong></span>
+          <span style="font-size:11px;color:#6b7280;">⏭ Skipped: <strong id="bf-skipped" style="color:#d97706;">0</strong></span>
+          <span style="font-size:11px;color:#6b7280;">❌ Failed: <strong id="bf-failed" style="color:#dc2626;">0</strong></span>
+          <span style="font-size:11px;color:#6b7280;">📋 Remaining: <strong id="bf-remaining" style="color:#6366f1;">-</strong></span>
+        </div>
+        <!-- Currently processing -->
+        <div id="bf-current-job" style="display:none;background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px;padding:8px 12px;margin-bottom:10px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:14px;animation:pulse-dot 1.2s infinite;">⟳</span>
+            <div>
+              <span style="font-size:12px;font-weight:600;color:#0f172a;" id="bf-cur-title">-</span>
+              <span style="font-size:11px;color:#64748b;margin-left:8px;" id="bf-cur-company">-</span>
+              <span id="bf-cur-platform" style="margin-left:6px;padding:1px 6px;border-radius:10px;font-size:9px;font-weight:700;background:#eff6ff;color:#1d4ed8;"></span>
+            </div>
+          </div>
+        </div>
+        <!-- Activity log -->
+        <div id="bf-log-container" style="max-height:220px;overflow-y:auto;border:1px solid #f1f5f9;border-radius:8px;">
+          <table style="width:100%;border-collapse:collapse;font-size:11px;">
+            <thead>
+              <tr style="background:#f8fafc;position:sticky;top:0;">
+                <th style="padding:6px 10px;text-align:left;color:#64748b;font-weight:600;">Status</th>
+                <th style="padding:6px 10px;text-align:left;color:#64748b;font-weight:600;">Job Title</th>
+                <th style="padding:6px 10px;text-align:left;color:#64748b;font-weight:600;">Company</th>
+                <th style="padding:6px 10px;text-align:left;color:#64748b;font-weight:600;">Platform</th>
+                <th style="padding:6px 10px;text-align:right;color:#64748b;font-weight:600;">JD Size</th>
+              </tr>
+            </thead>
+            <tbody id="bf-log-body">
+              <tr><td colspan="5" style="padding:12px;text-align:center;color:#94a3b8;">Waiting for data…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div style="display:grid;grid-template-columns:60% 1fr;gap:16px;">
 
         <!-- Platform chart -->
@@ -1114,6 +1164,138 @@ function showToast(msg, type='success') {
     { rootMargin: '0px 0px 300px 0px', threshold: 0 }
   );
   if (hasNext) observer.observe(sentinel);
+})();
+
+// ─── Backfill JD live progress ────────────────────────────────────────────────
+(function() {
+  const BF_STORAGE_KEY = 'gc_backfill_task_id';
+  const panel = document.getElementById('backfill-live-panel');
+  if (!panel) return;
+
+  function getTaskId() {
+    // Check URL params first (set by redirect_with_task_progress)
+    const u = new URL(window.location.href);
+    const tp = u.searchParams.get('tp');
+    const tpl = (u.searchParams.get('tpl') || '').toLowerCase();
+    if (tp && tpl.includes('backfill')) {
+      try { sessionStorage.setItem(BF_STORAGE_KEY, tp); } catch(e) {}
+      return tp;
+    }
+    // Fall back to stored
+    try { return sessionStorage.getItem(BF_STORAGE_KEY) || ''; } catch(e) { return ''; }
+  }
+
+  const STATUS_BADGE = {
+    processing: '⟳',
+    updated:    '✅',
+    skipped:    '⏭',
+    failed:     '❌',
+  };
+  const STATUS_COLOR = {
+    processing: 'color:#0d9488',
+    updated:    'color:#059669',
+    skipped:    'color:#d97706',
+    failed:     'color:#dc2626',
+  };
+
+  function renderLog(log) {
+    const tbody = document.getElementById('bf-log-body');
+    if (!tbody || !log || !log.length) return;
+    tbody.innerHTML = log.slice().reverse().map(item => {
+      const badge = STATUS_BADGE[item.status] || '•';
+      const color = STATUS_COLOR[item.status] || 'color:#64748b';
+      const descLen = item.desc_len ? (item.desc_len > 1000 ? (item.desc_len/1000).toFixed(1)+'k' : item.desc_len) + ' chars' : '—';
+      const strat = item.strategy || '';
+      return `<tr style="border-bottom:1px solid #f8fafc;">
+        <td style="padding:5px 10px;${color};font-weight:700;white-space:nowrap;">${badge} ${item.status}</td>
+        <td style="padding:5px 10px;color:#1e293b;font-weight:500;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(item.title||'')}">${escHtml((item.title||'').substring(0,45))}</td>
+        <td style="padding:5px 10px;color:#64748b;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml((item.company||'').substring(0,25))}</td>
+        <td style="padding:5px 10px;"><span style="padding:1px 6px;border-radius:10px;font-size:9px;font-weight:700;background:#eff6ff;color:#1d4ed8;">${escHtml(item.platform||'')}</span></td>
+        <td style="padding:5px 10px;text-align:right;color:#64748b;font-family:monospace;font-size:10px;">${descLen}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  let bfInterval = null;
+
+  function pollBackfill() {
+    const taskId = getTaskId();
+    if (!taskId) {
+      panel.style.display = 'none';
+      return;
+    }
+    panel.style.display = 'block';
+
+    const url = "{% url 'api-task-progress' task_id='TASK_ID_PLACEHOLDER' %}".replace('TASK_ID_PLACEHOLDER', taskId);
+    fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+      .then(r => r.json())
+      .then(data => {
+        if (data.state === 'PENDING') {
+          document.getElementById('bf-status-label').textContent = 'Queued — waiting for Celery worker…';
+          return;
+        }
+        if (data.ready) {
+          // Task finished
+          const res = data.result || {};
+          const msg = data.state === 'SUCCESS'
+            ? `Done ✓ — ${res.updated||0} updated, ${res.skipped||0} skipped, ${res.failed||0} failed`
+            : `Task ended: ${data.message || data.state}`;
+          document.getElementById('bf-status-label').textContent = msg;
+          document.getElementById('bf-progress-bar').style.width = '100%';
+          if (res.chained_next) {
+            document.getElementById('bf-status-label').textContent = msg + ' — next batch queuing…';
+          }
+          if (data.state === 'SUCCESS') {
+            document.getElementById('bf-progress-bar').style.background = 'linear-gradient(90deg,#059669,#10b981)';
+          }
+          // Don't clear yet — chained task may come
+          if (!res.chained_next) {
+            setTimeout(() => {
+              if (bfInterval) { clearInterval(bfInterval); bfInterval = null; }
+            }, 10000);
+          }
+          return;
+        }
+        // In progress
+        const pct = data.percent || 0;
+        document.getElementById('bf-progress-bar').style.width = pct + '%';
+        document.getElementById('bf-status-label').textContent = data.message || 'Processing…';
+
+        const d = data.detail || {};
+        setText('bf-updated', d.updated ?? 0);
+        setText('bf-skipped', d.skipped ?? 0);
+        setText('bf-failed', d.failed ?? 0);
+        setText('bf-remaining', d.remaining_global != null ? d.remaining_global.toLocaleString() : '-');
+
+        const chainBadge = document.getElementById('bf-chain-badge');
+        if (d.chain_depth > 0) {
+          chainBadge.style.display = 'inline';
+          chainBadge.textContent = 'Chain #' + d.chain_depth;
+        }
+
+        // Current job
+        const cur = d.current_job;
+        const curEl = document.getElementById('bf-current-job');
+        if (cur && curEl) {
+          curEl.style.display = 'block';
+          setText('bf-cur-title', cur.title || 'Processing…');
+          setText('bf-cur-company', cur.company || '');
+          setText('bf-cur-platform', cur.platform || '');
+        }
+
+        // Log
+        if (d.log) renderLog(d.log);
+      })
+      .catch(() => {});
+  }
+
+  // Start polling if there's a backfill task
+  if (getTaskId()) {
+    panel.style.display = 'block';
+    pollBackfill();
+    bfInterval = setInterval(pollBackfill, 2000);
+    startPolling(); // also start stats polling so No JD count updates
+  }
 })();
 </script>
 

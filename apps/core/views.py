@@ -77,16 +77,17 @@ class TaskProgressAPIView(LoginRequiredMixin, UserPassesTestMixin, View):
             meta = r.info or {}
             if not isinstance(meta, dict):
                 meta = {}
-            return JsonResponse(
-                {
-                    "state": "PROGRESS",
-                    "ready": False,
-                    "percent": int(meta.get("percent") or 0),
-                    "current": int(meta.get("current") or 0),
-                    "total": int(meta.get("total") or 0),
-                    "message": meta.get("message") or "",
-                }
-            )
+            resp = {
+                "state": "PROGRESS",
+                "ready": False,
+                "percent": int(meta.get("percent") or 0),
+                "current": int(meta.get("current") or 0),
+                "total": int(meta.get("total") or 0),
+                "message": meta.get("message") or "",
+            }
+            if meta.get("detail") and isinstance(meta["detail"], dict):
+                resp["detail"] = meta["detail"]
+            return JsonResponse(resp)
 
         if state == "SUCCESS":
             res = r.result
