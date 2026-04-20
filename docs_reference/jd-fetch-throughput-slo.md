@@ -38,6 +38,10 @@ Uses `HARVEST_BACKFILL_INTER_JOB_DELAY_SEC` instead of a fixed 0.3s delay so thr
 3. **Tune** env vars after measuring: success rate, p95 latency, 429/403 counts per platform.
 4. **SLO**: define “success” vs “expected failure” (404 job gone) before promising 98%.
 
+## Parallel backfill without PostgreSQL `SKIP LOCKED`
+
+If the database does **not** support `SELECT … FOR UPDATE SKIP LOCKED` (e.g. SQLite), backfill still runs **multiple chunk tasks** by **sharding on primary key**: `MOD(pk, shard_count) = shard_index`, so chunks never claim the same row. PostgreSQL with `SKIP LOCKED` remains preferable for fair queueing under heavy contention.
+
 ## What this does *not* guarantee
 
 - A fixed jobs/sec in all conditions (single tenant, heavy HTML, IP blocks).

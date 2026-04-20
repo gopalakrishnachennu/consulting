@@ -4,7 +4,8 @@ from datetime import timedelta
 
 from celery import group, shared_task
 from django.db import connection, models, transaction
-from django.db.models import Q
+from django.db.models import F, IntegerField, Q, Value
+from django.db.models.functions import Mod
 from django.utils import timezone
 
 from core.task_progress import update_task_progress
@@ -64,16 +65,35 @@ def _backfill_eligible_queryset(platform_slug: str | None):
     return q
 
 
-def _claim_backfill_job_batch(claim_size: int, platform_slug: str | None) -> list:
+def _claim_backfill_job_batch(
+    claim_size: int,
+    platform_slug: str | None,
+    *,
+    shard_index: int = 0,
+    shard_count: int = 1,
+) -> list:
     """
     Claim up to *claim_size* rows for JD backfill.
 
-    Uses SELECT … FOR UPDATE SKIP LOCKED on PostgreSQL so parallel workers
-    never process the same row. On SQLite, callers must use parallelism=1.
+    - **PostgreSQL**: ``SELECT … FOR UPDATE SKIP LOCKED`` — parallel chunks may
+      all use ``shard_count=1`` and compete for the next rows.
+    - **SQLite / no SKIP LOCKED**: use ``shard_index`` + ``shard_count`` with
+      ``MOD(pk, shard_count) = shard_index`` so parallel chunks never claim the
+      same primary key (safe without row-level skip locked).
     """
     from .models import RawJob
 
     eligible = _backfill_eligible_queryset(platform_slug)
+    sc = max(1, int(shard_count))
+    si = int(shard_index) % sc
+    if sc > 1:
+        eligible = (
+            eligible.annotate(
+                _bk_shard=Mod(F("pk"), Value(sc, output_field=IntegerField())),
+            )
+            .filter(_bk_shard=si)
+        )
+
     with transaction.atomic():
         if _supports_select_for_update_skip_locked():
             locked = list(
@@ -1705,6 +1725,8 @@ def _backfill_descriptions_chunk_impl(
     platform_slug: str | None,
     *,
     progress_hook=None,
+    shard_index: int = 0,
+    shard_count: int = 1,
 ) -> dict:
     """
     Claim up to *claim_size* rows (SKIP LOCKED on Postgres) and fetch JDs sequentially.
@@ -1727,7 +1749,12 @@ def _backfill_descriptions_chunk_impl(
     logs: list[dict] = []
 
     try:
-        jobs = _claim_backfill_job_batch(claim_size, platform_slug)
+        jobs = _claim_backfill_job_batch(
+            claim_size,
+            platform_slug,
+            shard_index=shard_index,
+            shard_count=shard_count,
+        )
     except Exception as exc:
         logger.exception("backfill chunk claim failed: %s", exc)
         return {"claimed": 0, "updated": 0, "skipped": 0, "failed": 0, "log": [], "error": str(exc)}
@@ -1780,9 +1807,19 @@ def _backfill_descriptions_chunk_impl(
     time_limit=3900,
     max_retries=0,
 )
-def backfill_descriptions_chunk_task(claim_size: int, platform_slug: str | None):
+def backfill_descriptions_chunk_task(
+    claim_size: int,
+    platform_slug: str | None,
+    shard_index: int = 0,
+    shard_count: int = 1,
+):
     """Celery entry point for :func:`_backfill_descriptions_chunk_impl`."""
-    return _backfill_descriptions_chunk_impl(claim_size, platform_slug)
+    return _backfill_descriptions_chunk_impl(
+        claim_size,
+        platform_slug,
+        shard_index=shard_index,
+        shard_count=shard_count,
+    )
 
 
 @shared_task(bind=True, name="harvest.backfill_descriptions", soft_time_limit=86400, time_limit=90000)
@@ -1800,9 +1837,10 @@ def backfill_descriptions_task(
 
     *batch_size* — rows claimed per chunk (default 200).
     *parallel_workers* — how many chunk tasks run at once (capped at 8).
-      On SQLite, forced to 1 (no SKIP LOCKED).
+      Without ``SKIP LOCKED``, chunks use PK modulo sharding so rows are not doubled.
 
-    Uses row locks + ``jd_backfill_locked_at`` so workers never duplicate HTTP work.
+    Uses ``jd_backfill_locked_at`` + either ``SKIP LOCKED`` or PK sharding so workers
+    do not process the same row twice.
     """
     import time as _time
 
@@ -1821,14 +1859,12 @@ def backfill_descriptions_task(
     parallelism = workers_requested
     parallelism_notes: list[str] = []
 
-    if not _supports_select_for_update_skip_locked():
-        if parallelism > 1:
-            logger.warning(
-                "Database has no SKIP LOCKED — running backfill with parallelism=1 "
-                "(use PostgreSQL for parallel JD backfill).",
-            )
-            parallelism_notes.append("DB has no SKIP LOCKED — using 1 worker (PostgreSQL recommended).")
-        parallelism = 1
+    use_pk_sharding = not _supports_select_for_update_skip_locked()
+    if use_pk_sharding and parallelism > 1:
+        parallelism_notes.append(
+            "Parallel chunks use PK modulo sharding (MOD id) — safe on SQLite; "
+            "PostgreSQL + SKIP LOCKED is still best for even load."
+        )
 
     # Avoid group().get() deadlock: parent task blocks the only worker process.
     try:
@@ -1971,13 +2007,28 @@ def backfill_descriptions_task(
                         claim_size,
                         platform_slug,
                         progress_hook=_inline_progress,
+                        shard_index=0,
+                        shard_count=1,
                     )
                 ]
             else:
-                g = group(
-                    backfill_descriptions_chunk_task.s(claim_size, platform_slug)
-                    for _ in range(parallelism)
-                )
+                if _supports_select_for_update_skip_locked():
+                    g = group(
+                        backfill_descriptions_chunk_task.s(
+                            claim_size, platform_slug, shard_index=0, shard_count=1
+                        )
+                        for _ in range(parallelism)
+                    )
+                else:
+                    g = group(
+                        backfill_descriptions_chunk_task.s(
+                            claim_size,
+                            platform_slug,
+                            shard_index=i,
+                            shard_count=parallelism,
+                        )
+                        for i in range(parallelism)
+                    )
                 async_result = g.apply_async()
                 try:
                     chunk_results = async_result.get(timeout=7200)
