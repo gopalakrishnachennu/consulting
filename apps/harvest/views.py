@@ -26,6 +26,21 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 
+def raw_jobs_missing_description_count() -> int:
+    """Matches backfill_descriptions_task: empty/whitespace description, has original_url."""
+    from django.db.models import Value
+    from django.db.models.functions import Coalesce, Trim
+
+    return (
+        RawJob.objects.annotate(
+            _desc_stripped=Coalesce(Trim("description"), Value("")),
+        )
+        .filter(_desc_stripped="")
+        .exclude(original_url="")
+        .count()
+    )
+
+
 class SuperuserRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
         return self.request.user.is_superuser
@@ -476,6 +491,7 @@ class RawJobListView(SuperuserRequiredMixin, ListView):
         ctx["synced_jobs"] = RawJob.objects.filter(sync_status="SYNCED").count()
         ctx["pending_jobs"] = RawJob.objects.filter(sync_status="PENDING").count()
         ctx["failed_jobs"] = RawJob.objects.filter(sync_status="FAILED").count()
+        ctx["missing_description_jobs"] = raw_jobs_missing_description_count()
 
         from django.utils.timezone import now
         from datetime import timedelta
@@ -808,6 +824,7 @@ class RawJobStatsView(SuperuserRequiredMixin, View):
             "pending_jobs": RawJob.objects.filter(sync_status="PENDING").count(),
             "failed_jobs": RawJob.objects.filter(sync_status="FAILED").count(),
             "new_today": RawJob.objects.filter(fetched_at__date=today).count(),
+            "missing_description_jobs": raw_jobs_missing_description_count(),
             "running_batch": batch_data,
             "platform_stats": list(
                 RawJob.objects.values("platform_slug")

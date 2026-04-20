@@ -35,7 +35,7 @@
       </div>
 
       <!-- Stat cards -->
-      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;padding:20px 0 24px;" id="stat-cards">
+      <div style="display:grid;grid-template-columns:repeat(8,1fr);gap:10px;padding:20px 0 24px;" id="stat-cards">
 
         <a href="{% url 'harvest-rawjobs' %}" style="text-decoration:none;background:#1e293b;border:1px solid #334155;border-top:3px solid #64748b;border-radius:10px;padding:12px 14px;display:block;">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
@@ -91,6 +91,14 @@
             <span style="color:#86efac;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Active</span>
           </div>
           <p style="color:#f1f5f9;font-size:22px;font-weight:800;margin:0;letter-spacing:-1px;" id="stat-active">{{ active_jobs }}</p>
+        </div>
+
+        <div style="background:#1e293b;border:1px solid #334155;border-top:3px solid #f97316;border-radius:10px;padding:12px 14px;" title="Rows backfill still needs to fill (empty description, has URL). Updates every ~10s.">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+            <span style="font-size:12px;">📄</span>
+            <span style="color:#fdba74;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;">No JD yet</span>
+          </div>
+          <p style="color:#f1f5f9;font-size:22px;font-weight:800;margin:0;letter-spacing:-1px;" id="stat-missing-jd">{{ missing_description_jobs }}</p>
         </div>
 
       </div>
@@ -728,6 +736,7 @@ function pollStats() {
       setText('stat-failed', data.failed_jobs);
       setText('stat-remote', data.remote_jobs);
       setText('stat-active', data.active_jobs);
+      setText('stat-missing-jd', data.missing_description_jobs);
 
       // Update batch progress
       const card = document.getElementById('batch-progress-card');
@@ -942,6 +951,9 @@ function confirmBackfillDesc() {
       </p>
       <p style="font-size:12px;color:#94a3b8;margin:0 0 20px;">
         Each Celery task processes <strong>200 jobs</strong> (~0.6 s between requests). When more rows still need a JD, the task <strong>auto-queues the next chunk</strong> until done or Celery hits a safety cap — one click can drain a large backlog.
+      </p>
+      <p style="font-size:12px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 12px;margin:0 0 16px;text-align:left;line-height:1.5;">
+        <strong>How to see progress:</strong> the bottom task bar only follows the <em>first</em> batch (each new batch is a new task id). Watch the <strong>No JD yet</strong> stat card above — it should drop while backfill runs. If it does not move for a long time, check that Celery workers are running and server logs for <code>Backfill updated job</code> / errors.
       </p>
       <div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px;padding:10px 14px;margin-bottom:20px;text-align:left;">
         <p style="font-size:12px;color:#134e4a;margin:0;line-height:1.6;">
