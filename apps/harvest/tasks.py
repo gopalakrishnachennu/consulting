@@ -2,7 +2,7 @@ import logging
 import time
 from datetime import timedelta
 
-from celery import group, shared_task
+from celery import shared_task
 from django.db import connection, models, transaction
 from django.db.models import F, IntegerField, Q, Value
 from django.db.models.functions import Mod
@@ -1730,8 +1730,8 @@ def _backfill_descriptions_chunk_impl(
 ) -> dict:
     """
     Claim up to *claim_size* rows (SKIP LOCKED on Postgres) and fetch JDs sequentially.
-    Used by the Celery chunk task and inline when parallel_workers=1 (avoids Celery
-    group/wait deadlock on single-concurrency workers).
+    Used by the Celery chunk task (standalone), the orchestrator (inline or thread pool),
+    and must be safe to call from worker threads (fresh DB connections per thread).
 
     If *progress_hook* is set, it is invoked with
     ``(event, job=..., entry=..., lu=..., ls=..., lf=...)`` where event is
@@ -1836,8 +1836,10 @@ def backfill_descriptions_task(
     Fetch JDs for RawJobs with no description using parallel chunk workers.
 
     *batch_size* — rows claimed per chunk (default 200).
-    *parallel_workers* — how many chunk tasks run at once (capped at 8).
-      Without ``SKIP LOCKED``, chunks use PK modulo sharding so rows are not doubled.
+    *parallel_workers* — concurrent chunk runners (capped at 8), implemented with
+      a thread pool inside this task (not nested Celery tasks).
+
+    Without ``SKIP LOCKED``, chunks use PK modulo sharding so rows are not doubled.
 
     Uses ``jd_backfill_locked_at`` + either ``SKIP LOCKED`` or PK sharding so workers
     do not process the same row twice.
@@ -1865,23 +1867,6 @@ def backfill_descriptions_task(
             "Parallel chunks use PK modulo sharding (MOD id) — safe on SQLite; "
             "PostgreSQL + SKIP LOCKED is still best for even load."
         )
-
-    # Avoid group().get() deadlock: parent task blocks the only worker process.
-    try:
-        from celery import current_app
-
-        wc = current_app.conf.worker_concurrency
-        if wc is not None and int(wc) == 1 and parallelism > 1:
-            logger.warning(
-                "Celery worker concurrency is 1 — using parallel_workers=1 for this run "
-                "(start worker with e.g. `celery -A config worker -c 8` for parallel JD fetch).",
-            )
-            parallelism_notes.append(
-                "Celery worker -c 1 — only one task runs at a time; use -c 8 for 4 parallel chunks."
-            )
-            parallelism = 1
-    except Exception:
-        pass
 
     parallelism_note = " ".join(parallelism_notes)
 
@@ -2012,29 +1997,34 @@ def backfill_descriptions_task(
                     )
                 ]
             else:
-                if _supports_select_for_update_skip_locked():
-                    g = group(
-                        backfill_descriptions_chunk_task.s(
-                            claim_size, platform_slug, shard_index=0, shard_count=1
-                        )
-                        for _ in range(parallelism)
-                    )
-                else:
-                    g = group(
-                        backfill_descriptions_chunk_task.s(
+                # Parallel chunks run in a thread pool inside this task. Do not use
+                # Celery group()+Result.get() here — Celery forbids blocking on subtask
+                # results from within a task (RuntimeError), and join_native can still
+                # call nested .get() with unsafe defaults.
+                from concurrent.futures import ThreadPoolExecutor
+
+                from django.db import close_old_connections
+
+                def _one_shard(shard_index: int, shard_count: int) -> dict:
+                    close_old_connections()
+                    try:
+                        return _backfill_descriptions_chunk_impl(
                             claim_size,
                             platform_slug,
-                            shard_index=i,
-                            shard_count=parallelism,
+                            shard_index=shard_index,
+                            shard_count=shard_count,
                         )
-                        for i in range(parallelism)
-                    )
-                async_result = g.apply_async()
-                try:
-                    chunk_results = async_result.get(timeout=7200)
-                except Exception as exc:
-                    logger.exception("backfill parallel round failed: %s", exc)
-                    raise
+                    finally:
+                        close_old_connections()
+
+                if _supports_select_for_update_skip_locked():
+                    shard_specs = [(0, 1)] * parallelism
+                else:
+                    shard_specs = [(i, parallelism) for i in range(parallelism)]
+
+                with ThreadPoolExecutor(max_workers=parallelism) as pool:
+                    futures = [pool.submit(_one_shard, si, sc) for si, sc in shard_specs]
+                    chunk_results = [fut.result() for fut in futures]
 
             round_claimed = 0
             for cr in chunk_results:
