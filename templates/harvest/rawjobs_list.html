@@ -164,6 +164,7 @@
             <span style="font-size:11px;color:#6b7280;" id="bf-status-label">Starting…</span>
           </div>
         </div>
+        <p id="bf-parallelism-note" style="display:none;font-size:11px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;margin:0 0 10px 0;line-height:1.4;"></p>
         <!-- Progress bar -->
         <div style="background:#ccfbf1;border-radius:20px;height:10px;overflow:hidden;margin-bottom:12px;">
           <div id="bf-progress-bar" style="background:linear-gradient(90deg,#0d9488,#06b6d4);height:100%;width:0%;transition:width .5s;border-radius:20px;"></div>
@@ -1309,6 +1310,16 @@ function showToast(msg, type='success') {
         setText('bf-remaining', d.remaining_global != null ? d.remaining_global.toLocaleString() : '-');
         setText('bf-speed', d.speed ? d.speed + '/s' : '-');
         setText('bf-eta', d.eta || '-');
+
+        const noteEl = document.getElementById('bf-parallelism-note');
+        if (noteEl) {
+          if (d.parallelism_note) {
+            noteEl.textContent = d.parallelism_note;
+            noteEl.style.display = 'block';
+          } else {
+            noteEl.style.display = 'none';
+          }
+        }
 
         const chainBadge = document.getElementById('bf-chain-badge');
         if (d.batch_num > 1) {

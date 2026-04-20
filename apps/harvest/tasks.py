@@ -1696,11 +1696,21 @@ def _backfill_process_one_job(job, jarvis):
     return "updated", log
 
 
-def _backfill_descriptions_chunk_impl(claim_size: int, platform_slug: str | None) -> dict:
+def _backfill_descriptions_chunk_impl(
+    claim_size: int,
+    platform_slug: str | None,
+    *,
+    progress_hook=None,
+) -> dict:
     """
     Claim up to *claim_size* rows (SKIP LOCKED on Postgres) and fetch JDs sequentially.
     Used by the Celery chunk task and inline when parallel_workers=1 (avoids Celery
     group/wait deadlock on single-concurrency workers).
+
+    If *progress_hook* is set, it is invoked with
+    ``(event, job=..., entry=..., lu=..., ls=..., lf=...)`` where event is
+    ``"job_start"`` before HTTP fetch and ``"job_done"`` after each job so the
+    orchestrator can update Celery PROGRESS every row (live UI).
     """
     import time as _time
 
@@ -1723,6 +1733,8 @@ def _backfill_descriptions_chunk_impl(claim_size: int, platform_slug: str | None
 
     jarvis = JobJarvis()
     for idx, job in enumerate(jobs):
+        if progress_hook:
+            progress_hook("job_start", job=job, entry=None, lu=updated, ls=skipped, lf=failed)
         try:
             outcome, entry = _backfill_process_one_job(job, jarvis)
         except SoftTimeLimitExceeded:
@@ -1735,7 +1747,7 @@ def _backfill_descriptions_chunk_impl(claim_size: int, platform_slug: str | None
                 "updated": updated,
                 "skipped": skipped,
                 "failed": failed,
-                "log": logs,
+                "log": logs if not progress_hook else [],
                 "soft_time_limit": True,
             }
         logs.append(entry)
@@ -1745,6 +1757,8 @@ def _backfill_descriptions_chunk_impl(claim_size: int, platform_slug: str | None
             skipped += 1
         else:
             failed += 1
+        if progress_hook:
+            progress_hook("job_done", job=job, entry=entry, lu=updated, ls=skipped, lf=failed)
         _time.sleep(BACKFILL_DELAY_SEC)
 
     return {
@@ -1752,7 +1766,7 @@ def _backfill_descriptions_chunk_impl(claim_size: int, platform_slug: str | None
         "updated": updated,
         "skipped": skipped,
         "failed": failed,
-        "log": logs,
+        "log": logs if not progress_hook else [],
     }
 
 
@@ -1799,13 +1813,17 @@ def backfill_descriptions_task(
         )
 
     claim_size = max(10, min(int(batch_size), 500))
-    parallelism = max(1, min(int(parallel_workers), BACKFILL_MAX_PARALLEL))
+    workers_requested = max(1, min(int(parallel_workers), BACKFILL_MAX_PARALLEL))
+    parallelism = workers_requested
+    parallelism_notes: list[str] = []
+
     if not _supports_select_for_update_skip_locked():
         if parallelism > 1:
             logger.warning(
                 "Database has no SKIP LOCKED — running backfill with parallelism=1 "
                 "(use PostgreSQL for parallel JD backfill).",
             )
+            parallelism_notes.append("DB has no SKIP LOCKED — using 1 worker (PostgreSQL recommended).")
         parallelism = 1
 
     # Avoid group().get() deadlock: parent task blocks the only worker process.
@@ -1818,9 +1836,14 @@ def backfill_descriptions_task(
                 "Celery worker concurrency is 1 — using parallel_workers=1 for this run "
                 "(start worker with e.g. `celery -A config worker -c 8` for parallel JD fetch).",
             )
+            parallelism_notes.append(
+                "Celery worker -c 1 — only one task runs at a time; use -c 8 for 4 parallel chunks."
+            )
             parallelism = 1
     except Exception:
         pass
+
+    parallelism_note = " ".join(parallelism_notes)
 
     total = _backfill_eligible_queryset(platform_slug).count()
     if total == 0:
@@ -1839,9 +1862,18 @@ def backfill_descriptions_task(
             recent_log.append(e)
         recent_log = recent_log[-_LOG_MAX:]
 
-    def _make_detail(cur_job=None) -> dict:
+    def _make_detail(
+        cur_job=None,
+        *,
+        disp_u=None,
+        disp_s=None,
+        disp_f=None,
+    ) -> dict:
+        u = disp_u if disp_u is not None else updated
+        s = disp_s if disp_s is not None else skipped
+        f = disp_f if disp_f is not None else failed
         elapsed = _time.monotonic() - _start_time
-        done = updated + skipped + failed
+        done = u + s + f
         speed = done / elapsed if elapsed > 0 else 0
         remaining = max(0, total - done)
         eta_secs = int(remaining / speed) if speed > 0 else 0
@@ -1853,13 +1885,15 @@ def backfill_descriptions_task(
             else (f"~{eta_min}m" if eta_min > 0 else f"~{eta_secs}s")
         )
         d = {
-            "updated": updated,
-            "skipped": skipped,
-            "failed": failed,
+            "updated": u,
+            "skipped": s,
+            "failed": f,
             "remaining_global": remaining,
             "batch_num": round_num,
             "parallel_workers": parallelism,
+            "workers_requested": workers_requested,
             "claim_size": claim_size,
+            "parallelism_note": parallelism_note,
             "speed": round(speed, 1),
             "elapsed_secs": int(elapsed),
             "eta": eta_str,
@@ -1875,18 +1909,66 @@ def backfill_descriptions_task(
             }
         return d
 
+    start_msg = (
+        f"Starting — {total} jobs — {parallelism} worker(s) × {claim_size} rows/chunk"
+    )
+    if workers_requested != parallelism:
+        start_msg += f" (you asked for {workers_requested})"
+    if parallelism_note:
+        start_msg += f" — {parallelism_note}"
+
     update_task_progress(
         self,
         current=0,
         total=total,
-        message=f"Starting — {total} jobs — {parallelism} parallel workers × {claim_size} rows/chunk…",
+        message=start_msg,
+        detail=_make_detail(),
     )
 
     try:
         while True:
             round_num += 1
+            base_u, base_s, base_f = updated, skipped, failed
+
             if parallelism == 1:
-                chunk_results = [_backfill_descriptions_chunk_impl(claim_size, platform_slug)]
+
+                def _inline_progress(event, job=None, entry=None, lu=0, ls=0, lf=0):
+                    nonlocal recent_log
+                    if event == "job_done" and entry is not None:
+                        recent_log.append(entry)
+                        recent_log = recent_log[-_LOG_MAX:]
+                    du, ds, df = base_u + lu, base_s + ls, base_f + lf
+                    done = du + ds + df
+                    cur = job
+                    msg = (
+                        f"Fetching: {(job.title or 'Untitled')[:50]} ({job.platform_slug or '?'})…"
+                        if event == "job_start" and job is not None
+                        else (
+                            f"Progress — {du} updated, {ds} skipped, {df} failed"
+                            if event == "job_done"
+                            else "…"
+                        )
+                    )
+                    update_task_progress(
+                        self,
+                        current=min(done, total),
+                        total=total,
+                        message=msg,
+                        detail=_make_detail(
+                            cur,
+                            disp_u=du,
+                            disp_s=ds,
+                            disp_f=df,
+                        ),
+                    )
+
+                chunk_results = [
+                    _backfill_descriptions_chunk_impl(
+                        claim_size,
+                        platform_slug,
+                        progress_hook=_inline_progress,
+                    )
+                ]
             else:
                 g = group(
                     backfill_descriptions_chunk_task.s(claim_size, platform_slug)
