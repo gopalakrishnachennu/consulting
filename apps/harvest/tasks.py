@@ -1584,15 +1584,52 @@ def backfill_descriptions_task(
 
     jarvis = JobJarvis()
     updated = skipped = failed = 0
-    recent_log: list[dict] = []  # last N items for live UI feed
-    _LOG_MAX = 12
+    recent_log: list[dict] = []
+    _LOG_MAX = 25
+    _start_time = _time.monotonic()
 
     def _push_log(entry: dict) -> None:
         recent_log.append(entry)
         if len(recent_log) > _LOG_MAX:
             recent_log.pop(0)
 
-    # Always slice from the start: rows leave this queryset as soon as description is set.
+    def _make_detail(idx_val: int, cur_job=None) -> dict:
+        elapsed = _time.monotonic() - _start_time
+        speed = idx_val / elapsed if elapsed > 0 else 0
+        remaining_this_batch = len(jobs) - idx_val
+        remaining_all = total - (updated + skipped + failed)
+        eta_secs = int(remaining_all / speed) if speed > 0 else 0
+        eta_min = eta_secs // 60
+        eta_hrs = eta_min // 60
+        if eta_hrs > 0:
+            eta_str = f"~{eta_hrs}h {eta_min % 60}m"
+        elif eta_min > 0:
+            eta_str = f"~{eta_min}m"
+        else:
+            eta_str = f"~{eta_secs}s"
+
+        d = {
+            "updated": updated, "skipped": skipped, "failed": failed,
+            "remaining_global": remaining_all,
+            "remaining_batch": remaining_this_batch,
+            "chain_depth": _chain_depth,
+            "batch_size": batch_size,
+            "batch_num": _chain_depth + 1,
+            "speed": round(speed, 1),
+            "elapsed_secs": int(elapsed),
+            "eta": eta_str,
+            "log": list(recent_log),
+        }
+        if cur_job:
+            d["current_job"] = {
+                "pk": cur_job.pk,
+                "title": (cur_job.title or "")[:60],
+                "company": (cur_job.company_name or "")[:40],
+                "platform": cur_job.platform_slug or "",
+                "url": (cur_job.original_url or "")[:200],
+            }
+        return d
+
     jobs = list(qs.order_by("pk")[:batch_size])
 
     for idx, job in enumerate(jobs, start=1):
@@ -1601,6 +1638,7 @@ def backfill_descriptions_task(
             "title": (job.title or "")[:60],
             "company": (job.company_name or "")[:40],
             "platform": job.platform_slug or "",
+            "url": (job.original_url or "")[:120],
             "status": "processing",
         })
         update_task_progress(
@@ -1608,19 +1646,7 @@ def backfill_descriptions_task(
             current=idx - 1,
             total=len(jobs),
             message=f"Fetching JD for: {(job.title or 'Untitled')[:50]} ({job.platform_slug or 'unknown'})",
-            detail={
-                "updated": updated, "skipped": skipped, "failed": failed,
-                "remaining_global": total - idx + 1,
-                "chain_depth": _chain_depth,
-                "current_job": {
-                    "pk": job.pk,
-                    "title": (job.title or "")[:60],
-                    "company": (job.company_name or "")[:40],
-                    "platform": job.platform_slug or "",
-                    "url": (job.original_url or "")[:120],
-                },
-                "log": list(recent_log),
-            },
+            detail=_make_detail(idx - 1, job),
         )
 
         try:
@@ -1629,6 +1655,8 @@ def backfill_descriptions_task(
             logger.warning("Backfill failed for job %s (%s): %s", job.pk, job.original_url, exc)
             failed += 1
             recent_log[-1]["status"] = "failed"
+            recent_log[-1]["reason"] = str(exc)[:80]
+            RawJob.objects.filter(pk=job.pk, description="").update(description=" ")
             _time.sleep(DELAY_BETWEEN)
             continue
 
@@ -1646,12 +1674,11 @@ def backfill_descriptions_task(
         desc_str = _s(data.get("description")).strip()
 
         if not desc_str:
-            # No description extracted — mark with a placeholder so we don't
-            # re-try this URL forever. A single space distinguishes "tried and
-            # failed" from "never attempted" (empty string).
             RawJob.objects.filter(pk=job.pk, description="").update(description=" ")
             skipped += 1
             recent_log[-1]["status"] = "skipped"
+            recent_log[-1]["reason"] = (err_str or "No description in response")[:80]
+            recent_log[-1]["strategy"] = _s(data.get("strategy"))[:30]
             _time.sleep(DELAY_BETWEEN)
             continue
 
@@ -1724,12 +1751,7 @@ def backfill_descriptions_task(
             current=idx,
             total=len(jobs),
             message=f"Updated {updated} / {idx} processed (failed {failed}, skipped {skipped})",
-            detail={
-                "updated": updated, "skipped": skipped, "failed": failed,
-                "remaining_global": total - idx,
-                "chain_depth": _chain_depth,
-                "log": list(recent_log),
-            },
+            detail=_make_detail(idx),
         )
         _time.sleep(DELAY_BETWEEN)
 
