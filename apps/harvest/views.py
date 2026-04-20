@@ -27,15 +27,13 @@ logger = logging.getLogger(__name__)
 
 
 def raw_jobs_missing_description_count() -> int:
-    """Matches backfill_descriptions_task: empty/whitespace description, has original_url."""
-    from django.db.models import Value
-    from django.db.models.functions import Coalesce, Trim
+    """Count jobs with empty/null description that have a URL (backfill candidates)."""
+    from django.db.models import Q
 
     return (
-        RawJob.objects.annotate(
-            _desc_stripped=Coalesce(Trim("description"), Value("")),
+        RawJob.objects.filter(
+            Q(description="") | Q(description__isnull=True),
         )
-        .filter(_desc_stripped="")
         .exclude(original_url="")
         .count()
     )
