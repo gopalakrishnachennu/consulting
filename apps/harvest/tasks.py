@@ -1550,8 +1550,6 @@ def backfill_descriptions_task(
     Progress is streamed to the task-progress widget.
     """
     import time as _time
-    from django.db.models import Value
-    from django.db.models.functions import Coalesce, Trim
 
     from .jarvis import JobJarvis
     from .models import RawJob
@@ -1567,13 +1565,11 @@ def backfill_descriptions_task(
         )
 
     def _qs_missing_description():
-        q = (
-            RawJob.objects.annotate(
-                _desc_stripped=Coalesce(Trim("description"), Value("")),
-            )
-            .filter(_desc_stripped="")
-            .exclude(original_url="")
-        )
+        from django.db.models import Q
+
+        q = RawJob.objects.filter(
+            Q(description="") | Q(description__isnull=True),
+        ).exclude(original_url="")
         if platform_slug:
             q = q.filter(platform_slug=platform_slug)
         return q
