@@ -672,6 +672,9 @@ class RawJob(models.Model):
     fetched_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     expires_at = models.DateTimeField(null=True, blank=True)
+    # Parallel JD backfill: set while a worker holds the row (cleared when done).
+    # Stale locks are reclaimed after BACKFILL_LOCK_STALE_MINUTES in tasks.
+    jd_backfill_locked_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
     class Meta:
         ordering = ["-fetched_at"]

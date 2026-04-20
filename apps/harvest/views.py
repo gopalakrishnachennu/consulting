@@ -7,6 +7,8 @@ from django.db.models import Count, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
+from datetime import timedelta
+
 from django.utils import timezone
 from django.views.generic import CreateView, DetailView, ListView, TemplateView, UpdateView, View
 
@@ -27,14 +29,25 @@ logger = logging.getLogger(__name__)
 
 
 def raw_jobs_missing_description_count() -> int:
-    """Count jobs with empty/null description that have a URL (backfill candidates)."""
+    """Count jobs with empty/null description that have a URL (backfill candidates).
+
+    Rows actively claimed by parallel backfill (recent ``jd_backfill_locked_at``) are
+    excluded so the stat does not flicker during a run.
+    """
     from django.db.models import Q
 
+    from .tasks import BACKFILL_LOCK_STALE_MINUTES
+
+    stale_before = timezone.now() - timedelta(minutes=BACKFILL_LOCK_STALE_MINUTES)
     return (
         RawJob.objects.filter(
             Q(description="") | Q(description__isnull=True),
         )
         .exclude(original_url="")
+        .filter(
+            Q(jd_backfill_locked_at__isnull=True)
+            | Q(jd_backfill_locked_at__lt=stale_before),
+        )
         .count()
     )
 
@@ -786,17 +799,19 @@ class RunBackfillDescriptionsView(SuperuserRequiredMixin, View):
 
         platform_slug = request.POST.get("platform_slug", "").strip() or None
         batch_size = int(request.POST.get("batch_size", "200") or "200")
+        parallel_workers = int(request.POST.get("parallel_workers", "4") or "4")
         offset = int(request.POST.get("offset", "0") or "0")
 
         task = backfill_descriptions_task.delay(
             batch_size=batch_size,
+            parallel_workers=parallel_workers,
             platform_slug=platform_slug,
             offset=offset,
         )
         label = f"platform={platform_slug}" if platform_slug else "all platforms"
         messages.success(
             request,
-            f"Description backfill started ({label}, batch={batch_size}) — Task {task.id[:8]}…",
+            f"Description backfill started ({label}, batch={batch_size}, workers={parallel_workers}) — Task {task.id[:8]}…",
         )
         return redirect_with_task_progress("harvest-rawjobs", task.id, f"Backfill descriptions ({label})")
 

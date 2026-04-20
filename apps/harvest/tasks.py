@@ -2,8 +2,9 @@ import logging
 import time
 from datetime import timedelta
 
-from celery import shared_task
-from django.db import models, transaction
+from celery import group, shared_task
+from django.db import connection, models, transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from core.task_progress import update_task_progress
@@ -21,6 +22,68 @@ HTML_SCRAPE_PLATFORMS = {"html_scrape", "icims", "taleo", "jobvite", "ultipro",
 MAX_CONSECUTIVE_FAILURES = 3
 
 logger = logging.getLogger(__name__)
+
+# JD backfill parallel workers: locks older than this are treated as stale (worker crash).
+BACKFILL_LOCK_STALE_MINUTES = 45
+BACKFILL_MAX_PARALLEL = 8
+BACKFILL_DELAY_SEC = 0.3  # politeness between HTTP fetches within one worker
+
+
+def _backfill_str(val) -> str:
+    if val is None:
+        return ""
+    if isinstance(val, list):
+        return "\n".join(_backfill_str(v) for v in val if v)
+    if isinstance(val, dict):
+        return str(val.get("text") or val.get("content") or val.get("name") or "")
+    return str(val)
+
+
+def _supports_select_for_update_skip_locked() -> bool:
+    return getattr(connection.features, "supports_select_for_update_skip_locked", False)
+
+
+def _backfill_eligible_queryset(platform_slug: str | None):
+    """Rows that still need a JD and are not actively claimed (unless lock is stale)."""
+    from .models import RawJob
+
+    stale_before = timezone.now() - timedelta(minutes=BACKFILL_LOCK_STALE_MINUTES)
+    q = RawJob.objects.filter(
+        Q(description="") | Q(description__isnull=True),
+    ).exclude(original_url="").exclude(original_url__isnull=True)
+    q = q.filter(
+        Q(jd_backfill_locked_at__isnull=True)
+        | Q(jd_backfill_locked_at__lt=stale_before),
+    )
+    if platform_slug:
+        q = q.filter(platform_slug=platform_slug)
+    return q
+
+
+def _claim_backfill_job_batch(claim_size: int, platform_slug: str | None) -> list:
+    """
+    Claim up to *claim_size* rows for JD backfill.
+
+    Uses SELECT … FOR UPDATE SKIP LOCKED on PostgreSQL so parallel workers
+    never process the same row. On SQLite, callers must use parallelism=1.
+    """
+    from .models import RawJob
+
+    eligible = _backfill_eligible_queryset(platform_slug)
+    with transaction.atomic():
+        if _supports_select_for_update_skip_locked():
+            locked = list(
+                eligible.select_for_update(skip_locked=True, of=("self",))
+                .order_by("pk")[:claim_size]
+            )
+        else:
+            locked = list(eligible.select_for_update().order_by("pk")[:claim_size])
+        if not locked:
+            return []
+        ids = [j.pk for j in locked]
+        now = timezone.now()
+        RawJob.objects.filter(pk__in=ids).update(jd_backfill_locked_at=now)
+    return list(RawJob.objects.filter(pk__in=ids).order_by("pk"))
 
 
 @shared_task(bind=True, name="harvest.backfill_platform_labels_from_jobs")
@@ -813,6 +876,7 @@ def fetch_raw_jobs_for_company_task(
             backfill_descriptions_task.apply_async(
                 kwargs={
                     "batch_size": 200,
+                    "parallel_workers": 2,
                     "platform_slug": platform_s,
                     "offset": 0,
                 },
@@ -1529,88 +1593,279 @@ def _jarvis_resolve_company(company_name: str, job_url: str):
 
 # ─── Description Backfill ────────────────────────────────────────────────────
 
+def _backfill_process_one_job(job, jarvis):
+    """
+    Fetch JD for a single RawJob row that was already claim-locked.
+    Clears jd_backfill_locked_at on every exit path.
+    Returns one of: ``updated``, ``skipped``, ``failed`` and a log dict.
+    """
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    from .enrichments import extract_enrichments
+    from .models import RawJob
+
+    log_base = {
+        "pk": job.pk,
+        "title": (job.title or "")[:60],
+        "company": (job.company_name or "")[:40],
+        "platform": job.platform_slug or "",
+        "url": (job.original_url or "")[:120],
+    }
+
+    try:
+        data = jarvis.ingest(job.original_url)
+    except SoftTimeLimitExceeded:
+        raise
+    except Exception as exc:
+        logger.warning("Backfill failed for job %s: %s", job.pk, exc)
+        RawJob.objects.filter(pk=job.pk).update(description=" ", jd_backfill_locked_at=None)
+        log = {**log_base, "status": "failed", "reason": str(exc)[:80]}
+        return "failed", log
+
+    desc_str = _backfill_str(data.get("description")).strip()
+
+    if not desc_str:
+        RawJob.objects.filter(pk=job.pk).update(description=" ", jd_backfill_locked_at=None)
+        log = {
+            **log_base,
+            "status": "skipped",
+            "reason": (_backfill_str(data.get("error")).strip() or "No description")[:80],
+            "strategy": _backfill_str(data.get("strategy"))[:30],
+        }
+        return "skipped", log
+
+    update_fields: dict = {"description": desc_str[:50000], "jd_backfill_locked_at": None}
+
+    for f, mx in (("requirements", 20000), ("benefits", 10000)):
+        v = _backfill_str(data.get(f)).strip()
+        if v:
+            update_fields[f] = v[:mx]
+
+    for f in ("salary_min", "salary_max"):
+        v = data.get(f)
+        if v is not None:
+            update_fields[f] = v
+
+    for f in ("salary_currency", "salary_period", "salary_raw"):
+        v = _backfill_str(data.get(f)).strip()
+        if v:
+            update_fields[f] = v[:256]
+
+    for f in ("employment_type", "experience_level"):
+        v = _backfill_str(data.get(f)).strip()
+        if v and v != "UNKNOWN":
+            update_fields[f] = v
+
+    for f in ("department", "city", "state", "country", "location_raw"):
+        v = _backfill_str(data.get(f)).strip()
+        if v:
+            update_fields[f] = v[:256]
+
+    for f in ("is_remote", "location_type"):
+        v = data.get(f)
+        if v is not None and v not in ("", "UNKNOWN"):
+            update_fields[f] = v
+
+    if data.get("raw_payload"):
+        merged = dict(data["raw_payload"])
+        merged.update(job.raw_payload or {})
+        update_fields["raw_payload"] = merged
+
+    update_fields.update(extract_enrichments({
+        "title": job.title,
+        "description": update_fields.get("description") or job.description,
+        "requirements": update_fields.get("requirements") or job.requirements,
+        "benefits": update_fields.get("benefits") or job.benefits,
+        "department": job.department,
+        "location_raw": job.location_raw,
+        "employment_type": job.employment_type,
+        "experience_level": job.experience_level,
+        "salary_raw": job.salary_raw,
+        "company_name": job.company_name,
+        "posted_date": str(job.posted_date) if job.posted_date else "",
+    }))
+
+    RawJob.objects.filter(pk=job.pk).update(**update_fields)
+    log = {
+        **log_base,
+        "status": "updated",
+        "desc_len": len(desc_str),
+        "strategy": _backfill_str(data.get("strategy"))[:30],
+    }
+    logger.info("Backfill updated job %s (%s)", job.pk, job.title[:60])
+    return "updated", log
+
+
+def _backfill_descriptions_chunk_impl(claim_size: int, platform_slug: str | None) -> dict:
+    """
+    Claim up to *claim_size* rows (SKIP LOCKED on Postgres) and fetch JDs sequentially.
+    Used by the Celery chunk task and inline when parallel_workers=1 (avoids Celery
+    group/wait deadlock on single-concurrency workers).
+    """
+    import time as _time
+
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    from .jarvis import JobJarvis
+    from .models import RawJob
+
+    updated = skipped = failed = 0
+    logs: list[dict] = []
+
+    try:
+        jobs = _claim_backfill_job_batch(claim_size, platform_slug)
+    except Exception as exc:
+        logger.exception("backfill chunk claim failed: %s", exc)
+        return {"claimed": 0, "updated": 0, "skipped": 0, "failed": 0, "log": [], "error": str(exc)}
+
+    if not jobs:
+        return {"claimed": 0, "updated": 0, "skipped": 0, "failed": 0, "log": []}
+
+    jarvis = JobJarvis()
+    for idx, job in enumerate(jobs):
+        try:
+            outcome, entry = _backfill_process_one_job(job, jarvis)
+        except SoftTimeLimitExceeded:
+            logger.warning("backfill chunk soft time limit at job %s", job.pk)
+            RawJob.objects.filter(pk__in=[j.pk for j in jobs[idx:]]).update(
+                jd_backfill_locked_at=None,
+            )
+            return {
+                "claimed": len(jobs),
+                "updated": updated,
+                "skipped": skipped,
+                "failed": failed,
+                "log": logs,
+                "soft_time_limit": True,
+            }
+        logs.append(entry)
+        if outcome == "updated":
+            updated += 1
+        elif outcome == "skipped":
+            skipped += 1
+        else:
+            failed += 1
+        _time.sleep(BACKFILL_DELAY_SEC)
+
+    return {
+        "claimed": len(jobs),
+        "updated": updated,
+        "skipped": skipped,
+        "failed": failed,
+        "log": logs,
+    }
+
+
+@shared_task(
+    name="harvest.backfill_descriptions_chunk",
+    soft_time_limit=3600,
+    time_limit=3900,
+    max_retries=0,
+)
+def backfill_descriptions_chunk_task(claim_size: int, platform_slug: str | None):
+    """Celery entry point for :func:`_backfill_descriptions_chunk_impl`."""
+    return _backfill_descriptions_chunk_impl(claim_size, platform_slug)
+
+
 @shared_task(bind=True, name="harvest.backfill_descriptions", soft_time_limit=86400, time_limit=90000)
 def backfill_descriptions_task(
     self,
     batch_size: int = 200,
+    parallel_workers: int = 4,
     platform_slug: str | None = None,
     offset: int = 0,
     _chain_depth: int = 0,
     _skip_streak: int = 0,
 ):
     """
-    Fetch JDs for ALL RawJobs that have no description. ONE long-running
-    task — no chaining, no race conditions. Loops internally until every
-    job is attempted, then exits.
+    Fetch JDs for RawJobs with no description using parallel chunk workers.
 
-    soft_time_limit=86400 (24 hrs). time_limit=90000 (25 hrs).
+    *batch_size* — rows claimed per chunk (default 200).
+    *parallel_workers* — how many chunk tasks run at once (capped at 8).
+      On SQLite, forced to 1 (no SKIP LOCKED).
+
+    Uses row locks + ``jd_backfill_locked_at`` so workers never duplicate HTTP work.
     """
     import time as _time
+
     from celery.exceptions import SoftTimeLimitExceeded
 
-    from .jarvis import JobJarvis
     from .models import RawJob
-
-    DELAY_BETWEEN = 0.3  # seconds between requests
 
     if offset:
         logger.warning(
-            "backfill_descriptions_task: offset=%s is ignored (queryset shrinks as rows are updated). "
-            "Use batch_size + auto-chaining only.",
+            "backfill_descriptions_task: offset=%s is ignored.",
             offset,
         )
 
-    def _qs_missing_description():
-        from django.db.models import Q
+    claim_size = max(10, min(int(batch_size), 500))
+    parallelism = max(1, min(int(parallel_workers), BACKFILL_MAX_PARALLEL))
+    if not _supports_select_for_update_skip_locked():
+        if parallelism > 1:
+            logger.warning(
+                "Database has no SKIP LOCKED — running backfill with parallelism=1 "
+                "(use PostgreSQL for parallel JD backfill).",
+            )
+        parallelism = 1
 
-        q = RawJob.objects.filter(
-            Q(description="") | Q(description__isnull=True),
-        ).exclude(original_url="").exclude(original_url__isnull=True)
-        if platform_slug:
-            q = q.filter(platform_slug=platform_slug)
-        return q
+    # Avoid group().get() deadlock: parent task blocks the only worker process.
+    try:
+        from celery import current_app
 
-    total = _qs_missing_description().count()
+        wc = current_app.conf.worker_concurrency
+        if wc is not None and int(wc) == 1 and parallelism > 1:
+            logger.warning(
+                "Celery worker concurrency is 1 — using parallel_workers=1 for this run "
+                "(start worker with e.g. `celery -A config worker -c 8` for parallel JD fetch).",
+            )
+            parallelism = 1
+    except Exception:
+        pass
+
+    total = _backfill_eligible_queryset(platform_slug).count()
     if total == 0:
         return {"message": "All jobs already have descriptions.", "updated": 0}
 
-    jarvis = JobJarvis()
     updated = skipped = failed = 0
     processed = 0
     recent_log: list[dict] = []
     _LOG_MAX = 25
     _start_time = _time.monotonic()
+    round_num = 0
 
-    def _s(val) -> str:
-        if val is None: return ""
-        if isinstance(val, list): return "\n".join(_s(v) for v in val if v)
-        if isinstance(val, dict): return str(val.get("text") or val.get("content") or val.get("name") or "")
-        return str(val)
-
-    def _push_log(entry: dict) -> None:
-        recent_log.append(entry)
-        if len(recent_log) > _LOG_MAX:
-            recent_log.pop(0)
+    def _push_log(entries: list[dict]) -> None:
+        nonlocal recent_log
+        for e in entries:
+            recent_log.append(e)
+        recent_log = recent_log[-_LOG_MAX:]
 
     def _make_detail(cur_job=None) -> dict:
         elapsed = _time.monotonic() - _start_time
         done = updated + skipped + failed
         speed = done / elapsed if elapsed > 0 else 0
-        remaining = total - done
+        remaining = max(0, total - done)
         eta_secs = int(remaining / speed) if speed > 0 else 0
         eta_min = eta_secs // 60
         eta_hrs = eta_min // 60
-        eta_str = f"~{eta_hrs}h {eta_min % 60}m" if eta_hrs > 0 else (f"~{eta_min}m" if eta_min > 0 else f"~{eta_secs}s")
+        eta_str = (
+            f"~{eta_hrs}h {eta_min % 60}m"
+            if eta_hrs > 0
+            else (f"~{eta_min}m" if eta_min > 0 else f"~{eta_secs}s")
+        )
         d = {
-            "updated": updated, "skipped": skipped, "failed": failed,
+            "updated": updated,
+            "skipped": skipped,
+            "failed": failed,
             "remaining_global": remaining,
-            "batch_num": 1,
+            "batch_num": round_num,
+            "parallel_workers": parallelism,
+            "claim_size": claim_size,
             "speed": round(speed, 1),
             "elapsed_secs": int(elapsed),
             "eta": eta_str,
             "log": list(recent_log),
         }
-        if cur_job:
+        if cur_job is not None:
             d["current_job"] = {
                 "pk": cur_job.pk,
                 "title": (cur_job.title or "")[:60],
@@ -1620,115 +1875,85 @@ def backfill_descriptions_task(
             }
         return d
 
-    update_task_progress(self, current=0, total=total,
-        message=f"Starting — {total} jobs without description…")
+    update_task_progress(
+        self,
+        current=0,
+        total=total,
+        message=f"Starting — {total} jobs — {parallelism} parallel workers × {claim_size} rows/chunk…",
+    )
 
-    # ONE continuous loop — fetch batch_size rows at a time from DB,
-    # process them all, then fetch the next batch_size. No chaining.
-    while True:
-        jobs = list(_qs_missing_description().order_by("pk")[:batch_size])
-        if not jobs:
-            break
+    try:
+        while True:
+            round_num += 1
+            if parallelism == 1:
+                chunk_results = [_backfill_descriptions_chunk_impl(claim_size, platform_slug)]
+            else:
+                g = group(
+                    backfill_descriptions_chunk_task.s(claim_size, platform_slug)
+                    for _ in range(parallelism)
+                )
+                async_result = g.apply_async()
+                try:
+                    chunk_results = async_result.get(timeout=7200)
+                except Exception as exc:
+                    logger.exception("backfill parallel round failed: %s", exc)
+                    raise
 
-        for job in jobs:
-            processed += 1
-            _push_log({
-                "pk": job.pk,
-                "title": (job.title or "")[:60],
-                "company": (job.company_name or "")[:40],
-                "platform": job.platform_slug or "",
-                "url": (job.original_url or "")[:120],
-                "status": "processing",
-            })
-            update_task_progress(self, current=updated + skipped + failed, total=total,
-                message=f"Fetching JD for: {(job.title or 'Untitled')[:50]} ({job.platform_slug or 'unknown'})",
-                detail=_make_detail(job))
+            round_claimed = 0
+            for cr in chunk_results:
+                if not isinstance(cr, dict):
+                    continue
+                round_claimed += int(cr.get("claimed") or 0)
+                updated += int(cr.get("updated") or 0)
+                skipped += int(cr.get("skipped") or 0)
+                failed += int(cr.get("failed") or 0)
+                _push_log(cr.get("log") or [])
 
-            try:
-                data = jarvis.ingest(job.original_url)
-            except SoftTimeLimitExceeded:
-                logger.warning("Backfill time limit — processed %d jobs", processed)
-                return {"updated": updated, "skipped": skipped, "failed": failed,
-                        "remaining": _qs_missing_description().count()}
-            except Exception as exc:
-                logger.warning("Backfill failed for job %s: %s", job.pk, exc)
-                failed += 1
-                recent_log[-1]["status"] = "failed"
-                recent_log[-1]["reason"] = str(exc)[:80]
-                RawJob.objects.filter(pk=job.pk, description="").update(description=" ")
-                _time.sleep(DELAY_BETWEEN)
-                continue
+            processed = updated + skipped + failed
 
-            desc_str = _s(data.get("description")).strip()
+            last_job = None
+            if recent_log:
+                last_pk = recent_log[-1].get("pk")
+                if last_pk:
+                    last_job = RawJob.objects.filter(pk=last_pk).first()
 
-            if not desc_str:
-                RawJob.objects.filter(pk=job.pk, description="").update(description=" ")
-                skipped += 1
-                recent_log[-1]["status"] = "skipped"
-                recent_log[-1]["reason"] = (_s(data.get("error")).strip() or "No description")[:80]
-                recent_log[-1]["strategy"] = _s(data.get("strategy"))[:30]
-                _time.sleep(DELAY_BETWEEN)
-                continue
+            update_task_progress(
+                self,
+                current=processed,
+                total=total,
+                message=(
+                    f"Round {round_num} — {parallelism} workers — "
+                    f"{updated} updated, {skipped} skipped, {failed} failed "
+                    f"(claimed {round_claimed} this round)"
+                ),
+                detail=_make_detail(last_job),
+            )
 
-            update_fields = {"description": desc_str[:50000]}
+            if round_claimed == 0:
+                break
 
-            for f, mx in (("requirements", 20000), ("benefits", 10000)):
-                v = _s(data.get(f)).strip()
-                if v: update_fields[f] = v[:mx]
+    except SoftTimeLimitExceeded:
+        logger.warning(
+            "Backfill orchestrator soft time limit — processed %s jobs",
+            processed,
+        )
+        return {
+            "updated": updated,
+            "skipped": skipped,
+            "failed": failed,
+            "remaining": _backfill_eligible_queryset(platform_slug).count(),
+            "parallel_workers": parallelism,
+        }
 
-            for f in ("salary_min", "salary_max"):
-                v = data.get(f)
-                if v is not None: update_fields[f] = v
-
-            for f in ("salary_currency", "salary_period", "salary_raw"):
-                v = _s(data.get(f)).strip()
-                if v: update_fields[f] = v[:256]
-
-            for f in ("employment_type", "experience_level"):
-                v = _s(data.get(f)).strip()
-                if v and v != "UNKNOWN": update_fields[f] = v
-
-            for f in ("department", "city", "state", "country", "location_raw"):
-                v = _s(data.get(f)).strip()
-                if v: update_fields[f] = v[:256]
-
-            for f in ("is_remote", "location_type"):
-                v = data.get(f)
-                if v is not None and v not in ("", "UNKNOWN"): update_fields[f] = v
-
-            if data.get("raw_payload"):
-                merged = dict(data["raw_payload"])
-                merged.update(job.raw_payload or {})
-                update_fields["raw_payload"] = merged
-
-            from .enrichments import extract_enrichments
-            update_fields.update(extract_enrichments({
-                "title": job.title,
-                "description": update_fields.get("description") or job.description,
-                "requirements": update_fields.get("requirements") or job.requirements,
-                "benefits": update_fields.get("benefits") or job.benefits,
-                "department": job.department, "location_raw": job.location_raw,
-                "employment_type": job.employment_type, "experience_level": job.experience_level,
-                "salary_raw": job.salary_raw, "company_name": job.company_name,
-                "posted_date": str(job.posted_date) if job.posted_date else "",
-            }))
-
-            RawJob.objects.filter(pk=job.pk).update(**update_fields)
-            updated += 1
-            recent_log[-1]["status"] = "updated"
-            recent_log[-1]["desc_len"] = len(desc_str)
-            recent_log[-1]["strategy"] = _s(data.get("strategy"))[:30]
-            logger.info("Backfill updated job %s (%s)", job.pk, job.title[:60])
-
-            update_task_progress(self, current=updated + skipped + failed, total=total,
-                message=f"Updated {updated} / {processed} processed (failed {failed}, skipped {skipped})",
-                detail=_make_detail())
-            _time.sleep(DELAY_BETWEEN)
-
-    remaining_n = _qs_missing_description().count()
+    remaining_n = _backfill_eligible_queryset(platform_slug).count()
     result = {
-        "updated": updated, "skipped": skipped, "failed": failed,
-        "total_processed": processed, "remaining": remaining_n,
+        "updated": updated,
+        "skipped": skipped,
+        "failed": failed,
+        "total_processed": processed,
+        "remaining": remaining_n,
+        "parallel_workers": parallelism,
+        "claim_size": claim_size,
         "chained_next": False,
     }
     logger.info("Backfill descriptions FINISHED: %s", result)
