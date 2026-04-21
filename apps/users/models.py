@@ -252,5 +252,22 @@ class SavedJob(models.Model):
         unique_together = ('user', 'job')
         ordering = ['-saved_at']
 
+
+class ConsultantEmbedding(models.Model):
+    """Stores the OpenAI embedding vector for a consultant profile (for semantic job matching)."""
+    consultant = models.OneToOneField(
+        ConsultantProfile, on_delete=models.CASCADE, related_name='embedding'
+    )
+    vector = models.JSONField(help_text="Embedding float list from text-embedding-3-small")
+    model = models.CharField(max_length=80, default='text-embedding-3-small')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Consultant Embedding"
+
+    def __str__(self):
+        return f"Embedding for consultant {self.consultant_id}"
+
     def __str__(self):
         return f"{self.user.username} saved {self.job.title}"

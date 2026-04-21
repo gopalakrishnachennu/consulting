@@ -13,6 +13,42 @@ from .models import Job
 logger = logging.getLogger(__name__)
 
 
+@shared_task
+def generate_job_matches_task(job_id: int, notify: bool = True):
+    """
+    Embed job + compute cosine similarity against all consultant embeddings.
+    Optionally notify top matches via in-app notification.
+    """
+    from .matching import embed_job, compute_matches_for_job, notify_top_matches_for_job
+    try:
+        job = Job.objects.get(pk=job_id)
+    except Job.DoesNotExist:
+        return {"error": f"Job {job_id} not found"}
+
+    embed_job(job)
+    results = compute_matches_for_job(job, top_n=20)
+    if notify and results:
+        notify_top_matches_for_job(job, top_n=5)
+
+    return {"job_id": job_id, "matches_computed": len(results)}
+
+
+@shared_task
+def refresh_consultant_embeddings_task():
+    """Regenerate embeddings for all active consultant profiles. Run weekly."""
+    from users.models import ConsultantProfile
+    from .matching import embed_consultant
+
+    profiles = ConsultantProfile.objects.select_related('user').prefetch_related(
+        'marketing_roles', 'experience'
+    )
+    updated = 0
+    for profile in profiles:
+        if embed_consultant(profile):
+            updated += 1
+    return {"updated": updated}
+
+
 def _normalize_url(url: str) -> str:
     if not url:
         return ""

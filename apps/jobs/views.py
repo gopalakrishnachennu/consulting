@@ -848,6 +848,12 @@ class JobApproveView(LoginRequiredMixin, EmployeeRequiredMixin, View):
             notify_job_pool_status(job, approved=True, actor=request.user)
         except Exception:
             logger.exception("Approval notifications failed for job %s", pk)
+        # Kick off semantic matching in background
+        try:
+            from .tasks import generate_job_matches_task
+            generate_job_matches_task.delay(job.pk, notify=True)
+        except Exception:
+            logger.exception("Match task dispatch failed for job %s", pk)
         messages.success(request, f"✓ \"{job.title}\" approved and is now Live.")
         return redirect(request.POST.get('next') or 'job-pool')
 
@@ -956,3 +962,94 @@ class JobPoolRefreshLinksView(LoginRequiredMixin, EmployeeRequiredMixin, View):
             logger.exception("Manual pool link refresh failed")
             messages.error(request, "Could not refresh link statuses right now. Please try again.")
         return redirect('job-pool')
+
+
+# ─── Jobs Command Center — unified pipeline hub ──────────────────────────────
+
+class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
+    """
+    Unified pipeline hub: Harvesting (raw) | Vetting (pool) | Live | Archived
+    Replaces separate /harvest/raw-jobs/, /jobs/pool/, /jobs/ views with one
+    tabbed command center.
+    """
+    template_name = 'jobs/pipeline.html'
+
+    def get(self, request):
+        tab = request.GET.get('tab', 'pool')
+        q = (request.GET.get('q') or '').strip()
+
+        # ── Summary stats (always computed) ─────────────────────────────────
+        from harvest.models import RawJob, FetchBatch
+        raw_total = RawJob.objects.count()
+        pool_total = Job.objects.filter(status=Job.Status.POOL, is_archived=False).count()
+        live_total = Job.objects.filter(status=Job.Status.OPEN, is_archived=False).count()
+        archived_total = Job.objects.filter(is_archived=True).count()
+
+        # Last harvest batch info
+        last_batch = FetchBatch.objects.order_by('-created_at').first()
+
+        # ── Tab-specific data ────────────────────────────────────────────────
+        tab_jobs = None
+        tab_raw = None
+
+        if tab == 'raw':
+            qs = RawJob.objects.select_related('company', 'platform').order_by('-created_at')
+            if q:
+                qs = qs.filter(Q(title__icontains=q) | Q(company__name__icontains=q))
+            tab_raw = qs[:200]
+
+        elif tab == 'pool':
+            score_tab = request.GET.get('score', 'all')
+            qs = Job.objects.filter(status=Job.Status.POOL, is_archived=False)
+            if q:
+                qs = qs.filter(Q(title__icontains=q) | Q(company__icontains=q))
+            pool_high = qs.filter(validation_score__gte=80).count()
+            pool_review = qs.filter(validation_score__gte=50, validation_score__lt=80).count()
+            pool_flagged = qs.filter(validation_score__lt=50).count()
+            pool_unscored = qs.filter(validation_score__isnull=True).count()
+            if score_tab == 'high':
+                qs = qs.filter(validation_score__gte=80)
+            elif score_tab == 'review':
+                qs = qs.filter(validation_score__gte=50, validation_score__lt=80)
+            elif score_tab == 'flagged':
+                qs = qs.filter(validation_score__lt=50)
+            elif score_tab == 'unscored':
+                qs = qs.filter(validation_score__isnull=True)
+            tab_jobs = qs.select_related('posted_by', 'company_obj').order_by('-created_at')[:200]
+            pool_extra = {
+                'score_tab': score_tab,
+                'pool_high': pool_high,
+                'pool_review': pool_review,
+                'pool_flagged': pool_flagged,
+                'pool_unscored': pool_unscored,
+            }
+
+        elif tab == 'live':
+            qs = Job.objects.filter(status=Job.Status.OPEN, is_archived=False)
+            if q:
+                qs = qs.filter(Q(title__icontains=q) | Q(company__icontains=q))
+            tab_jobs = qs.select_related('posted_by', 'company_obj').annotate(
+                sub_count=Count('submissions')
+            ).order_by('-created_at')[:200]
+
+        elif tab == 'archived':
+            qs = Job.objects.filter(is_archived=True)
+            if q:
+                qs = qs.filter(Q(title__icontains=q) | Q(company__icontains=q))
+            tab_jobs = qs.select_related('posted_by').order_by('-archived_at')[:200]
+
+        ctx = {
+            'tab': tab,
+            'q': q,
+            'raw_total': raw_total,
+            'pool_total': pool_total,
+            'live_total': live_total,
+            'archived_total': archived_total,
+            'last_batch': last_batch,
+            'tab_jobs': tab_jobs,
+            'tab_raw': tab_raw,
+        }
+        if tab == 'pool':
+            ctx.update(pool_extra)
+
+        return render(request, self.template_name, ctx)

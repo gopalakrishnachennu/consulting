@@ -106,6 +106,26 @@ TASKS = [
         "kwargs": {},
     },
 
+    # ── ANALYTICS ──────────────────────────────────────────────────────────
+    {
+        "name": "Analytics — daily snapshot",
+        "task": "analytics.tasks.take_daily_snapshot_task",
+        "category": "analytics",
+        "description": "Captures a point-in-time snapshot of platform health metrics (jobs, submissions, revenue, consultants).",
+        "cron": {"minute": "55", "hour": "23", "day_of_week": "*", "day_of_month": "*", "month_of_year": "*"},
+        "schedule_label": "Daily 23:55 UTC",
+        "kwargs": {},
+    },
+    {
+        "name": "Matching — refresh consultant embeddings",
+        "task": "jobs.tasks.refresh_consultant_embeddings_task",
+        "category": "analytics",
+        "description": "Regenerates OpenAI embeddings for all active consultant profiles for semantic job matching.",
+        "cron": {"minute": "0", "hour": "2", "day_of_week": "0", "day_of_month": "*", "month_of_year": "*"},
+        "schedule_label": "Weekly Sunday 02:00 UTC",
+        "kwargs": {},
+    },
+
     # ── HARVEST ENGINE ─────────────────────────────────────────────────────
     {
         "name": "Harvest — detect company platforms",

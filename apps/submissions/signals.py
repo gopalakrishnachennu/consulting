@@ -11,15 +11,37 @@ from .models import ApplicationSubmission, Placement
 from users.models import ConsultantProfile
 
 
+_STATUS_TO_STAGE = {
+    ApplicationSubmission.Status.APPLIED: 'SUBMITTED',
+    ApplicationSubmission.Status.INTERVIEW: 'INTERVIEW',
+    ApplicationSubmission.Status.OFFER: 'OFFER',
+    ApplicationSubmission.Status.PLACED: 'PLACED',
+    ApplicationSubmission.Status.REJECTED: 'REJECTED',
+    ApplicationSubmission.Status.WITHDRAWN: 'WITHDRAWN',
+}
+
+
 @receiver(post_save, sender=ApplicationSubmission)
 def on_submission_status_change(sender, instance, **kwargs):
-    """Auto-update consultant profile status based on submission status."""
+    """Auto-update consultant profile status and record funnel events."""
     if instance.status == ApplicationSubmission.Status.PLACED:
-        # Set consultant status to PLACED
         consultant = instance.consultant
         if consultant.status != ConsultantProfile.Status.PLACED:
             consultant.status = ConsultantProfile.Status.PLACED
             consultant.save(update_fields=['status'])
+
+    # Record funnel event for analytics
+    stage = _STATUS_TO_STAGE.get(instance.status)
+    if stage:
+        try:
+            from analytics.models import FunnelEvent
+            FunnelEvent.record(
+                stage=stage,
+                submission=instance,
+                source='signal',
+            )
+        except Exception:
+            pass
 
 
 @receiver(post_save, sender=Placement)

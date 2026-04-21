@@ -137,5 +137,43 @@ class JobTemplate(models.Model):
     default_marketing_roles = models.ManyToManyField(MarketingRole, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+
+class JobEmbedding(models.Model):
+    """Stores the OpenAI embedding vector for a job (for semantic matching)."""
+    job = models.OneToOneField(Job, on_delete=models.CASCADE, related_name='embedding')
+    vector = models.JSONField(help_text="Embedding float list from text-embedding-3-small")
+    model = models.CharField(max_length=80, default='text-embedding-3-small')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Job Embedding"
+
+    def __str__(self):
+        return f"Embedding for {self.job_id}"
+
+
+class MatchScore(models.Model):
+    """Pre-computed cosine similarity between a job and a consultant profile."""
+    job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name='match_scores')
+    consultant = models.ForeignKey(
+        'users.ConsultantProfile', on_delete=models.CASCADE, related_name='match_scores'
+    )
+    score = models.FloatField(help_text="Cosine similarity 0.0–1.0")
+    rank = models.PositiveSmallIntegerField(default=0, help_text="Rank among all consultants for this job (1 = best)")
+    computed_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('job', 'consultant')
+        ordering = ['rank']
+        verbose_name = "Match Score"
+
+    def __str__(self):
+        return f"Job {self.job_id} ↔ Consultant {self.consultant_id}: {self.score:.3f}"
+
+    @property
+    def score_pct(self):
+        return int(self.score * 100)
+
     def __str__(self):
         return self.title

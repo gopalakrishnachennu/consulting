@@ -1,0 +1,498 @@
+{% extends 'base.html' %}
+{% load tz %}
+
+{% block content %}
+
+{# ── Command Center Header ─────────────────────────────────────────────────── #}
+<div class="hero-gradient rounded-2xl px-8 py-6 mb-0 relative overflow-hidden">
+  <div class="relative z-10">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-5">
+      <div>
+        <h1 class="text-3xl font-extrabold text-white tracking-tight">Jobs Command Center</h1>
+        <p class="text-blue-100 text-sm mt-1">Harvest → Vet → Live — the full pipeline in one place</p>
+      </div>
+      <div class="flex items-center gap-3 flex-wrap">
+        <a href="{% url 'harvest-run-fetch-batch' %}"
+           class="bg-white/15 border border-white/30 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-white/25 transition flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+          Run Harvest
+        </a>
+        <a href="{% url 'job-create' %}"
+           class="bg-white text-indigo-700 font-bold text-sm px-5 py-2 rounded-xl shadow hover:shadow-lg transition flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+          </svg>
+          Post Job
+        </a>
+      </div>
+    </div>
+
+    {# ── Pipeline Stats Bar ──────────────────────────────────────────────────── #}
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <a href="?tab=raw" class="bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl p-4 transition group">
+        <div class="text-blue-200 text-xs font-semibold uppercase tracking-wide mb-1 flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-blue-300 inline-block animate-pulse"></span>Harvesting
+        </div>
+        <div class="text-3xl font-extrabold text-white">{{ raw_total|default:"0" }}</div>
+        <div class="text-blue-200 text-xs mt-0.5">raw jobs collected</div>
+        {% if last_batch %}
+        <div class="text-blue-300 text-[11px] mt-1">Last run: {{ last_batch.created_at|timesince }} ago</div>
+        {% endif %}
+      </a>
+
+      <a href="?tab=pool" class="bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl p-4 transition group">
+        <div class="text-yellow-200 text-xs font-semibold uppercase tracking-wide mb-1 flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-yellow-300 inline-block"></span>Vetting Queue
+        </div>
+        <div class="text-3xl font-extrabold text-white">{{ pool_total|default:"0" }}</div>
+        <div class="text-blue-200 text-xs mt-0.5">awaiting review</div>
+      </a>
+
+      <a href="?tab=live" class="bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl p-4 transition group">
+        <div class="text-green-200 text-xs font-semibold uppercase tracking-wide mb-1 flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-green-400 inline-block"></span>Live Jobs
+        </div>
+        <div class="text-3xl font-extrabold text-white">{{ live_total|default:"0" }}</div>
+        <div class="text-blue-200 text-xs mt-0.5">open to consultants</div>
+      </a>
+
+      <a href="?tab=archived" class="bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl p-4 transition group">
+        <div class="text-gray-300 text-xs font-semibold uppercase tracking-wide mb-1 flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-gray-400 inline-block"></span>Archived
+        </div>
+        <div class="text-3xl font-extrabold text-white">{{ archived_total|default:"0" }}</div>
+        <div class="text-blue-200 text-xs mt-0.5">closed / removed</div>
+      </a>
+    </div>
+  </div>
+</div>
+
+{# ── Sub-navigation ────────────────────────────────────────────────────────── #}
+<div class="bg-white border-b border-gray-200 shadow-sm mb-6 rounded-b-xl">
+  <div class="flex items-center gap-0 overflow-x-auto px-4">
+    <a href="{% url 'jobs-pipeline' %}"
+       class="px-4 py-3.5 text-sm font-semibold border-b-2 transition whitespace-nowrap
+              {% if request.resolver_match.url_name == 'jobs-pipeline' %}border-indigo-600 text-indigo-700{% else %}border-transparent text-gray-500 hover:text-gray-800{% endif %}">
+      Pipeline
+    </a>
+    <a href="{% url 'company-list' %}"
+       class="px-4 py-3.5 text-sm font-medium border-b-2 transition whitespace-nowrap
+              {% if 'company' in request.resolver_match.url_name|default:'' %}border-indigo-600 text-indigo-700{% else %}border-transparent text-gray-500 hover:text-gray-800{% endif %}">
+      Companies
+    </a>
+    <a href="{% url 'harvest-platforms' %}"
+       class="px-4 py-3.5 text-sm font-medium border-b-2 transition whitespace-nowrap
+              border-transparent text-gray-500 hover:text-gray-800">
+      Platforms
+    </a>
+    <a href="{% url 'harvest-schedule' %}"
+       class="px-4 py-3.5 text-sm font-medium border-b-2 transition whitespace-nowrap
+              border-transparent text-gray-500 hover:text-gray-800">
+      Schedule
+    </a>
+    <a href="{% url 'harvest-monitor' %}"
+       class="px-4 py-3.5 text-sm font-medium border-b-2 transition whitespace-nowrap
+              border-transparent text-gray-500 hover:text-gray-800">
+      Run Monitor
+    </a>
+    <a href="{% url 'harvest-jarvis' %}"
+       class="px-4 py-3.5 text-sm font-medium border-b-2 transition whitespace-nowrap
+              border-transparent text-gray-500 hover:text-gray-800">
+      Jarvis
+    </a>
+    <a href="{% url 'harvest-rawjobs' %}"
+       class="px-4 py-3.5 text-sm font-medium border-b-2 transition whitespace-nowrap
+              border-transparent text-gray-500 hover:text-gray-800">
+      Raw Jobs
+    </a>
+  </div>
+</div>
+
+{# ── Pipeline Tab Navigation ───────────────────────────────────────────────── #}
+<div class="flex items-center gap-2 mb-5 flex-wrap">
+  <a href="?tab=raw{% if q %}&q={{ q }}{% endif %}"
+     class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition
+            {% if tab == 'raw' %}bg-blue-600 text-white shadow{% else %}bg-white text-gray-600 border border-gray-200 hover:border-blue-300{% endif %}">
+    <span class="w-2 h-2 rounded-full {% if tab == 'raw' %}bg-blue-200{% else %}bg-blue-400{% endif %} animate-pulse"></span>
+    Harvesting <span class="font-bold">{{ raw_total }}</span>
+  </a>
+  <a href="?tab=pool{% if q %}&q={{ q }}{% endif %}"
+     class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition
+            {% if tab == 'pool' %}bg-yellow-500 text-white shadow{% else %}bg-white text-gray-600 border border-gray-200 hover:border-yellow-300{% endif %}">
+    ⚠ Vetting Queue <span class="font-bold">{{ pool_total }}</span>
+  </a>
+  <a href="?tab=live{% if q %}&q={{ q }}{% endif %}"
+     class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition
+            {% if tab == 'live' %}bg-green-600 text-white shadow{% else %}bg-white text-gray-600 border border-gray-200 hover:border-green-300{% endif %}">
+    ✓ Live <span class="font-bold">{{ live_total }}</span>
+  </a>
+  <a href="?tab=archived{% if q %}&q={{ q }}{% endif %}"
+     class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition
+            {% if tab == 'archived' %}bg-gray-600 text-white shadow{% else %}bg-white text-gray-600 border border-gray-200 hover:border-gray-400{% endif %}">
+    ◌ Archived <span class="font-bold">{{ archived_total }}</span>
+  </a>
+
+  {# Search bar #}
+  <form method="get" class="ml-auto flex items-center gap-2">
+    <input type="hidden" name="tab" value="{{ tab }}">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search jobs…"
+           class="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-400 focus:outline-none w-56">
+    <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg transition">
+      Search
+    </button>
+    {% if q %}
+    <a href="?tab={{ tab }}" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm rounded-lg">Clear</a>
+    {% endif %}
+  </form>
+</div>
+
+{# ══════════════════════════════════════════════════════════════════════════════
+   TAB: RAW JOBS (Harvesting)
+═══════════════════════════════════════════════════════════════════════════════ #}
+{% if tab == 'raw' %}
+<div class="flex items-center justify-between mb-4">
+  <div>
+    <h2 class="text-lg font-bold text-gray-800">Harvested Raw Jobs</h2>
+    <p class="text-sm text-gray-500">Jobs scraped from ATS platforms — not yet in the vetting queue</p>
+  </div>
+  <div class="flex gap-2">
+    <a href="{% url 'harvest-rawjobs-batches' %}" class="px-3 py-2 bg-white border border-gray-200 text-gray-600 text-sm rounded-lg hover:border-gray-300 transition">View Batches</a>
+    <a href="{% url 'harvest-rawjobs-stats' %}" class="px-3 py-2 bg-white border border-gray-200 text-gray-600 text-sm rounded-lg hover:border-gray-300 transition">Stats</a>
+    <form method="post" action="{% url 'harvest-run-sync' %}">{% csrf_token %}
+      <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg transition">
+        Sync to Pool →
+      </button>
+    </form>
+  </div>
+</div>
+
+{% if tab_raw %}
+<div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-gray-50 border-b border-gray-200">
+      <tr>
+        <th class="px-4 py-3 text-left font-semibold text-gray-600">Job</th>
+        <th class="px-4 py-3 text-left font-semibold text-gray-600 hidden md:table-cell">Platform</th>
+        <th class="px-4 py-3 text-left font-semibold text-gray-600 hidden lg:table-cell">Location</th>
+        <th class="px-4 py-3 text-left font-semibold text-gray-600 hidden lg:table-cell">Harvested</th>
+        <th class="px-4 py-3 text-right font-semibold text-gray-600">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for raw in tab_raw %}
+      <tr class="hover:bg-gray-50 transition">
+        <td class="px-4 py-3">
+          <div class="font-semibold text-gray-900 text-sm">{{ raw.title }}</div>
+          <div class="text-xs text-gray-500 mt-0.5">{{ raw.company.name|default:"—" }}</div>
+        </td>
+        <td class="px-4 py-3 hidden md:table-cell">
+          {% if raw.platform %}
+          <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">{{ raw.platform.name }}</span>
+          {% else %}
+          <span class="text-gray-400 text-xs">—</span>
+          {% endif %}
+        </td>
+        <td class="px-4 py-3 hidden lg:table-cell text-xs text-gray-600">{{ raw.location|default:"—" }}</td>
+        <td class="px-4 py-3 hidden lg:table-cell text-xs text-gray-400">{{ raw.created_at|timesince }} ago</td>
+        <td class="px-4 py-3 text-right">
+          <a href="{% url 'harvest-rawjob-detail' raw.pk %}" class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg transition">View</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="bg-white border border-gray-200 rounded-xl shadow-sm p-10 text-center">
+  <div class="empty-state-icon mx-auto mb-3"><svg class="w-7 h-7 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg></div>
+  <p class="text-gray-500 text-sm">No raw jobs harvested yet.
+    <a href="{% url 'harvest-platforms' %}" class="text-indigo-600 hover:underline">Configure platforms</a>
+    or <a href="{% url 'harvest-jarvis' %}" class="text-indigo-600 hover:underline">paste a URL via Jarvis</a>.
+  </p>
+</div>
+{% endif %}
+{% endif %}
+
+{# ══════════════════════════════════════════════════════════════════════════════
+   TAB: VETTING POOL
+═══════════════════════════════════════════════════════════════════════════════ #}
+{% if tab == 'pool' %}
+<div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+  <div>
+    <h2 class="text-lg font-bold text-gray-800">Vetting Queue</h2>
+    <p class="text-sm text-gray-500">Review and approve jobs before they go live to consultants</p>
+  </div>
+  <div class="flex gap-2 flex-wrap">
+    <form method="post" action="{% url 'job-pool-refresh-links' %}">{% csrf_token %}
+      <button type="submit" class="px-3 py-2 bg-white border border-gray-200 text-gray-600 text-sm rounded-lg hover:border-gray-300 transition flex items-center gap-1.5">
+        ↻ Refresh Links
+      </button>
+    </form>
+    <a href="{% url 'job-create' %}" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg transition">+ Post Job</a>
+  </div>
+</div>
+
+{# Score sub-tabs #}
+<div class="flex flex-wrap gap-2 mb-4">
+  {% for stab, label, color, count in score_tabs %}{% endfor %}
+  <a href="?tab=pool&score=all{% if q %}&q={{ q }}{% endif %}"
+     class="px-3 py-1.5 rounded-lg text-sm font-medium transition
+            {% if score_tab == 'all' %}bg-blue-600 text-white{% else %}bg-white text-gray-600 border border-gray-200 hover:border-blue-300{% endif %}">
+    All <span class="font-bold">{{ pool_total }}</span>
+  </a>
+  <a href="?tab=pool&score=high{% if q %}&q={{ q }}{% endif %}"
+     class="px-3 py-1.5 rounded-lg text-sm font-medium transition
+            {% if score_tab == 'high' %}bg-green-600 text-white{% else %}bg-white text-gray-600 border border-gray-200 hover:border-green-300{% endif %}">
+    ✓ High ≥80 <span class="font-bold">{{ pool_high }}</span>
+  </a>
+  <a href="?tab=pool&score=review{% if q %}&q={{ q }}{% endif %}"
+     class="px-3 py-1.5 rounded-lg text-sm font-medium transition
+            {% if score_tab == 'review' %}bg-yellow-500 text-white{% else %}bg-white text-gray-600 border border-gray-200 hover:border-yellow-300{% endif %}">
+    ⚠ Needs Review <span class="font-bold">{{ pool_review }}</span>
+  </a>
+  <a href="?tab=pool&score=flagged{% if q %}&q={{ q }}{% endif %}"
+     class="px-3 py-1.5 rounded-lg text-sm font-medium transition
+            {% if score_tab == 'flagged' %}bg-red-600 text-white{% else %}bg-white text-gray-600 border border-gray-200 hover:border-red-300{% endif %}">
+    ✗ Flagged &lt;50 <span class="font-bold">{{ pool_flagged }}</span>
+  </a>
+  <a href="?tab=pool&score=unscored{% if q %}&q={{ q }}{% endif %}"
+     class="px-3 py-1.5 rounded-lg text-sm font-medium transition
+            {% if score_tab == 'unscored' %}bg-gray-600 text-white{% else %}bg-white text-gray-600 border border-gray-200 hover:border-gray-400{% endif %}">
+    ◌ Unscored <span class="font-bold">{{ pool_unscored }}</span>
+  </a>
+</div>
+
+{% if tab_jobs %}
+<form method="post" action="{% url 'job-bulk-approve' %}" id="pipeline-bulk-form">
+  {% csrf_token %}
+  <div class="bg-white border border-gray-200 rounded-xl shadow-sm mb-3 px-4 py-3 flex items-center gap-4">
+    <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
+      <input type="checkbox" id="select-all-pool" class="w-4 h-4 rounded border-gray-300 text-blue-600">
+      Select all on page
+    </label>
+    <button type="submit"
+        class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg transition flex items-center gap-1.5">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+      Bulk Approve
+    </button>
+    <span class="text-xs text-gray-400">Blacklisted companies skipped automatically.</span>
+  </div>
+
+  <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 border-b border-gray-200">
+        <tr>
+          <th class="px-4 py-3 w-8"></th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Job</th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Score</th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600 hidden md:table-cell">Posting</th>
+          <th class="px-4 py-3 text-right font-semibold text-gray-600">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for job in tab_jobs %}
+        <tr x-data="{ open: false }" class="hover:bg-gray-50 transition">
+          <td class="px-4 py-3">
+            <input type="checkbox" name="job_ids" value="{{ job.pk }}" class="pool-cb w-4 h-4 rounded border-gray-300 text-blue-600">
+          </td>
+          <td class="px-4 py-3">
+            <div class="font-semibold text-gray-900">
+              <a href="{% url 'job-detail' job.pk %}" class="hover:text-blue-600 transition" target="_blank">{{ job.title }}</a>
+            </div>
+            <div class="text-xs text-gray-500 mt-0.5">{{ job.company|default:"—" }}{% if job.location %} · {{ job.location }}{% endif %}</div>
+            <div class="text-xs text-gray-400 mt-0.5">{{ job.created_at|localtime|date:"M j, Y" }}</div>
+          </td>
+          <td class="px-4 py-3">
+            {% if job.validation_score is not None %}
+              {% if job.validation_score >= 80 %}
+              <span class="px-2.5 py-1 rounded-full bg-green-100 text-green-800 font-bold text-sm">{{ job.validation_score }}/100</span>
+              {% elif job.validation_score >= 50 %}
+              <span class="px-2.5 py-1 rounded-full bg-yellow-100 text-yellow-800 font-bold text-sm">{{ job.validation_score }}/100</span>
+              {% else %}
+              <span class="px-2.5 py-1 rounded-full bg-red-100 text-red-800 font-bold text-sm">{{ job.validation_score }}/100</span>
+              {% endif %}
+            {% else %}
+            <span class="px-2 py-1 rounded-full bg-gray-100 text-gray-500 text-xs">Pending…</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 hidden md:table-cell">
+            {% if job.original_link_is_live %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-xs font-semibold">Active</span>
+            {% else %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-800 text-xs font-semibold">Gone</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-right">
+            <div class="flex items-center justify-end gap-1.5">
+              {% if job.original_link %}
+              <a href="{{ job.original_link }}" target="_blank" class="px-2 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs rounded-lg transition">↗</a>
+              {% endif %}
+              <form method="post" action="{% url 'job-approve' job.pk %}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{% url 'jobs-pipeline' %}?tab=pool">
+                <button type="submit" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg transition">Approve</button>
+              </form>
+              <button type="button"
+                  @click="$dispatch('open-reject-modal', { jobId: {{ job.pk }}, jobTitle: '{{ job.title|escapejs }}' })"
+                  class="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-semibold rounded-lg transition">Reject</button>
+              <form method="post" action="{% url 'job-revalidate' job.pk %}">
+                {% csrf_token %}
+                <button type="submit" title="Re-score" class="px-2 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs rounded-lg transition">↻</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</form>
+{% else %}
+<div class="bg-white border border-gray-200 rounded-xl shadow-sm p-10 text-center">
+  <p class="text-gray-500 text-sm font-medium">Vetting queue is clear{% if score_tab != 'all' %} for this filter{% endif %}. All good.</p>
+</div>
+{% endif %}
+
+{# Reject modal (reused from job_pool.html) #}
+<div x-data="pipelineRejectModal()" x-cloak>
+  <div x-show="open" class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background:rgba(0,0,0,0.5);">
+    <div @click.outside="close()" class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+      <h3 class="text-lg font-bold text-gray-900 mb-1">Reject Job</h3>
+      <p class="text-sm text-gray-600 mb-4">Rejecting: <span class="font-semibold" x-text="jobTitle"></span></p>
+      <form :action="formAction" method="post">
+        {% csrf_token %}
+        <textarea name="rejection_reason" rows="3" required placeholder="Reason…"
+            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-4 focus:ring-2 focus:ring-red-300 focus:outline-none resize-none"></textarea>
+        <div class="flex gap-3 justify-end">
+          <button type="button" @click="close()" class="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-semibold rounded-lg">Cancel</button>
+          <button type="submit" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-lg">Confirm Reject</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script>
+  const selAll = document.getElementById('select-all-pool');
+  if (selAll) selAll.addEventListener('change', () => document.querySelectorAll('.pool-cb').forEach(cb => cb.checked = selAll.checked));
+  function pipelineRejectModal() {
+    return { open: false, jobId: null, jobTitle: '', get formAction() { return `/jobs/${this.jobId}/reject/`; }, close() { this.open = false; }, init() { window.addEventListener('open-reject-modal', e => { this.jobId = e.detail.jobId; this.jobTitle = e.detail.jobTitle; this.open = true; }); } };
+  }
+</script>
+{% endif %}
+
+{# ══════════════════════════════════════════════════════════════════════════════
+   TAB: LIVE JOBS
+═══════════════════════════════════════════════════════════════════════════════ #}
+{% if tab == 'live' %}
+<div class="flex items-center justify-between mb-4">
+  <div>
+    <h2 class="text-lg font-bold text-gray-800">Live Jobs</h2>
+    <p class="text-sm text-gray-500">Open positions visible to consultants</p>
+  </div>
+  <a href="{% url 'job-list' %}" class="px-3 py-2 bg-white border border-gray-200 text-gray-600 text-sm rounded-lg hover:border-gray-300 transition">
+    Full Job List →
+  </a>
+</div>
+
+{% if tab_jobs %}
+<div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-gray-50 border-b border-gray-200">
+      <tr>
+        <th class="px-4 py-3 text-left font-semibold text-gray-600">Job</th>
+        <th class="px-4 py-3 text-left font-semibold text-gray-600 hidden md:table-cell">Type</th>
+        <th class="px-4 py-3 text-left font-semibold text-gray-600 hidden lg:table-cell">Submissions</th>
+        <th class="px-4 py-3 text-left font-semibold text-gray-600 hidden lg:table-cell">Posted</th>
+        <th class="px-4 py-3 text-right font-semibold text-gray-600">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for job in tab_jobs %}
+      <tr class="hover:bg-gray-50 transition">
+        <td class="px-4 py-3">
+          <div class="font-semibold text-gray-900">
+            <a href="{% url 'job-detail' job.pk %}" class="hover:text-blue-600 transition">{{ job.title }}</a>
+          </div>
+          <div class="text-xs text-gray-500 mt-0.5">{{ job.company|default:"—" }}{% if job.location %} · {{ job.location }}{% endif %}</div>
+          {% if not job.original_link_is_live %}
+          <span class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[11px] font-medium mt-1">⚠ Link gone</span>
+          {% endif %}
+        </td>
+        <td class="px-4 py-3 hidden md:table-cell">
+          <span class="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-xs">{{ job.get_job_type_display }}</span>
+        </td>
+        <td class="px-4 py-3 hidden lg:table-cell">
+          <span class="font-semibold text-gray-800">{{ job.sub_count }}</span>
+          <span class="text-gray-400 text-xs"> submissions</span>
+        </td>
+        <td class="px-4 py-3 hidden lg:table-cell text-xs text-gray-400">{{ job.created_at|date:"M j, Y" }}</td>
+        <td class="px-4 py-3 text-right">
+          <div class="flex items-center justify-end gap-1.5">
+            {% if job.original_link %}
+            <a href="{{ job.original_link }}" target="_blank" class="px-2 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs rounded-lg">↗</a>
+            {% endif %}
+            <a href="{% url 'job-update' job.pk %}" class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg">Edit</a>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="bg-white border border-gray-200 rounded-xl shadow-sm p-10 text-center">
+  <p class="text-gray-500 text-sm">No live jobs. <a href="{% url 'job-create' %}" class="text-indigo-600 hover:underline">Post a job</a> or <a href="?tab=pool" class="text-indigo-600 hover:underline">approve jobs from the vetting queue</a>.</p>
+</div>
+{% endif %}
+{% endif %}
+
+{# ══════════════════════════════════════════════════════════════════════════════
+   TAB: ARCHIVED
+═══════════════════════════════════════════════════════════════════════════════ #}
+{% if tab == 'archived' %}
+<div class="mb-4">
+  <h2 class="text-lg font-bold text-gray-800">Archived Jobs</h2>
+  <p class="text-sm text-gray-500">Closed and soft-deleted positions</p>
+</div>
+
+{% if tab_jobs %}
+<div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-gray-50 border-b border-gray-200">
+      <tr>
+        <th class="px-4 py-3 text-left font-semibold text-gray-600">Job</th>
+        <th class="px-4 py-3 text-left font-semibold text-gray-600 hidden md:table-cell">Archived</th>
+        <th class="px-4 py-3 text-right font-semibold text-gray-600">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for job in tab_jobs %}
+      <tr class="hover:bg-gray-50 transition opacity-75">
+        <td class="px-4 py-3">
+          <div class="font-medium text-gray-700">{{ job.title }}</div>
+          <div class="text-xs text-gray-400 mt-0.5">{{ job.company|default:"—" }}</div>
+        </td>
+        <td class="px-4 py-3 hidden md:table-cell text-xs text-gray-400">
+          {% if job.archived_at %}{{ job.archived_at|date:"M j, Y" }}{% else %}—{% endif %}
+        </td>
+        <td class="px-4 py-3 text-right">
+          <form method="post" action="{% url 'job-restore' job.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="px-3 py-1.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-xs font-medium rounded-lg transition">Restore</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="bg-white border border-gray-200 rounded-xl shadow-sm p-10 text-center">
+  <p class="text-gray-500 text-sm">No archived jobs.</p>
+</div>
+{% endif %}
+{% endif %}
+
+{% endblock %}

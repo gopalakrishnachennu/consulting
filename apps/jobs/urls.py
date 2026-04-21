@@ -7,10 +7,13 @@ from .views import (
     JobArchiveView, JobRestoreView, ArchivedJobsView,
     # Job Pool / Validation Pipeline
     JobPoolView, JobPoolRevalidateView, JobApproveView, JobRejectView, JobBulkApproveView, JobPoolRefreshLinksView,
+    # Unified Command Center
+    JobsPipelineView,
 )
 
 urlpatterns = [
     path('', JobListView.as_view(), name='job-list'),
+    path('pipeline/', JobsPipelineView.as_view(), name='jobs-pipeline'),
     path('export/', JobExportCSVView.as_view(), name='job-export-csv'),
     path('duplicate-check/', JobDuplicateCheckView.as_view(), name='job-duplicate-check'),
     path('url-check/', JobUrlCheckView.as_view(), name='job-url-check'),
