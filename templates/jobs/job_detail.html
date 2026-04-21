@@ -28,14 +28,31 @@
 
                     <div class="mt-4 flex flex-wrap gap-6 text-blue-100 text-sm">
                         <div class="flex items-center gap-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-75" viewBox="0 0 20 20"
-                                fill="currentColor">
-                                <path fill-rule="evenodd"
-                                    d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a1 1 0 110 2h-3a1 1 0 01-1-1v-2a1 1 0 00-1-1H9a1 1 0 00-1 1v2a1 1 0 01-1 1H4a1 1 0 110-2V4zm3 1h2v2H7V5zm2 4H7v2h2V9zm2-4h2v2h11V5zm2 4h-2v2h2V9z"
-                                    clip-rule="evenodd" />
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-75" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a1 1 0 110 2h-3a1 1 0 01-1-1v-2a1 1 0 00-1-1H9a1 1 0 00-1 1v2a1 1 0 01-1 1H4a1 1 0 110-2V4zm3 1h2v2H7V5zm2 4H7v2h2V9zm2-4h2v2h11V5zm2 4h-2v2h2V9z" clip-rule="evenodd" />
                             </svg>
                             <span class="font-medium">Company:</span> {{ object.company|default:"Confidential" }}
                         </div>
+                        <div class="flex items-center gap-2">
+                            {% with s=object.stage %}
+                            {% if s == 'LIVE' or s == 'MATCHED' %}
+                              <span class="bg-green-500 text-white text-xs font-bold px-2 py-0.5 rounded-full uppercase">{{ object.get_stage_display }}</span>
+                            {% elif s == 'VETTED' or s == 'SCORED' %}
+                              <span class="bg-blue-400 text-white text-xs font-bold px-2 py-0.5 rounded-full uppercase">{{ object.get_stage_display }}</span>
+                            {% elif s == 'ARCHIVED' or s == 'FILLED' %}
+                              <span class="bg-gray-400 text-white text-xs font-bold px-2 py-0.5 rounded-full uppercase">{{ object.get_stage_display }}</span>
+                            {% else %}
+                              <span class="bg-yellow-500 text-white text-xs font-bold px-2 py-0.5 rounded-full uppercase">{{ object.get_stage_display }}</span>
+                            {% endif %}
+                            {% endwith %}
+                            {% if object.quality_score is not None %}<span class="text-blue-200 text-xs ml-1">Q: {{ object.quality_score }}</span>{% endif %}
+                        </div>
+                        {% if user.is_superuser or user.role == 'ADMIN' %}
+                        <a href="{% url 'job-timeline' object.pk %}" class="flex items-center gap-1 text-blue-200 hover:text-white text-xs transition">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                            Pipeline timeline
+                        </a>
+                        {% endif %}
                         <div class="flex items-center gap-2">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-75" viewBox="0 0 20 20"
                                 fill="currentColor">

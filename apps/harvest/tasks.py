@@ -1193,17 +1193,6 @@ def cleanup_harvested_jobs_task():
     return {"deactivated": expired[0] if isinstance(expired, tuple) else expired, "purged": purged}
 
 
-def _mirror_raw_job_sync_status(url_hash: str, sync_status: str) -> None:
-    """
-    When a HarvestedJob is promoted to the pool (or skipped / fails), align RawJob.sync_status
-    for the same URL hash so the Raw Jobs dashboard reflects pool sync, not only defaults.
-    """
-    if not url_hash or sync_status not in ("SYNCED", "SKIPPED", "FAILED"):
-        return
-    from .models import RawJob
-
-    RawJob.objects.filter(url_hash=url_hash).update(sync_status=sync_status)
-
 
 @shared_task(bind=True, name="harvest.sync_harvested_to_pool")
 def sync_harvested_to_pool_task(self, max_jobs: int = 100):

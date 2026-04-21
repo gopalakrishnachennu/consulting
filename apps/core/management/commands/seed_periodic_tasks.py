@@ -158,18 +158,29 @@ TASKS = [
         "name": "Harvest — cleanup expired jobs",
         "task": "harvest.cleanup_harvested_jobs",
         "category": "harvest",
-        "description": "Purges harvested job listings older than 24 hours and trims run logs older than 30 days.",
+        "description": "Soft-deletes expired RawJob rows and purges rows inactive for 30+ days.",
         "cron": {"minute": "0", "hour": "0", "day_of_week": "*", "day_of_month": "*", "month_of_year": "*"},
         "schedule_label": "Daily midnight UTC",
         "kwargs": {},
     },
+
+    # ── PIPELINE HEALTH ────────────────────────────────────────────────────────
+    {
+        "name": "Pipeline — escalate stale VETTED jobs",
+        "task": "jobs.escalate_stale_vetted_jobs",
+        "category": "jobs",
+        "description": "Flags VETTED jobs with no stage progression in 7+ days via PipelineEvent SKIPPED rows — surfaces on the health dashboard for ops triage.",
+        "cron": {"minute": "0", "hour": "5", "day_of_week": "*", "day_of_month": "*", "month_of_year": "*"},
+        "schedule_label": "Daily 05:00 UTC",
+        "kwargs": {"stale_days": 7},
+    },
 ]
 
-CATEGORY_ORDER = ["email", "submissions", "jobs", "companies", "reports", "harvest"]
+CATEGORY_ORDER = ["email", "submissions", "jobs", "companies", "reports", "analytics", "harvest"]
 
 
 class Command(BaseCommand):
-    help = "Seed / sync all 13 GoCareers periodic tasks into django_celery_beat"
+    help = "Seed / sync all GoCareers periodic tasks into django_celery_beat"
 
     def add_arguments(self, parser):
         parser.add_argument(
