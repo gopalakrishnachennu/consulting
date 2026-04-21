@@ -692,6 +692,10 @@ def fetch_raw_jobs_for_company_task(
     use_fetch_all = fetch_all or is_scraper_platform or (max_jobs is not None)
     effective_since_hours = since_hours if since_hours is not None else 25
 
+    # Phase 3: honor PlatformConfig.inter_request_delay_ms before each fetch.
+    from .rate_limiter import throttle as _throttle
+    _throttle(label.platform.slug)
+
     try:
         if is_scraper_platform:
             # HTML scrapers have no date filter — always fetch everything
@@ -1291,6 +1295,8 @@ def sync_harvested_to_pool_task(self, max_jobs: int = 100):
             continue
 
         try:
+            from jobs.quality import compute_quality_score
+            from django.utils import timezone as _tz
             with transaction.atomic():
                 job = Job.objects.create(
                     title=hj.title,
@@ -1302,9 +1308,14 @@ def sync_harvested_to_pool_task(self, max_jobs: int = 100):
                     salary_range=hj.salary_raw or "",
                     job_type=hj.job_type if hj.job_type != "UNKNOWN" else "FULL_TIME",
                     status="POOL",
+                    stage=Job.Stage.VETTED,
+                    stage_changed_at=_tz.now(),
+                    url_hash=hj.url_hash or "",
                     job_source=f"HARVESTED_{hj.platform.slug.upper()}",
                     posted_by=system_user,
                 )
+                job.quality_score = compute_quality_score(job)
+                Job.objects.filter(pk=job.pk).update(quality_score=job.quality_score)
                 hj.synced_to_job = job
                 hj.sync_status = "SYNCED"
                 hj.save(update_fields=["synced_to_job", "sync_status"])
