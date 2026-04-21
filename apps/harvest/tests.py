@@ -541,3 +541,99 @@ class BackfillJdEligibilityTests(TestCase):
             description=" ",
         )
         self.assertTrue(_backfill_eligible_queryset(None).filter(pk=j.pk).exists())
+
+
+class SyncHarvestedMirrorsRawJobTests(TestCase):
+    """Pool sync updates RawJob.sync_status when URL hash matches HarvestedJob."""
+
+    def setUp(self):
+        from companies.models import Company
+        from harvest.models import HarvestRun, JobBoardPlatform
+        from users.models import User
+
+        self.user = User.objects.create_user(
+            username="sync_mirror_admin",
+            email="sync_mirror@example.com",
+            password="testpass123",
+            is_superuser=True,
+        )
+        self.company = Company.objects.create(name="SyncMirrorCo")
+        self.platform = JobBoardPlatform.objects.create(
+            name="Sync Mirror Plat",
+            slug="sync-mirror-plat",
+        )
+        self.harvest_run = HarvestRun.objects.create(
+            platform=self.platform,
+            status="SUCCESS",
+        )
+
+    def test_pool_sync_updates_matching_raw_job_to_synced(self):
+        import hashlib
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from harvest.models import HarvestedJob, RawJob
+        from harvest.tasks import sync_harvested_to_pool_task
+
+        url = "https://example.com/careers/sync-mirror-unique-99"
+        h = hashlib.sha256(url.strip().encode()).hexdigest()
+        raw = RawJob.objects.create(
+            company=self.company,
+            title="Engineer",
+            url_hash=h,
+            original_url=url,
+            sync_status="PENDING",
+        )
+        HarvestedJob.objects.create(
+            harvest_run=self.harvest_run,
+            company=self.company,
+            platform=self.platform,
+            original_url=url,
+            title="Engineer",
+            expires_at=timezone.now() + timedelta(days=1),
+            description_text="Desc",
+        )
+        sync_harvested_to_pool_task.apply(kwargs={"max_jobs": 10}).get()
+        raw.refresh_from_db()
+        self.assertEqual(raw.sync_status, "SYNCED")
+
+    def test_pool_sync_skipped_duplicate_updates_raw_job(self):
+        import hashlib
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from harvest.models import HarvestedJob, RawJob
+        from harvest.tasks import sync_harvested_to_pool_task
+        from jobs.models import Job
+
+        url = "https://example.com/careers/sync-mirror-dup-88"
+        h = hashlib.sha256(url.strip().encode()).hexdigest()
+        raw = RawJob.objects.create(
+            company=self.company,
+            title="Engineer",
+            url_hash=h,
+            original_url=url,
+            sync_status="PENDING",
+        )
+        Job.objects.create(
+            title="Already here",
+            company=self.company.name,
+            company_obj=self.company,
+            description="Existing pool job",
+            original_link=url,
+            posted_by=self.user,
+        )
+        HarvestedJob.objects.create(
+            harvest_run=self.harvest_run,
+            company=self.company,
+            platform=self.platform,
+            original_url=url,
+            title="Engineer",
+            expires_at=timezone.now() + timedelta(days=1),
+            description_text="Desc",
+        )
+        sync_harvested_to_pool_task.apply(kwargs={"max_jobs": 10}).get()
+        raw.refresh_from_db()
+        self.assertEqual(raw.sync_status, "SKIPPED")

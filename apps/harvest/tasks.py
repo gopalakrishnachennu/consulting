@@ -1240,6 +1240,18 @@ def cleanup_harvested_jobs_task():
     return {"expired_jobs": expired, "old_runs": old_runs}
 
 
+def _mirror_raw_job_sync_status(url_hash: str, sync_status: str) -> None:
+    """
+    When a HarvestedJob is promoted to the pool (or skipped / fails), align RawJob.sync_status
+    for the same URL hash so the Raw Jobs dashboard reflects pool sync, not only defaults.
+    """
+    if not url_hash or sync_status not in ("SYNCED", "SKIPPED", "FAILED"):
+        return
+    from .models import RawJob
+
+    RawJob.objects.filter(url_hash=url_hash).update(sync_status=sync_status)
+
+
 @shared_task(bind=True, name="harvest.sync_harvested_to_pool")
 def sync_harvested_to_pool_task(self, max_jobs: int = 100):
     """Promote pending HarvestedJobs to internal Job model (status=POOL)."""
@@ -1274,6 +1286,7 @@ def sync_harvested_to_pool_task(self, max_jobs: int = 100):
             hj.synced_to_job = existing
             hj.sync_status = "SKIPPED"
             hj.save(update_fields=["synced_to_job", "sync_status"])
+            _mirror_raw_job_sync_status(hj.url_hash, "SKIPPED")
             skipped += 1
             continue
 
@@ -1295,10 +1308,12 @@ def sync_harvested_to_pool_task(self, max_jobs: int = 100):
                 hj.synced_to_job = job
                 hj.sync_status = "SYNCED"
                 hj.save(update_fields=["synced_to_job", "sync_status"])
+                _mirror_raw_job_sync_status(hj.url_hash, "SYNCED")
                 synced += 1
         except Exception as e:
             hj.sync_status = "FAILED"
             hj.save(update_fields=["sync_status"])
+            _mirror_raw_job_sync_status(hj.url_hash, "FAILED")
             logger.error(f"Sync failed for HarvestedJob {hj.id}: {e}")
             failed += 1
 

@@ -739,3 +739,42 @@ class RawJob(models.Model):
 
     def __str__(self):
         return f"{self.title} @ {self.company_name}"
+
+
+class PlatformConfig(models.Model):
+    """Per-platform runtime config — replaces hardcoded `_NEEDS_BACKFILL` list and sleep delays.
+
+    One row per JobBoardPlatform. Edits take effect on next task run, no deploy needed.
+    """
+    platform = models.OneToOneField(
+        JobBoardPlatform, on_delete=models.CASCADE, related_name='config',
+    )
+    auto_backfill = models.BooleanField(
+        default=False,
+        help_text="If true, fetch auto-queues JD backfill for new jobs on this platform.",
+    )
+    backfill_priority = models.PositiveSmallIntegerField(
+        default=5,
+        help_text="1 = highest, 10 = lowest. Backfill workers dequeue lowest number first.",
+    )
+    fetch_cadence_hours = models.PositiveIntegerField(
+        default=24,
+        help_text="Minimum hours between per-company fetches on this platform.",
+    )
+    inter_request_delay_ms = models.PositiveIntegerField(
+        default=1500,
+        help_text="Delay between consecutive requests (APIs ~1500, scrapers ~5000).",
+    )
+    min_quality_score = models.FloatField(
+        default=0.3,
+        help_text="Jobs below this score are auto-archived after enrichment.",
+    )
+    is_active = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Platform Config"
+        ordering = ['platform__name']
+
+    def __str__(self):
+        return f"Config[{self.platform.slug}]"

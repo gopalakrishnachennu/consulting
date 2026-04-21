@@ -17,6 +17,17 @@ class Job(models.Model):
         CLOSED = 'CLOSED', _('Closed')
         DRAFT = 'DRAFT', _('Draft')
 
+    class Stage(models.TextChoices):
+        DISCOVERED = 'DISCOVERED', _('Discovered')
+        FETCHED    = 'FETCHED',    _('Fetched')
+        ENRICHED   = 'ENRICHED',   _('Enriched')
+        SCORED     = 'SCORED',     _('Scored')
+        VETTED     = 'VETTED',     _('Vetted')
+        LIVE       = 'LIVE',       _('Live')
+        MATCHED    = 'MATCHED',    _('Matched')
+        FILLED     = 'FILLED',     _('Filled')
+        ARCHIVED   = 'ARCHIVED',   _('Archived')
+
     title = models.CharField(max_length=200)
     company = models.CharField(max_length=200, help_text="Legacy company name (will be kept for compatibility).")
     company_obj = models.ForeignKey(
@@ -51,6 +62,30 @@ class Job(models.Model):
         max_length=20,
         choices=Status.choices,
         default=Status.POOL
+    )
+
+    stage = models.CharField(
+        max_length=20,
+        choices=Stage.choices,
+        default=Stage.DISCOVERED,
+        db_index=True,
+        help_text=_("Unified pipeline stage — supersedes status over time."),
+    )
+    stage_changed_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    url_hash = models.CharField(
+        max_length=64, blank=True, db_index=True,
+        help_text=_("SHA256 of original_link for cross-platform dedupe."),
+    )
+    quality_score = models.FloatField(
+        null=True, blank=True,
+        help_text=_("0.0–1.0 fraction of key fields populated."),
+    )
+    stage_owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='owned_jobs',
+        help_text=_("Staffer responsible at current stage."),
     )
 
     # ─── Validation pipeline ───────────────────────────────────────────
@@ -177,3 +212,66 @@ class MatchScore(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class PipelineEvent(models.Model):
+    """Single source of truth for job lifecycle transitions.
+
+    Replaces HarvestRun + FetchBatch + CompanyFetchRun. Every stage transition,
+    every task run, every failure — one row each. Gives full lineage per job
+    in one query: Job.pipeline_events.all().
+    """
+
+    class Status(models.TextChoices):
+        SUCCESS = 'SUCCESS', _('Success')
+        FAILED  = 'FAILED',  _('Failed')
+        SKIPPED = 'SKIPPED', _('Skipped')
+        RUNNING = 'RUNNING', _('Running')
+
+    job = models.ForeignKey(
+        Job, on_delete=models.CASCADE, related_name='pipeline_events',
+        null=True, blank=True,
+        help_text=_("Nullable: pre-FETCHED events (discovery) may not have a Job yet."),
+    )
+    url_hash = models.CharField(
+        max_length=64, blank=True, db_index=True,
+        help_text=_("Allows event logging before Job row exists."),
+    )
+    from_stage = models.CharField(max_length=20, blank=True)
+    to_stage   = models.CharField(max_length=20, blank=True)
+    task_name  = models.CharField(max_length=120, blank=True)
+    celery_id  = models.CharField(max_length=80, blank=True, db_index=True)
+    status     = models.CharField(max_length=10, choices=Status.choices, default=Status.SUCCESS)
+    error      = models.TextField(blank=True)
+    duration_ms = models.PositiveIntegerField(null=True, blank=True)
+    meta = models.JSONField(default=dict, blank=True, help_text=_("Task-specific payload."))
+    occurred_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-occurred_at']
+        indexes = [
+            models.Index(fields=['job', '-occurred_at']),
+            models.Index(fields=['to_stage', '-occurred_at']),
+            models.Index(fields=['status', '-occurred_at']),
+        ]
+        verbose_name = "Pipeline Event"
+
+    def __str__(self):
+        return f"{self.task_name or 'event'} {self.from_stage}→{self.to_stage} [{self.status}]"
+
+    @classmethod
+    def record(cls, *, job=None, url_hash='', from_stage='', to_stage='',
+               task_name='', celery_id='', status='SUCCESS', error='',
+               duration_ms=None, meta=None):
+        return cls.objects.create(
+            job=job,
+            url_hash=url_hash or (getattr(job, 'url_hash', '') if job else ''),
+            from_stage=from_stage,
+            to_stage=to_stage,
+            task_name=task_name,
+            celery_id=celery_id,
+            status=status,
+            error=error,
+            duration_ms=duration_ms,
+            meta=meta or {},
+        )
