@@ -5,7 +5,7 @@ from datetime import timedelta
 from celery import shared_task
 from django.db import connection, models, transaction
 from django.db.models import F, IntegerField, Q, Value
-from django.db.models.functions import Mod
+from django.db.models.functions import Coalesce, Length, Mod, Trim
 from django.utils import timezone
 
 from core.task_progress import update_task_progress
@@ -49,13 +49,23 @@ def _supports_select_for_update_skip_locked() -> bool:
 
 
 def _backfill_eligible_queryset(platform_slug: str | None):
-    """Rows that still need a JD and are not actively claimed (unless lock is stale)."""
+    """Rows that still need a JD and are not actively claimed (unless lock is stale).
+
+    Must match the Jobs Browser / stats rule: only trivial whitespace (or empty) counts
+    as “no JD”. Failed/skipped backfill sets ``description=' '`` — those rows must stay
+    eligible; the old filter ``description='' OR NULL`` excluded them forever.
+    """
     from .models import RawJob
 
     stale_before = timezone.now() - timedelta(minutes=BACKFILL_LOCK_STALE_MINUTES)
-    q = RawJob.objects.filter(
-        Q(description="") | Q(description__isnull=True),
-    ).exclude(original_url="").exclude(original_url__isnull=True)
+    q = (
+        RawJob.objects.annotate(
+            _jd_len=Length(Trim(Coalesce(F("description"), Value("")))),
+        )
+        .filter(_jd_len__lte=1)
+        .exclude(original_url="")
+        .exclude(original_url__isnull=True)
+    )
     q = q.filter(
         Q(jd_backfill_locked_at__isnull=True)
         | Q(jd_backfill_locked_at__lt=stale_before),

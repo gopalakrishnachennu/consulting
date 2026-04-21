@@ -495,3 +495,27 @@ class JarvisFetchGateTests(SimpleTestCase):
             r = gate.request(session, "GET", "https://example.com/missing")
         self.assertEqual(r.status_code, 404)
         self.assertEqual(session.get.call_count, 1)
+
+
+class BackfillJdEligibilityTests(TestCase):
+    """Regression: skipped/failed backfill uses description=' ' — must stay eligible."""
+
+    def test_space_placeholder_description_remains_in_backfill_queue(self):
+        import hashlib
+
+        from companies.models import Company
+
+        from harvest.models import RawJob
+        from harvest.tasks import _backfill_eligible_queryset
+
+        c = Company.objects.create(name="BackfillEligTestCo")
+        url = "https://example.com/job/backfill-elig-1"
+        h = hashlib.sha256(url.encode()).hexdigest()
+        j = RawJob.objects.create(
+            company=c,
+            title="Test",
+            url_hash=h,
+            original_url=url,
+            description=" ",
+        )
+        self.assertTrue(_backfill_eligible_queryset(None).filter(pk=j.pk).exists())
