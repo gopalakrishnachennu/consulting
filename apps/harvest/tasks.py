@@ -1638,16 +1638,22 @@ def _backfill_process_one_job(job, jarvis):
     from .enrichments import extract_enrichments
     from .models import RawJob
 
+    fetch_url = (job.original_url or "").strip()
+    if (job.platform_slug or "").lower() == "smartrecruiters":
+        from .smartrecruiters_support import backfill_fetch_url_for_raw_job
+
+        fetch_url = backfill_fetch_url_for_raw_job(job) or fetch_url
+
     log_base = {
         "pk": job.pk,
         "title": (job.title or "")[:60],
         "company": (job.company_name or "")[:40],
         "platform": job.platform_slug or "",
-        "url": (job.original_url or "")[:120],
+        "url": (fetch_url or "")[:120],
     }
 
     try:
-        data = jarvis.ingest(job.original_url)
+        data = jarvis.ingest(fetch_url)
     except SoftTimeLimitExceeded:
         raise
     except Exception as exc:

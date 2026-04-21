@@ -497,6 +497,28 @@ class JarvisFetchGateTests(SimpleTestCase):
         self.assertEqual(session.get.call_count, 1)
 
 
+class SmartRecruitersSupportTests(SimpleTestCase):
+    """Canonical API URLs from list payload — avoids case-sensitive slug mismatches."""
+
+    def test_backfill_fetch_url_uses_company_identifier_from_payload(self):
+        from types import SimpleNamespace
+
+        from harvest.smartrecruiters_support import backfill_fetch_url_for_raw_job
+
+        job = SimpleNamespace(
+            original_url="https://jobs.smartrecruiters.com/wrongslug/744000112340137",
+            external_id="744000112340137",
+            raw_payload={
+                "company": {"identifier": "WesternDigital", "name": "WD"},
+                "id": "744000112340137",
+            },
+        )
+        u = backfill_fetch_url_for_raw_job(job)
+        self.assertTrue(u.startswith("https://api.smartrecruiters.com/v1/companies/"))
+        self.assertIn("WesternDigital", u)
+        self.assertIn("/postings/744000112340137", u)
+
+
 class BackfillJdEligibilityTests(TestCase):
     """Regression: skipped/failed backfill uses description=' ' — must stay eligible."""
 
