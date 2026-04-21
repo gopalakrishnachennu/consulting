@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block title %}Timeline — {{ job.title }}{% endblock %}
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 py-6 space-y-6">
+  <div class="flex items-start justify-between">
+    <div>
+      <a href="{% url 'job-detail' job.pk %}" class="text-sm text-blue-600 hover:underline">← {{ job.title }}</a>
+      <h1 class="text-2xl font-semibold text-gray-900 mt-1">Pipeline Timeline</h1>
+      <p class="text-sm text-gray-500 mt-1">{{ job.company }} · stage <span class="font-medium text-gray-800">{{ job.get_stage_display }}</span>
+        · quality {{ job.quality_score|default:"—" }}</p>
+    </div>
+    <a href="{% url 'pipeline-health' %}" class="text-sm text-gray-600 hover:text-gray-900">Health dashboard →</a>
+  </div>
+
+  <div class="bg-white border rounded-lg shadow-sm overflow-hidden">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+      <thead class="bg-gray-50">
+        <tr class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+          <th class="px-4 py-3">When</th>
+          <th class="px-4 py-3">Transition</th>
+          <th class="px-4 py-3">Task</th>
+          <th class="px-4 py-3">Status</th>
+          <th class="px-4 py-3">Duration</th>
+          <th class="px-4 py-3">Notes</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for ev in events %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-4 py-2 text-gray-700 whitespace-nowrap">{{ ev.occurred_at|date:"Y-m-d H:i:s" }}</td>
+          <td class="px-4 py-2">
+            <span class="text-gray-400">{{ ev.from_stage|default:"—" }}</span>
+            <span class="text-gray-400">→</span>
+            <span class="font-medium text-gray-800">{{ ev.to_stage|default:"—" }}</span>
+          </td>
+          <td class="px-4 py-2 font-mono text-xs text-gray-600">{{ ev.task_name|default:"—" }}</td>
+          <td class="px-4 py-2">
+            {% if ev.status == 'SUCCESS' %}
+              <span class="px-2 py-0.5 rounded text-xs bg-green-100 text-green-700">success</span>
+            {% elif ev.status == 'FAILED' %}
+              <span class="px-2 py-0.5 rounded text-xs bg-red-100 text-red-700">failed</span>
+            {% elif ev.status == 'SKIPPED' %}
+              <span class="px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-600">skipped</span>
+            {% else %}
+              <span class="px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700">{{ ev.status|lower }}</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-2 text-gray-600">{% if ev.duration_ms %}{{ ev.duration_ms }}ms{% else %}—{% endif %}</td>
+          <td class="px-4 py-2 text-gray-600 max-w-md truncate" title="{{ ev.error|default:ev.meta }}">
+            {% if ev.error %}<span class="text-red-600">{{ ev.error|truncatechars:80 }}</span>
+            {% else %}{{ ev.meta|default:""|truncatechars:80 }}{% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="px-4 py-10 text-center text-gray-500">No pipeline events recorded yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1053,3 +1053,67 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
             ctx.update(pool_extra)
 
         return render(request, self.template_name, ctx)
+
+
+# ─── Phase 4: PipelineEvent timeline + health dashboard ─────────────────────
+
+class JobTimelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
+    """Per-job lineage: every PipelineEvent for this Job (and its url_hash)."""
+    template_name = 'jobs/job_timeline.html'
+
+    def get(self, request, pk):
+        from .models import PipelineEvent
+        job = get_object_or_404(Job, pk=pk)
+        events_qs = PipelineEvent.objects.filter(
+            Q(job=job) | (Q(url_hash=job.url_hash) & ~Q(url_hash=''))
+        ).order_by('-occurred_at')[:500]
+        return render(request, self.template_name, {
+            'job': job,
+            'events': events_qs,
+            'stage_choices': Job.Stage.choices,
+        })
+
+
+class PipelineHealthView(LoginRequiredMixin, EmployeeRequiredMixin, View):
+    """Ops dashboard: stage counts, recent failures, throughput (last 24h)."""
+    template_name = 'jobs/pipeline_health.html'
+
+    def get(self, request):
+        from django.db.models import Count
+        from django.utils import timezone as _tz
+        from datetime import timedelta
+        from .models import PipelineEvent
+
+        since = _tz.now() - timedelta(hours=24)
+
+        stage_counts = list(
+            Job.objects.filter(is_archived=False)
+            .values('stage').annotate(n=Count('id')).order_by('stage')
+        )
+        stage_order = [s for s, _ in Job.Stage.choices]
+        stage_labels_map = dict(Job.Stage.choices)
+        stage_counts.sort(key=lambda r: stage_order.index(r['stage']) if r['stage'] in stage_order else 99)
+        for r in stage_counts:
+            r['label'] = stage_labels_map.get(r['stage'], r['stage'])
+
+        recent_failures = (
+            PipelineEvent.objects.filter(status=PipelineEvent.Status.FAILED, occurred_at__gte=since)
+            .select_related('job').order_by('-occurred_at')[:50]
+        )
+        throughput = (
+            PipelineEvent.objects.filter(occurred_at__gte=since)
+            .values('to_stage').annotate(n=Count('id')).order_by('-n')
+        )
+        total_events_24h = PipelineEvent.objects.filter(occurred_at__gte=since).count()
+        failure_rate = (
+            PipelineEvent.objects.filter(occurred_at__gte=since, status=PipelineEvent.Status.FAILED).count()
+            / total_events_24h * 100 if total_events_24h else 0
+        )
+        return render(request, self.template_name, {
+            'stage_counts': stage_counts,
+            'stage_labels': dict(Job.Stage.choices),
+            'recent_failures': recent_failures,
+            'throughput': throughput,
+            'total_events_24h': total_events_24h,
+            'failure_rate': round(failure_rate, 2),
+        })

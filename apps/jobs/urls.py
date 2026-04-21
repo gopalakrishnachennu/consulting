@@ -9,6 +9,8 @@ from .views import (
     JobPoolView, JobPoolRevalidateView, JobApproveView, JobRejectView, JobBulkApproveView, JobPoolRefreshLinksView,
     # Unified Command Center
     JobsPipelineView,
+    # Phase 4: lineage + health
+    JobTimelineView, PipelineHealthView,
 )
 
 urlpatterns = [
@@ -33,4 +35,7 @@ urlpatterns = [
     path('<int:pk>/approve/', JobApproveView.as_view(), name='job-approve'),
     path('<int:pk>/reject/', JobRejectView.as_view(), name='job-reject'),
     path('<int:pk>/revalidate/', JobPoolRevalidateView.as_view(), name='job-revalidate'),
+    # Phase 4: per-job timeline + ops health dashboard
+    path('<int:pk>/timeline/', JobTimelineView.as_view(), name='job-timeline'),
+    path('pipeline/health/', PipelineHealthView.as_view(), name='pipeline-health'),
 ]

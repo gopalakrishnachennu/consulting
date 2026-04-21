@@ -1285,7 +1285,13 @@ def sync_harvested_to_pool_task(self, max_jobs: int = 100):
         update_task_progress(self, current=0, total=total_n, message="Sync to job pool…")
 
     for idx, hj in enumerate(pending, start=1):
-        existing = Job.objects.filter(original_link=hj.original_url).first()
+        # Phase 4: cross-company dedup by url_hash first, then fall back to exact link match.
+        from jobs.dedup import find_existing_job_by_url
+        existing = (
+            (Job.objects.filter(url_hash=hj.url_hash, is_archived=False).first() if hj.url_hash else None)
+            or find_existing_job_by_url(hj.original_url)
+            or Job.objects.filter(original_link=hj.original_url).first()
+        )
         if existing:
             hj.synced_to_job = existing
             hj.sync_status = "SKIPPED"

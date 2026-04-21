@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+{% block title %}Pipeline Health{% endblock %}
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+  <div class="flex items-end justify-between">
+    <div>
+      <h1 class="text-2xl font-semibold text-gray-900">Pipeline Health</h1>
+      <p class="text-sm text-gray-500">Live stage distribution, 24-hour throughput, and recent failures.</p>
+    </div>
+    <a href="{% url 'jobs-pipeline' %}" class="text-sm text-gray-600 hover:text-gray-900">← Command center</a>
+  </div>
+
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="bg-white border rounded-lg p-4">
+      <div class="text-xs uppercase text-gray-500">Events (24h)</div>
+      <div class="text-2xl font-semibold text-gray-900 mt-1">{{ total_events_24h }}</div>
+    </div>
+    <div class="bg-white border rounded-lg p-4">
+      <div class="text-xs uppercase text-gray-500">Failure rate</div>
+      <div class="text-2xl font-semibold {% if failure_rate > 5 %}text-red-600{% else %}text-gray-900{% endif %} mt-1">{{ failure_rate }}%</div>
+    </div>
+    <div class="bg-white border rounded-lg p-4 col-span-2">
+      <div class="text-xs uppercase text-gray-500 mb-2">Throughput by stage (24h)</div>
+      <div class="flex flex-wrap gap-2">
+        {% for t in throughput %}
+          <span class="px-2 py-1 rounded bg-blue-50 text-blue-700 text-xs font-mono">{{ t.to_stage|default:"—" }}: {{ t.n }}</span>
+        {% empty %}<span class="text-xs text-gray-400">no events yet</span>{% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="bg-white border rounded-lg shadow-sm overflow-hidden">
+    <div class="px-4 py-3 border-b bg-gray-50 text-sm font-medium text-gray-700">Current stage distribution (active jobs)</div>
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+      <thead class="bg-white">
+        <tr class="text-left text-xs font-medium text-gray-500 uppercase">
+          <th class="px-4 py-2">Stage</th><th class="px-4 py-2">Count</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for row in stage_counts %}
+        <tr><td class="px-4 py-2 font-medium text-gray-800">{{ row.label }}</td>
+            <td class="px-4 py-2 text-gray-700">{{ row.n }}</td></tr>
+        {% empty %}
+        <tr><td colspan="2" class="px-4 py-6 text-center text-gray-500">No jobs.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="bg-white border rounded-lg shadow-sm overflow-hidden">
+    <div class="px-4 py-3 border-b bg-gray-50 text-sm font-medium text-gray-700">Recent failures (24h)</div>
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+      <thead class="bg-white">
+        <tr class="text-left text-xs font-medium text-gray-500 uppercase">
+          <th class="px-4 py-2">When</th><th class="px-4 py-2">Job</th><th class="px-4 py-2">Stage</th>
+          <th class="px-4 py-2">Task</th><th class="px-4 py-2">Error</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for ev in recent_failures %}
+        <tr class="hover:bg-red-50/40">
+          <td class="px-4 py-2 text-gray-700 whitespace-nowrap">{{ ev.occurred_at|date:"m-d H:i:s" }}</td>
+          <td class="px-4 py-2">
+            {% if ev.job %}<a class="text-blue-600 hover:underline" href="{% url 'job-timeline' ev.job.pk %}">{{ ev.job.title|truncatechars:40 }}</a>
+            {% else %}<span class="text-gray-400">—</span>{% endif %}
+          </td>
+          <td class="px-4 py-2 font-mono text-xs text-gray-600">{{ ev.from_stage|default:"—" }} → {{ ev.to_stage|default:"—" }}</td>
+          <td class="px-4 py-2 font-mono text-xs text-gray-600">{{ ev.task_name|default:"—" }}</td>
+          <td class="px-4 py-2 text-red-600 max-w-md truncate" title="{{ ev.error }}">{{ ev.error|truncatechars:100 }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="px-4 py-6 text-center text-gray-500">No failures 🎉</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
