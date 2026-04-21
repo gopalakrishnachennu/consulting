@@ -1210,9 +1210,14 @@ def sync_harvested_to_pool_task(self, max_jobs: int = 100):
         logger.error("No superuser found for sync task.")
         return {"synced": 0}
 
+    # Quality gate: only sync RawJobs that have a real description (>50 chars).
+    # This filters out stale/empty rows from the 100K backlog and keeps the pool clean.
     pending = list(
         RawJob.objects.filter(sync_status="PENDING", is_active=True, company__isnull=False)
         .exclude(original_url="")
+        .exclude(description="")
+        .filter(description__length__gt=50)
+        .order_by("-fetched_at")
         .select_related("company", "job_platform")[:max_jobs]
     )
 

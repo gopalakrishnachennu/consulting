@@ -149,10 +149,10 @@ TASKS = [
         "name": "Harvest — sync to job pool",
         "task": "harvest.sync_harvested_to_pool",
         "category": "harvest",
-        "description": "Promotes reviewed harvest results into the live job pool for consultant matching.",
+        "description": "Promotes high-quality PENDING RawJobs into the live job pool (quality gate: desc>50 chars).",
         "cron": {"minute": "30", "hour": "6", "day_of_week": "*", "day_of_month": "*", "month_of_year": "*"},
         "schedule_label": "Daily 06:30 UTC",
-        "kwargs": {"max_jobs": 200},
+        "kwargs": {"max_jobs": 1000},
     },
     {
         "name": "Harvest — cleanup expired jobs",
