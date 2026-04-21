@@ -148,9 +148,6 @@
   </form>
 </div>
 
-{# ══════════════════════════════════════════════════════════════════════════════
-   TAB: RAW JOBS (Harvesting)
-═══════════════════════════════════════════════════════════════════════════════ #}
 {% if tab == 'raw' %}
 <div class="flex items-center justify-between mb-4">
   <div>
@@ -215,9 +212,6 @@
 {% endif %}
 {% endif %}
 
-{# ══════════════════════════════════════════════════════════════════════════════
-   TAB: VETTING POOL
-═══════════════════════════════════════════════════════════════════════════════ #}
 {% if tab == 'pool' %}
 <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
   <div>
@@ -236,7 +230,6 @@
 
 {# Score sub-tabs #}
 <div class="flex flex-wrap gap-2 mb-4">
-  {% for stab, label, color, count in score_tabs %}{% endfor %}
   <a href="?tab=pool&score=all{% if q %}&q={{ q }}{% endif %}"
      class="px-3 py-1.5 rounded-lg text-sm font-medium transition
             {% if score_tab == 'all' %}bg-blue-600 text-white{% else %}bg-white text-gray-600 border border-gray-200 hover:border-blue-300{% endif %}">
@@ -382,9 +375,6 @@
 </script>
 {% endif %}
 
-{# ══════════════════════════════════════════════════════════════════════════════
-   TAB: LIVE JOBS
-═══════════════════════════════════════════════════════════════════════════════ #}
 {% if tab == 'live' %}
 <div class="flex items-center justify-between mb-4">
   <div>
@@ -448,9 +438,6 @@
 {% endif %}
 {% endif %}
 
-{# ══════════════════════════════════════════════════════════════════════════════
-   TAB: ARCHIVED
-═══════════════════════════════════════════════════════════════════════════════ #}
 {% if tab == 'archived' %}
 <div class="mb-4">
   <h2 class="text-lg font-bold text-gray-800">Archived Jobs</h2>
