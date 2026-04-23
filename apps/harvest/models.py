@@ -599,3 +599,112 @@ class PlatformConfig(models.Model):
 
     def __str__(self):
         return f"Config[{self.platform.slug}]"
+
+
+class HarvestEngineConfig(models.Model):
+    """
+    Singleton — harvest engine runtime configuration.
+    One row (pk=1) always exists; editable from the GUI at /harvest/engine/.
+    All task code reads from this — zero hardcoded values.
+
+    Changes to task_rate_limit are broadcast to running Celery workers immediately.
+    Changes to worker_concurrency require restarting the celery_harvest container
+    (set HARVEST_CONCURRENCY in .env.production, then docker compose restart celery_harvest).
+    All other fields take effect on the next batch run.
+    """
+
+    # ── Worker-level concurrency ──────────────────────────────────────────────
+    worker_concurrency = models.PositiveSmallIntegerField(
+        default=3,
+        verbose_name="Worker concurrency",
+        help_text=(
+            "How many company-fetch tasks run in parallel per worker. "
+            "Matches the --concurrency flag on the celery_harvest container. "
+            "Rule of thumb: CPU count for CPU-heavy workloads, 2×CPU for I/O-heavy. "
+            "Change HARVEST_CONCURRENCY in .env.production and restart celery_harvest to apply."
+        ),
+    )
+
+    # ── Task rate limit (applies LIVE via Celery broadcast on save) ───────────
+    task_rate_limit = models.PositiveSmallIntegerField(
+        default=6,
+        verbose_name="Tasks per worker per minute",
+        help_text=(
+            "Max fetch tasks each worker runs per minute. "
+            "Total throughput = this × worker_concurrency. "
+            "Applied immediately to running workers — no restart needed."
+        ),
+    )
+
+    # ── Batch dispatch stagger ────────────────────────────────────────────────
+    api_stagger_ms = models.PositiveIntegerField(
+        default=100,
+        verbose_name="API platform stagger (ms)",
+        help_text=(
+            "Milliseconds between queuing tasks for JSON-API platforms "
+            "(Greenhouse, Lever, Workday …). Lower = faster queue fill. "
+            "Takes effect on next batch run."
+        ),
+    )
+    scraper_stagger_ms = models.PositiveIntegerField(
+        default=1500,
+        verbose_name="Scraper platform stagger (ms)",
+        help_text=(
+            "Milliseconds between queuing tasks for HTML-scraper platforms "
+            "(iCIMS, Taleo, Jobvite …). Keep ≥1000 to avoid hammering slow sites. "
+            "Takes effect on next batch run."
+        ),
+    )
+
+    # ── Freshness guard ───────────────────────────────────────────────────────
+    min_hours_since_fetch = models.PositiveSmallIntegerField(
+        default=6,
+        verbose_name="Min hours between re-fetches",
+        help_text=(
+            "Skip any company that was successfully fetched within this many hours. "
+            "Set to 0 to force re-fetch everything every run. "
+            "Takes effect on next batch run."
+        ),
+    )
+
+    # ── Per-task timeouts ─────────────────────────────────────────────────────
+    task_soft_time_limit_secs = models.PositiveSmallIntegerField(
+        default=480,
+        verbose_name="Soft time limit (seconds)",
+        help_text=(
+            "A single company-fetch task that runs longer than this gets a graceful "
+            "shutdown signal (marks run as PARTIAL). Hard kill fires 120s later."
+        ),
+    )
+
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+",
+    )
+
+    class Meta:
+        verbose_name = "Harvest Engine Config"
+
+    def __str__(self):
+        return "Harvest Engine Config"
+
+    @classmethod
+    def get(cls):
+        """Return the singleton, creating it with defaults if it doesn't exist."""
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # enforce singleton
+        super().save(*args, **kwargs)
+        # Broadcast updated rate limit to all running Celery workers immediately.
+        # Workers that are offline will pick up the new rate from DB on next task start.
+        try:
+            from celery import current_app
+            current_app.control.rate_limit(
+                "harvest.fetch_raw_jobs_for_company",
+                f"{self.task_rate_limit}/m",
+            )
+        except Exception:
+            pass  # Non-fatal — workers will apply the rate limit on next restart

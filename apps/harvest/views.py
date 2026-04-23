@@ -21,6 +21,7 @@ from .models import (
     CompanyFetchRun,
     CompanyPlatformLabel,
     FetchBatch,
+    HarvestEngineConfig,
     JobBoardPlatform,
     RawJob,
 )
@@ -1065,3 +1066,74 @@ class JarvisReScrapeView(SuperuserRequiredMixin, View):
         # Strip raw_payload (too large) from response
         data.pop("raw_payload", None)
         return JsonResponse({"ok": not bool(data.get("error")), "data": data})
+
+
+# ── Harvest Engine Config ──────────────────────────────────────────────────────
+
+class EngineConfigView(SuperuserRequiredMixin, View):
+    """GET = show engine config GUI. POST = save + broadcast rate limit live."""
+    template_name = "harvest/settings_engine.html"
+
+    def get(self, request, *args, **kwargs):
+        import os
+        from django.template.response import TemplateResponse
+        cfg = HarvestEngineConfig.get()
+
+        # Detect server CPU count for the advisory note
+        cpu_count = os.cpu_count() or 2
+        recommended_concurrency = max(2, cpu_count)
+
+        # Try to inspect running Celery workers
+        worker_stats = {}
+        try:
+            from celery import current_app
+            inspect = current_app.control.inspect(timeout=1.5)
+            stats = inspect.stats() or {}
+            for worker_name, info in stats.items():
+                pool = info.get("pool", {})
+                worker_stats[worker_name] = {
+                    "concurrency": pool.get("max-concurrency", "?"),
+                    "processes": len(pool.get("processes", [])),
+                    "queues": [q["name"] for q in info.get("consumer", {}).get("queues", [])],
+                }
+        except Exception:
+            pass
+
+        ctx = {
+            "cfg": cfg,
+            "cpu_count": cpu_count,
+            "recommended_concurrency": recommended_concurrency,
+            "worker_stats": worker_stats,
+            "active_tab": "engine",
+        }
+        return TemplateResponse(request, self.template_name, ctx)
+
+    def post(self, request, *args, **kwargs):
+        cfg = HarvestEngineConfig.get()
+
+        fields = [
+            "worker_concurrency", "task_rate_limit",
+            "api_stagger_ms", "scraper_stagger_ms",
+            "min_hours_since_fetch", "task_soft_time_limit_secs",
+        ]
+        errors = []
+        for field in fields:
+            val = request.POST.get(field, "").strip()
+            if val:
+                try:
+                    setattr(cfg, field, int(val))
+                except (ValueError, TypeError):
+                    errors.append(f"{field}: must be a whole number")
+
+        if errors:
+            messages.error(request, " | ".join(errors))
+        else:
+            cfg.updated_by = request.user
+            cfg.save()  # triggers Celery broadcast for rate_limit
+            messages.success(
+                request,
+                "Engine config saved. Rate limit applied to running workers immediately. "
+                "Stagger and freshness changes apply on the next batch run.",
+            )
+
+        return redirect("harvest-engine-config")

@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     CompanyFetchStatusView,
     CompanyLabelListView,
+    EngineConfigView,
     FetchBatchListView,
     JarvisReScrapeView,
     JarvisStatusView,
@@ -67,6 +68,8 @@ urlpatterns = [
     path("run/stop-batch/", StopBatchView.as_view(), name="harvest-run-stop-batch"),
     path("run/backfill-descriptions/", RunBackfillDescriptionsView.as_view(), name="harvest-run-backfill-descriptions"),
     path("run/enrich-existing/", RunEnrichExistingView.as_view(), name="harvest-run-enrich-existing"),
+    # Engine Config — runtime tuning knobs (concurrency, rate limit, stagger)
+    path("engine/", EngineConfigView.as_view(), name="harvest-engine-config"),
     # Job Jarvis — paste-any-URL ingestion
     path("jarvis/", JarvisView.as_view(), name="harvest-jarvis"),
     path("jarvis/status/", JarvisStatusView.as_view(), name="harvest-jarvis-status"),

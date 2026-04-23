@@ -41,13 +41,13 @@ services:
     restart: unless-stopped
 
   # ── General worker: handles UI-triggered tasks, approvals, validation ────────
-  # concurrency=3 on a 2-vCPU box — leaves headroom for web + postgres + redis.
+  # WORKER_CONCURRENCY default = cpu_count (set in .env.production to override).
   celery_worker:
     build: .
     image: ${IMAGE_WORKER:-consulting-worker:local}
     command: >
       celery -A config worker -l info
-      --concurrency=3
+      --concurrency=${WORKER_CONCURRENCY:-3}
       -Q default
       --hostname=worker@%h
     environment:
@@ -62,17 +62,16 @@ services:
       - redis
     restart: unless-stopped
 
-  # ── Harvest worker: dedicated to batch scraping — intentionally throttled ────
-  # concurrency=3 keeps CPU usage ≤80% on CX23 even during full 967-company scans.
-  # The fetch_raw_jobs_for_company task has rate_limit="6/m" so each worker slot
-  # processes ≤6 companies/min — total ≤18/min, ~54 min for a full scan vs
-  # the previous 10-worker all-at-once approach that pegged CPU at 200%.
+  # ── Harvest worker: dedicated to batch scraping ───────────────────────────
+  # HARVEST_CONCURRENCY is controlled via the GUI at /harvest/engine/ and stored
+  # in HarvestEngineConfig. Update .env.production + restart this container to apply.
+  # Rate-limit and stagger values are read from DB on every task run — no restart needed.
   celery_harvest:
     build: .
     image: ${IMAGE_WORKER:-consulting-worker:local}
     command: >
       celery -A config worker -l warning
-      --concurrency=3
+      --concurrency=${HARVEST_CONCURRENCY:-3}
       -Q batches,harvest
       --hostname=harvest@%h
       --max-tasks-per-child=50
@@ -83,6 +82,7 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
       CELERY_TASK_ALWAYS_EAGER: "0"
+      HARVEST_CONCURRENCY: ${HARVEST_CONCURRENCY:-3}
     depends_on:
       - db
       - redis

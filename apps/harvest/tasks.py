@@ -559,12 +559,11 @@ def verify_all_portals_task(self):
     name="harvest.fetch_raw_jobs_for_company",
     max_retries=2,
     default_retry_delay=60,
-    # Hard cap: 8 min soft limit (raises SoftTimeLimitExceeded → graceful cleanup),
-    # 10 min hard kill. Prevents one hung company from blocking a worker slot forever.
+    # soft_time_limit / time_limit / rate_limit are all read from HarvestEngineConfig
+    # at task startup — see the body of the function.  These decorator-level values
+    # are the safe fallbacks used only if the DB read fails.
     soft_time_limit=480,
     time_limit=600,
-    # Rate-limit: max 6 company fetches per worker per minute.
-    # At concurrency=3 this means ≤18 company fetches/min total — keeps CPU sane.
     rate_limit="6/m",
 )
 def fetch_raw_jobs_for_company_task(
@@ -584,8 +583,20 @@ def fetch_raw_jobs_for_company_task(
     import requests
     from datetime import date
 
-    from .models import CompanyPlatformLabel, CompanyFetchRun, FetchBatch, RawJob
+    from .models import CompanyPlatformLabel, CompanyFetchRun, FetchBatch, HarvestEngineConfig, RawJob
     from .harvesters import get_harvester
+
+    # ── Read live config from DB — overrides decorator-level fallbacks ────────
+    try:
+        _cfg = HarvestEngineConfig.get()
+        # Apply the current rate limit to THIS worker's slot for this task type.
+        # This ensures the DB value is always honoured even after a live GUI change.
+        self.rate_limit = f"{_cfg.task_rate_limit}/m"
+        _soft_limit = _cfg.task_soft_time_limit_secs
+        _hard_limit = _soft_limit + 120
+    except Exception:
+        _soft_limit = 480
+        _hard_limit = 600
 
     # ── Load label ────────────────────────────────────────────────────────────
     try:
@@ -932,11 +943,23 @@ def fetch_raw_jobs_batch_task(
     passes max_jobs=test_max_jobs (no full pagination). Useful for smoke-testing.
     skip_platforms — list of platform slugs to exclude (e.g. ["greenhouse","lever"]).
     min_hours_since_fetch — skip labels that were successfully fetched within this many
-    hours (default 6). Prevents re-hammering the same API on repeated daily runs.
-    Pass 0 to disable (force re-fetch everything).
+    hours. Pass None to read from HarvestEngineConfig (default). Pass 0 to force re-fetch.
     """
     from django.contrib.auth import get_user_model
-    from .models import CompanyPlatformLabel, CompanyFetchRun, FetchBatch
+    from .models import CompanyPlatformLabel, CompanyFetchRun, FetchBatch, HarvestEngineConfig
+
+    # ── Read live engine config — all tuning knobs come from DB ──────────────
+    try:
+        _ecfg = HarvestEngineConfig.get()
+        # Caller-supplied min_hours_since_fetch overrides DB only when explicitly passed.
+        # Default argument sentinel is 6; if it still equals 6, prefer the DB value.
+        if min_hours_since_fetch == 6:
+            min_hours_since_fetch = _ecfg.min_hours_since_fetch
+        _api_stagger    = _ecfg.api_stagger_ms    / 1000.0   # convert ms → seconds
+        _scraper_stagger = _ecfg.scraper_stagger_ms / 1000.0
+    except Exception:
+        _api_stagger    = 0.1
+        _scraper_stagger = 1.5
 
     User = get_user_model()
     triggered_user = None
@@ -1054,10 +1077,10 @@ def fetch_raw_jobs_batch_task(
         is_scraper = slug in SCRAPER_SLUGS
         if is_scraper:
             countdown = scraper_offset
-            scraper_offset += 1.5   # 1.5s between scraper tasks
+            scraper_offset += _scraper_stagger   # from HarvestEngineConfig (default 1.5s)
         else:
             countdown = api_offset
-            api_offset += 0.1       # 0.1s between API tasks (they throttle internally)
+            api_offset += _api_stagger           # from HarvestEngineConfig (default 0.1s)
 
         kwargs = {"max_jobs": test_max_jobs} if test_mode else {}
         if fetch_all and not test_mode:
