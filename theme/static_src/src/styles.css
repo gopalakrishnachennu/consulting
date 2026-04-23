@@ -2,10 +2,329 @@
 @plugin "daisyui";
 
 /**
-  * A catch-all path to Django template files, JavaScript, and Python files
-  * that contain Tailwind CSS classes and will be scanned by Tailwind to generate the final CSS file.
-  *
-  * If your final CSS file is not being updated after code changes, you may want to broaden or narrow
-  * the scope of this path.
+  * Source path — scans all Django templates, JS, and Python files for Tailwind classes.
   */
 @source "../../../**/*.{html,py,js}";
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   KEYFRAME ANIMATIONS
+   ───────────────────────────────────────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: .5; transform: scale(1.6); }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-4px); }
+}
+@keyframes loading-bar {
+  0%   { width: 0; }
+  50%  { width: 70%; }
+  100% { width: 95%; }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   GLOBAL UTILITIES  (not purgeable — always present)
+   ───────────────────────────────────────────────────────────────────────────── */
+.nav-open .nav-menu { display: flex !important; }
+[x-cloak]           { display: none !important; }
+
+.animate-fade-in-up  { animation: fadeInUp .5s ease-out both; }
+.animate-slide-up    { animation: slideUp .35s ease-out both; }
+
+/* Stagger delays */
+.stagger-1 { animation-delay: .05s; }
+.stagger-2 { animation-delay: .10s; }
+.stagger-3 { animation-delay: .15s; }
+.stagger-4 { animation-delay: .20s; }
+.stagger-5 { animation-delay: .25s; }
+.stagger-6 { animation-delay: .30s; }
+.stagger-7 { animation-delay: .35s; }
+.stagger-8 { animation-delay: .40s; }
+
+/* ── Card hover lift ── */
+.card-hover {
+  transition: transform .25s ease, box-shadow .25s ease;
+}
+.card-hover:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 20px 40px -12px rgba(0,0,0,.12), 0 8px 20px -6px rgba(0,0,0,.08);
+}
+
+/* ── Glassmorphism ── */
+.glass {
+  background: rgba(255,255,255,.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255,255,255,.3);
+}
+
+/* ── Gradient text ── */
+.gradient-text {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Status pulse dot ── */
+.pulse-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+/* ── Gradient hero ── */
+.hero-gradient {
+  background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 50%, #06b6d4 100%);
+}
+
+/* ── Skill tag color variants ── */
+.skill-tag-1 { background: #ede9fe; color: #6d28d9; }
+.skill-tag-2 { background: #dbeafe; color: #1d4ed8; }
+.skill-tag-3 { background: #d1fae5; color: #047857; }
+.skill-tag-4 { background: #fce7f3; color: #be185d; }
+.skill-tag-5 { background: #ffedd5; color: #c2410c; }
+.skill-tag-6 { background: #e0e7ff; color: #4338ca; }
+
+/* ── Dashboard stat cards (consultant/analytics pages) ── */
+.stat-card {
+  position: relative; overflow: hidden;
+  transition: transform .2s ease, box-shadow .2s ease;
+  border-left: 4px solid transparent;
+}
+.stat-card:hover { transform: translateY(-3px); box-shadow: 0 12px 32px -8px rgba(0,0,0,.1); }
+.stat-card::before {
+  content: ''; position: absolute;
+  top: 0; right: 0; width: 80px; height: 80px;
+  border-radius: 50%; opacity: .06;
+  transform: translate(20px,-20px);
+}
+.stat-active  { border-left-color: #10b981; }
+.stat-active::before  { background: #10b981; }
+.stat-bench   { border-left-color: #f59e0b; }
+.stat-bench::before   { background: #f59e0b; }
+.stat-placed  { border-left-color: #3b82f6; }
+.stat-placed::before  { background: #3b82f6; }
+.stat-inactive { border-left-color: #9ca3af; }
+.stat-inactive::before { background: #6b7280; }
+
+/* ── Button glow ── */
+.btn-glow { box-shadow: 0 4px 14px 0 rgba(79,70,229,.4); transition: all .25s ease; }
+.btn-glow:hover { box-shadow: 0 6px 20px 0 rgba(79,70,229,.6); transform: translateY(-1px); }
+
+/* ── Section cards (detail pages) ── */
+.section-card {
+  background: white; border-radius: 1rem;
+  border: 1px solid #f3f4f6;
+  box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  transition: box-shadow .25s ease;
+}
+.section-card:hover { box-shadow: 0 8px 24px -6px rgba(0,0,0,.08); }
+
+/* ── Empty state icon wrapper ── */
+.empty-state-icon {
+  width: 56px; height: 56px; border-radius: 1rem;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #eef2ff, #e0e7ff);
+}
+
+/* ── Action pill link ── */
+.action-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 10px; border-radius: 8px;
+  font-size: .75rem; font-weight: 600;
+  transition: all .15s ease;
+}
+.action-pill:hover { transform: translateY(-1px); }
+
+/* ── Generate button gradient ── */
+.btn-generate {
+  background: linear-gradient(135deg, #7c3aed, #6366f1);
+  color: white; font-weight: 700;
+  padding: 10px 24px; border-radius: 12px;
+  transition: all .25s ease;
+  box-shadow: 0 4px 14px rgba(99,102,241,.3);
+}
+.btn-generate:hover { box-shadow: 0 6px 20px rgba(99,102,241,.5); transform: translateY(-1px); }
+
+/* ── HTMX loading bar ── */
+.htmx-request .htmx-indicator      { animation: loading-bar 2s ease-in-out forwards; }
+.htmx-request.htmx-settling .htmx-indicator { width: 100% !important; animation: none; transition: width .15s ease; }
+
+/* ── Breadcrumb separator ── */
+.breadcrumb-sep::before { content: '/'; margin: 0 .5rem; color: #94a3b8; }
+
+/* ── Confirmation modal backdrop ── */
+.avatar-ring { box-shadow: none; }
+
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   DESIGN SYSTEM — @layer components
+   Centralised reusable classes used across all templates.
+   Import with: class="btn-primary"  class="card"  class="badge-green"  etc.
+   ───────────────────────────────────────────────────────────────────────────── */
+@layer components {
+
+  /* ── Buttons ─────────────────────────────────────────────────────────────── */
+  /* Base .btn — shared shape, cursor, transition */
+  .btn {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    font-weight: 600; border-radius: 0.5rem;
+    transition: all .15s ease; cursor: pointer; white-space: nowrap;
+  }
+  /* Variants — full Tailwind utility lists (no @apply of custom classes) */
+  .btn-primary {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    padding: 0.5rem 1rem; background: #4f46e5; color: #fff;
+    font-size: 0.875rem; font-weight: 600; border-radius: 0.5rem;
+    box-shadow: 0 1px 2px rgba(0,0,0,.08); transition: background .15s ease; cursor: pointer;
+  }
+  .btn-primary:hover { background: #4338ca; }
+  .btn-secondary {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    padding: 0.5rem 0.75rem; background: #fff; color: #4b5563;
+    font-size: 0.875rem; font-weight: 600; border-radius: 0.5rem;
+    border: 1px solid #e5e7eb; transition: all .15s ease; cursor: pointer;
+  }
+  .btn-secondary:hover { background: #f9fafb; border-color: #d1d5db; }
+  .btn-success {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    padding: 0.5rem 1rem; background: #16a34a; color: #fff;
+    font-size: 0.875rem; font-weight: 600; border-radius: 0.5rem;
+    box-shadow: 0 1px 2px rgba(0,0,0,.08); transition: background .15s ease; cursor: pointer;
+  }
+  .btn-success:hover { background: #15803d; }
+  .btn-danger {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    padding: 0.375rem 0.75rem; background: #dc2626; color: #fff;
+    font-size: 0.75rem; font-weight: 600; border-radius: 0.5rem;
+    box-shadow: 0 1px 2px rgba(0,0,0,.08); transition: background .15s ease; cursor: pointer;
+  }
+  .btn-danger:hover { background: #b91c1c; }
+  .btn-danger-soft {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    padding: 0.375rem 0.75rem; background: #fef2f2; color: #b91c1c;
+    font-size: 0.75rem; font-weight: 600; border-radius: 0.5rem;
+    border: 1px solid #fecaca; transition: all .15s ease; cursor: pointer;
+  }
+  .btn-danger-soft:hover { background: #fee2e2; }
+  .btn-ghost {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    padding: 0.375rem 0.75rem; background: #f3f4f6; color: #374151;
+    font-size: 0.75rem; font-weight: 500; border-radius: 0.5rem;
+    transition: background .15s ease; cursor: pointer;
+  }
+  .btn-ghost:hover { background: #e5e7eb; }
+  .btn-icon {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    padding: 0.375rem 0.5rem; background: #eff6ff; color: #1d4ed8;
+    font-size: 0.75rem; font-weight: 500; border-radius: 0.5rem;
+    transition: background .15s ease; cursor: pointer;
+  }
+  .btn-icon:hover { background: #dbeafe; }
+  /* Size modifiers — override padding/font-size on any btn-* variant */
+  .btn-sm { padding: 0.375rem 0.75rem !important; font-size: 0.8125rem !important; }
+  .btn-xs { padding: 0.25rem  0.625rem !important; font-size: 0.75rem !important; }
+
+  /* ── Cards ────────────────────────────────────────────────────────────────── */
+  .card          { @apply bg-white border border-gray-200 rounded-xl shadow-sm; }
+  .card-table    { @apply bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden; }
+  .card-padded   { @apply bg-white border border-gray-200 rounded-xl shadow-sm p-5; }
+  .card-lift     { @apply bg-white border border-gray-200 rounded-xl shadow-sm transition hover:shadow-md hover:-translate-y-0.5; }
+
+  /* ── Badges / Status pills ────────────────────────────────────────────────── */
+  .badge         { @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-semibold border; }
+  .badge-green   { @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-semibold border bg-green-100 text-green-800 border-green-200; }
+  .badge-yellow  { @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-semibold border bg-yellow-100 text-yellow-800 border-yellow-200; }
+  .badge-red     { @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-semibold border bg-red-100 text-red-800 border-red-200; }
+  .badge-gray    { @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-semibold border bg-gray-100 text-gray-500 border-gray-200; }
+  .badge-blue    { @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-semibold border bg-blue-50 text-blue-700 border-blue-100; }
+  .badge-indigo  { @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-semibold border bg-indigo-50 text-indigo-700 border-indigo-100; }
+
+  /* Dot-style status */
+  .status-dot    { @apply inline-flex items-center gap-1.5 text-xs font-semibold; }
+  .status-live   { @apply inline-flex items-center gap-1.5 text-xs font-semibold text-green-700; }
+  .status-gone   { @apply inline-flex items-center gap-1.5 text-xs font-semibold text-red-700; }
+  .status-pending { @apply inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500; }
+
+  /* ── Tables ───────────────────────────────────────────────────────────────── */
+  .tbl-head      { @apply bg-gray-50 border-b border-gray-200; }
+  .tbl-th        { @apply px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider; }
+  .tbl-th-right  { @apply px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider; }
+  .tbl-td        { @apply px-4 py-3 text-sm text-gray-700; }
+  .tbl-td-right  { @apply px-4 py-3 text-right; }
+  .tbl-row       { @apply border-b border-gray-100 hover:bg-gray-50/60 transition-colors; }
+
+  /* ── Empty state ──────────────────────────────────────────────────────────── */
+  .empty-state   { @apply bg-white border border-gray-200 rounded-xl shadow-sm p-12 text-center; }
+
+  /* ── Page / section headers ───────────────────────────────────────────────── */
+  .page-header   { @apply flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6; }
+  .page-title    { @apply text-2xl font-bold text-gray-900; }
+  .page-subtitle { @apply text-sm text-gray-500 mt-0.5; }
+
+  .section-hdr   { @apply flex items-center justify-between flex-wrap gap-3 mb-4; }
+  .section-title-sm { @apply text-lg font-bold text-gray-800; }
+  .section-subtitle { @apply text-sm text-gray-500; }
+
+  /* ── Form elements ────────────────────────────────────────────────────────── */
+  .form-input  {
+    width: 100%;
+    border: 1px solid #d1d5db;
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    transition: border-color .15s ease, box-shadow .15s ease;
+    outline: none;
+    background: white;
+  }
+  .form-input:focus {
+    border-color: #818cf8;
+    box-shadow: 0 0 0 3px rgba(99,102,241,.12);
+  }
+  .form-select {
+    width: 100%; border: 1px solid #d1d5db; border-radius: 0.5rem;
+    padding: 0.5rem 0.75rem; font-size: 0.875rem; outline: none;
+    background: white; appearance: none;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .form-select:focus { border-color: #818cf8; box-shadow: 0 0 0 3px rgba(99,102,241,.12); }
+  .form-label  { @apply block text-xs font-medium text-gray-600 mb-1; }
+
+  /* ── Pipeline-specific tab pills ─────────────────────────────────────────── */
+  .tab-pill {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    padding: 0.5rem 1rem; border-radius: 0.5rem;
+    font-size: 0.875rem; font-weight: 600;
+    transition: all .15s ease; white-space: nowrap; flex-shrink: 0;
+  }
+  .tab-pill-active  { background: var(--tab-color, #4f46e5); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+  .tab-pill-inactive { @apply bg-white text-gray-600 border border-gray-200 hover:bg-gray-50; }
+
+  /* ── Score sub-tabs ───────────────────────────────────────────────────────── */
+  .score-tab {
+    display: inline-flex; align-items: center; gap: 0.375rem;
+    padding: 0.375rem 0.75rem; border-radius: 0.5rem;
+    font-size: 0.75rem; font-weight: 600;
+    transition: all .15s ease;
+  }
+  .score-tab-active   { color: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.1); }
+  .score-tab-inactive { @apply bg-white text-gray-600 border border-gray-200 hover:border-gray-300; }
+
+  /* ── Stats grid for hero ──────────────────────────────────────────────────── */
+  .hero-stat { @apply bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl p-4 transition; }
+}
