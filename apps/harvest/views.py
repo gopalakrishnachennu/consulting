@@ -1111,19 +1111,26 @@ class EngineConfigView(SuperuserRequiredMixin, View):
     def post(self, request, *args, **kwargs):
         cfg = HarvestEngineConfig.get()
 
-        fields = [
+        # Integer fields
+        int_fields = [
             "worker_concurrency", "task_rate_limit",
             "api_stagger_ms", "scraper_stagger_ms",
             "min_hours_since_fetch", "task_soft_time_limit_secs",
         ]
         errors = []
-        for field in fields:
+        for field in int_fields:
             val = request.POST.get(field, "").strip()
             if val:
                 try:
                     setattr(cfg, field, int(val))
                 except (ValueError, TypeError):
                     errors.append(f"{field}: must be a whole number")
+
+        # Boolean (checkbox) fields — unchecked checkboxes send no value, so
+        # we must explicitly set False when the key is absent from POST.
+        bool_fields = ["auto_backfill_jd", "auto_enrich", "auto_sync_to_pool"]
+        for field in bool_fields:
+            setattr(cfg, field, field in request.POST)
 
         if errors:
             messages.error(request, " | ".join(errors))
@@ -1133,7 +1140,7 @@ class EngineConfigView(SuperuserRequiredMixin, View):
             messages.success(
                 request,
                 "Engine config saved. Rate limit applied to running workers immediately. "
-                "Stagger and freshness changes apply on the next batch run.",
+                "Pipeline funnel toggles and stagger changes apply on the next batch run.",
             )
 
         return redirect("harvest-engine-config")

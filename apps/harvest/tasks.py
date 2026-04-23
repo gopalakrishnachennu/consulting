@@ -745,6 +745,7 @@ def fetch_raw_jobs_for_company_task(
     # ── Upsert jobs ───────────────────────────────────────────────────────────
     jobs_new = jobs_updated = jobs_duplicate = jobs_failed = 0
     upsert_errors: list[str] = []
+    new_raw_job_pks: list[int] = []  # PKs of freshly-created RawJobs for auto-pipeline
 
     # In test mode, cap to max_jobs so we don't write hundreds of rows
     if max_jobs and len(raw_jobs) > max_jobs:
@@ -814,12 +815,23 @@ def fetch_raw_jobs_for_company_task(
                 "is_active": True,
             }
 
+            # ── Dedup guard: never overwrite a SYNCED job ────────────────────
+            # If this URL is already in the pool (sync_status=SYNCED), there is
+            # nothing to do — don't reset its sync status or overwrite its data.
+            existing_synced = RawJob.objects.filter(
+                url_hash=url_hash, sync_status="SYNCED"
+            ).values_list("pk", flat=True).first()
+            if existing_synced:
+                jobs_duplicate += 1
+                continue
+
             obj, created = RawJob.objects.update_or_create(
                 url_hash=url_hash,
                 defaults=defaults,
             )
             if created:
                 jobs_new += 1
+                new_raw_job_pks.append(obj.pk)
             else:
                 jobs_updated += 1
 
@@ -850,6 +862,13 @@ def fetch_raw_jobs_for_company_task(
         "jobs_duplicate", "jobs_failed", "completed_at", "error_message", "error_type",
     ])
 
+    # ── Auto-pipeline: funnel control variables (initialized before batch block) ──
+    # These are mutated by the batch-completion check below, then used after.
+    platform_s = (label.platform.slug if label and label.platform else "") or ""
+    _trigger_enrich_sync = not batch   # True for single-company fetches, False for batches
+    _enrich_countdown = 900            # 15 min for single-company (backfill needs time first)
+    _sync_countdown   = 1800           # 30 min for single-company
+
     # ── Update batch counters + auto-complete ────────────────────────────────
     if batch:
         if run.status in (CompanyFetchRun.Status.SUCCESS, CompanyFetchRun.Status.PARTIAL):
@@ -876,42 +895,82 @@ def fetch_raw_jobs_for_company_task(
                     if refreshed["failed_companies"] == 0
                     else FetchBatch.Status.PARTIAL
                 )
-                FetchBatch.objects.filter(
+                updated_rows = FetchBatch.objects.filter(
                     pk=batch.pk, status=FetchBatch.Status.RUNNING
                 ).update(status=final_status, completed_at=timezone.now())
+                # We are the ONE task that just closed the batch — trigger pipeline steps 2+3.
+                # updated_rows==1 means exactly one worker wrote the final status (no races).
+                if updated_rows == 1:
+                    _trigger_enrich_sync = True
+                    _enrich_countdown = 120   # 2 min — batch done, backfill is already running
+                    _sync_countdown   = 300   # 5 min — enrich is pure-CPU, ~1000 jobs/s
 
     logger.info(
         "fetch_raw_jobs: label=%s new=%d updated=%d failed=%d",
         label_pk, jobs_new, jobs_updated, jobs_failed,
     )
 
-    # ── Auto-queue description backfill for new jobs that still have no JD ──
-    # Platforms like Workday, iCIMS, Taleo, Oracle, Jobvite, BambooHR, UltiPro
-    # don't return descriptions in their list APIs.  Fire a background task to
-    # fetch JDs for every new job from this run — totally automatic, no button.
-    _NEEDS_BACKFILL = {
-        "workday", "icims", "taleo", "oracle", "jobvite",
-        "bamboohr", "ultipro", "zoho", "teamtailor", "breezy",
-        "dayforce",
-    }
-    platform_s = (label.platform.slug if label and label.platform else "") or ""
-    if jobs_new > 0 and platform_s in _NEEDS_BACKFILL:
+    # ── Auto-pipeline funnel ─────────────────────────────────────────────────
+    #
+    # Step 1 — JD backfill: fires per-company for every new job regardless of platform.
+    #   Jobs that already have descriptions are skipped inside the backfill task so
+    #   firing it unconditionally is always safe and cheap when nothing needs fetching.
+    #
+    # Steps 2 + 3 — enrich + sync: fire exactly once per batch when the last task
+    #   completes (_trigger_enrich_sync=True set above), OR immediately for standalone
+    #   single-company triggers with a long countdown so backfill can finish first.
+    #
+    # All steps are gated by HarvestEngineConfig.auto_* flags — user can disable any
+    # step from the Engine Config GUI without touching code.
+
+    # ── Step 1: JD backfill (per-company, scoped to this platform) ───────────
+    if jobs_new > 0:
         try:
-            backfill_descriptions_task.apply_async(
-                kwargs={
-                    "batch_size": 200,
-                    "parallel_workers": 2,
-                    "platform_slug": platform_s,
-                    "offset": 0,
-                },
-                countdown=30,   # 30 s after harvest finishes, start fetching JDs
-            )
-            logger.info(
-                "Auto-queued description backfill for %d new %s jobs",
-                jobs_new, platform_s,
-            )
+            from .models import HarvestEngineConfig as _EngCfg
+            _pipe_cfg = _EngCfg.get()
+            if _pipe_cfg.auto_backfill_jd:
+                backfill_descriptions_task.apply_async(
+                    kwargs={
+                        "batch_size": 200,
+                        "parallel_workers": 2,
+                        "platform_slug": platform_s or None,  # None = all platforms
+                        "offset": 0,
+                    },
+                    countdown=30,   # 30 s after harvest — let the upserts settle first
+                )
+                logger.info(
+                    "Auto-pipeline step 1: JD backfill queued for %d new %s jobs",
+                    jobs_new, platform_s or "all",
+                )
         except Exception as exc:
-            logger.warning("Could not queue auto-backfill: %s", exc)
+            logger.warning("Auto-pipeline step 1 (JD backfill) queue failed: %s", exc)
+
+    # ── Steps 2 + 3: enrich then sync ────────────────────────────────────────
+    if _trigger_enrich_sync:
+        try:
+            from .models import HarvestEngineConfig as _EngCfg2
+            _pipe_cfg2 = _EngCfg2.get()
+
+            if _pipe_cfg2.auto_enrich:
+                enrich_existing_jobs_task.apply_async(
+                    kwargs={"batch_size": 5000, "only_unenriched": True},
+                    countdown=_enrich_countdown,
+                )
+                logger.info(
+                    "Auto-pipeline step 2: enrich queued (countdown=%ds)", _enrich_countdown
+                )
+
+            if _pipe_cfg2.auto_sync_to_pool:
+                sync_harvested_to_pool_task.apply_async(
+                    kwargs={"max_jobs": 500},
+                    countdown=_sync_countdown,
+                )
+                logger.info(
+                    "Auto-pipeline step 3: sync-to-pool queued (countdown=%ds)", _sync_countdown
+                )
+
+        except Exception as exc:
+            logger.warning("Auto-pipeline steps 2/3 (enrich/sync) queue failed: %s", exc)
 
     return {
         "label_pk": label_pk,

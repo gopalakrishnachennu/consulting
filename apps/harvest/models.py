@@ -677,6 +677,37 @@ class HarvestEngineConfig(models.Model):
         ),
     )
 
+    # ── Auto-pipeline funnel toggles ──────────────────────────────────────────
+    # When all three are True (the default), pressing "Fetch All" runs the full
+    # pipeline automatically: fetch → JD backfill → enrich → sync to pool.
+    # Disable individual steps here without touching code.
+    auto_backfill_jd = models.BooleanField(
+        default=True,
+        verbose_name="Auto JD backfill",
+        help_text=(
+            "After each company fetch, automatically queue a description backfill "
+            "for new jobs that have no JD yet. Fires 30s after harvest."
+        ),
+    )
+    auto_enrich = models.BooleanField(
+        default=True,
+        verbose_name="Auto enrich",
+        help_text=(
+            "After a full batch completes, automatically run enrichment (skills, "
+            "category, experience level …) on all new unenriched jobs. "
+            "Fires 2 min after the last company task finishes."
+        ),
+    )
+    auto_sync_to_pool = models.BooleanField(
+        default=True,
+        verbose_name="Auto sync to pool",
+        help_text=(
+            "After enrichment, automatically promote enriched jobs with real "
+            "descriptions into the Vet Queue (Job Pool). "
+            "Fires 5 min after the last company task finishes."
+        ),
+    )
+
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(
         "auth.User", null=True, blank=True, on_delete=models.SET_NULL,
