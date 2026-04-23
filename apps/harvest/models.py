@@ -710,7 +710,7 @@ class HarvestEngineConfig(models.Model):
 
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(
-        "auth.User", null=True, blank=True, on_delete=models.SET_NULL,
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
         related_name="+",
     )
 
