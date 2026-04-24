@@ -1,5 +1,6 @@
 from django.urls import path
 
+from .push_api import ExportLabelsView, PushJobsView, PushStatusView
 from .views import (
     CompanyFetchStatusView,
     CompanyLabelListView,
@@ -75,6 +76,10 @@ urlpatterns = [
     path("run/setup-schedule/", SetupScheduleView.as_view(), name="harvest-run-setup-schedule"),
     # API helpers
     path("api/cooldown/", FetchCooldownStatusView.as_view(), name="harvest-api-cooldown"),
+    # Local Harvesting Agent — push API (token-authenticated, csrf_exempt)
+    path("api/push/labels/", ExportLabelsView.as_view(), name="harvest-push-labels"),
+    path("api/push/jobs/", PushJobsView.as_view(), name="harvest-push-jobs"),
+    path("api/push/status/", PushStatusView.as_view(), name="harvest-push-status"),
     # Engine Config — runtime tuning knobs (concurrency, rate limit, stagger)
     path("engine/", EngineConfigView.as_view(), name="harvest-engine-config"),
     # Job Jarvis — paste-any-URL ingestion

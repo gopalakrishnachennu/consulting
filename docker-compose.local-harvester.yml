@@ -1,0 +1,73 @@
+##############################################################################
+# Local Harvesting Agent — Docker Compose
+#
+# Runs the harvesting engine on your local machine (or cheap VPS) at FULL
+# speed, with no server-side constraints, then writes directly to production.
+#
+# TWO modes — pick ONE:
+#
+#   MODE A: Direct (recommended) ─────────────────────────────────────────────
+#     Connect straight to the production PostgreSQL database.
+#     Set DATABASE_URL to your prod connection string in .env.harvester.
+#     Run:
+#       docker compose -f docker-compose.local-harvester.yml run --rm harvester \
+#         python manage.py harvest_and_push --mode direct --fetch-all
+#
+#   MODE B: Push (when prod DB is not directly reachable) ─────────────────────
+#     Harvest fully offline → push via HTTP API to prod.
+#     Set PUSH_URL + PUSH_TOKEN in .env.harvester.
+#     Run:
+#       docker compose -f docker-compose.local-harvester.yml run --rm harvester \
+#         python manage.py harvest_and_push --mode push --fetch-all --workers 8
+#
+# Quick start:
+#   cp .env.harvester.example .env.harvester
+#   # edit .env.harvester
+#   docker compose -f docker-compose.local-harvester.yml build
+#   docker compose -f docker-compose.local-harvester.yml run --rm harvester \
+#     python manage.py harvest_and_push --mode direct --platform greenhouse --fetch-all
+##############################################################################
+
+services:
+
+  harvester:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: consulting-harvester:local
+    # Override entrypoint so we don't run gunicorn — just use the container as a CLI
+    entrypoint: []
+    command: ["python", "manage.py", "harvest_and_push", "--mode", "direct", "--fetch-all"]
+    env_file:
+      - .env.harvester
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings_local_harvester
+      PYTHONPATH: /app/apps
+      PYTHONUNBUFFERED: "1"
+      # These are overridden by .env.harvester — listed here as documentation
+      # DATABASE_URL: postgres://user:pass@prod-host:5432/dbname   (direct mode)
+      # PUSH_URL: https://chennu.co                               (push mode)
+      # PUSH_TOKEN: your-harvest-push-secret                      (push mode)
+    volumes:
+      - .:/app
+    # No ports needed — this is a CLI-only service
+    restart: "no"
+
+  # Optional: local PostgreSQL for MODE B staging buffer
+  # Only needed if you want a local DB for debugging harvested jobs before pushing.
+  # Comment out if using MODE A (direct) or if you don't need local staging.
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: harvest_local
+      POSTGRES_USER: harvest
+      POSTGRES_PASSWORD: harvest_local_pass
+    ports:
+      - "5433:5432"    # Port 5433 to avoid conflict with any local PostgreSQL on 5432
+    volumes:
+      - harvest_local_db:/var/lib/postgresql/data
+    profiles:
+      - local-db      # Only starts with: docker compose --profile local-db up
+
+volumes:
+  harvest_local_db:

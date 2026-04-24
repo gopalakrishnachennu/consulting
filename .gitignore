@@ -8,7 +8,12 @@ build/
 # Virtual Environment
 venv/
 .venv/
+.venv-harvester/
 env/
+
+# Local harvesting agent secrets
+.env.harvester
+local_harvest.db
 
 # Database
 db.sqlite3

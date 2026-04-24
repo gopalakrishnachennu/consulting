@@ -240,6 +240,12 @@ HARVEST_BACKFILL_INTER_JOB_DELAY_SEC = config(
 # Missing-JD rows with posted_date older than this are labeled "expired" (stale listings). Override via env.
 HARVEST_JD_STALE_DAYS = config('HARVEST_JD_STALE_DAYS', default=120, cast=int)
 
+# ── Local Harvesting Agent ────────────────────────────────────────────────────
+# Bearer token that the local harvesting agent must send in Authorization header.
+# Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+# REQUIRED: Set this in production .env before enabling the push API.
+HARVEST_PUSH_SECRET = config('HARVEST_PUSH_SECRET', default='').strip()
+
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
