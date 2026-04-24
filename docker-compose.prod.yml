@@ -31,6 +31,7 @@ services:
       CELERY_TASK_ALWAYS_EAGER: "0"
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
       WEB_TIMEOUT: ${WEB_TIMEOUT:-120}
+      HARVEST_PUSH_SECRET: ${HARVEST_PUSH_SECRET:-}
     depends_on:
       - db
       - redis
