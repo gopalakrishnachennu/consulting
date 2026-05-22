@@ -603,19 +603,21 @@ class ConsultantDetailView(LoginRequiredMixin, DetailView):
         context['total_resume_drafts'] = resume_drafts.count()
         context['latest_draft'] = resume_drafts.first()
 
-        # Draft generate form (Admin/Employee only)
+        # Assignable jobs for resume generation (Admin/Employee only)
         if context['is_admin'] or context['is_employee']:
-            from resumes.forms import DraftGenerateForm
             roles = profile.marketing_roles.all()
-            form = DraftGenerateForm()
             if roles:
-                form.fields['job'].queryset = Job.objects.filter(
+                assignable_jobs = Job.objects.filter(
                     status='OPEN',
                     marketing_roles__in=roles
-                ).distinct()
+                ).select_related('company_obj').distinct().order_by('-created_at')
             else:
-                form.fields['job'].queryset = Job.objects.none()
-            context['draft_form'] = form
+                assignable_jobs = Job.objects.none()
+            context['assignable_jobs'] = assignable_jobs
+            context['assignable_jobs_count'] = assignable_jobs.count()
+            # Track which jobs already have drafts
+            drafted_job_ids = set(resume_drafts.values_list('job_id', flat=True))
+            context['drafted_job_ids'] = drafted_job_ids
             context['claimed_job_ids'] = set(
                 submissions.values_list('job_id', flat=True)
             )
