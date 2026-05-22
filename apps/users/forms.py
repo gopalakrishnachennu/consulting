@@ -220,13 +220,34 @@ class UserProfileForm(forms.ModelForm):
 
 
 class EmployeeProfileForm(forms.ModelForm):
-    """Edit employee-specific fields: department, company_name."""
+    """Edit employee-specific fields: department, designation, company_name, permissions."""
     class Meta:
         model = EmployeeProfile
-        fields = ['department', 'company_name', 'can_manage_consultants']
+        fields = ['department', 'designation', 'company_name', 'can_manage_consultants']
         widgets = {
-            'department': forms.Select(attrs={'class': 'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500'}),
+            'department': forms.Select(attrs={'class': 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition'}),
+            'designation': forms.Select(attrs={'class': 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition'}),
+            'company_name': forms.TextInput(attrs={'class': 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition'}),
             'can_manage_consultants': forms.CheckboxInput(attrs={'class': 'h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded'}),
+        }
+
+
+class EmployeeAccountForm(forms.ModelForm):
+    """Admin controls for employee account: active status, superuser."""
+    class Meta:
+        model = User
+        fields = ['is_active', 'is_superuser']
+        widgets = {
+            'is_active': forms.CheckboxInput(attrs={'class': 'h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded'}),
+            'is_superuser': forms.CheckboxInput(attrs={'class': 'h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded'}),
+        }
+        labels = {
+            'is_active': 'Account Active',
+            'is_superuser': 'Superuser Access',
+        }
+        help_texts = {
+            'is_active': 'Uncheck to disable this employee account. They will not be able to log in.',
+            'is_superuser': 'Grants full admin access to all features. Use with caution.',
         }
 
 

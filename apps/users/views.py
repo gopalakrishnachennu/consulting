@@ -33,6 +33,7 @@ from .forms import (
     ConsultantCreateForm,
     UserProfileForm,
     EmployeeProfileForm,
+    EmployeeAccountForm,
     ConsultantProfileEditForm,
     MarketingRoleForm,
     EmployeeCreateForm,
@@ -375,8 +376,8 @@ class EmployeeCreateView(LoginRequiredMixin, UserPassesTestMixin, BaseView):
         return render(request, self.template_name, {'form': form})
 
 class EmployeeEditView(LoginRequiredMixin, UserPassesTestMixin, BaseView):
-    """Admin can edit any employee's profile."""
-    template_name = 'users/profile_form.html'
+    """Admin can edit any employee's profile — dedicated employee edit form."""
+    template_name = 'users/employee_edit.html'
 
     def test_func(self):
         return self.request.user.is_superuser or self.request.user.role == 'ADMIN'
@@ -384,44 +385,43 @@ class EmployeeEditView(LoginRequiredMixin, UserPassesTestMixin, BaseView):
     def _get_employee(self):
         return get_object_or_404(User, pk=self.kwargs['pk'], role=User.Role.EMPLOYEE)
 
-    def get(self, request, pk):
-        employee = self._get_employee()
-        # Ensure profile exists
+    def _ensure_profile(self, employee):
         if not hasattr(employee, 'employee_profile'):
             EmployeeProfile.objects.create(user=employee)
             employee.refresh_from_db()
 
-        user_form = UserProfileForm(instance=employee, prefix='user')
-        profile_form = EmployeeProfileForm(instance=employee.employee_profile, prefix='profile')
-        return render(request, self.template_name, {
-            'form_title': f'Edit Employee: {employee.get_full_name() or employee.username}',
+    def _get_context(self, employee, user_form, profile_form, account_form):
+        return {
+            'employee': employee,
             'user_form': user_form,
             'profile_form': profile_form,
-            'cancel_url': reverse_lazy('employee-detail', kwargs={'pk': pk}),
-            'multi_form': True,
-        })
+            'account_form': account_form,
+            'cancel_url': reverse_lazy('employee-detail', kwargs={'pk': employee.pk}),
+        }
+
+    def get(self, request, pk):
+        employee = self._get_employee()
+        self._ensure_profile(employee)
+        user_form = UserProfileForm(instance=employee, prefix='user')
+        profile_form = EmployeeProfileForm(instance=employee.employee_profile, prefix='profile')
+        account_form = EmployeeAccountForm(instance=employee, prefix='account')
+        return render(request, self.template_name,
+                      self._get_context(employee, user_form, profile_form, account_form))
 
     def post(self, request, pk):
         employee = self._get_employee()
-        # Ensure profile exists
-        if not hasattr(employee, 'employee_profile'):
-             EmployeeProfile.objects.create(user=employee)
-             employee.refresh_from_db()
-
+        self._ensure_profile(employee)
         user_form = UserProfileForm(request.POST, instance=employee, prefix='user')
         profile_form = EmployeeProfileForm(request.POST, instance=employee.employee_profile, prefix='profile')
-        if user_form.is_valid() and profile_form.is_valid():
+        account_form = EmployeeAccountForm(request.POST, instance=employee, prefix='account')
+        if user_form.is_valid() and profile_form.is_valid() and account_form.is_valid():
             user_form.save()
             profile_form.save()
-            messages.success(request, 'Employee profile updated successfully.')
+            account_form.save()
+            messages.success(request, f'Employee "{employee.get_full_name() or employee.username}" updated successfully.')
             return redirect('employee-detail', pk=pk)
-        return render(request, self.template_name, {
-            'form_title': f'Edit Employee: {employee.get_full_name() or employee.username}',
-            'user_form': user_form,
-            'profile_form': profile_form,
-            'cancel_url': reverse_lazy('employee-detail', kwargs={'pk': pk}),
-            'multi_form': True,
-        })
+        return render(request, self.template_name,
+                      self._get_context(employee, user_form, profile_form, account_form))
 
 
 class ConsultantEditView(LoginRequiredMixin, UserPassesTestMixin, BaseView):
