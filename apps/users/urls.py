@@ -2,7 +2,7 @@ from django.urls import path
 from .views import (
     ConsultantListView, ConsultantExportCSVView,
     EmployeeListView, EmployeeExportCSVView, EmployeeDetailView, EmployeeCreateView,
-    EmployeeEditView, ConsultantEditView, ConsultantDetailView,     ConsultantDashboardView,
+    EmployeeEditView, EmployeeDeleteView, ConsultantEditView, ConsultantDetailView, ConsultantDashboardView,
     ConsultantJourneyView,
     ConsultantOnboardingView,
     EmailNotificationPreferencesView,
@@ -24,6 +24,7 @@ urlpatterns = [
     path('employees/create/', EmployeeCreateView.as_view(), name='employee-create'),
     path('employees/<int:pk>/', EmployeeDetailView.as_view(), name='employee-detail'),
     path('employees/<int:pk>/edit/', EmployeeEditView.as_view(), name='employee-edit'),
+    path('employees/<int:pk>/delete/', EmployeeDeleteView.as_view(), name='employee-delete'),
 
     path('account/email-notifications/', EmailNotificationPreferencesView.as_view(), name='email-notification-preferences'),
     path('settings/', SettingsView.as_view(), name='settings-dashboard'),

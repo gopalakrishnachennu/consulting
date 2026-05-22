@@ -34,6 +34,7 @@ from .forms import (
     UserProfileForm,
     EmployeeProfileForm,
     EmployeeAccountForm,
+    DesignationFeaturesForm,
     ConsultantProfileEditForm,
     MarketingRoleForm,
     EmployeeCreateForm,
@@ -390,38 +391,67 @@ class EmployeeEditView(LoginRequiredMixin, UserPassesTestMixin, BaseView):
             EmployeeProfile.objects.create(user=employee)
             employee.refresh_from_db()
 
-    def _get_context(self, employee, user_form, profile_form, account_form):
+    def _get_context(self, employee, user_form, profile_form, account_form, features_form):
+        ep = employee.employee_profile
         return {
             'employee': employee,
             'user_form': user_form,
             'profile_form': profile_form,
             'account_form': account_form,
+            'features_form': features_form,
             'cancel_url': reverse_lazy('employee-detail', kwargs={'pk': employee.pk}),
         }
 
     def get(self, request, pk):
         employee = self._get_employee()
         self._ensure_profile(employee)
+        ep = employee.employee_profile
         user_form = UserProfileForm(instance=employee, prefix='user')
-        profile_form = EmployeeProfileForm(instance=employee.employee_profile, prefix='profile')
+        profile_form = EmployeeProfileForm(instance=ep, prefix='profile')
         account_form = EmployeeAccountForm(instance=employee, prefix='account')
+        features_form = DesignationFeaturesForm(designation=ep.designation, prefix='flags')
         return render(request, self.template_name,
-                      self._get_context(employee, user_form, profile_form, account_form))
+                      self._get_context(employee, user_form, profile_form, account_form, features_form))
 
     def post(self, request, pk):
         employee = self._get_employee()
         self._ensure_profile(employee)
+        ep = employee.employee_profile
         user_form = UserProfileForm(request.POST, instance=employee, prefix='user')
-        profile_form = EmployeeProfileForm(request.POST, instance=employee.employee_profile, prefix='profile')
+        profile_form = EmployeeProfileForm(request.POST, instance=ep, prefix='profile')
         account_form = EmployeeAccountForm(request.POST, instance=employee, prefix='account')
-        if user_form.is_valid() and profile_form.is_valid() and account_form.is_valid():
+        # Build features form with the *saved* designation (before profile_form changes it)
+        features_form = DesignationFeaturesForm(request.POST, designation=ep.designation, prefix='flags')
+        if user_form.is_valid() and profile_form.is_valid() and account_form.is_valid() and features_form.is_valid():
             user_form.save()
             profile_form.save()
             account_form.save()
+            # Re-read designation after profile save (may have changed)
+            ep.refresh_from_db()
+            if ep.designation:
+                features_form.designation = ep.designation
+                features_form.save()
             messages.success(request, f'Employee "{employee.get_full_name() or employee.username}" updated successfully.')
             return redirect('employee-detail', pk=pk)
         return render(request, self.template_name,
-                      self._get_context(employee, user_form, profile_form, account_form))
+                      self._get_context(employee, user_form, profile_form, account_form, features_form))
+
+
+class EmployeeDeleteView(LoginRequiredMixin, UserPassesTestMixin, BaseView):
+    """Admin can delete an employee account."""
+
+    def test_func(self):
+        return self.request.user.is_superuser or self.request.user.role == 'ADMIN'
+
+    def post(self, request, pk):
+        employee = get_object_or_404(User, pk=pk, role=User.Role.EMPLOYEE)
+        if employee.pk == request.user.pk:
+            messages.error(request, 'You cannot delete your own account.')
+            return redirect('employee-detail', pk=pk)
+        name = employee.get_full_name() or employee.username
+        employee.delete()
+        messages.success(request, f'Employee "{name}" has been permanently deleted.')
+        return redirect('employee-list')
 
 
 class ConsultantEditView(LoginRequiredMixin, UserPassesTestMixin, BaseView):

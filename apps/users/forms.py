@@ -234,6 +234,18 @@ class EmployeeProfileForm(forms.ModelForm):
 
 class EmployeeAccountForm(forms.ModelForm):
     """Admin controls for employee account: active status, superuser."""
+
+    new_password = forms.CharField(
+        required=False,
+        widget=forms.PasswordInput(attrs={
+            'class': 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition',
+            'placeholder': 'Leave blank to keep current password',
+            'autocomplete': 'new-password',
+        }),
+        label='New Password',
+        help_text='Set a new password for this employee. Leave blank to keep their current password.',
+    )
+
     class Meta:
         model = User
         fields = ['is_active', 'is_superuser']
@@ -249,6 +261,49 @@ class EmployeeAccountForm(forms.ModelForm):
             'is_active': 'Uncheck to disable this employee account. They will not be able to log in.',
             'is_superuser': 'Grants full admin access to all features. Use with caution.',
         }
+
+    def save(self, commit=True):
+        user = super().save(commit=commit)
+        new_pw = self.cleaned_data.get('new_password', '').strip()
+        if new_pw:
+            user.set_password(new_pw)
+            if commit:
+                user.save()
+        return user
+
+
+class DesignationFeaturesForm(forms.Form):
+    """Editable feature flag checkboxes for a designation's allowed_features M2M."""
+
+    def __init__(self, *args, designation=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        from core.models import FeatureFlag
+        self.designation = designation
+        all_flags = FeatureFlag.objects.filter(is_enabled=True).order_by('sort_order', 'label')
+        current_ids = set()
+        if designation:
+            current_ids = set(designation.allowed_features.values_list('pk', flat=True))
+        for flag in all_flags:
+            self.fields[f'flag_{flag.pk}'] = forms.BooleanField(
+                required=False,
+                initial=flag.pk in current_ids,
+                label=f'{flag.icon} {flag.label}' if flag.icon else flag.label,
+                help_text=flag.description,
+                widget=forms.CheckboxInput(attrs={
+                    'class': 'h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded',
+                }),
+            )
+            self.fields[f'flag_{flag.pk}'].flag_pk = flag.pk
+
+    def save(self):
+        if not self.designation:
+            return
+        from core.models import FeatureFlag
+        enabled_ids = []
+        for name, value in self.cleaned_data.items():
+            if name.startswith('flag_') and value:
+                enabled_ids.append(self.fields[name].flag_pk)
+        self.designation.allowed_features.set(enabled_ids)
 
 
 class ConsultantProfileEditForm(forms.ModelForm):
