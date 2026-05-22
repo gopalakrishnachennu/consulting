@@ -513,6 +513,9 @@ class ResumeGenerateActionView(ResumeGenerateActionAccessMixin, BaseView):
             draft.llm_user_prompt = metadata.get('user_prompt', '')
             draft.save(skip_version=True)
             messages.error(request, f"Generation failed: {error}")
+            next_url = request.POST.get('next') or request.GET.get('next')
+            if next_url:
+                return redirect(next_url)
             return redirect('resume-generate')
 
         draft.content = content
@@ -537,6 +540,9 @@ class ResumeGenerateActionView(ResumeGenerateActionAccessMixin, BaseView):
             request,
             f"Resume v{draft.version} generated for {cp.user.get_full_name()} — ATS score: {draft.ats_score}%"
         )
+        next_url = request.POST.get('next') or request.GET.get('next')
+        if next_url:
+            return redirect(next_url)
         return redirect('draft-review', pk=draft.pk)
 
 
