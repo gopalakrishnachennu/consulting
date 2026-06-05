@@ -2,135 +2,187 @@
 {% load widget_tweaks %}
 
 {% block content %}
-<div class="max-w-2xl mx-auto px-4 py-8">
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-        <h1 class="text-2xl font-bold text-gray-800 mb-2">Add New Consultant</h1>
-        <p class="text-gray-500 mb-6">Create a new consultant account and profile.</p>
+<div class="max-w-4xl mx-auto px-4 sm:px-6 py-6">
 
-        {% if form.errors %}
-        <div class="mb-6 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg" role="alert">
-            <strong class="font-bold">Please fix the errors below.</strong>
+  {# ━━ BREADCRUMB ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
+  <nav class="flex items-center gap-2 text-sm text-gray-500 mb-5">
+    <a href="{% url 'admin-dashboard' %}" class="hover:text-gray-700 transition">Dashboard</a>
+    <svg class="w-3.5 h-3.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+    <a href="{% url 'consultant-list' %}" class="hover:text-gray-700 transition">Consultants</a>
+    <svg class="w-3.5 h-3.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+    <span class="text-gray-900 font-medium">Add New</span>
+  </nav>
+
+  <form method="post" x-data="{ showPassword: false }">
+    {% csrf_token %}
+
+    {# Header #}
+    <div class="flex items-center justify-between mb-6">
+      <div class="flex items-center gap-4">
+        <div class="h-12 w-12 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center text-lg font-bold shadow-sm">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
         </div>
-        {% endif %}
-
-        <form method="post" class="space-y-5">
-            {% csrf_token %}
-
-            <div class="border-b pb-4 mb-4">
-                <h2 class="text-lg font-semibold text-gray-700 mb-4">Account Details</h2>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label for="id_username" class="block text-sm font-medium text-gray-700 mb-1">Username <span
-                                class="text-red-500">*</span></label>
-                        {% render_field form.username class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" %}
-                        {% if form.username.errors %}<p class="text-red-500 text-sm mt-1">{{ form.username.errors.0 }}
-                        </p>{% endif %}
-                    </div>
-                    <div>
-                        <label for="id_email" class="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                        {% render_field form.email class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" %}
-                        {% if form.email.errors %}<p class="text-red-500 text-sm mt-1">{{ form.email.errors.0 }}</p>{% endif %}
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                    <div>
-                        <label for="id_first_name" class="block text-sm font-medium text-gray-700 mb-1">First
-                            Name</label>
-                        {% render_field form.first_name class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" %}
-                    </div>
-                    <div>
-                        <label for="id_last_name" class="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
-                        {% render_field form.last_name class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" %}
-                    </div>
-                </div>
-
-                <div class="mt-4">
-                    <label for="id_password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                    <div class="relative">
-                        {% render_field form.password class="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Leave blank to auto-generate" %}
-                        <button type="button" onclick="togglePassword('id_password', this)"
-                            class="absolute right-3 top-2.5 text-gray-500 hover:text-gray-700 focus:outline-none">
-                            <svg class="h-5 w-5 eye-open" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z">
-                                </path>
-                            </svg>
-                            <svg class="h-5 w-5 eye-closed hidden" fill="none" stroke="currentColor"
-                                viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21">
-                                </path>
-                            </svg>
-                        </button>
-                    </div>
-                    <p class="text-gray-600 text-xs mt-1">Leave blank to auto-generate from Name + Email (e.g.
-                        John.Doe@example)</p>
-                    {% if form.password.errors %}<p class="text-red-500 text-sm mt-1">{{ form.password.errors.0 }}</p>{% endif %}
-                </div>
-            </div>
-
-            <div>
-                <h2 class="text-lg font-semibold text-gray-700 mb-4">Consultant Profile</h2>
-
-                <div class="space-y-4">
-                    <div>
-                        <label for="id_phone" class="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
-                        {% render_field form.phone class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="+1 (555) 123-4567" %}
-                    </div>
-                    <div>
-                        <label for="id_bio" class="block text-sm font-medium text-gray-700 mb-1">Bio</label>
-                        {% render_field form.bio class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" %}
-                    </div>
-                    <div>
-                        <label for="id_base_resume_text" class="block text-sm font-medium text-gray-700 mb-1">Base Resume</label>
-                        {% render_field form.base_resume_text class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" %}
-                        <p class="text-gray-600 text-xs mt-1">Paste the consultant's base resume here for tailoring.</p>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label for="id_skills" class="block text-sm font-medium text-gray-700 mb-1">Skills</label>
-                            {% render_field form.skills class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Python, Django, AWS" %}
-                            <p class="text-gray-600 text-xs mt-1">Comma-separated list</p>
-                        </div>
-                        <div>
-                            <label for="id_hourly_rate" class="block text-sm font-medium text-gray-700 mb-1">Hourly Rate
-                                ($)</label>
-                            {% render_field form.hourly_rate class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="150.00" %}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="flex justify-between pt-4 border-t">
-                <a href="{% url 'consultant-list' %}"
-                    class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">
-                    Cancel
-                </a>
-                <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
-                    Create Consultant
-                </button>
-            </div>
-        </form>
+        <div>
+          <h1 class="text-2xl font-extrabold text-gray-900">Add New Consultant</h1>
+          <p class="text-sm text-gray-500">Create an account and set up their profile</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <a href="{% url 'consultant-list' %}" class="px-4 py-2 rounded-lg text-sm font-semibold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition">Cancel</a>
+        <button type="submit" class="px-5 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-sm transition">Create Consultant</button>
+      </div>
     </div>
-</div>
 
-<script>
-function togo    rd(inputId, btn) {
-    const input = doc        t.getElementById(inputId);
-    const eyeOpen = b        uerySelector('.eye-open');
-    const eyeClosed =        .querySelector('.eye-closed');
-    if (input.type ==        assword') {
-        input.type =                     eyeOpen.class            ('hidden');
-        eyeClosed.cla            emove('hidden');
-    } else {
-                t.type =             d';
-        eyeOpen.class            ove('hidden');
-        eyeClosed.cla            dd('hidden');
-    }
-}
-</script>
+    {% if form.errors %}
+    <div class="mb-5 flex items-center gap-2.5 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm font-medium">
+      <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+      Please fix the errors below.
+    </div>
+    {% endif %}
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      {# ━━ LEFT COLUMN ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
+      <div class="space-y-6">
+
+        {# Identity #}
+        <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+          <div class="px-5 py-3 border-b border-gray-100">
+            <h2 class="text-xs font-bold text-gray-600 uppercase tracking-wider">Identity</h2>
+          </div>
+          <div class="p-5 space-y-4">
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label for="id_first_name" class="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">First Name</label>
+                {% render_field form.first_name class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition" placeholder="John" %}
+              </div>
+              <div>
+                <label for="id_last_name" class="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">Last Name</label>
+                {% render_field form.last_name class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition" placeholder="Doe" %}
+              </div>
+            </div>
+            <div>
+              <label for="id_email" class="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">Email</label>
+              {% render_field form.email class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition" placeholder="john.doe@company.com" %}
+              {% if form.email.errors %}<p class="text-red-500 text-xs mt-1">{{ form.email.errors.0 }}</p>{% endif %}
+            </div>
+            <div>
+              <label for="id_phone" class="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">Phone</label>
+              {% render_field form.phone class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition" placeholder="+1 (555) 123-4567" %}
+            </div>
+          </div>
+        </div>
+
+        {# Credentials #}
+        <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+          <div class="px-5 py-3 border-b border-gray-100">
+            <h2 class="text-xs font-bold text-gray-600 uppercase tracking-wider">Credentials</h2>
+          </div>
+          <div class="p-5 space-y-4">
+            <div>
+              <label for="id_username" class="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">Username <span class="text-red-400">*</span></label>
+              {% render_field form.username class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition" placeholder="john.doe" %}
+              {% if form.username.errors %}<p class="text-red-500 text-xs mt-1">{{ form.username.errors.0 }}</p>{% endif %}
+            </div>
+            <div>
+              <label for="id_password" class="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">Password</label>
+              <div class="relative">
+                {% render_field form.password class="w-full px-3 py-2 pr-10 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition" placeholder="Leave blank to auto-generate" %}
+                <button type="button" @click="showPassword = !showPassword; $refs.pwd = document.getElementById('id_password'); $refs.pwd.type = showPassword ? 'text' : 'password'"
+                        class="absolute right-2.5 top-2 text-gray-400 hover:text-gray-600 transition">
+                  <svg x-show="!showPassword" class="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                  <svg x-show="showPassword" x-cloak class="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>
+                </button>
+              </div>
+              <p class="text-[10px] text-gray-400 mt-1.5">Leave blank to auto-generate from Name + Email</p>
+              {% if form.password.errors %}<p class="text-red-500 text-xs mt-1">{{ form.password.errors.0 }}</p>{% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# ━━ RIGHT 2 COLUMNS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
+      <div class="lg:col-span-2 space-y-6">
+
+        {# Professional Profile #}
+        <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+          <div class="px-5 py-3 border-b border-gray-100">
+            <h2 class="text-xs font-bold text-gray-600 uppercase tracking-wider">Professional Profile</h2>
+          </div>
+          <div class="p-5 space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label for="id_skills" class="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">Skills</label>
+                {% render_field form.skills class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition" placeholder="Python, Django, AWS, React" %}
+                <p class="text-[10px] text-gray-400 mt-1">Comma-separated list</p>
+              </div>
+              <div>
+                <label for="id_hourly_rate" class="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">Hourly Rate ($)</label>
+                {% render_field form.hourly_rate class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition" placeholder="150.00" %}
+              </div>
+            </div>
+            <div>
+              <label for="id_bio" class="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">Bio</label>
+              {% render_field form.bio class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition resize-y" placeholder="Brief professional summary..." %}
+            </div>
+          </div>
+        </div>
+
+        {# Base Resume #}
+        <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+          <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+            <h2 class="text-xs font-bold text-gray-600 uppercase tracking-wider">Base Resume</h2>
+            <span class="text-[10px] text-gray-400">Used for AI-tailored resume generation</span>
+          </div>
+          <div class="p-5">
+            {% render_field form.base_resume_text class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition font-mono text-xs resize-y" placeholder="Paste full resume text here..." %}
+            <p class="text-[10px] text-gray-400 mt-1.5">This text is used as the foundation when generating job-specific resumes. Include all experience, education, and certifications.</p>
+          </div>
+        </div>
+
+        {# Options #}
+        <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+          <div class="px-5 py-3 border-b border-gray-100">
+            <h2 class="text-xs font-bold text-gray-600 uppercase tracking-wider">Resume Options</h2>
+          </div>
+          <div class="p-5">
+            <div class="flex items-start gap-3 p-3 rounded-lg border border-gray-100 hover:bg-gray-50 transition">
+              <div class="mt-0.5">{{ form.match_jd_title_override }}</div>
+              <div class="flex-1">
+                <label for="id_match_jd_title_override" class="text-sm font-semibold text-gray-800 cursor-pointer">{{ form.match_jd_title_override.label }}</label>
+                <p class="text-[10px] text-gray-400 mt-0.5">{{ form.match_jd_title_override.help_text }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {# Quick Info #}
+        <div class="bg-gradient-to-r from-indigo-50 to-violet-50 rounded-2xl border border-indigo-100 p-5">
+          <div class="flex items-start gap-3">
+            <svg class="w-5 h-5 text-indigo-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <div class="text-xs text-indigo-800 space-y-1">
+              <p class="font-semibold">What happens next?</p>
+              <ul class="text-indigo-700 space-y-0.5 list-disc list-inside">
+                <li>Consultant account is created and can log in immediately</li>
+                <li>Base resume is used for AI-tailored resume generation per job</li>
+                <li>You can add experience, education, and certifications from the detail page</li>
+                <li>Assign marketing roles to start matching jobs automatically</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# Sticky save bar #}
+    <div class="mt-6 flex items-center justify-between bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-4 sticky bottom-4">
+      <a href="{% url 'consultant-list' %}" class="px-5 py-2.5 rounded-lg text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 transition">Cancel</a>
+      <button type="submit" class="px-6 py-2.5 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-sm transition">
+        <svg class="w-4 h-4 inline -mt-0.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
+        Create Consultant
+      </button>
+    </div>
+  </form>
+
+</div>
 {% endblock %}

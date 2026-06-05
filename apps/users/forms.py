@@ -10,6 +10,7 @@ from .models import (
     Department,
     UserEmailNotificationPreferences,
 )
+from core.models import EmployeeDesignation
 
 User = get_user_model()
 
@@ -114,7 +115,18 @@ class EmployeeCreateForm(forms.Form):
 
     # Profile fields
     department = forms.ModelChoiceField(queryset=Department.objects.all(), required=False, empty_label="Select Department")
+    designation = forms.ModelChoiceField(
+        queryset=EmployeeDesignation.objects.filter(is_active=True),
+        required=False,
+        empty_label="Select Designation",
+    )
     company_name = forms.CharField(max_length=100, required=False)
+
+    # Permissions
+    is_superuser = forms.BooleanField(required=False, label="Admin Access",
+                                       help_text="Grant full system administration privileges.")
+    can_manage_consultants = forms.BooleanField(required=False, label="Manage Consultants",
+                                                 help_text="Allow adding, editing, and managing consultants.")
 
     def clean_username(self):
         username = self.cleaned_data['username']
@@ -155,11 +167,14 @@ class EmployeeCreateForm(forms.Form):
             first_name=data.get('first_name', ''),
             last_name=data.get('last_name', ''),
             role=User.Role.EMPLOYEE,
+            is_superuser=data.get('is_superuser', False),
         )
         EmployeeProfile.objects.create(
             user=user,
             department=data.get('department'),
+            designation=data.get('designation'),
             company_name=data.get('company_name', ''),
+            can_manage_consultants=data.get('can_manage_consultants', False),
         )
         return user, password, generated
 
