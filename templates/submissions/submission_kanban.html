@@ -1,16 +1,48 @@
 {% extends 'base.html' %}
+{% load humanize %}
 
 {% block content %}
-<div class="max-w-[100vw] mx-auto px-4 py-6">
-    <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
-        <div>
-            <h1 class="text-2xl font-bold text-gray-900">Pipeline board</h1>
-            <p class="text-sm text-gray-500 mt-1">Drag cards between columns to update status. Changes notify the consultant when relevant.</p>
-        </div>
-        <a href="{% url 'submission-list' %}"
-            class="inline-flex items-center px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50">List view</a>
+<div class="max-w-[100vw] mx-auto px-4 sm:px-6 py-5">
+
+  {# ━━ HEADER ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
+  <div class="flex flex-wrap items-center justify-between gap-4 mb-5">
+    <div class="flex items-center gap-3">
+      <div class="h-10 w-10 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 text-white flex items-center justify-center shadow-sm">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7"/></svg>
+      </div>
+      <div>
+        <h1 class="text-xl font-extrabold text-gray-900">Pipeline Board</h1>
+        <p class="text-xs text-gray-500">Drag cards between columns to update status</p>
+      </div>
     </div>
-    {% include 'submissions/partials/kanban_board.html' %}
+    <div class="flex items-center gap-2">
+      {# Column count summary #}
+      <div class="hidden sm:flex items-center gap-3 mr-4 text-[11px]">
+        {% for col in kanban_columns %}
+        {% if col.items|length > 0 %}
+        <span class="inline-flex items-center gap-1">
+          <span class="w-2 h-2 rounded-full
+            {% if col.code == 'APPLIED' %}bg-blue-500
+            {% elif col.code == 'INTERVIEW' %}bg-violet-500
+            {% elif col.code == 'OFFER' %}bg-emerald-500
+            {% elif col.code == 'PLACED' %}bg-green-500
+            {% elif col.code == 'REJECTED' %}bg-red-400
+            {% else %}bg-gray-400{% endif %}"></span>
+          <span class="font-bold text-gray-700">{{ col.items|length }}</span>
+          <span class="text-gray-400">{{ col.label }}</span>
+        </span>
+        {% endif %}
+        {% endfor %}
+      </div>
+      <a href="{% url 'submission-list' %}"
+         class="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+        List View
+      </a>
+    </div>
+  </div>
+
+  {% include 'submissions/partials/kanban_board.html' %}
 </div>
 {% endblock %}
 
@@ -33,6 +65,9 @@
             el._sortableInstance = new Sortable(el, {
                 group: 'kanban',
                 animation: 150,
+                ghostClass: 'opacity-40',
+                chosenClass: 'shadow-lg',
+                dragClass: 'rotate-2',
                 draggable: '.kanban-card',
                 onEnd: function (evt) {
                     var item = evt.item;
@@ -40,6 +75,13 @@
                     var toCol = evt.to.closest('[data-status]');
                     if (!toCol || !submissionId) return;
                     var newStatus = toCol.getAttribute('data-status');
+
+                    // Optimistic UI: flash card border
+                    item.classList.add('border-blue-400', 'bg-blue-50/30');
+                    setTimeout(function() {
+                        item.classList.remove('border-blue-400', 'bg-blue-50/30');
+                    }, 1500);
+
                     var fd = new FormData();
                     fd.append('submission_id', submissionId);
                     fd.append('status', newStatus);
