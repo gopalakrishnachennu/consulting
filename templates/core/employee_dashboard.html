@@ -1,212 +1,359 @@
 {% extends "base.html" %}
+{% load humanize %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto px-4 py-6">
-    <!-- ═══════ PAGE HEADER (Employee) ═══════ -->
-    <div class="hero-gradient rounded-2xl px-6 py-5 mb-5">
-        <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-4 items-center">
-            <div class="flex items-center gap-4 min-w-0">
-                <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/20">
-                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                            d="M16 14a4 4 0 10-8 0v4a2 2 0 01-2 2h12a2 2 0 01-2-2v-4zM12 4a3 3 0 110 6 3 3 0 010-6z" />
-                    </svg>
-                </div>
-                <div class="min-w-0">
-                    <h1 class="text-xl font-bold text-white">Employee Dashboard</h1>
-                    <p class="text-sm text-blue-100 mt-0.5">
-                        {{ request.user.get_full_name|default:request.user.username }} · {{ my_open_jobs }} open role{{ my_open_jobs|pluralize }}
-                    </p>
-                </div>
-            </div>
-            <a href="{% url 'job-create' %}"
-                class="inline-flex items-center justify-end gap-2 px-4 py-2.5 rounded-lg bg-white text-blue-600 text-sm font-semibold hover:bg-blue-50 transition w-full sm:w-auto sm:justify-self-end">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                </svg>
-                Post job
-            </a>
-        </div>
-    </div>
+<div class="max-w-[1440px] mx-auto px-4 sm:px-6 py-5 space-y-5">
 
-    <!-- ═══════ KPI STRIP (clean, no letters) ═══════ -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-        <div class="bg-white rounded-xl px-4 py-3 border border-gray-100 shadow-sm flex items-center justify-between">
-            <div>
-                <p class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">My posted jobs</p>
-                <p class="mt-1 text-xl font-extrabold text-gray-900">{{ my_jobs_count }}</p>
-            </div>
-            <span
-                class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-blue-500">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M4 6h16M4 10h16M4 14h10M4 18h6" />
-                </svg>
-            </span>
-        </div>
-        <div class="bg-white rounded-xl px-4 py-3 border border-gray-100 shadow-sm flex items-center justify-between">
-            <div>
-                <p class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">My open jobs</p>
-                <p class="mt-1 text-xl font-extrabold text-gray-900">{{ my_open_jobs }}</p>
-            </div>
-            <span
-                class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M5 13l4 4L19 7" />
-                </svg>
-            </span>
-        </div>
-        <div class="bg-white rounded-xl px-4 py-3 border border-gray-100 shadow-sm flex items-center justify-between">
-            <div>
-                <p class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Apps received</p>
-                <p class="mt-1 text-xl font-extrabold text-gray-900">{{ total_apps_received }}</p>
-            </div>
-            <span
-                class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-violet-50 text-violet-600">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M3 7h18M5 11h14M7 15h10" />
-                </svg>
-            </span>
-        </div>
-        <div class="bg-white rounded-xl px-4 py-3 border border-gray-100 shadow-sm flex items-center justify-between">
-            <div>
-                <p class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Pending review</p>
-                <p class="mt-1 text-xl font-extrabold text-gray-900">{{ pending_apps }}</p>
-            </div>
-            <span
-                class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-50 text-amber-600">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M12 8v4m0 4h.01M12 2a10 10 0 100 20 10 10 0 000-20z" />
-                </svg>
-            </span>
-        </div>
+{# ━━ HEADER ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
+<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+  <div class="flex items-center gap-4">
+    <div class="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center text-lg font-bold shadow-sm">
+      {{ request.user.first_name|first|upper|default:"?" }}{{ request.user.last_name|first|upper }}
     </div>
+    <div>
+      <h1 class="text-2xl font-extrabold text-gray-900 tracking-tight">Welcome back, {{ request.user.first_name|default:request.user.username }}</h1>
+      <p class="text-sm text-gray-500 mt-0.5">
+        {% if designation %}<span class="text-indigo-600 font-medium">{{ designation.name }}</span> · {% endif %}
+        {% if department %}{{ department.name }} · {% endif %}
+        {{ my_open_jobs }} open role{{ my_open_jobs|pluralize }}
+      </p>
+    </div>
+  </div>
+  <div class="flex flex-wrap gap-2">
+    <a href="{% url 'job-create' %}" class="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition shadow-sm">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+      Post Job
+    </a>
+    <a href="{% url 'submission-kanban' %}" class="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg bg-gray-800 text-white hover:bg-gray-900 transition shadow-sm">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7"/></svg>
+      Kanban Board
+    </a>
+    {% if can_manage_consultants %}
+    <a href="{% url 'consultant-list' %}" class="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      Consultants
+    </a>
+    {% endif %}
+  </div>
+</div>
 
-    {% if pending_apps and pending_apps > 0 %}
-    <div
-        class="mb-5 p-4 rounded-2xl bg-blue-50 border border-blue-100 flex flex-wrap items-center justify-between gap-4">
-        <div class="flex items-center gap-3">
-            <span class="flex h-9 w-9 items-center justify-center rounded-full bg-blue-100 text-blue-600">
-                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                </svg>
-            </span>
-            <div>
-                <p class="font-semibold text-blue-900 text-sm">
-                    {{ pending_apps }} application{{ pending_apps|pluralize }} pending review for your jobs
-                </p>
-                <p class="text-xs text-blue-700">Move candidates through the funnel faster.</p>
-            </div>
+{# ━━ ALERT BANNER ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
+{% if pending_apps and pending_apps > 0 %}
+<div class="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200">
+  <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-600 shrink-0">
+    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+  </span>
+  <div class="flex-1">
+    <p class="text-sm font-semibold text-amber-900">{{ pending_apps }} application{{ pending_apps|pluralize }} pending your review</p>
+    <p class="text-xs text-amber-700">Move candidates through the funnel to keep the pipeline flowing.</p>
+  </div>
+  <a href="{% url 'submission-list' %}?status=APPLIED" class="px-3.5 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 transition shrink-0">Review Now</a>
+</div>
+{% endif %}
+
+{# ━━ KPI CARDS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
+<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+  <a href="{% url 'job-list' %}?posted_by={{ request.user.pk }}" class="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md hover:border-blue-200 transition group">
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">My Jobs</span>
+      <span class="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 group-hover:bg-blue-100 transition">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+      </span>
+    </div>
+    <p class="text-2xl font-extrabold text-gray-900">{{ my_jobs_count }}</p>
+    <p class="text-[11px] text-gray-400 mt-1">{{ my_open_jobs }} open · {{ my_pool_jobs }} pool</p>
+  </a>
+
+  <a href="{% url 'submission-list' %}" class="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md hover:border-violet-200 transition group">
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Applications</span>
+      <span class="w-7 h-7 rounded-lg bg-violet-50 flex items-center justify-center text-violet-600 group-hover:bg-violet-100 transition">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+      </span>
+    </div>
+    <p class="text-2xl font-extrabold text-gray-900">{{ total_apps_received|intcomma }}</p>
+    <p class="text-[11px] text-gray-400 mt-1">for your jobs</p>
+  </a>
+
+  <a href="{% url 'submission-list' %}?status=APPLIED" class="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md hover:border-amber-200 transition group">
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Pending</span>
+      <span class="w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 group-hover:bg-amber-100 transition">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      </span>
+    </div>
+    <p class="text-2xl font-extrabold {% if pending_apps > 0 %}text-amber-600{% else %}text-gray-900{% endif %}">{{ pending_apps }}</p>
+    <p class="text-[11px] text-gray-400 mt-1">need review</p>
+  </a>
+
+  <a href="{% url 'submission-list' %}?status=INTERVIEW" class="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md hover:border-indigo-200 transition group">
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Interview</span>
+      <span class="w-7 h-7 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-100 transition">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+      </span>
+    </div>
+    <p class="text-2xl font-extrabold text-gray-900">{{ interview_apps }}</p>
+    <p class="text-[11px] text-gray-400 mt-1">in progress</p>
+  </a>
+
+  <a href="{% url 'submission-list' %}?status=OFFER" class="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md hover:border-emerald-200 transition group">
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Offers</span>
+      <span class="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 group-hover:bg-emerald-100 transition">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      </span>
+    </div>
+    <p class="text-2xl font-extrabold {% if offer_apps > 0 %}text-emerald-600{% else %}text-gray-900{% endif %}">{{ offer_apps }}</p>
+    <p class="text-[11px] text-gray-400 mt-1">outstanding</p>
+  </a>
+
+  <a href="{% url 'job-list' %}" class="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md hover:border-sky-200 transition group">
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Platform</span>
+      <span class="w-7 h-7 rounded-lg bg-sky-50 flex items-center justify-center text-sky-600 group-hover:bg-sky-100 transition">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      </span>
+    </div>
+    <p class="text-2xl font-extrabold text-gray-900">{{ all_open_jobs|intcomma }}</p>
+    <p class="text-[11px] text-gray-400 mt-1">total open jobs</p>
+  </a>
+</div>
+
+{# ━━ PIPELINE FUNNEL ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
+{% if total_apps_received > 0 %}
+<div class="bg-white rounded-xl border border-gray-200 p-5">
+  <div class="flex items-center gap-2 mb-4">
+    <span class="w-6 h-6 rounded-md bg-indigo-50 flex items-center justify-center">
+      <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/></svg>
+    </span>
+    <h2 class="text-sm font-bold text-gray-900">My Application Pipeline</h2>
+  </div>
+  <div class="flex items-center gap-2">
+    <a href="{% url 'submission-list' %}?status=APPLIED" class="flex-1 text-center p-3 rounded-lg bg-blue-50 hover:bg-blue-100 transition">
+      <p class="text-lg font-extrabold text-blue-700">{{ pending_apps }}</p>
+      <p class="text-[10px] font-semibold text-blue-500 uppercase">Applied</p>
+    </a>
+    <svg class="w-4 h-4 text-gray-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+    <a href="{% url 'submission-list' %}?status=INTERVIEW" class="flex-1 text-center p-3 rounded-lg bg-violet-50 hover:bg-violet-100 transition">
+      <p class="text-lg font-extrabold text-violet-700">{{ interview_apps }}</p>
+      <p class="text-[10px] font-semibold text-violet-500 uppercase">Interview</p>
+    </a>
+    <svg class="w-4 h-4 text-gray-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+    <a href="{% url 'submission-list' %}?status=OFFER" class="flex-1 text-center p-3 rounded-lg bg-emerald-50 hover:bg-emerald-100 transition">
+      <p class="text-lg font-extrabold text-emerald-700">{{ offer_apps }}</p>
+      <p class="text-[10px] font-semibold text-emerald-500 uppercase">Offer</p>
+    </a>
+    <svg class="w-4 h-4 text-gray-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+    <a href="{% url 'submission-list' %}?status=PLACED" class="flex-1 text-center p-3 rounded-lg bg-green-50 hover:bg-green-100 transition">
+      <p class="text-lg font-extrabold text-green-700">{{ placed_apps }}</p>
+      <p class="text-[10px] font-semibold text-green-500 uppercase">Placed</p>
+    </a>
+    <svg class="w-4 h-4 text-gray-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+    <div class="flex-1 text-center p-3 rounded-lg bg-red-50">
+      <p class="text-lg font-extrabold text-red-600">{{ rejected_apps }}</p>
+      <p class="text-[10px] font-semibold text-red-400 uppercase">Rejected</p>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ━━ MAIN CONTENT GRID ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+  {# -- My Recent Jobs (2 cols) --------------------------------------------- #}
+  <div class="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-5">
+    <div class="flex items-center gap-2 mb-4">
+      <span class="w-6 h-6 rounded-md bg-blue-50 flex items-center justify-center">
+        <svg class="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+      </span>
+      <h2 class="text-sm font-bold text-gray-900">My Recent Jobs</h2>
+      <a href="{% url 'job-list' %}?posted_by={{ request.user.pk }}" class="ml-auto text-xs text-indigo-600 hover:text-indigo-800 font-medium">View all &rarr;</a>
+    </div>
+    {% if recent_my_jobs %}
+    <div class="space-y-2">
+      {% for job in recent_my_jobs %}
+      <a href="{% url 'job-detail' pk=job.pk %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition group">
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-semibold text-gray-800 truncate group-hover:text-indigo-700">{{ job.title }}</p>
+          <p class="text-[11px] text-gray-400">{{ job.company }} · {{ job.location|default:"Remote" }} · {{ job.created_at|timesince }} ago</p>
         </div>
-        <a href="{% url 'submission-list' %}?status=APPLIED"
-            class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition">
-            Review applications →
-        </a>
+        <span class="px-2 py-1 text-[10px] font-bold rounded-full shrink-0
+          {% if job.status == 'OPEN' %}bg-emerald-50 text-emerald-700
+          {% elif job.status == 'POOL' %}bg-indigo-50 text-indigo-700
+          {% elif job.status == 'DRAFT' %}bg-amber-50 text-amber-700
+          {% else %}bg-gray-100 text-gray-500{% endif %}">{{ job.get_status_display }}</span>
+        <a href="{% url 'job-update' pk=job.pk %}" class="text-[10px] text-gray-400 hover:text-blue-600 shrink-0 font-medium" onclick="event.stopPropagation()">Edit</a>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-center py-8">
+      <svg class="w-10 h-10 text-gray-200 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+      <p class="text-sm text-gray-400">No jobs posted yet</p>
+      <a href="{% url 'job-create' %}" class="text-xs text-indigo-600 hover:underline mt-1 inline-block">Post your first job &rarr;</a>
     </div>
     {% endif %}
+  </div>
 
-    <!-- ═══════ LISTS & QUICK ACTIONS ═══════ -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <!-- My Recent Jobs -->
-        <div class="bg-white rounded-2xl shadow-sm p-5 border border-gray-100">
-            <div class="flex justify-between items-center mb-3">
-                <h2 class="text-sm font-semibold text-gray-800">My Recent Job Postings</h2>
-                <a href="{% url 'job-list' %}" class="text-xs text-blue-600 hover:underline">View all →</a>
-            </div>
-            {% if recent_my_jobs %}
-            <div class="space-y-2.5">
-                {% for job in recent_my_jobs %}
-                <div class="flex justify-between items-center px-3 py-2.5 bg-gray-50 rounded-xl">
-                    <div class="pr-3">
-                        <a href="{% url 'job-detail' pk=job.pk %}"
-                            class="font-medium text-sm text-gray-800 hover:text-blue-600 line-clamp-1">{{ job.title }}</a>
-                        <p class="text-xs text-gray-500">{{ job.company }} · {{ job.location }}</p>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <span
-                            class="px-2.5 py-1 text-[10px] font-semibold rounded-full {% if job.status == 'OPEN' %}bg-green-50 text-green-700{% else %}bg-gray-100 text-gray-600{% endif %}">
-                            {{ job.status }}
-                        </span>
-                        <a href="{% url 'job-update' pk=job.pk %}"
-                            class="text-xs text-blue-600 hover:underline whitespace-nowrap">Edit</a>
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-            {% else %}
-            <p class="text-xs text-gray-500 text-center py-4">You haven't posted any jobs yet.</p>
-            {% endif %}
-        </div>
-
-        <!-- Recent Applications for My Jobs -->
-        <div class="bg-white rounded-2xl shadow-sm p-5 border border-gray-100">
-            <div class="flex justify-between items-center mb-3">
-                <h2 class="text-sm font-semibold text-gray-800">Applications for My Jobs</h2>
-                <a href="{% url 'submission-list' %}" class="text-xs text-blue-600 hover:underline">View all →</a>
-            </div>
-            {% if recent_apps %}
-            <div class="space-y-2.5">
-                {% for app in recent_apps %}
-                <div class="flex justify-between items-center px-3 py-2.5 bg-gray-50 rounded-xl">
-                    <div class="pr-3">
-                        <p class="font-medium text-sm text-gray-800 line-clamp-1">{{ app.job.title }}</p>
-                        <p class="text-xs text-gray-500">
-                            by {{ app.consultant.user.get_full_name|default:app.consultant.user.username }}
-                        </p>
-                    </div>
-                    <span
-                        class="px-2.5 py-1 text-[10px] font-semibold rounded-full {% if app.status == 'APPLIED' %}bg-amber-50 text-amber-700{% elif app.status == 'REJECTED' %}bg-red-50 text-red-700{% else %}bg-emerald-50 text-emerald-700{% endif %}">
-                        {{ app.status }}
-                    </span>
-                </div>
-                {% endfor %}
-            </div>
-            {% else %}
-            <p class="text-xs text-gray-500 text-center py-4">No applications received yet.</p>
-            {% endif %}
-        </div>
-
-        <!-- Quick Actions -->
-        <div class="bg-white rounded-2xl shadow-sm p-5 border border-gray-100 lg:col-span-2 mt-1">
-            <h2 class="text-sm font-semibold text-gray-800 mb-3">Quick actions</h2>
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <a href="{% url 'job-create' %}"
-                    class="flex flex-col items-center justify-center px-4 py-3 rounded-xl border border-blue-100 bg-blue-50 text-blue-700 text-xs font-semibold hover:bg-blue-100 transition">
-                    <span class="mb-1">＋</span>
-                    Post new job
-                </a>
-                <a href="{% url 'job-bulk-upload' %}"
-                    class="flex flex-col items-center justify-center px-4 py-3 rounded-xl border border-emerald-100 bg-emerald-50 text-emerald-700 text-xs font-semibold hover:bg-emerald-100 transition">
-                    Bulk upload
-                </a>
-                <a href="{% url 'submission-list' %}"
-                    class="flex flex-col items-center justify-center px-4 py-3 rounded-xl border border-violet-100 bg-violet-50 text-violet-700 text-xs font-semibold hover:bg-violet-100 transition">
-                    All applications
-                </a>
-                <a href="{% url 'analytics-dashboard' %}"
-                    class="flex flex-col items-center justify-center px-4 py-3 rounded-xl border border-amber-100 bg-amber-50 text-amber-700 text-xs font-semibold hover:bg-amber-100 transition">
-                    Analytics
-                </a>
-            </div>
-        </div>
+  {# -- Quick Actions (1 col) ----------------------------------------------- #}
+  <div class="space-y-5">
+    <div class="bg-white rounded-xl border border-gray-200 p-5">
+      <h2 class="text-xs font-bold text-gray-600 uppercase tracking-wider mb-3">Quick Actions</h2>
+      <div class="space-y-2">
+        <a href="{% url 'job-create' %}" class="flex items-center gap-3 p-2.5 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-100 transition group">
+          <span class="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600 group-hover:bg-blue-200 transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          </span>
+          <div>
+            <p class="text-xs font-semibold text-blue-800">Post New Job</p>
+            <p class="text-[10px] text-blue-600">Create a job listing</p>
+          </div>
+        </a>
+        <a href="{% url 'job-bulk-upload' %}" class="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-50 border border-gray-100 transition group">
+          <span class="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-600 group-hover:bg-gray-200 transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+          </span>
+          <div>
+            <p class="text-xs font-semibold text-gray-800">Bulk Upload</p>
+            <p class="text-[10px] text-gray-500">Import multiple jobs</p>
+          </div>
+        </a>
+        <a href="{% url 'submission-kanban' %}" class="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-50 border border-gray-100 transition group">
+          <span class="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-600 group-hover:bg-gray-200 transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7"/></svg>
+          </span>
+          <div>
+            <p class="text-xs font-semibold text-gray-800">Pipeline Board</p>
+            <p class="text-[10px] text-gray-500">Drag-drop applications</p>
+          </div>
+        </a>
+        <a href="{% url 'analytics-dashboard' %}" class="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-50 border border-gray-100 transition group">
+          <span class="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-600 group-hover:bg-gray-200 transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+          </span>
+          <div>
+            <p class="text-xs font-semibold text-gray-800">Analytics</p>
+            <p class="text-[10px] text-gray-500">Reports & metrics</p>
+          </div>
+        </a>
+      </div>
     </div>
 
-    <!-- Platform Stats -->
-    <div class="mt-5 bg-white rounded-2xl shadow-sm p-5 border border-gray-100">
-        <div class="flex items-center justify-between">
-            <div>
-                <h2 class="text-sm font-semibold text-gray-800 mb-1">Platform overview</h2>
-                <p class="text-xs text-gray-500">
-                    There are currently
-                    <span class="font-semibold text-blue-600">{{ all_open_jobs }}</span>
-                    open jobs across the platform.
-                </p>
-            </div>
+    {# Job Breakdown Mini #}
+    <div class="bg-white rounded-xl border border-gray-200 p-5">
+      <h2 class="text-xs font-bold text-gray-600 uppercase tracking-wider mb-3">My Job Breakdown</h2>
+      <div class="space-y-2">
+        <div class="flex items-center gap-2 text-xs">
+          <span class="w-2.5 h-2.5 rounded-sm bg-emerald-400"></span>
+          <span class="text-gray-600 flex-1">Open</span>
+          <span class="font-bold text-gray-800">{{ my_open_jobs }}</span>
         </div>
+        <div class="flex items-center gap-2 text-xs">
+          <span class="w-2.5 h-2.5 rounded-sm bg-indigo-400"></span>
+          <span class="text-gray-600 flex-1">Pool</span>
+          <span class="font-bold text-gray-800">{{ my_pool_jobs }}</span>
+        </div>
+        <div class="flex items-center gap-2 text-xs">
+          <span class="w-2.5 h-2.5 rounded-sm bg-amber-400"></span>
+          <span class="text-gray-600 flex-1">Draft</span>
+          <span class="font-bold text-gray-800">{{ my_draft_jobs }}</span>
+        </div>
+        <div class="flex items-center gap-2 text-xs">
+          <span class="w-2.5 h-2.5 rounded-sm bg-gray-300"></span>
+          <span class="text-gray-600 flex-1">Closed</span>
+          <span class="font-bold text-gray-800">{{ my_closed_jobs }}</span>
+        </div>
+      </div>
+      {% if my_jobs_count > 0 %}
+      <div class="flex h-2 rounded-full overflow-hidden mt-3 bg-gray-100">
+        <div class="bg-emerald-400" style="width:{% widthratio my_open_jobs my_jobs_count 100 %}%"></div>
+        <div class="bg-indigo-400" style="width:{% widthratio my_pool_jobs my_jobs_count 100 %}%"></div>
+        <div class="bg-amber-400" style="width:{% widthratio my_draft_jobs my_jobs_count 100 %}%"></div>
+        <div class="bg-gray-300" style="width:{% widthratio my_closed_jobs my_jobs_count 100 %}%"></div>
+      </div>
+      {% endif %}
     </div>
+  </div>
+</div>
+
+{# ━━ RECENT APPLICATIONS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
+<div class="bg-white rounded-xl border border-gray-200 p-5">
+  <div class="flex items-center gap-2 mb-4">
+    <span class="w-6 h-6 rounded-md bg-orange-50 flex items-center justify-center">
+      <svg class="w-3.5 h-3.5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+    </span>
+    <h2 class="text-sm font-bold text-gray-900">Recent Applications</h2>
+    <a href="{% url 'submission-list' %}" class="ml-auto text-xs text-indigo-600 hover:text-indigo-800 font-medium">View all &rarr;</a>
+  </div>
+  {% if recent_apps %}
+  <div class="overflow-x-auto">
+    <table class="w-full text-xs">
+      <thead>
+        <tr class="text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-100">
+          <th class="pb-2 pr-4">Consultant</th>
+          <th class="pb-2 pr-4">Job</th>
+          <th class="pb-2 pr-4">Status</th>
+          <th class="pb-2 text-right">When</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for app in recent_apps %}
+        <tr class="border-b border-gray-50 hover:bg-gray-50 transition cursor-pointer" onclick="window.location='{% url 'submission-detail' app.pk %}'">
+          <td class="py-2.5 pr-4">
+            <div class="flex items-center gap-2">
+              <div class="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-400 to-violet-500 flex items-center justify-center text-white text-[10px] font-bold shrink-0">
+                {{ app.consultant.user.first_name|first|default:"?" }}
+              </div>
+              <span class="font-semibold text-gray-800">{{ app.consultant.user.get_full_name|default:"--" }}</span>
+            </div>
+          </td>
+          <td class="py-2.5 pr-4 text-gray-600 truncate max-w-[200px]">{{ app.job.title }}</td>
+          <td class="py-2.5 pr-4">
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold
+              {% if app.status == 'APPLIED' %}bg-blue-50 text-blue-700
+              {% elif app.status == 'INTERVIEW' %}bg-violet-50 text-violet-700
+              {% elif app.status == 'OFFER' %}bg-emerald-50 text-emerald-700
+              {% elif app.status == 'PLACED' %}bg-green-50 text-green-700
+              {% elif app.status == 'REJECTED' %}bg-red-50 text-red-700
+              {% else %}bg-gray-100 text-gray-500{% endif %}">{{ app.get_status_display }}</span>
+          </td>
+          <td class="py-2.5 text-right text-gray-400 whitespace-nowrap">{{ app.created_at|timesince }} ago</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="text-center py-8">
+    <svg class="w-10 h-10 text-gray-200 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+    <p class="text-sm text-gray-400">No applications received yet</p>
+    <p class="text-xs text-gray-300 mt-1">Post jobs to start receiving applications</p>
+  </div>
+  {% endif %}
+</div>
+
+{# ━━ UPCOMING INTERVIEWS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
+{% if upcoming_interviews %}
+<div class="bg-white rounded-xl border border-gray-200 p-5">
+  <div class="flex items-center gap-2 mb-4">
+    <span class="w-6 h-6 rounded-md bg-purple-50 flex items-center justify-center">
+      <svg class="w-3.5 h-3.5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+    </span>
+    <h2 class="text-sm font-bold text-gray-900">Upcoming Interviews</h2>
+    <a href="{% url 'interview-calendar' %}" class="ml-auto text-xs text-indigo-600 hover:text-indigo-800 font-medium">Calendar &rarr;</a>
+  </div>
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+    {% for interview in upcoming_interviews %}
+    <div class="p-3 rounded-lg border border-purple-100 bg-purple-50/30 hover:bg-purple-50 transition">
+      <p class="text-xs font-semibold text-gray-800">{{ interview.submission.consultant.user.get_full_name }}</p>
+      <p class="text-[11px] text-gray-500 truncate">{{ interview.submission.job.title }}</p>
+      <p class="text-[10px] text-purple-600 font-medium mt-1">{{ interview.scheduled_at|date:"M j, g:i A" }}</p>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 </div>
 {% endblock %}

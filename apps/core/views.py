@@ -1392,39 +1392,66 @@ class EmployeeDashboardView(LoginRequiredMixin, UserPassesTestMixin, TemplateVie
         context = super().get_context_data(**kwargs)
         user = self.request.user
         my_jobs = Job.objects.filter(posted_by=user)
-        context['my_jobs_count'] = my_jobs.count()
-        context['my_open_jobs'] = my_jobs.filter(status='OPEN').count()
+
+        # Job aggregates — single query
+        job_agg = my_jobs.aggregate(
+            total=Count('id'),
+            open=Count('id', filter=Q(status='OPEN')),
+            closed=Count('id', filter=Q(status='CLOSED')),
+            pool=Count('id', filter=Q(status='POOL')),
+            draft=Count('id', filter=Q(status='DRAFT')),
+        )
+        context['my_jobs_count'] = job_agg['total']
+        context['my_open_jobs'] = job_agg['open']
+        context['my_closed_jobs'] = job_agg['closed']
+        context['my_pool_jobs'] = job_agg['pool']
+        context['my_draft_jobs'] = job_agg['draft']
+
         my_job_ids = my_jobs.values_list('id', flat=True)
         apps_for_my_jobs = ApplicationSubmission.objects.filter(job_id__in=my_job_ids)
-        context['total_apps_received'] = apps_for_my_jobs.count()
-        context['pending_apps'] = apps_for_my_jobs.filter(status='APPLIED').count()
-        context['recent_my_jobs'] = my_jobs.order_by('-created_at')[:5]
-        context['recent_apps'] = apps_for_my_jobs.select_related('job', 'consultant').order_by('-created_at')[:5]
+
+        # App aggregates — single query
+        app_agg = apps_for_my_jobs.aggregate(
+            total=Count('id'),
+            applied=Count('id', filter=Q(status='APPLIED')),
+            interview=Count('id', filter=Q(status='INTERVIEW')),
+            offer=Count('id', filter=Q(status='OFFER')),
+            placed=Count('id', filter=Q(status='PLACED')),
+            rejected=Count('id', filter=Q(status='REJECTED')),
+        )
+        context['total_apps_received'] = app_agg['total']
+        context['pending_apps'] = app_agg['applied']
+        context['interview_apps'] = app_agg['interview']
+        context['offer_apps'] = app_agg['offer']
+        context['placed_apps'] = app_agg['placed']
+        context['rejected_apps'] = app_agg['rejected']
+
+        context['recent_my_jobs'] = my_jobs.select_related('company_obj').order_by('-created_at')[:6]
+        context['recent_apps'] = (
+            apps_for_my_jobs
+            .select_related('job', 'consultant__user')
+            .order_by('-created_at')[:8]
+        )
         context['all_open_jobs'] = Job.objects.filter(status='OPEN').count()
 
-        # Per-employee job status breakdown
-        my_job_status_qs = my_jobs.values('status').annotate(count=Count('status'))
-        job_status_map = dict(Job.Status.choices)
-        context['my_job_status_labels'] = json.dumps(
-            [job_status_map.get(row['status'], row['status']) for row in my_job_status_qs],
-            cls=DjangoJSONEncoder,
-        )
-        context['my_job_status_data'] = json.dumps(
-            [row['count'] for row in my_job_status_qs],
-            cls=DjangoJSONEncoder,
-        )
+        # Upcoming interviews for my jobs
+        try:
+            from interviews_app.models import Interview
+            context['upcoming_interviews'] = (
+                Interview.objects
+                .filter(submission__job__posted_by=user, status='SCHEDULED')
+                .select_related('submission__job', 'submission__consultant__user')
+                .order_by('scheduled_at')[:5]
+            )
+        except Exception:
+            context['upcoming_interviews'] = []
 
-        # Per-employee application status breakdown
-        my_app_status_qs = apps_for_my_jobs.values('status').annotate(count=Count('status'))
-        app_status_map = dict(ApplicationSubmission.Status.choices)
-        context['my_app_status_labels'] = json.dumps(
-            [app_status_map.get(row['status'], row['status']) for row in my_app_status_qs],
-            cls=DjangoJSONEncoder,
-        )
-        context['my_app_status_data'] = json.dumps(
-            [row['count'] for row in my_app_status_qs],
-            cls=DjangoJSONEncoder,
-        )
+        # Employee profile info
+        ep = getattr(user, 'employee_profile', None)
+        context['can_manage_consultants'] = getattr(ep, 'can_manage_consultants', False)
+        context['designation'] = getattr(ep, 'designation', None) if ep else None
+        context['department'] = getattr(ep, 'department', None) if ep else None
+
         return context
 
 
