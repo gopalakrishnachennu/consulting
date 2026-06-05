@@ -1,0 +1,84 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(/Users/gopalakrishnachennu/Desktop/Devops/consulting/**)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git branch:*)",
+      "Bash(git stash:*)",
+      "Bash(git reset:*)",
+      "Bash(git rm:*)",
+      "Bash(gh run:*)",
+      "Bash(gh workflow:*)",
+      "Bash(gh pr:*)",
+      "Bash(gh secret:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(wc:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(awk:*)",
+      "Bash(sed:*)",
+      "Bash(sort:*)",
+      "Bash(uniq:*)",
+      "Bash(python3 -c:*)",
+      "Bash(python3 manage.py check:*)",
+      "Bash(python3 manage.py showmigrations:*)",
+      "Bash(python3 manage.py makemigrations:*)",
+      "Bash(python3 manage.py migrate:*)",
+      "Bash(python3 manage.py shell -c:*)",
+      "Bash(python3 manage.py test:*)",
+      "Bash(python3 manage.py show_urls:*)",
+      "Bash(./venv/bin/python manage.py:*)",
+      "Bash(docker compose:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker logs:*)",
+      "Bash(pip3 install:*)",
+      "Bash(./venv/bin/pip install:*)",
+      "Bash(curl -s:*)",
+      "Bash(ssh -i ~/.ssh/github_actions_deploy:*)",
+      "Bash(ssh -o:*)",
+      "Bash(scp:*)",
+      "Bash(redis-cli:*)",
+      "Bash(xargs:*)",
+      "Bash(lsof:*)",
+      "Bash(kill:*)",
+      "Read(/tmp/**)",
+      "Read(/Users/gopalakrishnachennu/.ssh/**)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "# Template syntax check — runs after any template edit\nFILE=\"$CLAUDE_FILE_PATH\"\nif echo \"$FILE\" | grep -q '\\.html$'; then\n  python3 -c \"\nimport django, os\nos.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')\ndjango.setup()\nfrom django.template.loader import get_template\nimport sys\ntry:\n    # Convert absolute path to template-relative\n    tpl_dirs = ['/Users/gopalakrishnachennu/Desktop/Devops/consulting/templates/']\n    for d in tpl_dirs:\n        if '$FILE'.startswith(d):\n            name = '$FILE'[len(d):]\n            get_template(name)\n            print(f'Template OK: {name}')\n            sys.exit(0)\n    print('Not in template dir, skipping')\nexcept Exception as e:\n    print(f'Template ERROR: {e}', file=sys.stderr)\n    sys.exit(1)\n\" 2>&1\nfi"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "# After git commit, remind about build+deploy sequence\nif echo \"$CLAUDE_TOOL_INPUT\" | grep -q 'git commit'; then\n  echo '\\n--- REMINDER: Push, wait for Docker build, then deploy ---'\nfi"
+          }
+        ]
+      }
+    ]
+  }
+}

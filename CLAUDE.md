@@ -104,6 +104,47 @@ apps/
 - Stack managed via `docker-compose.prod.yml`
 - Deployed via `deploy.sh` (sources `.env.deploy`) or `deploy-vps.yml` GitHub Action
 
+## Deploy workflow
+
+**Always follow this exact sequence:**
+
+```
+git push origin main
+→ Wait for "Build & publish Docker image" workflow (GH Actions)
+→ gh workflow run deploy-vps.yml -f confirm=DEPLOY
+→ Wait for deploy workflow
+→ Verify with curl https://chennu.co/
+```
+
+**NEVER deploy before the Docker build completes** — it will pull the old image.
+
+## Subagent patterns
+
+Use parallel subagents when:
+- Editing view + template simultaneously (independent files)
+- Running tests while checking deployment status
+- Code review on one file while implementing changes in another
+
+Use sequential (foreground) agents when:
+- Need to read a file's content before deciding what to edit
+- Deploy depends on build completing first
+
+## Template conventions
+
+- All templates use Tailwind CSS utility classes
+- Alpine.js for interactivity (x-data, x-show, @click, x-model)
+- HTMX for partial page updates (hx-get, hx-trigger, hx-swap)
+- Django template tags: `{% load humanize widget_tweaks %}`
+- Partials go in `templates/<app>/_partial_name.html`
+- Dashboard partials: `templates/core/dashboard_partials/_dashboard_*.html`
+
+## Model gotchas
+
+- Job model: use `company_obj` not `company` for FK (has `company` property)
+- ConsultantProfile: `submissions` is the related name for ApplicationSubmission
+- EmployeeDesignation: `allowed_features` M2M to FeatureFlag (changes affect ALL employees with that designation)
+- Always `select_related('consultant__user')` when template accesses `sub.consultant.user`
+
 ## AI handoff / current work pointer
 
 For new AI sessions, read this file first, then read:
