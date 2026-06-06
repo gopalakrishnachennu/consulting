@@ -200,15 +200,22 @@ def _load_section_prompts():
 
 
 def _clean_llm_output(text):
-    """Strip markdown fences, separator lines, and other LLM artifacts."""
+    """Strip markdown fences, bold markers, separator lines, and other LLM artifacts."""
     import re
 
     # Remove markdown code fences
     text = re.sub(r'^```\w*\s*\n?', '', text, flags=re.MULTILINE)
     text = re.sub(r'\n?```\s*$', '', text, flags=re.MULTILINE)
 
+    # Remove bold/italic markdown (**text** → text, *text* → text)
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    text = re.sub(r'\*(.+?)\*', r'\1', text)
+
     # Remove separator lines (====, ----, ****)
     text = re.sub(r'^[=\-*]{4,}\s*$', '', text, flags=re.MULTILINE)
+
+    # Remove trailing whitespace per line
+    text = re.sub(r'[ \t]+$', '', text, flags=re.MULTILINE)
 
     # Collapse 3+ blank lines into 2
     text = re.sub(r'\n{3,}', '\n\n', text)
