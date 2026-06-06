@@ -1,8 +1,13 @@
 """
-Single-call prompt builder for the resume pipeline V3.1.
+Prompt builder for the resume pipeline V3.1.
 
-Builds ONE focused prompt using structured JD intelligence + matching matrix
-instead of dumping raw JD text. The LLM gets clean, organized input.
+System prompt + generation rules come from MasterPrompt (admin-editable).
+This file only handles building the structured USER prompt with candidate
+data, JD intelligence, and matching results.
+
+The admin controls the entire LLM behavior from:
+  Admin → Master Prompts → system_prompt (who the LLM is)
+  Admin → Master Prompts → generation_rules (section rules)
 """
 from django.utils import timezone
 
@@ -21,7 +26,9 @@ def _format_years(consultant):
     return str(years) if years else "1"
 
 
-RESUME_SYSTEM_PROMPT = """You are a Senior Resume Architect. Generate a complete, ATS-optimized, human-authentic resume.
+# ── Fallback prompts (used only if MasterPrompt is not configured) ──
+
+DEFAULT_SYSTEM_PROMPT = """You are a Senior Resume Architect. Generate a complete, ATS-optimized, human-authentic resume.
 
 ABSOLUTE RULES:
 1. Every word must trace to the Candidate Profile or Job Intelligence. Nothing invented.
@@ -50,29 +57,85 @@ CERTIFICATIONS
 [If provided, copy exactly]"""
 
 
-def build_single_call_prompt(jd_intel, matching, consultant, header, education, certifications):
+DEFAULT_GENERATION_RULES = """PROFESSIONAL SUMMARY rules:
+- Single paragraph, exactly 70-80 words
+- Start with the job title
+- Include total years of experience
+- Weave in 3-4 matched skills naturally
+- No pronouns (I, my, we), no company names
+- No generic phrases ('proven track record', 'innovative solutions')
+- Active voice, confident, grounded
+
+SKILLS rules:
+- Key:value format, 6-10 categories
+- Example: Cloud Platforms: AWS (EC2, S3, Lambda), Azure (AKS)
+- Put JD-required skills first in each category
+- Only include skills the candidate actually has
+- No bullets — only key:value lines
+
+PROFESSIONAL EXPERIENCE rules:
+- Use role Title | Company | Start - End format for each header
+- Keep titles, companies, dates EXACTLY as provided
+- Most recent role: 7-10 bullets; all other roles: exactly 6 bullets
+- Each bullet: 22-25 words exactly
+- Each bullet structure: [Action Verb] + [Technology/Method] + [Outcome]
+- Prefer concrete verbs: Built, Deployed, Configured, Automated, Reduced
+- At most 1 elevated verb (Architected, Orchestrated) in entire section
+- Do NOT copy JD text verbatim — rephrase as accomplishments
+- Do NOT repeat phrases across bullets
+- Most recent role: up to 2 quantified bullets (%, $, time)
+- Older roles: max 1 quantified bullet each
+- Do NOT keyword-stuff or list JD terms at end of bullets
+
+EDUCATION & CERTIFICATIONS:
+- Copy EXACTLY as provided. Do not modify, reorder, or add."""
+
+
+def get_system_prompt(master_prompt=None):
     """
-    Build ONE comprehensive prompt with structured intelligence.
-    No raw JD text — only parsed, organized data.
+    Get system prompt from MasterPrompt (admin-editable) or fallback.
+    This is what the admin edits from the UI.
+    """
+    if master_prompt and master_prompt.system_prompt:
+        return master_prompt.system_prompt
+    return DEFAULT_SYSTEM_PROMPT
+
+
+def get_generation_rules(master_prompt=None):
+    """
+    Get generation rules from MasterPrompt (admin-editable) or fallback.
+    This is what the admin edits from the UI.
+    """
+    if master_prompt and master_prompt.generation_rules:
+        return master_prompt.generation_rules
+    return DEFAULT_GENERATION_RULES
+
+
+def build_single_call_prompt(jd_intel, matching, consultant, header, education, certifications,
+                              generation_rules=None):
+    """
+    Build ONE comprehensive user prompt with structured intelligence.
+
+    The generation_rules parameter comes from MasterPrompt.generation_rules
+    (admin-editable). If None, uses DEFAULT_GENERATION_RULES.
     """
     years = _format_years(consultant)
     experiences = list(consultant.experience.all())
     consultant_skills = consultant.skills or []
+    rules = generation_rules or DEFAULT_GENERATION_RULES
+
+    parts = []
 
     # ── Section 1: Header (copy exactly) ────────────────────────────
-    parts = [
-        "=" * 60,
-        "HEADER (copy this exactly — do not modify)",
-        "=" * 60,
+    parts.extend([
+        "HEADER (copy this exactly — do not modify):",
         header,
-    ]
+    ])
 
     # ── Section 2: Job Intelligence ─────────────────────────────────
     parts.extend([
         "",
-        "=" * 60,
-        "TARGET JOB INTELLIGENCE",
-        "=" * 60,
+        "TARGET JOB INTELLIGENCE:",
         f"Title: {jd_intel.get('job_title', 'N/A')}",
         f"Company: {jd_intel.get('company', 'N/A')}",
         f"Seniority: {jd_intel.get('seniority_level', 'mid')}",
@@ -99,12 +162,10 @@ def build_single_call_prompt(jd_intel, matching, consultant, header, education, 
     if ats_keywords:
         parts.append(f"ATS Keywords (weave naturally): {', '.join(ats_keywords[:20])}")
 
-    # ── Section 3: Compatibility Matrix ─────────────────────────────
+    # ── Section 3: Skill Match Analysis ─────────────────────────────
     parts.extend([
         "",
-        "=" * 60,
-        "SKILL MATCH ANALYSIS",
-        "=" * 60,
+        "SKILL MATCH ANALYSIS:",
         f"Match Score: {matching.get('match_pct', 0)}%",
     ])
 
@@ -113,30 +174,26 @@ def build_single_call_prompt(jd_intel, matching, consultant, header, education, 
     coaching = matching.get("coaching_keywords", [])
 
     if matched_req:
-        parts.append(f"Matched Required Skills: {', '.join(matched_req)}")
+        parts.append(f"Matched Required: {', '.join(matched_req)}")
     if missing_req:
-        parts.append(f"Missing Required (do NOT fake experience): {', '.join(missing_req)}")
+        parts.append(f"Missing Required (do NOT fake): {', '.join(missing_req)}")
     if coaching:
         parts.append(f"Coaching Keywords (weave where truthful): {', '.join(coaching)}")
 
     warnings = matching.get("warnings", [])
-    if warnings:
-        for w in warnings:
-            parts.append(f"WARNING: {w}")
+    for w in warnings:
+        parts.append(f"WARNING: {w}")
 
     # ── Section 4: Candidate Profile ────────────────────────────────
     parts.extend([
         "",
-        "=" * 60,
-        "CANDIDATE PROFILE",
-        "=" * 60,
+        "CANDIDATE PROFILE:",
         f"Total Experience: {years} years",
     ])
 
     if consultant_skills:
         parts.append(f"Skills: {', '.join(consultant_skills[:40])}")
 
-    # Experience records
     if experiences:
         parts.append("")
         parts.append("EXPERIENCE RECORDS:")
@@ -165,9 +222,7 @@ def build_single_call_prompt(jd_intel, matching, consultant, header, education, 
     # ── Section 5: Education + Certs (copy exactly) ─────────────────
     parts.extend([
         "",
-        "=" * 60,
-        "EDUCATION & CERTIFICATIONS (copy exactly — do not modify)",
-        "=" * 60,
+        "EDUCATION & CERTIFICATIONS (copy exactly — do not modify):",
     ])
     if education:
         parts.append(education)
@@ -177,45 +232,11 @@ def build_single_call_prompt(jd_intel, matching, consultant, header, education, 
         parts.append("")
         parts.append(certifications)
 
-    # ── Section 6: Generation Rules ─────────────────────────────────
+    # ── Section 6: Generation Rules (from MasterPrompt) ─────────────
     parts.extend([
         "",
-        "=" * 60,
-        "GENERATION RULES",
-        "=" * 60,
-        "",
-        "PROFESSIONAL SUMMARY rules:",
-        "- Single paragraph, exactly 70-80 words",
-        f"- Start with the job title: {jd_intel.get('job_title', '')}",
-        f"- Include '{years} years' of experience",
-        "- Weave in 3-4 matched skills naturally",
-        "- No pronouns (I, my, we), no company names",
-        "- No generic phrases ('proven track record', 'innovative solutions')",
-        "- Active voice, confident, grounded",
-        "",
-        "SKILLS rules:",
-        "- Key:value format, 6-10 categories",
-        "- Example: Cloud Platforms: AWS (EC2, S3, Lambda), Azure (AKS)",
-        "- Put JD-required skills first in each category",
-        "- Only include skills the candidate actually has",
-        "- No bullets — only key:value lines",
-        "",
-        "PROFESSIONAL EXPERIENCE rules:",
-        "- Use role Title | Company | Start - End format for each header",
-        "- Keep titles, companies, dates EXACTLY as provided above",
-        "- Most recent role: 7-10 bullets; all other roles: exactly 6 bullets",
-        "- Each bullet: 22-25 words exactly",
-        "- Each bullet structure: [Action Verb] + [Technology/Method] + [Outcome]",
-        "- Prefer concrete verbs: Built, Deployed, Configured, Automated, Reduced",
-        "- At most 1 elevated verb (Architected, Orchestrated) in entire section",
-        "- Do NOT copy JD text verbatim — rephrase as accomplishments",
-        "- Do NOT repeat phrases across bullets",
-        "- Most recent role: up to 2 quantified bullets (%, $, time)",
-        "- Older roles: max 1 quantified bullet each",
-        "- Do NOT keyword-stuff or list JD terms at end of bullets",
-        "",
-        "EDUCATION & CERTIFICATIONS:",
-        "- Copy EXACTLY as provided above. Do not modify, reorder, or add.",
+        "GENERATION RULES:",
+        rules,
     ])
 
     return "\n".join(parts)

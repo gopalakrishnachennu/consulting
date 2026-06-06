@@ -21,7 +21,7 @@ from .matching import build_compatibility_matrix
 from .llm_client import PipelineLLMClient
 from .generators.header import generate_header
 from .generators.education import generate_education, generate_certifications
-from .prompts import build_single_call_prompt, RESUME_SYSTEM_PROMPT
+from .prompts import build_single_call_prompt, get_system_prompt, get_generation_rules
 from .utils import validate_resume, score_ats
 
 logger = logging.getLogger("apps.resumes.pipeline")
@@ -50,8 +50,9 @@ def generate_resume_pipeline(job, consultant, actor=None, input_sections=None):
     if not cap_ok:
         return None, 0, cap_msg, {}
 
-    # Load section prompt overrides if configured
-    section_prompts = _load_section_prompts()
+    # Load MasterPrompt for system prompt + generation rules
+    from resumes.models import MasterPrompt
+    master_prompt = MasterPrompt.get_active()
 
     metadata = {
         "pipeline_version": "v3.1",
@@ -89,10 +90,9 @@ def generate_resume_pipeline(job, consultant, actor=None, input_sections=None):
         # ── Phase 3: ONE LLM call ──────────────────────────────────────
         phase_start = time.time()
 
-        # Get system prompt — from SectionPrompt override or default
-        system_prompt = RESUME_SYSTEM_PROMPT
-        if section_prompts.get("_master_system"):
-            system_prompt = section_prompts["_master_system"]
+        # System prompt + generation rules from MasterPrompt (admin-editable)
+        system_prompt = get_system_prompt(master_prompt)
+        generation_rules = get_generation_rules(master_prompt)
 
         # Build the single focused prompt with structured intelligence
         user_prompt = build_single_call_prompt(
@@ -102,6 +102,7 @@ def generate_resume_pipeline(job, consultant, actor=None, input_sections=None):
             header=header,
             education=education_text,
             certifications=certs_text,
+            generation_rules=generation_rules,
         )
 
         content, tokens, error = llm.call(
@@ -180,23 +181,8 @@ def generate_resume_pipeline(job, consultant, actor=None, input_sections=None):
         return None, llm.total_tokens, str(e), metadata
 
 
-def _load_section_prompts():
-    """Load section-specific prompts from the active MasterPrompt."""
-    from resumes.models import MasterPrompt, SectionPrompt
 
-    master = MasterPrompt.get_active()
-    if not master:
-        return {}
-
-    prompts = {}
-    # Store master system prompt for override
-    if master.system_prompt:
-        prompts["_master_system"] = master.system_prompt
-
-    for sp in SectionPrompt.objects.filter(master_prompt=master):
-        prompts[sp.section_type] = sp
-
-    return prompts
+# _load_section_prompts removed — pipeline now reads directly from MasterPrompt
 
 
 def _clean_llm_output(text):
