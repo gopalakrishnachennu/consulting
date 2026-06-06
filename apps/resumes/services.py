@@ -1,3 +1,15 @@
+"""
+resumes/services.py — LEGACY module.
+
+Active functions (still imported by views.py, engine.py, tasks.py):
+    extract_keywords, score_ats, validate_resume, extract_section,
+    replace_section, normalize_generated_resume, DocxService, LLMService
+
+DEPRECATED: The LLM generation pipeline has moved to resumes/pipeline/.
+Functions like build_user_prompt_from_sections, generate_resume_content,
+and the bullet-generation chain are no longer the primary path.
+New code should use resumes.pipeline.generate_resume_pipeline() instead.
+"""
 import openai
 import time
 import re
@@ -34,7 +46,6 @@ from .prompt_strings import (
     BUILD_PROMPT_NO_EDUCATION,
     BUILD_PROMPT_JD_HEADER,
     BUILD_PROMPT_ROLE_NO_DESC,
-    BUILD_PROMPT_TEMPLATE_SUFFIX,
     BUILD_PROMPT_BASE_SECTION_WITH,
     BUILD_PROMPT_BASE_SECTION_WITHOUT,
     BUILD_PROMPT_REQUIRED_SECTIONS,
@@ -1280,120 +1291,10 @@ def normalize_generated_resume(content, job, consultant, bullets_map=None):
     text = _normalize_core_skills_format(text)
 
     return text.strip()
-SECTION_KEYS = {
-    "name",
-    "email",
-    "phone",
-    "jd_location",
-    "professional_summary",
-    "skills",
-    "base_resume",
-    "experience",
-    "education",
-    "jd_description",
-}
 
 
-def build_user_prompt_from_sections(job, consultant, sections):
-    selected = set(sections or [])
-    selected = selected.intersection(SECTION_KEYS)
+# DEPRECATED: build_user_prompt_from_sections removed — use resumes.pipeline instead.
 
-    parts = [
-        "STRICT DATA RULES:",
-        "- Use the provided profile data exactly for name, contact, experience titles/companies/dates, education, and certifications.",
-        "- Do NOT invent or replace people, companies, dates, degrees, or certifications.",
-        "- If certifications are not provided, do NOT add a Certifications section.",
-        "- Bullet counts: most recent role must have 7–10 bullets; all other roles must have exactly 6 bullets.",
-        "- Do NOT repeat the same sentence or phrase across bullets or roles.",
-        "- Latest role title MUST exactly match the JD role title.",
-        "- Every bullet must be 22–25 words.",
-        "- Naturally integrate JD-required keywords (e.g., Windows, Linux, IIS, REST, XML, Firewall) into sentences. Do NOT just list them.",
-        "- Each bullet must follow: Action + Tool/Method + Context + Outcome.",
-        "- Example: 'Engineered a scalable CI/CD pipeline using Jenkins and Docker, reducing deployment cycle times by 40% and ensuring 99.9% uptime.'",
-        "- Output plain text only. No markdown headings, no bold, no tables.",
-        "- Use this structure exactly:",
-        "  FULL NAME",
-        "  City, State | Email | Phone | LinkedIn (only if provided)",
-        "  PROFESSIONAL SUMMARY",
-        "  SKILLS",
-        "  PROFESSIONAL EXPERIENCE",
-        "  EDUCATION",
-        "  CERTIFICATIONS (only if provided)",
-        "",
-    ]
-    contact_name = consultant.user.get_full_name() or consultant.user.username
-    contact_email = consultant.user.email or "Not provided."
-    contact_phone = consultant.phone or "Not provided."
-
-    if "name" in selected:
-        parts.append(f"Name: {contact_name}")
-    if "email" in selected:
-        parts.append(f"Email: {contact_email}")
-    if "phone" in selected:
-        parts.append(f"Phone: {contact_phone}")
-    if "jd_location" in selected:
-        parts.append(f"Location (use JD location): {job.location or 'Not provided.'}")
-
-    years_display = _total_experience_years_display(consultant)
-    if years_display:
-        parts.append(f"Total Experience (use exactly): {years_display} years")
-
-    if "professional_summary" in selected:
-        parts.append(BUILD_PROMPT_SUMMARY_INSTRUCTION)
-
-    if "skills" in selected:
-        skills = consultant.skills or []
-        if skills:
-            parts.append(BUILD_PROMPT_SKILLS_WITH_PROFILE)
-            parts.append(f"Skills (from profile): {', '.join(skills)}")
-        else:
-            parts.append(BUILD_PROMPT_SKILLS_GENERATE)
-
-    if "base_resume" in selected:
-        base_resume_text = consultant.base_resume_text or ""
-        if base_resume_text.strip():
-            parts.append(BUILD_PROMPT_BASE_RESUME_LABEL)
-            parts.append(base_resume_text)
-        else:
-            parts.append(BUILD_PROMPT_BASE_RESUME_MISSING)
-            parts.append(BUILD_PROMPT_BASE_RESUME_GUIDE_1)
-            parts.append(BUILD_PROMPT_BASE_RESUME_GUIDE_2)
-            parts.append(BUILD_PROMPT_BASE_RESUME_GUIDE_3)
-
-    if "experience" in selected:
-        parts.append(BUILD_PROMPT_EXPERIENCE_LABEL)
-        experiences = list(consultant.experience.all())
-        ordered = [e for e, _, _ in _target_counts_for_experiences(experiences)]
-        if experiences:
-            for e in ordered:
-                start = e.start_date.strftime('%Y') if e.start_date else ''
-                end = "Present" if e.is_current else (e.end_date.strftime('%Y') if e.end_date else '')
-                role_line = f"{e.title} | {e.company} | {start} – {end}"
-                if e.description:
-                    role_line += f"\n  Responsibilities: {e.description}"
-                else:
-                    role_line += f"\n  {BUILD_PROMPT_ROLE_NO_DESC}"
-                parts.append(role_line)
-        else:
-            parts.append(BUILD_PROMPT_NO_EXPERIENCE)
-
-    if "education" in selected:
-        parts.append(BUILD_PROMPT_EDUCATION_LABEL)
-        educations = consultant.education.all()
-        if educations:
-            for e in educations:
-                start = e.start_date.strftime('%Y') if e.start_date else ''
-                end = e.end_date.strftime('%Y') if e.end_date else 'Present'
-                year = end if end else start
-                parts.append(f"{e.degree} | {e.institution} | {year}")
-        else:
-            parts.append(BUILD_PROMPT_NO_EDUCATION)
-
-    if "jd_description" in selected:
-        parts.append(BUILD_PROMPT_JD_HEADER)
-        parts.append(job.description or "Not provided.")
-
-    return "\n".join(parts).strip()
 
 def get_system_prompt_text(job=None, consultant=None, prompt_override=None):
     """Returns the system prompt — always uses the active MasterPrompt if set."""
