@@ -432,7 +432,7 @@ def generate_resume(job, consultant, actor=None, input_sections=None, coaching_k
     try:
         from core.models import FeatureFlag
         pipeline_enabled = FeatureFlag.objects.filter(
-            slug='multi_phase_pipeline', is_enabled=True
+            key='multi_phase_pipeline', is_enabled=True
         ).exists()
     except Exception:
         pipeline_enabled = False
