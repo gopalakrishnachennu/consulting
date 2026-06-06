@@ -30,10 +30,12 @@ def get_jd_intelligence(job):
     if job.description and job.description.strip():
         try:
             from jobs.services import JDParserService
-            parser = JDParserService()
-            parsed = parser.parse_job(job)
-            if parsed:
-                return _build_intel_from_parsed(job, parsed, source="freshly_parsed")
+            success, _msg = JDParserService.parse_job(job)
+            if success:
+                job.refresh_from_db(fields=["parsed_jd", "parsed_jd_status"])
+                parsed = job.parsed_jd or {}
+                if parsed:
+                    return _build_intel_from_parsed(job, parsed, source="freshly_parsed")
         except Exception as e:
             logger.warning("JD parsing failed for job %s: %s", job.pk, e)
 

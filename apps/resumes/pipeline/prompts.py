@@ -1,14 +1,14 @@
 """
-Section-specific prompt templates for the resume pipeline.
+Single-call prompt builder for the resume pipeline V3.1.
 
-Each function builds a focused user prompt using structured JD data
-and matching results — no raw JD text dumped into prompts.
+Builds ONE focused prompt using structured JD intelligence + matching matrix
+instead of dumping raw JD text. The LLM gets clean, organized input.
 """
+from django.utils import timezone
 
 
 def _format_years(consultant):
     """Calculate total years of experience from experience records."""
-    from django.utils import timezone
     total_months = 0
     for exp in consultant.experience.all():
         start = exp.start_date
@@ -16,190 +16,206 @@ def _format_years(consultant):
         months = (end.year - start.year) * 12 + (end.month - start.month)
         total_months += max(months, 0)
     years = total_months // 12
-    if years < 1:
-        return "1 year"
-    return f"{years} years"
+    if years < 1 and total_months > 0:
+        return "1"
+    return str(years) if years else "1"
 
 
-# ── Summary Prompt ──────────────────────────────────────────────────
+RESUME_SYSTEM_PROMPT = """You are a Senior Resume Architect. Generate a complete, ATS-optimized, human-authentic resume.
 
-SUMMARY_SYSTEM = (
-    "You are a professional resume writer. Generate ONLY a PROFESSIONAL SUMMARY "
-    "paragraph. Output the paragraph text only — no heading, no bullets, no extra text."
-)
+ABSOLUTE RULES:
+1. Every word must trace to the Candidate Profile or Job Intelligence. Nothing invented.
+2. NEVER add companies, titles, dates, or certifications not in the Candidate Profile.
+3. The resume must read as if the candidate wrote it — no AI filler, no fluff.
+4. Use the EXACT header (name, location, contact) provided — do not change it.
+5. Use the EXACT education and certifications provided — do not change them.
+6. Output plain text only. No markdown, no bold, no tables.
 
-def build_summary_prompt(jd_intel, matching, consultant, section_rules=""):
-    """Build user prompt for professional summary generation (~400 tokens input)."""
+OUTPUT STRUCTURE (use UPPERCASE headings exactly):
+[Header — provided, copy exactly]
+
+PROFESSIONAL SUMMARY
+[Single paragraph, 70-80 words]
+
+SKILLS
+[Key:value format, 6-10 categories]
+
+PROFESSIONAL EXPERIENCE
+[Role headers + bullets]
+
+EDUCATION
+[Provided, copy exactly]
+
+CERTIFICATIONS
+[If provided, copy exactly]"""
+
+
+def build_single_call_prompt(jd_intel, matching, consultant, header, education, certifications):
+    """
+    Build ONE comprehensive prompt with structured intelligence.
+    No raw JD text — only parsed, organized data.
+    """
     years = _format_years(consultant)
-    top_skills = matching.get("matched_required", [])[:8]
-    responsibilities = jd_intel.get("responsibilities", [])[:5]
-    coaching = matching.get("coaching_keywords", [])[:6]
-
-    prompt = f"""Write a PROFESSIONAL SUMMARY for a resume targeting this role:
-
-TARGET ROLE: {jd_intel.get('job_title', 'N/A')}
-SENIORITY: {jd_intel.get('seniority_level', 'mid')}
-DOMAIN: {jd_intel.get('role_domain', 'Technology')}
-
-CANDIDATE PROFILE:
-- Total experience: {years}
-- Top matched skills: {', '.join(top_skills) if top_skills else 'N/A'}
-- Key technologies: {', '.join(matching.get('matched_tools', [])[:6]) if matching.get('matched_tools') else 'N/A'}
-
-KEY RESPONSIBILITIES TO REFLECT:
-{chr(10).join(f'- {r}' for r in responsibilities) if responsibilities else '- General role responsibilities'}
-
-RULES:
-- Single paragraph, exactly 70-80 words
-- Start with the job title from TARGET ROLE
-- Include "{years}" of experience
-- Naturally weave in at least 3-4 of the matched skills
-- No pronouns (I, my, we), no company names, no buzzwords
-- Do NOT use generic phrases like "innovative solutions" or "proven track record"
-- Do NOT mention salary, location, or work arrangement
-- Active voice, confident but grounded
-- Mention collaboration with cross-functional teams
-- Include a measurable outcome if possible"""
-
-    if coaching:
-        prompt += f"\n- Try to naturally include these terms: {', '.join(coaching[:4])}"
-
-    if section_rules:
-        prompt += f"\n\nADDITIONAL RULES:\n{section_rules}"
-
-    return prompt
-
-
-# ── Skills Prompt ───────────────────────────────────────────────────
-
-SKILLS_SYSTEM = (
-    "You are a resume skills section writer. Output ONLY key:value formatted "
-    "skill categories. No heading, no bullets, no extra text."
-)
-
-def build_skills_prompt(jd_intel, matching, consultant, section_rules=""):
-    """Build user prompt for skills section generation (~300 tokens input)."""
-    matched_req = matching.get("matched_required", [])
-    matched_pref = matching.get("matched_preferred", [])
-    matched_tools = matching.get("matched_tools", [])
-    coaching = matching.get("coaching_keywords", [])
+    experiences = list(consultant.experience.all())
     consultant_skills = consultant.skills or []
 
-    prompt = f"""Generate a SKILLS section for a resume targeting:
-ROLE: {jd_intel.get('job_title', 'N/A')}
-DOMAIN: {jd_intel.get('role_domain', 'Technology')}
+    # ── Section 1: Header (copy exactly) ────────────────────────────
+    parts = [
+        "=" * 60,
+        "HEADER (copy this exactly — do not modify)",
+        "=" * 60,
+        header,
+    ]
 
-FORMAT: key:value lines (6-10 categories). Example:
-Cloud Platforms: AWS (EC2, S3, Lambda), Azure (AKS, Functions)
-Programming: Python, Java, Go, SQL
-CI/CD: Jenkins, GitHub Actions, ArgoCD
+    # ── Section 2: Job Intelligence ─────────────────────────────────
+    parts.extend([
+        "",
+        "=" * 60,
+        "TARGET JOB INTELLIGENCE",
+        "=" * 60,
+        f"Title: {jd_intel.get('job_title', 'N/A')}",
+        f"Company: {jd_intel.get('company', 'N/A')}",
+        f"Seniority: {jd_intel.get('seniority_level', 'mid')}",
+        f"Domain: {jd_intel.get('role_domain', 'Technology')}",
+        f"Location: {jd_intel.get('location', 'N/A')}",
+    ])
 
-CANDIDATE'S ACTUAL SKILLS:
-{', '.join(consultant_skills[:30]) if consultant_skills else 'Not provided'}
+    req_skills = jd_intel.get("required_skills", [])
+    pref_skills = jd_intel.get("preferred_skills", [])
+    tools = jd_intel.get("tools_and_technologies", [])
+    responsibilities = jd_intel.get("responsibilities", [])
+    ats_keywords = jd_intel.get("keywords_for_ats", [])
 
-JD REQUIRED SKILLS (must appear if candidate has them):
-{', '.join(matched_req[:15]) if matched_req else 'None matched'}
+    if req_skills:
+        parts.append(f"Required Skills: {', '.join(req_skills)}")
+    if pref_skills:
+        parts.append(f"Preferred Skills: {', '.join(pref_skills)}")
+    if tools:
+        parts.append(f"Tools & Technologies: {', '.join(tools)}")
+    if responsibilities:
+        parts.append("Key Responsibilities:")
+        for r in responsibilities[:10]:
+            parts.append(f"  - {r}")
+    if ats_keywords:
+        parts.append(f"ATS Keywords (weave naturally): {', '.join(ats_keywords[:20])}")
 
-JD PREFERRED SKILLS:
-{', '.join(matched_pref[:10]) if matched_pref else 'None matched'}
+    # ── Section 3: Compatibility Matrix ─────────────────────────────
+    parts.extend([
+        "",
+        "=" * 60,
+        "SKILL MATCH ANALYSIS",
+        "=" * 60,
+        f"Match Score: {matching.get('match_pct', 0)}%",
+    ])
 
-TOOLS & TECHNOLOGIES FROM JD:
-{', '.join(matched_tools[:15]) if matched_tools else 'None matched'}
-
-RULES:
-- Only include skills the candidate actually has (from their skills list)
-- Group related skills into logical categories
-- Put JD-critical skills first in each category
-- No bullets — use key:value format only
-- 6-10 categories total
-- Do NOT invent skills the candidate does not have"""
-
-    if coaching:
-        prompt += f"\n- These JD terms are important but missing from candidate — include ONLY if candidate has adjacent experience: {', '.join(coaching[:6])}"
-
-    if section_rules:
-        prompt += f"\n\nADDITIONAL RULES:\n{section_rules}"
-
-    return prompt
-
-
-# ── Experience Prompt ───────────────────────────────────────────────
-
-EXPERIENCE_SYSTEM = (
-    "You are a professional resume writer specializing in experience bullets. "
-    "Generate responsibilities bullets for each role provided. "
-    "Return plain text with role headers and bullets only — no extra commentary."
-)
-
-def build_experience_prompt(jd_intel, matching, consultant, section_rules=""):
-    """Build user prompt for experience section generation (~1200 tokens input)."""
-    experiences = list(consultant.experience.all())
+    matched_req = matching.get("matched_required", [])
+    missing_req = matching.get("missing_required", [])
     coaching = matching.get("coaching_keywords", [])
-    responsibilities = jd_intel.get("responsibilities", [])[:8]
-    action_verbs = jd_intel.get("action_verbs", [])[:10]
 
-    # Format experience records
-    roles_text = []
-    for i, exp in enumerate(experiences):
-        start = exp.start_date.strftime("%b %Y") if exp.start_date else "N/A"
-        end = exp.end_date.strftime("%b %Y") if exp.end_date else "Present"
-        is_current = (i == 0)
-        bullet_count = "7-10" if is_current else "6"
-
-        role_block = f"ROLE {i+1} ({'MOST RECENT' if is_current else 'PREVIOUS'}):\n"
-        role_block += f"  Title: {exp.title}\n"
-        role_block += f"  Company: {exp.company}\n"
-        role_block += f"  Dates: {start} – {end}\n"
-        role_block += f"  Bullets needed: {bullet_count}\n"
-
-        if exp.description:
-            # Truncate to avoid bloating the prompt
-            desc = exp.description[:500]
-            role_block += f"  Description: {desc}\n"
-
-        # Find which coaching keywords are relevant to this role
-        if matching.get("experience_overlap"):
-            for eo in matching["experience_overlap"]:
-                if exp.company in eo.get("role", ""):
-                    role_block += f"  Relevant JD keywords: {', '.join(eo['relevant_keywords'][:8])}\n"
-                    break
-
-        roles_text.append(role_block)
-
-    prompt = f"""Generate PROFESSIONAL EXPERIENCE bullets for a resume targeting:
-ROLE: {jd_intel.get('job_title', 'N/A')} at {jd_intel.get('company', 'N/A')}
-SENIORITY: {jd_intel.get('seniority_level', 'mid')}
-DOMAIN: {jd_intel.get('role_domain', 'Technology')}
-
-OUTPUT FORMAT (use exactly this structure):
-Title | Company | Start – End
-- Bullet text here (22-25 words)
-- Another bullet (22-25 words)
-
-{chr(10).join(roles_text)}
-
-JD RESPONSIBILITIES TO REFLECT:
-{chr(10).join(f'- {r}' for r in responsibilities) if responsibilities else '- General role responsibilities'}
-
-BULLET RULES:
-- Each bullet: [Action Verb] + [Specific Technology/Method] + [Outcome/Impact]
-- Each bullet must be 22-25 words — not fewer, not more
-- Most recent role: 7-10 bullets; all other roles: exactly 6 bullets
-- Use ONLY the provided role descriptions and JD as sources
-- Do NOT invent companies, titles, dates, or technologies not in the description
-- Do NOT copy JD responsibilities word-for-word — rephrase as personal accomplishments
-- Do NOT repeat the same verb or phrase across bullets
-- Prefer concrete verbs: Built, Deployed, Configured, Automated, Reduced, Improved
-- At most 1 elevated verb (Architected, Orchestrated) in the entire section
-- Most recent role: up to 2 quantified bullets (%, $, time reduction)
-- Older roles: max 1 quantified bullet each
-- Do NOT keyword-stuff or append lists of JD terms at the end of bullets
-- Keep role title, company, and dates EXACTLY as provided"""
-
+    if matched_req:
+        parts.append(f"Matched Required Skills: {', '.join(matched_req)}")
+    if missing_req:
+        parts.append(f"Missing Required (do NOT fake experience): {', '.join(missing_req)}")
     if coaching:
-        prompt += f"\n\nKEY JD TERMS TO WEAVE IN NATURALLY (where truthful):\n{', '.join(coaching)}"
+        parts.append(f"Coaching Keywords (weave where truthful): {', '.join(coaching)}")
 
-    if section_rules:
-        prompt += f"\n\nADDITIONAL RULES:\n{section_rules}"
+    warnings = matching.get("warnings", [])
+    if warnings:
+        for w in warnings:
+            parts.append(f"WARNING: {w}")
 
-    return prompt
+    # ── Section 4: Candidate Profile ────────────────────────────────
+    parts.extend([
+        "",
+        "=" * 60,
+        "CANDIDATE PROFILE",
+        "=" * 60,
+        f"Total Experience: {years} years",
+    ])
+
+    if consultant_skills:
+        parts.append(f"Skills: {', '.join(consultant_skills[:40])}")
+
+    # Experience records
+    if experiences:
+        parts.append("")
+        parts.append("EXPERIENCE RECORDS:")
+        for i, exp in enumerate(experiences):
+            start = exp.start_date.strftime("%b %Y") if exp.start_date else "N/A"
+            end = exp.end_date.strftime("%b %Y") if exp.end_date else "Present"
+            is_most_recent = (i == 0)
+            bullet_target = "7-10 bullets" if is_most_recent else "6 bullets"
+
+            parts.append(f"  Role {i+1} ({'MOST RECENT' if is_most_recent else 'PREVIOUS'}) — {bullet_target}:")
+            parts.append(f"    Title: {exp.title}")
+            parts.append(f"    Company: {exp.company}")
+            parts.append(f"    Dates: {start} - {end}")
+            if exp.description:
+                desc = exp.description[:600].strip()
+                parts.append(f"    Description: {desc}")
+            parts.append("")
+    elif consultant.base_resume_text:
+        parts.append("")
+        parts.append("BASE RESUME TEXT (extract roles from this):")
+        parts.append(consultant.base_resume_text[:3000])
+    else:
+        parts.append("")
+        parts.append("NO EXPERIENCE PROVIDED — generate realistic bullets based on skills and JD.")
+
+    # ── Section 5: Education + Certs (copy exactly) ─────────────────
+    parts.extend([
+        "",
+        "=" * 60,
+        "EDUCATION & CERTIFICATIONS (copy exactly — do not modify)",
+        "=" * 60,
+    ])
+    if education:
+        parts.append(education)
+    else:
+        parts.append("EDUCATION\nNot provided")
+    if certifications:
+        parts.append("")
+        parts.append(certifications)
+
+    # ── Section 6: Generation Rules ─────────────────────────────────
+    parts.extend([
+        "",
+        "=" * 60,
+        "GENERATION RULES",
+        "=" * 60,
+        "",
+        "PROFESSIONAL SUMMARY rules:",
+        "- Single paragraph, exactly 70-80 words",
+        f"- Start with the job title: {jd_intel.get('job_title', '')}",
+        f"- Include '{years} years' of experience",
+        "- Weave in 3-4 matched skills naturally",
+        "- No pronouns (I, my, we), no company names",
+        "- No generic phrases ('proven track record', 'innovative solutions')",
+        "- Active voice, confident, grounded",
+        "",
+        "SKILLS rules:",
+        "- Key:value format, 6-10 categories",
+        "- Example: Cloud Platforms: AWS (EC2, S3, Lambda), Azure (AKS)",
+        "- Put JD-required skills first in each category",
+        "- Only include skills the candidate actually has",
+        "- No bullets — only key:value lines",
+        "",
+        "PROFESSIONAL EXPERIENCE rules:",
+        "- Use role Title | Company | Start - End format for each header",
+        "- Keep titles, companies, dates EXACTLY as provided above",
+        "- Most recent role: 7-10 bullets; all other roles: exactly 6 bullets",
+        "- Each bullet: 22-25 words exactly",
+        "- Each bullet structure: [Action Verb] + [Technology/Method] + [Outcome]",
+        "- Prefer concrete verbs: Built, Deployed, Configured, Automated, Reduced",
+        "- At most 1 elevated verb (Architected, Orchestrated) in entire section",
+        "- Do NOT copy JD text verbatim — rephrase as accomplishments",
+        "- Do NOT repeat phrases across bullets",
+        "- Most recent role: up to 2 quantified bullets (%, $, time)",
+        "- Older roles: max 1 quantified bullet each",
+        "- Do NOT keyword-stuff or list JD terms at end of bullets",
+        "",
+        "EDUCATION & CERTIFICATIONS:",
+        "- Copy EXACTLY as provided above. Do not modify, reorder, or add.",
+    ])
+
+    return "\n".join(parts)

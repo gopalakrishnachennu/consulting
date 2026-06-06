@@ -1,5 +1,11 @@
 """
-Resume Generation Pipeline V3 — Multi-Phase Architecture.
+Resume Generation Pipeline V3 — Single-Call with Structured Intelligence.
+
+Architecture:
+    Phase 1: JD Intelligence (deterministic, 0 tokens) — extracts structured data from parsed_jd
+    Phase 2: Candidate-JD Matching (deterministic, 0 tokens) — builds compatibility matrix
+    Phase 3: ONE focused LLM call with structured input → Full resume
+    Phase 4: Validation + ATS scoring (deterministic, 0 tokens)
 
 Public API:
     generate_resume_pipeline(job, consultant, actor=None, input_sections=None)
@@ -10,35 +16,27 @@ Returns: (content, total_tokens, error_msg, metadata)
 import time
 import logging
 
-from django.utils import timezone
-
 from .jd_intelligence import get_jd_intelligence
 from .matching import build_compatibility_matrix
 from .llm_client import PipelineLLMClient
 from .generators.header import generate_header
-from .generators.summary import generate_summary
-from .generators.skills import generate_skills
-from .generators.experience import generate_experience
 from .generators.education import generate_education, generate_certifications
-from .assembly import assemble_resume
-from .quality_gate import run_quality_gate
+from .prompts import build_single_call_prompt, RESUME_SYSTEM_PROMPT
+from .utils import validate_resume, score_ats
 
 logger = logging.getLogger("apps.resumes.pipeline")
 
 
 def generate_resume_pipeline(job, consultant, actor=None, input_sections=None):
     """
-    Multi-phase resume generation pipeline.
+    Single-call resume generation with structured intelligence.
 
-    Phases:
-        1. JD Intelligence (deterministic, 0 tokens)
-        2. Candidate-JD Matching (deterministic, 0 tokens)
-        3. Section Generation (3 LLM calls: summary, skills, experience)
-        4. Assembly + Validation (deterministic, 0 tokens)
-        5. Quality Gate (0-2 retry LLM calls if needed)
+    Phase 1: JD Intelligence (0 tokens) — use parsed_jd, not raw text
+    Phase 2: Matching (0 tokens) — know what skills match before prompting
+    Phase 3: ONE LLM call with all structured data → full resume
+    Phase 4: Validation + ATS (0 tokens)
 
     Returns: (content, total_tokens, error_msg, metadata)
-        Same signature as engine.generate_resume() for drop-in compatibility.
     """
     pipeline_start = time.time()
 
@@ -52,26 +50,26 @@ def generate_resume_pipeline(job, consultant, actor=None, input_sections=None):
     if not cap_ok:
         return None, 0, cap_msg, {}
 
-    # Load section prompts (if configured)
+    # Load section prompt overrides if configured
     section_prompts = _load_section_prompts()
 
     metadata = {
-        "pipeline_version": "v3",
+        "pipeline_version": "v3.1",
         "phases": {},
     }
 
     try:
-        # ── Phase 1: JD Intelligence ────────────────────────────────────
+        # ── Phase 1: JD Intelligence (0 tokens) ────────────────────────
         phase_start = time.time()
         jd_intel = get_jd_intelligence(job)
-        jd_intel["_job_pk"] = job.pk  # for cache key in matching
+        jd_intel["_job_pk"] = job.pk
         metadata["phases"]["jd_intelligence"] = {
             "source": jd_intel.get("source", "unknown"),
+            "required_skills_count": len(jd_intel.get("required_skills", [])),
             "latency_ms": int((time.time() - phase_start) * 1000),
-            "tokens": 0,
         }
 
-        # ── Phase 2: Candidate-JD Matching ──────────────────────────────
+        # ── Phase 2: Candidate-JD Matching (0 tokens) ──────────────────
         phase_start = time.time()
         matching = build_compatibility_matrix(consultant, jd_intel)
         metadata["phases"]["matching"] = {
@@ -81,124 +79,78 @@ def generate_resume_pipeline(job, consultant, actor=None, input_sections=None):
             "coaching_keywords": matching.get("coaching_keywords", [])[:8],
             "warnings": matching.get("warnings", []),
             "latency_ms": int((time.time() - phase_start) * 1000),
-            "tokens": 0,
         }
 
-        # ── Phase 3: Section Generation ─────────────────────────────────
-        # 3e: Header (deterministic)
+        # ── Deterministic sections (0 tokens) ──────────────────────────
         header = generate_header(consultant, job)
-
-        # 3d: Education + Certifications (deterministic)
         education_text = generate_education(consultant)
         certs_text = generate_certifications(consultant)
 
-        # 3a: Summary (LLM)
+        # ── Phase 3: ONE LLM call ──────────────────────────────────────
         phase_start = time.time()
-        summary_text, summary_tokens, summary_err = generate_summary(
-            llm, jd_intel, matching, consultant,
-            section_prompt=section_prompts.get("summary"),
-            job=job, actor=actor,
-        )
-        metadata["phases"]["summary"] = {
-            "tokens": summary_tokens,
-            "latency_ms": int((time.time() - phase_start) * 1000),
-            "error": summary_err,
-        }
-        if summary_err:
-            logger.warning("Summary generation failed: %s", summary_err)
-            summary_text = "Summary generation failed."
 
-        # 3b: Skills (LLM or skills_extractor)
-        phase_start = time.time()
-        skills_text, skills_tokens, skills_err = generate_skills(
-            llm, jd_intel, matching, consultant,
-            section_prompt=section_prompts.get("skills"),
-            job=job, actor=actor,
-        )
-        metadata["phases"]["skills"] = {
-            "tokens": skills_tokens,
-            "latency_ms": int((time.time() - phase_start) * 1000),
-            "error": skills_err,
-        }
-        if skills_err:
-            logger.warning("Skills generation failed: %s", skills_err)
-            skills_text = "Skills generation failed."
+        # Get system prompt — from SectionPrompt override or default
+        system_prompt = RESUME_SYSTEM_PROMPT
+        if section_prompts.get("_master_system"):
+            system_prompt = section_prompts["_master_system"]
 
-        # 3c: Experience (LLM)
-        phase_start = time.time()
-        exp_text, exp_tokens, exp_err = generate_experience(
-            llm, jd_intel, matching, consultant,
-            section_prompt=section_prompts.get("experience"),
-            job=job, actor=actor,
-        )
-        metadata["phases"]["experience"] = {
-            "tokens": exp_tokens,
-            "latency_ms": int((time.time() - phase_start) * 1000),
-            "error": exp_err,
-        }
-        if exp_err:
-            logger.warning("Experience generation failed: %s", exp_err)
-            exp_text = "Experience generation failed."
-
-        # ── Phase 4: Assembly ───────────────────────────────────────────
-        phase_start = time.time()
-        content, val_errors, val_warnings = assemble_resume(
+        # Build the single focused prompt with structured intelligence
+        user_prompt = build_single_call_prompt(
+            jd_intel=jd_intel,
+            matching=matching,
+            consultant=consultant,
             header=header,
-            summary=summary_text,
-            skills=skills_text,
-            experience=exp_text,
             education=education_text,
             certifications=certs_text,
         )
-        metadata["phases"]["assembly"] = {
+
+        content, tokens, error = llm.call(
+            system_prompt,
+            user_prompt,
+            request_type="pipeline_v3_generate",
+            temperature=0.6,
+            max_tokens=4000,
+            job=job,
+            consultant=consultant,
+            actor=actor,
+        )
+
+        metadata["phases"]["generation"] = {
+            "tokens": tokens,
+            "latency_ms": int((time.time() - phase_start) * 1000),
+            "error": error,
+        }
+
+        if error:
+            return None, tokens, error, metadata
+
+        # ── Phase 4: Validation + ATS (0 tokens) ──────────────────────
+        phase_start = time.time()
+        val_errors, val_warnings = validate_resume(content or "")
+
+        # ATS score using structured keywords
+        ats_keywords = jd_intel.get("keywords_for_ats", [])
+        if ats_keywords:
+            ats = score_ats(" ".join(ats_keywords), content or "")
+        else:
+            ats = score_ats(jd_intel.get("raw_description", ""), content or "")
+
+        metadata["phases"]["validation"] = {
+            "ats_score": ats,
             "validation_errors": val_errors,
             "validation_warnings": val_warnings,
             "latency_ms": int((time.time() - phase_start) * 1000),
         }
 
-        # ── Phase 5: Quality Gate ───────────────────────────────────────
-        phase_start = time.time()
-        generators = {
-            "summary": generate_summary,
-            "skills": generate_skills,
-            "experience": generate_experience,
-        }
-        qg_result = run_quality_gate(
-            content=content,
-            job=job,
-            jd_intel=jd_intel,
-            validation_errors=val_errors,
-            validation_warnings=val_warnings,
-            generators=generators,
-            llm_client=llm,
-            matching=matching,
-            consultant=consultant,
-            section_prompts=section_prompts,
-            actor=actor,
-        )
-        metadata["phases"]["quality_gate"] = {
-            "ats_score": qg_result["ats_score"],
-            "passed": qg_result["passed"],
-            "retried_sections": qg_result["retried_sections"],
-            "final_errors": qg_result["validation_errors"],
-            "retry_tokens": qg_result["retry_tokens"],
-            "latency_ms": int((time.time() - phase_start) * 1000),
-        }
-
-        final_content = qg_result["final_content"]
-        final_ats = qg_result["ats_score"]
-
-        # ── Totals ──────────────────────────────────────────────────────
+        # ── Totals ─────────────────────────────────────────────────────
         total_latency = int((time.time() - pipeline_start) * 1000)
         metadata["totals"] = {
             "tokens": llm.total_tokens,
             "cost": float(llm.total_cost),
             "llm_calls": llm.total_calls,
             "latency_ms": total_latency,
-            "ats_score": final_ats,
+            "ats_score": ats,
         }
-
-        # Store for PipelineRun creation by caller
         metadata["jd_intelligence"] = {
             k: v for k, v in jd_intel.items()
             if k not in ("_job_pk", "raw_description")
@@ -207,19 +159,20 @@ def generate_resume_pipeline(job, consultant, actor=None, input_sections=None):
             k: v for k, v in matching.items()
             if k != "_job_pk"
         }
-        metadata["input_sections"] = input_sections or {}
+        metadata["system_prompt"] = system_prompt
+        metadata["user_prompt"] = user_prompt
 
         logger.info(
-            "Pipeline complete for consultant %s x job %s: "
-            "ATS=%d, tokens=%d, calls=%d, latency=%dms, retries=%s",
-            consultant.pk, job.pk, final_ats, llm.total_tokens,
-            llm.total_calls, total_latency, qg_result["retried_sections"],
+            "Pipeline V3.1 complete: consultant %s x job %s — "
+            "ATS=%d, tokens=%d, cost=$%.4f, latency=%dms",
+            consultant.pk, job.pk, ats, llm.total_tokens,
+            llm.total_cost, total_latency,
         )
 
-        return final_content, llm.total_tokens, None, metadata
+        return content, llm.total_tokens, None, metadata
 
     except Exception as e:
-        logger.exception("Pipeline failed for consultant %s x job %s: %s",
+        logger.exception("Pipeline failed: consultant %s x job %s: %s",
                         consultant.pk, job.pk, e)
         return None, llm.total_tokens, str(e), metadata
 
@@ -233,6 +186,10 @@ def _load_section_prompts():
         return {}
 
     prompts = {}
+    # Store master system prompt for override
+    if master.system_prompt:
+        prompts["_master_system"] = master.system_prompt
+
     for sp in SectionPrompt.objects.filter(master_prompt=master):
         prompts[sp.section_type] = sp
 
