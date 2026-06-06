@@ -124,9 +124,12 @@ def generate_resume_pipeline(job, consultant, actor=None, input_sections=None):
         if error:
             return None, tokens, error, metadata
 
+        # Clean LLM output artifacts
+        content = _clean_llm_output(content or "")
+
         # ── Phase 4: Validation + ATS (0 tokens) ──────────────────────
         phase_start = time.time()
-        val_errors, val_warnings = validate_resume(content or "")
+        val_errors, val_warnings = validate_resume(content)
 
         # ATS score using structured keywords
         ats_keywords = jd_intel.get("keywords_for_ats", [])
@@ -194,3 +197,20 @@ def _load_section_prompts():
         prompts[sp.section_type] = sp
 
     return prompts
+
+
+def _clean_llm_output(text):
+    """Strip markdown fences, separator lines, and other LLM artifacts."""
+    import re
+
+    # Remove markdown code fences
+    text = re.sub(r'^```\w*\s*\n?', '', text, flags=re.MULTILINE)
+    text = re.sub(r'\n?```\s*$', '', text, flags=re.MULTILINE)
+
+    # Remove separator lines (====, ----, ****)
+    text = re.sub(r'^[=\-*]{4,}\s*$', '', text, flags=re.MULTILINE)
+
+    # Collapse 3+ blank lines into 2
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    return text.strip()

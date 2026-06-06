@@ -29,7 +29,7 @@ ABSOLUTE RULES:
 3. The resume must read as if the candidate wrote it — no AI filler, no fluff.
 4. Use the EXACT header (name, location, contact) provided — do not change it.
 5. Use the EXACT education and certifications provided — do not change them.
-6. Output plain text only. No markdown, no bold, no tables.
+6. Output plain text only. No markdown, no bold, no tables, no code fences, no separator lines.
 
 OUTPUT STRUCTURE (use UPPERCASE headings exactly):
 [Header — provided, copy exactly]
