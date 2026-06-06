@@ -262,3 +262,104 @@ class LLMInputPreference(models.Model):
 
     def __str__(self):
         return f"LLM Input Prefs for {self.user.username}"
+
+
+# ─── Pipeline V3 Models ─────────────────────────────────────────────────
+
+class SectionPrompt(models.Model):
+    """
+    Section-specific prompt template linked to a MasterPrompt.
+    Admin can fine-tune system prompts, rules, temperature, and max_tokens
+    per resume section. Falls back to MasterPrompt defaults if blank.
+    """
+    SECTION_CHOICES = [
+        ('summary', 'Professional Summary'),
+        ('skills', 'Skills'),
+        ('experience', 'Professional Experience'),
+        ('education', 'Education & Certifications'),
+    ]
+
+    master_prompt = models.ForeignKey(
+        MasterPrompt, on_delete=models.CASCADE, related_name='section_prompts'
+    )
+    section_type = models.CharField(max_length=20, choices=SECTION_CHOICES)
+    system_prompt = models.TextField(
+        blank=True,
+        help_text="Section-specific system prompt. If blank, falls back to MasterPrompt.system_prompt."
+    )
+    generation_rules = models.TextField(
+        blank=True,
+        help_text="Section-specific rules appended to the user prompt for this section."
+    )
+    temperature_override = models.DecimalField(
+        max_digits=3, decimal_places=2, null=True, blank=True,
+        help_text="Override temperature for this section. Null = use LLMConfig default."
+    )
+    max_tokens_override = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Override max tokens for this section. Null = auto-calculated."
+    )
+
+    class Meta:
+        unique_together = ('master_prompt', 'section_type')
+        ordering = ['section_type']
+
+    def __str__(self):
+        return f"{self.get_section_type_display()} prompt for {self.master_prompt.name}"
+
+    def get_system_prompt(self):
+        """Return section-specific or master fallback system prompt."""
+        return self.system_prompt.strip() or self.master_prompt.system_prompt
+
+    def get_temperature(self, default):
+        """Return override temperature or the provided default."""
+        if self.temperature_override is not None:
+            return float(self.temperature_override)
+        return default
+
+    def get_max_tokens(self, default):
+        """Return override max_tokens or the provided default."""
+        return self.max_tokens_override or default
+
+
+class PipelineRun(models.Model):
+    """
+    Tracks a single multi-phase resume generation pipeline execution.
+    Stores per-phase results for debugging, cost analysis, and quality tracking.
+    """
+    draft = models.ForeignKey(
+        ResumeDraft, on_delete=models.CASCADE, related_name='pipeline_runs'
+    )
+    consultant = models.ForeignKey(
+        'users.ConsultantProfile', on_delete=models.CASCADE
+    )
+    job = models.ForeignKey(
+        'jobs.Job', on_delete=models.CASCADE
+    )
+
+    started_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    # Per-phase stored results
+    jd_intelligence = models.JSONField(default=dict, blank=True)
+    matching_matrix = models.JSONField(default=dict, blank=True)
+    section_results = models.JSONField(
+        default=dict, blank=True,
+        help_text='Per-section: {section: {content, tokens, latency_ms, retries}}'
+    )
+    quality_gate = models.JSONField(
+        default=dict, blank=True,
+        help_text='{ats_score, validation_errors, retried_sections, passed}'
+    )
+
+    # Totals
+    total_tokens = models.PositiveIntegerField(default=0)
+    total_cost = models.DecimalField(max_digits=10, decimal_places=6, default=0)
+    total_llm_calls = models.PositiveIntegerField(default=0)
+    total_latency_ms = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['-started_at']
+
+    def __str__(self):
+        return f"Pipeline run for Draft #{self.draft_id} ({self.started_at:%Y-%m-%d %H:%M})"

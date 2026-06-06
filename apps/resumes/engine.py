@@ -419,10 +419,8 @@ def build_jd_input(job):
 
 def generate_resume(job, consultant, actor=None, input_sections=None, coaching_keywords=None):
     """
-    Generate a resume using a single LLM call with the active MasterPrompt.
-
-    input_sections: optional dict (INPUT_SECTION_KEYS → bool) from the generate UI, merged with
-    MasterPrompt.default_input_sections. None = use master defaults only.
+    Generate a resume. Routes to the multi-phase pipeline (V3) if enabled,
+    otherwise falls back to the legacy single-call approach.
 
     Returns: (content, tokens_used, error, metadata)
       - content: the generated resume text (or None on error)
@@ -430,6 +428,20 @@ def generate_resume(job, consultant, actor=None, input_sections=None, coaching_k
       - error: error message string (or None on success)
       - metadata: dict with system_prompt, user_prompt, model, preflight info
     """
+    # Check if multi-phase pipeline is enabled
+    try:
+        from core.models import FeatureFlag
+        pipeline_enabled = FeatureFlag.objects.filter(
+            slug='multi_phase_pipeline', is_enabled=True
+        ).exists()
+    except Exception:
+        pipeline_enabled = False
+
+    if pipeline_enabled:
+        from .pipeline import generate_resume_pipeline
+        return generate_resume_pipeline(job, consultant, actor, input_sections)
+
+    # ── Legacy single-call path ─────────────────────────────────────────
     # Get active master prompt
     master = MasterPrompt.get_active()
     if not master:
