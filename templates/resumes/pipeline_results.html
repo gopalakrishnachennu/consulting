@@ -1,0 +1,326 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-5"
+     x-data="{ showSystem: false, showUser: false }">
+
+  {# ━━ BREADCRUMB ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
+  <nav class="flex items-center gap-2 text-sm text-gray-500">
+    <a href="{% url 'admin-dashboard' %}" class="hover:text-gray-700 transition">Dashboard</a>
+    <svg class="w-3.5 h-3.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+    <a href="{% url 'consultant-detail' draft.consultant.user.pk %}" class="hover:text-gray-700 transition">{{ draft.consultant.user.get_full_name }}</a>
+    <svg class="w-3.5 h-3.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+    <span class="text-gray-900 font-medium">Pipeline Results</span>
+  </nav>
+
+  {# ━━ HEADER ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
+  <div class="flex items-center justify-between">
+    <div class="flex items-center gap-4">
+      <div class="h-12 w-12 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 text-white flex items-center justify-center text-lg font-bold shadow-sm">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+      </div>
+      <div>
+        <h1 class="text-2xl font-extrabold text-gray-900">Pipeline Results</h1>
+        <p class="text-sm text-gray-500">{{ draft.consultant.user.get_full_name }} &rarr; {{ draft.job.title }} (v{{ draft.version }})</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <a href="{% url 'draft-detail' draft.pk %}" class="px-4 py-2 rounded-lg text-sm font-semibold border border-gray-300 text-gray-700 hover:bg-gray-50 transition">View Draft</a>
+      <a href="{% url 'resume-editor' draft.pk %}" class="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-sm transition">Open Editor</a>
+    </div>
+  </div>
+
+  {# ━━ METRICS STRIP ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
+  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+    <div class="bg-white rounded-xl border border-gray-200 p-3 text-center">
+      <p class="text-[10px] font-bold text-gray-400 uppercase">Pipeline</p>
+      <p class="text-lg font-extrabold text-indigo-600">{{ pipeline_version }}</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-3 text-center">
+      <p class="text-[10px] font-bold text-gray-400 uppercase">ATS Score</p>
+      <p class="text-lg font-extrabold {% if draft.ats_score >= 65 %}text-emerald-600{% elif draft.ats_score >= 40 %}text-amber-600{% else %}text-red-600{% endif %}">{{ draft.ats_score }}%</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-3 text-center">
+      <p class="text-[10px] font-bold text-gray-400 uppercase">Tokens</p>
+      <p class="text-lg font-extrabold text-gray-900">{{ draft.tokens_used|intcomma }}</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-3 text-center">
+      <p class="text-[10px] font-bold text-gray-400 uppercase">Cost</p>
+      <p class="text-lg font-extrabold text-gray-900">${{ totals.cost|floatformat:4|default:"0" }}</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-3 text-center">
+      <p class="text-[10px] font-bold text-gray-400 uppercase">LLM Calls</p>
+      <p class="text-lg font-extrabold text-gray-900">{{ totals.llm_calls|default:"1" }}</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-3 text-center">
+      <p class="text-[10px] font-bold text-gray-400 uppercase">Latency</p>
+      <p class="text-lg font-extrabold text-gray-900">{{ totals.latency_ms|default:"—" }}ms</p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+    {# ━━ LEFT: Pipeline Phases (2 cols) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
+    <div class="lg:col-span-2 space-y-5">
+
+      {# Phase 1: JD Intelligence #}
+      <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
+          <span class="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-xs font-bold">1</span>
+          <h2 class="text-sm font-bold text-gray-900">JD Intelligence</h2>
+          <span class="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full ml-auto">0 tokens</span>
+          {% if phases.jd_intelligence.source %}
+          <span class="text-[10px] text-gray-400">source: {{ phases.jd_intelligence.source }}</span>
+          {% endif %}
+        </div>
+        <div class="p-5 space-y-3">
+          {% if jd_intel %}
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div class="bg-gray-50 rounded-lg p-2.5">
+              <p class="text-[10px] text-gray-400 uppercase">Title</p>
+              <p class="text-xs font-bold text-gray-800 truncate">{{ jd_intel.job_title|default:"N/A" }}</p>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-2.5">
+              <p class="text-[10px] text-gray-400 uppercase">Seniority</p>
+              <p class="text-xs font-bold text-gray-800">{{ jd_intel.seniority_level|default:"N/A" }}</p>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-2.5">
+              <p class="text-[10px] text-gray-400 uppercase">Domain</p>
+              <p class="text-xs font-bold text-gray-800 truncate">{{ jd_intel.role_domain|default:"N/A" }}</p>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-2.5">
+              <p class="text-[10px] text-gray-400 uppercase">Company</p>
+              <p class="text-xs font-bold text-gray-800 truncate">{{ jd_intel.company|default:"N/A" }}</p>
+            </div>
+          </div>
+          {% if jd_intel.required_skills %}
+          <div>
+            <p class="text-[10px] font-bold text-gray-400 uppercase mb-1.5">Required Skills</p>
+            <div class="flex flex-wrap gap-1">
+              {% for s in jd_intel.required_skills %}
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-50 text-red-700 border border-red-100">{{ s }}</span>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+          {% if jd_intel.preferred_skills %}
+          <div>
+            <p class="text-[10px] font-bold text-gray-400 uppercase mb-1.5">Preferred Skills</p>
+            <div class="flex flex-wrap gap-1">
+              {% for s in jd_intel.preferred_skills %}
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-100">{{ s }}</span>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+          {% if jd_intel.tools_and_technologies %}
+          <div>
+            <p class="text-[10px] font-bold text-gray-400 uppercase mb-1.5">Tools & Technologies</p>
+            <div class="flex flex-wrap gap-1">
+              {% for t in jd_intel.tools_and_technologies %}
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-700">{{ t }}</span>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+          {% if jd_intel.keywords_for_ats %}
+          <div>
+            <p class="text-[10px] font-bold text-gray-400 uppercase mb-1.5">ATS Keywords</p>
+            <div class="flex flex-wrap gap-1">
+              {% for k in jd_intel.keywords_for_ats %}
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-100">{{ k }}</span>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+          {% else %}
+          <p class="text-sm text-gray-400 text-center py-4">No JD intelligence data available</p>
+          {% endif %}
+        </div>
+      </div>
+
+      {# Phase 2: Matching #}
+      <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
+          <span class="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-xs font-bold">2</span>
+          <h2 class="text-sm font-bold text-gray-900">Skill Matching</h2>
+          <span class="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full ml-auto">0 tokens</span>
+          {% if matching.match_pct is not None %}
+          <span class="text-sm font-extrabold {% if matching.match_pct >= 70 %}text-emerald-600{% elif matching.match_pct >= 40 %}text-amber-600{% else %}text-red-600{% endif %}">{{ matching.match_pct }}% match</span>
+          {% endif %}
+        </div>
+        <div class="p-5 space-y-3">
+          {% if matching %}
+          {% if matching.matched_required %}
+          <div>
+            <p class="text-[10px] font-bold text-emerald-500 uppercase mb-1.5">Matched Required</p>
+            <div class="flex flex-wrap gap-1">
+              {% for s in matching.matched_required %}
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">{{ s }}</span>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+          {% if matching.missing_required %}
+          <div>
+            <p class="text-[10px] font-bold text-red-500 uppercase mb-1.5">Missing Required</p>
+            <div class="flex flex-wrap gap-1">
+              {% for s in matching.missing_required %}
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-50 text-red-700 border border-red-100">{{ s }}</span>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+          {% if matching.coaching_keywords %}
+          <div>
+            <p class="text-[10px] font-bold text-violet-500 uppercase mb-1.5">Coaching Keywords (sent to LLM)</p>
+            <div class="flex flex-wrap gap-1">
+              {% for k in matching.coaching_keywords %}
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-50 text-violet-700 border border-violet-100">{{ k }}</span>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+          {% if matching.warnings %}
+          <div class="space-y-1">
+            {% for w in matching.warnings %}
+            <div class="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+              <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+              {{ w }}
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% else %}
+          <p class="text-sm text-gray-400 text-center py-4">No matching data available</p>
+          {% endif %}
+        </div>
+      </div>
+
+      {# Phase 3: LLM Call — Prompts #}
+      <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
+          <span class="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">3</span>
+          <h2 class="text-sm font-bold text-gray-900">LLM Generation</h2>
+          {% if phases.generation %}
+          <span class="text-[10px] text-blue-600 font-semibold bg-blue-50 px-2 py-0.5 rounded-full ml-auto">{{ phases.generation.tokens }} tokens</span>
+          <span class="text-[10px] text-gray-400">{{ phases.generation.latency_ms }}ms</span>
+          {% endif %}
+        </div>
+        <div class="p-5 space-y-3">
+          {# System Prompt toggle #}
+          <div>
+            <button @click="showSystem = !showSystem" class="flex items-center gap-2 text-xs font-semibold text-gray-600 hover:text-gray-900 transition">
+              <svg :class="showSystem ? 'rotate-90' : ''" class="w-3.5 h-3.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+              System Prompt ({{ system_prompt|length }} chars)
+            </button>
+            <pre x-show="showSystem" x-collapse class="mt-2 text-[11px] text-gray-600 bg-gray-50 border border-gray-200 rounded-lg p-3 overflow-x-auto max-h-60 whitespace-pre-wrap" x-cloak>{{ system_prompt }}</pre>
+          </div>
+          {# User Prompt toggle #}
+          <div>
+            <button @click="showUser = !showUser" class="flex items-center gap-2 text-xs font-semibold text-gray-600 hover:text-gray-900 transition">
+              <svg :class="showUser ? 'rotate-90' : ''" class="w-3.5 h-3.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+              User Prompt ({{ user_prompt|length }} chars)
+            </button>
+            <pre x-show="showUser" x-collapse class="mt-2 text-[11px] text-gray-600 bg-gray-50 border border-gray-200 rounded-lg p-3 overflow-x-auto max-h-96 whitespace-pre-wrap" x-cloak>{{ user_prompt }}</pre>
+          </div>
+        </div>
+      </div>
+
+      {# Phase 4: Validation #}
+      <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
+          <span class="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-xs font-bold">4</span>
+          <h2 class="text-sm font-bold text-gray-900">Validation & ATS</h2>
+          <span class="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full ml-auto">0 tokens</span>
+        </div>
+        <div class="p-5">
+          <div class="flex items-center gap-6 mb-4">
+            <div>
+              <p class="text-[10px] font-bold text-gray-400 uppercase">ATS Score</p>
+              <p class="text-3xl font-extrabold {% if draft.ats_score >= 65 %}text-emerald-600{% elif draft.ats_score >= 40 %}text-amber-600{% else %}text-red-600{% endif %}">{{ draft.ats_score }}%</p>
+            </div>
+            <div class="flex-1">
+              <div class="w-full bg-gray-100 rounded-full h-3">
+                <div class="h-3 rounded-full transition-all {% if draft.ats_score >= 65 %}bg-emerald-500{% elif draft.ats_score >= 40 %}bg-amber-400{% else %}bg-red-500{% endif %}"
+                     style="width: {{ draft.ats_score }}%"></div>
+              </div>
+            </div>
+          </div>
+          {% with v=phases.validation %}
+          {% if v.validation_errors %}
+          <div class="space-y-1.5 mb-3">
+            <p class="text-[10px] font-bold text-red-500 uppercase">Validation Errors</p>
+            {% for e in v.validation_errors %}
+            <div class="flex items-start gap-2 text-xs text-red-700 bg-red-50 rounded-lg px-3 py-2">
+              <span class="text-red-400 mt-0.5 shrink-0">&#9679;</span>
+              {{ e }}
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="flex items-center gap-2 text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+            All validation checks passed
+          </div>
+          {% endif %}
+          {% endwith %}
+        </div>
+      </div>
+    </div>
+
+    {# ━━ RIGHT: Resume Preview ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
+    <div class="space-y-5">
+
+      {# Status #}
+      <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-xs font-bold text-gray-600 uppercase tracking-wider">Draft Status</h3>
+          <span class="px-2.5 py-1 rounded-full text-xs font-bold
+            {% if draft.status == 'DRAFT' %}bg-blue-100 text-blue-700
+            {% elif draft.status == 'FINAL' %}bg-emerald-100 text-emerald-700
+            {% elif draft.status == 'ERROR' %}bg-red-100 text-red-700
+            {% else %}bg-gray-100 text-gray-600{% endif %}">{{ draft.get_status_display }}</span>
+        </div>
+        <div class="text-xs text-gray-500 space-y-1">
+          <p>Version: <strong>v{{ draft.version }}</strong></p>
+          <p>Created: <strong>{{ draft.created_at|date:"M d, Y g:i A" }}</strong></p>
+          {% if draft.created_by %}<p>By: <strong>{{ draft.created_by.get_full_name }}</strong></p>{% endif %}
+        </div>
+      </div>
+
+      {# Actions #}
+      <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-2">
+        <h3 class="text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">Actions</h3>
+        <a href="{% url 'resume-editor' draft.pk %}" class="flex items-center gap-2 w-full px-3 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+          Open in Editor
+        </a>
+        <a href="{% url 'draft-download' draft.pk %}" class="flex items-center gap-2 w-full px-3 py-2.5 rounded-lg border border-gray-300 text-gray-700 text-sm font-semibold hover:bg-gray-50 transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          Download DOCX
+        </a>
+        <form method="post" action="{% url 'draft-regenerate' draft.pk %}" class="w-full">
+          {% csrf_token %}
+          <button type="submit" class="flex items-center gap-2 w-full px-3 py-2.5 rounded-lg border border-gray-300 text-gray-700 text-sm font-semibold hover:bg-gray-50 transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            Regenerate
+          </button>
+        </form>
+      </div>
+
+      {# Resume Preview #}
+      <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-3 border-b border-gray-100">
+          <h3 class="text-xs font-bold text-gray-600 uppercase tracking-wider">Resume Preview</h3>
+        </div>
+        <div class="p-5">
+          <pre class="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap font-sans">{{ draft.content }}</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

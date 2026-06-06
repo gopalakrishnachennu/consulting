@@ -465,8 +465,9 @@ class ResumeGeneratePageView(AdminOrEmployeeMixin, BaseView):
 
 class ResumeGenerateActionView(ResumeGenerateActionAccessMixin, BaseView):
     """
-    POST: Generate a resume using the clean engine (single LLM call).
-    Creates a ResumeDraft and redirects to the review page.
+    POST: Generate a resume using the pipeline V3.
+    Creates a ResumeDraft, saves all pipeline metadata, and redirects to
+    the transparent results page showing every phase.
     """
 
     def post(self, request):
@@ -511,6 +512,7 @@ class ResumeGenerateActionView(ResumeGenerateActionAccessMixin, BaseView):
             draft.error_message = error
             draft.llm_system_prompt = metadata.get('system_prompt', '')
             draft.llm_user_prompt = metadata.get('user_prompt', '')
+            draft.llm_input_summary = metadata
             draft.save(skip_version=True)
             messages.error(request, f"Generation failed: {error}")
             next_url = request.POST.get('next') or request.GET.get('next')
@@ -518,32 +520,75 @@ class ResumeGenerateActionView(ResumeGenerateActionAccessMixin, BaseView):
                 return redirect(next_url)
             return redirect('resume-generate')
 
+        # Score and save
+        ats = metadata.get('totals', {}).get('ats_score') or score_resume(job.description, content)
         draft.content = content
         draft.tokens_used = tokens
-        draft.ats_score = score_resume(job.description, content)
+        draft.ats_score = ats
         draft.llm_system_prompt = metadata.get('system_prompt', '')
         draft.llm_user_prompt = metadata.get('user_prompt', '')
-        draft.llm_request_payload = {
-            'model': metadata.get('model'),
-            'temperature': metadata.get('temperature'),
-            'max_tokens': metadata.get('max_tokens'),
-            'master_prompt': metadata.get('master_prompt_name'),
-            'input_sections': metadata.get('input_sections'),
-        }
-        summ = dict(metadata.get('preflight', {}))
-        summ['input_sections'] = metadata.get('input_sections', {})
-        draft.llm_input_summary = summ
+        draft.llm_input_summary = metadata
+        draft.llm_request_payload = metadata.get('totals', {})
         draft.status = ResumeDraft.Status.DRAFT
         draft.save(skip_version=True)
 
-        messages.success(
-            request,
-            f"Resume v{draft.version} generated for {cp.user.get_full_name()} — ATS score: {draft.ats_score}%"
-        )
+        # Save PipelineRun if pipeline V3 was used
+        if metadata.get('pipeline_version'):
+            try:
+                from .models import PipelineRun
+                PipelineRun.objects.create(
+                    draft=draft,
+                    consultant=cp,
+                    job=job,
+                    jd_intelligence=metadata.get('jd_intelligence', {}),
+                    matching_matrix=metadata.get('matching_matrix', {}),
+                    section_results=metadata.get('phases', {}),
+                    quality_gate=metadata.get('phases', {}).get('validation', {}),
+                    total_tokens=tokens,
+                    total_cost=metadata.get('totals', {}).get('cost', 0),
+                    total_llm_calls=metadata.get('totals', {}).get('llm_calls', 0),
+                    total_latency_ms=metadata.get('totals', {}).get('latency_ms', 0),
+                )
+            except Exception:
+                pass
+
+        # Redirect to transparent results page
         next_url = request.POST.get('next') or request.GET.get('next')
         if next_url:
             return redirect(next_url)
-        return redirect('draft-review', pk=draft.pk)
+        return redirect('pipeline-results', pk=draft.pk)
+
+
+class PipelineResultsView(AdminOrEmployeeMixin, DetailView):
+    """
+    Transparent pipeline results page — shows every phase of resume generation:
+    JD Intelligence, Matching, Prompts sent, LLM response, Validation, ATS score.
+    """
+    model = ResumeDraft
+    template_name = 'resumes/pipeline_results.html'
+    context_object_name = 'draft'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        draft = self.object
+        meta = draft.llm_input_summary or {}
+
+        context['pipeline_version'] = meta.get('pipeline_version', 'legacy')
+        context['phases'] = meta.get('phases', {})
+        context['totals'] = meta.get('totals', {})
+        context['jd_intel'] = meta.get('jd_intelligence', {})
+        context['matching'] = meta.get('matching_matrix', {})
+        context['system_prompt'] = draft.llm_system_prompt
+        context['user_prompt'] = draft.llm_user_prompt
+
+        # Pipeline run record if exists
+        try:
+            from .models import PipelineRun
+            context['pipeline_run'] = PipelineRun.objects.filter(draft=draft).first()
+        except Exception:
+            context['pipeline_run'] = None
+
+        return context
 
 
 class PreflightCheckView(AdminOrEmployeeMixin, BaseView):

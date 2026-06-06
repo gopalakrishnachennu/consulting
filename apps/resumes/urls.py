@@ -4,7 +4,7 @@ from .views import (
     DraftRegenerateView, LLMInputPreferenceSaveView,
     DraftRegenerateSectionView,
     ResumeGeneratePageView, ResumeGenerateActionView,
-    PreflightCheckView, DraftReviewView,
+    PreflightCheckView, DraftReviewView, PipelineResultsView,
     # Template editor
     ResumeEditorView, ResumeEditorSaveView, ResumeEditorPreviewView,
     ResumeExportDOCXView, ResumeExportPDFView,
@@ -21,6 +21,7 @@ urlpatterns = [
     path('generate/run/', ResumeGenerateActionView.as_view(), name='resume-generate-run'),
     path('generate/preflight/', PreflightCheckView.as_view(), name='resume-preflight'),
     path('drafts/<int:pk>/review/', DraftReviewView.as_view(), name='draft-review'),
+    path('drafts/<int:pk>/pipeline/', PipelineResultsView.as_view(), name='pipeline-results'),
 
     path('drafts/<int:pk>/', DraftDetailView.as_view(), name='draft-detail'),
     path('drafts/<int:pk>/regenerate/', DraftRegenerateView.as_view(), name='draft-regenerate'),
