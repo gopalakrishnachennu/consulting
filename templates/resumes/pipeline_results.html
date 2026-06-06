@@ -3,7 +3,7 @@
 
 {% block content %}
 <div class="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-5"
-     x-data="{ showSystem: false, showUser: false }">
+     x-data="{ showUser: false }">
 
   {# ━━ BREADCRUMB ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
   <nav class="flex items-center gap-2 text-sm text-gray-500">
@@ -208,22 +208,13 @@
           <span class="text-[10px] text-gray-400">{{ phases.generation.latency_ms }}ms</span>
           {% endif %}
         </div>
-        <div class="p-5 space-y-3">
-          {# System Prompt toggle #}
-          <div>
-            <button @click="showSystem = !showSystem" class="flex items-center gap-2 text-xs font-semibold text-gray-600 hover:text-gray-900 transition">
-              <svg :class="showSystem ? 'rotate-90' : ''" class="w-3.5 h-3.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-              System Prompt ({{ system_prompt|length }} chars)
-            </button>
-            <pre x-show="showSystem" x-collapse class="mt-2 text-[11px] text-gray-600 bg-gray-50 border border-gray-200 rounded-lg p-3 overflow-x-auto max-h-60 whitespace-pre-wrap" x-cloak>{{ system_prompt }}</pre>
-          </div>
-          {# User Prompt toggle #}
+        <div class="p-5">
           <div>
             <button @click="showUser = !showUser" class="flex items-center gap-2 text-xs font-semibold text-gray-600 hover:text-gray-900 transition">
               <svg :class="showUser ? 'rotate-90' : ''" class="w-3.5 h-3.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-              User Prompt ({{ user_prompt|length }} chars)
+              Full Prompt Sent to LLM ({{ user_prompt|length }} chars) — click to expand
             </button>
-            <pre x-show="showUser" x-collapse class="mt-2 text-[11px] text-gray-600 bg-gray-50 border border-gray-200 rounded-lg p-3 overflow-x-auto max-h-96 whitespace-pre-wrap" x-cloak>{{ user_prompt }}</pre>
+            <pre x-show="showUser" x-collapse class="mt-2 text-[11px] text-gray-600 bg-gray-50 border border-gray-200 rounded-lg p-3 overflow-x-auto max-h-[500px] whitespace-pre-wrap" x-cloak>{{ user_prompt }}</pre>
           </div>
         </div>
       </div>

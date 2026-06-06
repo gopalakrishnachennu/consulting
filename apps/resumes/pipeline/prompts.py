@@ -1,19 +1,38 @@
 """
 Prompt builder for the resume pipeline V3.1.
 
-System prompt + generation rules come from MasterPrompt (admin-editable).
-This file only handles building the structured USER prompt with candidate
-data, JD intelligence, and matching results.
+The admin writes ONE prompt template in MasterPrompt with {variables}.
+This module fills in the variables with real data from JD intelligence,
+matching, and consultant profile.
 
-The admin controls the entire LLM behavior from:
-  Admin → Master Prompts → system_prompt (who the LLM is)
-  Admin → Master Prompts → generation_rules (section rules)
+Available variables the admin can use in their prompt:
+    {header}              — Name + contact line (copy exactly)
+    {job_title}           — Target job title
+    {company}             — Target company
+    {seniority}           — junior/mid/senior/lead/principal
+    {domain}              — Role domain (DevOps, Data Engineering, etc.)
+    {location}            — Job location
+    {required_skills}     — Comma-separated required skills from JD
+    {preferred_skills}    — Comma-separated preferred skills from JD
+    {tools}               — Comma-separated tools & technologies from JD
+    {ats_keywords}        — ATS keywords to weave in
+    {responsibilities}    — Key responsibilities from JD (bulleted)
+    {match_pct}           — Skill match percentage
+    {matched_skills}      — Skills the consultant HAS that JD requires
+    {missing_skills}      — Skills the consultant LACKS that JD requires
+    {coaching_keywords}   — Important terms to weave in where truthful
+    {warnings}            — Match warnings (low overlap, etc.)
+    {years}               — Total years of experience
+    {consultant_skills}   — All consultant skills
+    {experience_records}  — Formatted experience with titles, companies, dates, descriptions
+    {education}           — Education section (copy exactly)
+    {certifications}      — Certifications section (copy exactly)
 """
 from django.utils import timezone
 
 
 def _format_years(consultant):
-    """Calculate total years of experience from experience records."""
+    """Calculate total years of experience."""
     total_months = 0
     for exp in consultant.experience.all():
         start = exp.start_date
@@ -26,217 +45,160 @@ def _format_years(consultant):
     return str(years) if years else "1"
 
 
-# ── Fallback prompts (used only if MasterPrompt is not configured) ──
+def _format_experience_records(consultant):
+    """Format experience records for the prompt."""
+    experiences = list(consultant.experience.all())
+    if not experiences and consultant.base_resume_text:
+        return f"BASE RESUME TEXT (extract roles from this):\n{consultant.base_resume_text[:3000]}"
+    if not experiences:
+        return "No experience provided."
 
-DEFAULT_SYSTEM_PROMPT = """You are a Senior Resume Architect. Generate a complete, ATS-optimized, human-authentic resume.
+    lines = []
+    for i, exp in enumerate(experiences):
+        start = exp.start_date.strftime("%b %Y") if exp.start_date else "N/A"
+        end = exp.end_date.strftime("%b %Y") if exp.end_date else "Present"
+        is_most_recent = (i == 0)
+        bullet_target = "7-10 bullets" if is_most_recent else "6 bullets"
+
+        lines.append(f"Role {i+1} ({'MOST RECENT' if is_most_recent else 'PREVIOUS'}) — {bullet_target}:")
+        lines.append(f"  Title: {exp.title}")
+        lines.append(f"  Company: {exp.company}")
+        lines.append(f"  Dates: {start} - {end}")
+        if exp.description:
+            lines.append(f"  Description: {exp.description[:600].strip()}")
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
+def _format_responsibilities(jd_intel):
+    """Format JD responsibilities as bulleted list."""
+    resp = jd_intel.get("responsibilities", [])
+    if not resp:
+        return "Not specified"
+    return "\n".join(f"- {r}" for r in resp[:10])
+
+
+def _format_warnings(matching):
+    """Format matching warnings."""
+    warnings = matching.get("warnings", [])
+    if not warnings:
+        return "None"
+    return "\n".join(f"- {w}" for w in warnings)
+
+
+# ── Default prompt (used if MasterPrompt has no content) ────────────
+
+DEFAULT_PROMPT_TEMPLATE = """You are a Senior Resume Architect. Generate a complete, ATS-optimized, human-authentic resume.
 
 ABSOLUTE RULES:
 1. Every word must trace to the Candidate Profile or Job Intelligence. Nothing invented.
 2. NEVER add companies, titles, dates, or certifications not in the Candidate Profile.
 3. The resume must read as if the candidate wrote it — no AI filler, no fluff.
-4. Use the EXACT header (name, location, contact) provided — do not change it.
+4. Use the EXACT header provided — do not change it.
 5. Use the EXACT education and certifications provided — do not change them.
-6. Output plain text only. No markdown, no bold, no tables, no code fences, no separator lines.
+6. Output plain text only. No markdown, no bold, no tables, no code fences.
 
-OUTPUT STRUCTURE (use UPPERCASE headings exactly):
-[Header — provided, copy exactly]
+HEADER (copy exactly):
+{header}
 
-PROFESSIONAL SUMMARY
-[Single paragraph, 70-80 words]
+TARGET JOB:
+Title: {job_title}
+Company: {company}
+Seniority: {seniority}
+Domain: {domain}
+Location: {location}
+Required Skills: {required_skills}
+Preferred Skills: {preferred_skills}
+Tools & Technologies: {tools}
+ATS Keywords: {ats_keywords}
+Responsibilities:
+{responsibilities}
 
-SKILLS
-[Key:value format, 6-10 categories]
+SKILL MATCH ({match_pct}% match):
+Matched: {matched_skills}
+Missing (do NOT fake): {missing_skills}
+Coaching Keywords (weave where truthful): {coaching_keywords}
+{warnings}
 
-PROFESSIONAL EXPERIENCE
-[Role headers + bullets]
+CANDIDATE PROFILE:
+Experience: {years} years
+Skills: {consultant_skills}
 
-EDUCATION
-[Provided, copy exactly]
+EXPERIENCE RECORDS:
+{experience_records}
 
-CERTIFICATIONS
-[If provided, copy exactly]"""
+EDUCATION & CERTIFICATIONS (copy exactly):
+{education}
+{certifications}
 
-
-DEFAULT_GENERATION_RULES = """PROFESSIONAL SUMMARY rules:
+GENERATION RULES:
+PROFESSIONAL SUMMARY:
 - Single paragraph, exactly 70-80 words
 - Start with the job title
-- Include total years of experience
+- Include "{years} years" of experience
 - Weave in 3-4 matched skills naturally
-- No pronouns (I, my, we), no company names
-- No generic phrases ('proven track record', 'innovative solutions')
-- Active voice, confident, grounded
+- No pronouns, no company names, no buzzwords
 
-SKILLS rules:
+SKILLS:
 - Key:value format, 6-10 categories
-- Example: Cloud Platforms: AWS (EC2, S3, Lambda), Azure (AKS)
-- Put JD-required skills first in each category
+- Example: Cloud Platforms: AWS (EC2, S3, Lambda), Azure
+- JD-required skills first in each category
 - Only include skills the candidate actually has
-- No bullets — only key:value lines
 
-PROFESSIONAL EXPERIENCE rules:
-- Use role Title | Company | Start - End format for each header
+PROFESSIONAL EXPERIENCE:
+- Title | Company | Start - End format
 - Keep titles, companies, dates EXACTLY as provided
-- Most recent role: 7-10 bullets; all other roles: exactly 6 bullets
-- Each bullet: 22-25 words exactly
-- Each bullet structure: [Action Verb] + [Technology/Method] + [Outcome]
-- Prefer concrete verbs: Built, Deployed, Configured, Automated, Reduced
-- At most 1 elevated verb (Architected, Orchestrated) in entire section
-- Do NOT copy JD text verbatim — rephrase as accomplishments
+- Most recent role: 7-10 bullets; others: 6 bullets
+- Each bullet: 22-25 words
+- Structure: [Action Verb] + [Technology] + [Outcome]
+- Do NOT copy JD verbatim — rephrase as accomplishments
 - Do NOT repeat phrases across bullets
-- Most recent role: up to 2 quantified bullets (%, $, time)
-- Older roles: max 1 quantified bullet each
-- Do NOT keyword-stuff or list JD terms at end of bullets
 
 EDUCATION & CERTIFICATIONS:
-- Copy EXACTLY as provided. Do not modify, reorder, or add."""
+- Copy EXACTLY as provided. Do not modify."""
 
 
-def get_system_prompt(master_prompt=None):
+def build_prompt(jd_intel, matching, consultant, header, education, certifications,
+                 prompt_template=None):
     """
-    Get system prompt from MasterPrompt (admin-editable) or fallback.
-    This is what the admin edits from the UI.
-    """
-    if master_prompt and master_prompt.system_prompt:
-        return master_prompt.system_prompt
-    return DEFAULT_SYSTEM_PROMPT
+    Build the complete prompt by filling {variables} in the template.
 
-
-def get_generation_rules(master_prompt=None):
+    If prompt_template is None, uses DEFAULT_PROMPT_TEMPLATE.
+    The admin sets the template via MasterPrompt.system_prompt in the admin UI.
     """
-    Get generation rules from MasterPrompt (admin-editable) or fallback.
-    This is what the admin edits from the UI.
-    """
-    if master_prompt and master_prompt.generation_rules:
-        return master_prompt.generation_rules
-    return DEFAULT_GENERATION_RULES
+    template = prompt_template or DEFAULT_PROMPT_TEMPLATE
 
-
-def build_single_call_prompt(jd_intel, matching, consultant, header, education, certifications,
-                              generation_rules=None):
-    """
-    Build ONE comprehensive user prompt with structured intelligence.
-
-    The generation_rules parameter comes from MasterPrompt.generation_rules
-    (admin-editable). If None, uses DEFAULT_GENERATION_RULES.
-    """
     years = _format_years(consultant)
-    experiences = list(consultant.experience.all())
     consultant_skills = consultant.skills or []
-    rules = generation_rules or DEFAULT_GENERATION_RULES
 
-    parts = []
+    # Build all variable values
+    variables = {
+        "header": header or "",
+        "job_title": jd_intel.get("job_title", "N/A"),
+        "company": jd_intel.get("company", "N/A"),
+        "seniority": jd_intel.get("seniority_level", "mid"),
+        "domain": jd_intel.get("role_domain", "Technology"),
+        "location": jd_intel.get("location", "N/A"),
+        "required_skills": ", ".join(jd_intel.get("required_skills", [])) or "Not specified",
+        "preferred_skills": ", ".join(jd_intel.get("preferred_skills", [])) or "Not specified",
+        "tools": ", ".join(jd_intel.get("tools_and_technologies", [])) or "Not specified",
+        "ats_keywords": ", ".join(jd_intel.get("keywords_for_ats", [])[:20]) or "Not specified",
+        "responsibilities": _format_responsibilities(jd_intel),
+        "match_pct": str(matching.get("match_pct", 0)),
+        "matched_skills": ", ".join(matching.get("matched_required", [])) or "None",
+        "missing_skills": ", ".join(matching.get("missing_required", [])) or "None",
+        "coaching_keywords": ", ".join(matching.get("coaching_keywords", [])) or "None",
+        "warnings": _format_warnings(matching),
+        "years": years,
+        "consultant_skills": ", ".join(consultant_skills[:40]) or "Not provided",
+        "experience_records": _format_experience_records(consultant),
+        "education": education or "Not provided",
+        "certifications": certifications or "",
+    }
 
-    # ── Section 1: Header (copy exactly) ────────────────────────────
-    parts.extend([
-        "HEADER (copy this exactly — do not modify):",
-        header,
-    ])
+    # Fill variables — use safe replacement (don't break on missing vars)
+    prompt = template
+    for key, value in variables.items():
+        prompt = prompt.replace("{" + key + "}", str(value))
 
-    # ── Section 2: Job Intelligence ─────────────────────────────────
-    parts.extend([
-        "",
-        "TARGET JOB INTELLIGENCE:",
-        f"Title: {jd_intel.get('job_title', 'N/A')}",
-        f"Company: {jd_intel.get('company', 'N/A')}",
-        f"Seniority: {jd_intel.get('seniority_level', 'mid')}",
-        f"Domain: {jd_intel.get('role_domain', 'Technology')}",
-        f"Location: {jd_intel.get('location', 'N/A')}",
-    ])
-
-    req_skills = jd_intel.get("required_skills", [])
-    pref_skills = jd_intel.get("preferred_skills", [])
-    tools = jd_intel.get("tools_and_technologies", [])
-    responsibilities = jd_intel.get("responsibilities", [])
-    ats_keywords = jd_intel.get("keywords_for_ats", [])
-
-    if req_skills:
-        parts.append(f"Required Skills: {', '.join(req_skills)}")
-    if pref_skills:
-        parts.append(f"Preferred Skills: {', '.join(pref_skills)}")
-    if tools:
-        parts.append(f"Tools & Technologies: {', '.join(tools)}")
-    if responsibilities:
-        parts.append("Key Responsibilities:")
-        for r in responsibilities[:10]:
-            parts.append(f"  - {r}")
-    if ats_keywords:
-        parts.append(f"ATS Keywords (weave naturally): {', '.join(ats_keywords[:20])}")
-
-    # ── Section 3: Skill Match Analysis ─────────────────────────────
-    parts.extend([
-        "",
-        "SKILL MATCH ANALYSIS:",
-        f"Match Score: {matching.get('match_pct', 0)}%",
-    ])
-
-    matched_req = matching.get("matched_required", [])
-    missing_req = matching.get("missing_required", [])
-    coaching = matching.get("coaching_keywords", [])
-
-    if matched_req:
-        parts.append(f"Matched Required: {', '.join(matched_req)}")
-    if missing_req:
-        parts.append(f"Missing Required (do NOT fake): {', '.join(missing_req)}")
-    if coaching:
-        parts.append(f"Coaching Keywords (weave where truthful): {', '.join(coaching)}")
-
-    warnings = matching.get("warnings", [])
-    for w in warnings:
-        parts.append(f"WARNING: {w}")
-
-    # ── Section 4: Candidate Profile ────────────────────────────────
-    parts.extend([
-        "",
-        "CANDIDATE PROFILE:",
-        f"Total Experience: {years} years",
-    ])
-
-    if consultant_skills:
-        parts.append(f"Skills: {', '.join(consultant_skills[:40])}")
-
-    if experiences:
-        parts.append("")
-        parts.append("EXPERIENCE RECORDS:")
-        for i, exp in enumerate(experiences):
-            start = exp.start_date.strftime("%b %Y") if exp.start_date else "N/A"
-            end = exp.end_date.strftime("%b %Y") if exp.end_date else "Present"
-            is_most_recent = (i == 0)
-            bullet_target = "7-10 bullets" if is_most_recent else "6 bullets"
-
-            parts.append(f"  Role {i+1} ({'MOST RECENT' if is_most_recent else 'PREVIOUS'}) — {bullet_target}:")
-            parts.append(f"    Title: {exp.title}")
-            parts.append(f"    Company: {exp.company}")
-            parts.append(f"    Dates: {start} - {end}")
-            if exp.description:
-                desc = exp.description[:600].strip()
-                parts.append(f"    Description: {desc}")
-            parts.append("")
-    elif consultant.base_resume_text:
-        parts.append("")
-        parts.append("BASE RESUME TEXT (extract roles from this):")
-        parts.append(consultant.base_resume_text[:3000])
-    else:
-        parts.append("")
-        parts.append("NO EXPERIENCE PROVIDED — generate realistic bullets based on skills and JD.")
-
-    # ── Section 5: Education + Certs (copy exactly) ─────────────────
-    parts.extend([
-        "",
-        "EDUCATION & CERTIFICATIONS (copy exactly — do not modify):",
-    ])
-    if education:
-        parts.append(education)
-    else:
-        parts.append("EDUCATION\nNot provided")
-    if certifications:
-        parts.append("")
-        parts.append(certifications)
-
-    # ── Section 6: Generation Rules (from MasterPrompt) ─────────────
-    parts.extend([
-        "",
-        "GENERATION RULES:",
-        rules,
-    ])
-
-    return "\n".join(parts)
+    return prompt
