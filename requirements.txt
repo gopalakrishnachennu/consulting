@@ -24,7 +24,7 @@ pytest-django>=4.7
 coverage>=7.4
 cryptography>=42.0
 sentry-sdk>=2.0
-country-converter>=0.7          # ISO country name/code normalisation
+country-converter>=1.3.2          # ISO country name/code normalisation
 pyyaml>=6.0                     # dept_rules.yaml / dept_anchors.yaml loading
 # sentence-transformers is optional — install from requirements-ml.txt on GPU/dev boxes
 # The classifier falls back to LLM (Tier 4) automatically if not installed
