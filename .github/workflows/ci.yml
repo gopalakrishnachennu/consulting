@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        image: public.ecr.aws/docker/library/postgres:16
         env:
           POSTGRES_DB: consulting_ci
           POSTGRES_USER: postgres
@@ -110,7 +110,7 @@ jobs:
           - analytics
     services:
       postgres:
-        image: postgres:16
+        image: public.ecr.aws/docker/library/postgres:16
         env:
           POSTGRES_DB: consulting_ci
           POSTGRES_USER: postgres
