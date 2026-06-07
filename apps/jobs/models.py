@@ -65,13 +65,15 @@ class Job(models.Model):
     job_type = models.CharField(
         max_length=20,
         choices=JobType.choices,
-        default=JobType.FULL_TIME
+        default=JobType.FULL_TIME,
+        db_index=True,
     )
-    
+
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
-        default=Status.POOL
+        default=Status.POOL,
+        db_index=True,
     )
 
     stage = models.CharField(
@@ -83,8 +85,8 @@ class Job(models.Model):
     )
     stage_changed_at = models.DateTimeField(null=True, blank=True, db_index=True)
     url_hash = models.CharField(
-        max_length=64, blank=True, db_index=True,
-        help_text=_("SHA256 of original_link for cross-platform dedupe."),
+        max_length=64, blank=True, default='', db_index=True,
+        help_text=_("SHA256 of original_link for cross-platform dedupe. Unique when non-empty."),
     )
     quality_score = models.FloatField(
         null=True, blank=True,

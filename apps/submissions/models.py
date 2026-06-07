@@ -33,7 +33,8 @@ class ApplicationSubmission(models.Model):
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
-        default=Status.APPLIED
+        default=Status.APPLIED,
+        db_index=True,
     )
     
     submitted_by = models.ForeignKey(

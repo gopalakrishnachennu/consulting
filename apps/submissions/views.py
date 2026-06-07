@@ -449,7 +449,11 @@ class SubmissionDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
     context_object_name = 'submission'
 
     def get_queryset(self):
-        return super().get_queryset().select_related('job', 'consultant__user')
+        return super().get_queryset().select_related(
+            'job', 'consultant__user', 'submitted_by', 'resume',
+        ).prefetch_related(
+            'status_history', 'responses',
+        )
 
     def test_func(self):
         obj = self.get_object()
@@ -473,7 +477,7 @@ class SubmissionDetailView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
         if sub.submitted_at:
             events.append((sub.submitted_at, 'Proof submitted', ''))
         status_display = dict(ApplicationSubmission.Status.choices)
-        for h in sub.status_history.all():
+        for h in sub.status_history.all():  # prefetched above — no N+1
             label = "Status: " + status_display.get(h.to_status, h.to_status)
             events.append((h.created_at, label, h.note or ''))
         try:
