@@ -169,3 +169,13 @@ class BroadcastDeliveryAdmin(admin.ModelAdmin):
     list_display = ('broadcast', 'user', 'status', 'notification', 'created_at')
     list_filter = ('status',)
     search_fields = ('broadcast__title', 'user__username')
+
+
+@admin.register(ErrorLog)
+class ErrorLogAdmin(admin.ModelAdmin):
+    list_display = ('severity', 'method', 'path', 'status_code', 'user', 'error_type', 'response_time_ms', 'resolved', 'created_at')
+    list_filter = ('severity', 'resolved', 'status_code', 'created_at')
+    search_fields = ('path', 'error_message', 'error_type', 'user__username')
+    readonly_fields = ('severity', 'path', 'method', 'status_code', 'user', 'error_type', 'error_message', 'traceback', 'request_data', 'response_time_ms', 'user_agent', 'ip_address', 'created_at')
+    list_per_page = 50
+    date_hierarchy = 'created_at'
