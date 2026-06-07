@@ -10,6 +10,7 @@ from .models import (
     BroadcastDelivery,
     FeatureFlag,
     EmployeeDesignation,
+    ErrorLog,
 )
 
 

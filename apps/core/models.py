@@ -542,6 +542,43 @@ class FeatureFlag(models.Model):
         return f'{self.key}'
 
 
+class ErrorLog(models.Model):
+    """Auto-captured error/incident log from middleware."""
+
+    class Severity(models.TextChoices):
+        ERROR = 'ERROR', 'Error (500)'
+        WARNING = 'WARNING', 'Warning (4xx)'
+        SLOW = 'SLOW', 'Slow Request'
+
+    severity = models.CharField(max_length=10, choices=Severity.choices, default=Severity.ERROR)
+    path = models.CharField(max_length=500)
+    method = models.CharField(max_length=10, default='GET')
+    status_code = models.PositiveIntegerField(default=500)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='error_logs'
+    )
+    error_type = models.CharField(max_length=200, blank=True)
+    error_message = models.TextField(blank=True)
+    traceback = models.TextField(blank=True)
+    request_data = models.JSONField(default=dict, blank=True)
+    response_time_ms = models.PositiveIntegerField(default=0)
+    user_agent = models.CharField(max_length=500, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    resolved = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['severity', '-created_at']),
+            models.Index(fields=['path', '-created_at']),
+            models.Index(fields=['resolved', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f"[{self.severity}] {self.method} {self.path} ({self.status_code})"
+
+
 class EmployeeDesignation(models.Model):
     """RBAC tier for employees (e.g. Recruiter → Senior → Manager)."""
 

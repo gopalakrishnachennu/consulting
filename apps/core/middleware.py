@@ -1,4 +1,6 @@
+import time
 import uuid
+import traceback as tb_module
 
 from django.conf import settings
 
@@ -144,3 +146,98 @@ class AuditMiddleware:
                 import logging
 
                 logging.getLogger(__name__).warning("Audit middleware error: %s", e)
+
+
+# ── Error Tracking Middleware ─────────────────────────────────────────────
+# Captures: 500 errors (with traceback), slow requests (>5s)
+
+SLOW_REQUEST_THRESHOLD_MS = 5000  # 5 seconds
+
+_ERROR_SKIP_PATHS = (
+    "/static/", "/media/", "/favicon.ico", "/health/",
+    "/.env", "/cgi-bin/", "/actuator/", "/wp-",
+)
+
+
+class ErrorTrackingMiddleware:
+    """
+    Captures server errors and slow requests into ErrorLog.
+    Never breaks the request — all logging is best-effort.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        # Skip static/bot paths
+        path = request.path
+        if any(path.startswith(p) for p in _ERROR_SKIP_PATHS):
+            return self.get_response(request)
+
+        start = time.time()
+        response = self.get_response(request)
+        elapsed_ms = int((time.time() - start) * 1000)
+
+        try:
+            # Log slow requests
+            if elapsed_ms >= SLOW_REQUEST_THRESHOLD_MS and response.status_code < 400:
+                self._log_incident(
+                    request=request,
+                    severity='SLOW',
+                    status_code=response.status_code,
+                    elapsed_ms=elapsed_ms,
+                    error_message=f"Request took {elapsed_ms}ms (threshold: {SLOW_REQUEST_THRESHOLD_MS}ms)",
+                )
+
+            # Log 500 errors
+            if response.status_code >= 500:
+                self._log_incident(
+                    request=request,
+                    severity='ERROR',
+                    status_code=response.status_code,
+                    elapsed_ms=elapsed_ms,
+                )
+        except Exception:
+            pass  # Never break the response
+
+        return response
+
+    def process_exception(self, request, exception):
+        """Capture unhandled exceptions with full traceback."""
+        try:
+            self._log_incident(
+                request=request,
+                severity='ERROR',
+                status_code=500,
+                elapsed_ms=0,
+                error_type=type(exception).__name__,
+                error_message=str(exception)[:2000],
+                traceback_text=tb_module.format_exc()[:5000],
+            )
+        except Exception:
+            pass  # Never break
+        return None  # Let Django handle the exception normally
+
+    def _log_incident(self, request, severity, status_code, elapsed_ms,
+                      error_type='', error_message='', traceback_text=''):
+        from .models import ErrorLog
+
+        user = request.user if hasattr(request, 'user') and request.user.is_authenticated else None
+
+        ErrorLog.objects.create(
+            severity=severity,
+            path=request.path[:500],
+            method=request.method,
+            status_code=status_code,
+            user=user,
+            error_type=error_type,
+            error_message=error_message,
+            traceback=traceback_text,
+            response_time_ms=elapsed_ms,
+            user_agent=(request.META.get('HTTP_USER_AGENT', '') or '')[:500],
+            ip_address=get_client_ip(request),
+            request_data={
+                'query': dict(request.GET.items()) if request.GET else {},
+                'path': request.path,
+            },
+        )
