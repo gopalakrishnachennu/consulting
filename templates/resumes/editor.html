@@ -4,7 +4,7 @@
 {% block hide_container %}style="display:none"{% endblock %}
 
 {% block fullscreen_content %}
-<div x-data="resumeEditor()" x-init="init()" class="flex flex-col h-screen overflow-hidden bg-gray-100">
+<div x-data="resumeEditor()" x-init="init()" class="flex flex-col h-screen overflow-hidden bg-gray-100 {% if PLATFORM_CONFIG.nav_layout == 'left' %}lg:ml-64{% endif %}">
 
   {# ═══════════════════════════════════════════════════════ TOP BAR ══ #}
   <header class="flex-none flex items-center justify-between h-14 px-4 bg-white border-b border-gray-200 shadow-sm z-20">
