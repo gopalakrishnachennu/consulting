@@ -162,6 +162,13 @@ class DraftDetailView(DraftAccessMixin, DetailView):
             context['summary_line_count'] = len(lines)
         else:
             context['summary_line_count'] = 0
+        context['section_buttons'] = [
+            ('summary', 'Summary'),
+            ('skills', 'Skills'),
+            ('experience', 'Experience'),
+            ('education', 'Education'),
+            ('header', 'Header'),
+        ]
         return context
 
 

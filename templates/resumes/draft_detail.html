@@ -1,632 +1,261 @@
 {% extends 'base.html' %}
+{% load humanize %}
 
 {% block content %}
-<div class="min-h-screen bg-gray-50 py-12">
-    <div class="container mx-auto px-4 max-w-4xl">
-        <!-- Header -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
-            <div class="px-8 py-6 border-b border-gray-100">
-                <div class="flex justify-between items-start">
-                    <div>
-                        <div class="flex items-center gap-3 mb-2">
-                            <h1 class="text-2xl font-bold text-gray-900">Resume Draft</h1>
-                            <span class="font-mono font-bold text-gray-600">v{{ draft.version }}</span>
-                            {% if draft.status == 'FINAL' %}
-                            <span class="px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">✅
-                                Final</span>
-                            {% elif draft.status == 'DRAFT' %}
-                            <span class="px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">📝
-                                Draft</span>
-                            {% elif draft.status == 'ERROR' %}
-                            <span class="px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">❌
-                                Error</span>
-                            {% else %}
-                            <span class="px-3 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800">⏳
-                                Processing</span>
-                            {% endif %}
-                        </div>
-                        <p class="text-gray-600">
-                            <strong>{{ draft.consultant.user.get_full_name }}</strong>
-                            applying to
-                            <strong>{{ draft.job.title }}</strong> at <strong>{{ draft.job.company }}</strong>
-                        </p>
-                        <p class="text-sm text-gray-600 mt-1">
-                            Generated {{ draft.created_at|date:"M d, Y" }} at {{ draft.created_at|date:"H:i" }}
-                            {% if draft.created_by %}by {{ draft.created_by.get_full_name }}{% endif %}
-                            {% if draft.tokens_used %}· {{ draft.tokens_used }} tokens{% endif %}
-                        </p>
-                        {% if draft.generation_id %}
-                        <p class="text-sm text-gray-500 mt-1">
-                            Generation ID: <span class="font-mono">{{ draft.generation_id }}</span>
-                        </p>
-                        {% endif %}
-                        <div class="mt-2 flex flex-wrap gap-2 text-xs">
-                            <span class="px-2 py-0.5 rounded font-semibold bg-gray-100 text-gray-700">
-                                JD Parsed: {{ jd_parse_status|default:"N/A" }}
-                            </span>
-                            {% if jd_parse_updated_at %}
-                            <span class="px-2 py-0.5 rounded bg-gray-100 text-gray-600">
-                                Parsed {{ jd_parse_updated_at|date:"M d, Y" }} at {{ jd_parse_updated_at|date:"H:i" }}
-                            </span>
-                            {% endif %}
-                            <span class="px-2 py-0.5 rounded bg-gray-100 text-gray-600">
-                                Summary Lines: {{ summary_line_count }}
-                            </span>
-                            {% if jd_parse_error %}
-                            <span class="px-2 py-0.5 rounded bg-red-100 text-red-700">
-                                Parse Error: {{ jd_parse_error }}
-                            </span>
-                            {% endif %}
-                        </div>
-                    </div>
-                    <div class="flex gap-3">
-                        {% if draft.content %}
-                        <a href="{% url 'draft-download' draft.pk %}"
-                            class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg shadow text-sm flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                            Download .DOCX
-                        </a>
-                        <button id="copy-resume" type="button"
-                            class="bg-white border border-gray-200 hover:border-indigo-400 text-gray-700 font-bold py-2 px-4 rounded-lg text-sm flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M8 7h8m-8 4h8m-8 4h6M8 3h8a2 2 0 012 2v14a2 2 0 01-2 2H8a2 2 0 01-2-2V5a2 2 0 012-2z" />
-                            </svg>
-                            Copy Resume
-                        </button>
-                        {% endif %}
-                        <a href="{% url 'job-detail' draft.job.pk %}"
-                            class="bg-indigo-100 hover:bg-indigo-200 text-indigo-800 font-bold py-2 px-4 rounded-lg text-sm">
-                            View JD
-                        </a>
-                        <a href="{% url 'consultant-detail' draft.consultant.user.pk %}"
-                            class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 px-4 rounded-lg text-sm">
-                            ← Back to Profile
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </div>
+<div class="max-w-[1400px] mx-auto px-4 sm:px-6 py-6 space-y-5" x-data="{ copied: false }">
 
-        {% if draft.status == 'ERROR' %}
-        <!-- Error Display -->
-        <div class="bg-red-50 border border-red-200 rounded-xl p-6 mb-6">
-            <h3 class="font-bold text-red-800 mb-2">Generation Failed</h3>
-            <p class="text-red-700 text-sm">{{ draft.error_message }}</p>
-        </div>
-        {% endif %}
+  {# ━━ BREADCRUMB ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
+  <nav class="flex items-center gap-2 text-sm text-gray-500">
+    <a href="{% url 'consultant-detail' draft.consultant.user.pk %}" class="hover:text-gray-700 transition">{{ draft.consultant.user.get_full_name }}</a>
+    <svg class="w-3.5 h-3.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+    <span class="text-gray-900 font-medium">Resume Draft v{{ draft.version }}</span>
+  </nav>
 
+  {# ━━ HEADER CARD ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
+  <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+    <div class="p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div class="flex items-start gap-4 min-w-0">
+        <div class="h-12 w-12 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 text-white flex items-center justify-center shadow-sm shrink-0">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        </div>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <h1 class="text-xl font-extrabold text-gray-900">Resume Draft</h1>
+            <span class="font-mono text-sm font-bold text-gray-400">v{{ draft.version }}</span>
+            {# status badge — fixed status colors per UI contract §1 #}
+            {% if draft.status == 'FINAL' %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Final</span>
+            {% elif draft.status == 'DRAFT' %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700"><span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>Draft</span>
+            {% elif draft.status == 'REVIEW' %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>Review</span>
+            {% elif draft.status == 'ERROR' %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700"><span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>Error</span>
+            {% else %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-600"><span class="w-1.5 h-1.5 rounded-full bg-gray-400 animate-pulse"></span>Processing</span>
+            {% endif %}
+          </div>
+          <p class="text-sm text-gray-600 mt-1 truncate">
+            <span class="font-semibold text-gray-800">{{ draft.consultant.user.get_full_name }}</span>
+            &rarr; <span class="font-semibold text-gray-800">{{ draft.job.title }}</span>
+            <span class="text-gray-400">at {{ draft.job.company }}</span>
+          </p>
+          <p class="text-xs text-gray-400 mt-1">
+            Generated {{ draft.created_at|date:"M d, Y g:i A" }}{% if draft.created_by %} by {{ draft.created_by.get_full_name }}{% endif %}{% if draft.tokens_used %} · {{ draft.tokens_used|intcomma }} tokens{% endif %}
+          </p>
+        </div>
+      </div>
+
+      {# Primary actions #}
+      <div class="flex items-center gap-2 shrink-0">
         {% if draft.content %}
-        <!-- Resume Content -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <div class="px-8 py-6 border-b border-gray-100 flex justify-between items-center">
-                <h2 class="text-lg font-bold text-gray-800">Generated Content</h2>
-                {% if request.user.is_superuser or request.user.role == 'ADMIN' %}
-                {% if draft.status == 'DRAFT' or draft.status == 'REVIEW' %}
-                <form method="post" action="{% url 'draft-promote' draft.pk %}" class="inline">
-                    {% csrf_token %}
-                    <button type="submit"
-                        class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-1.5 px-4 rounded-lg text-sm">
-                        Promote to Final
-                    </button>
-                </form>
-                {% endif %}
-                {% endif %}
-            </div>
-            <div class="p-8">
-                <div id="resume-content"
-                    class="prose max-w-none whitespace-pre-wrap font-mono text-sm leading-relaxed text-gray-800 bg-gray-50 border border-gray-200 rounded-lg p-6">
-                    {{ draft.content }}
-                </div>
-            </div>
-        </div>
+        <a href="{% url 'draft-download' draft.pk %}" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-sm transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          Download
+        </a>
+        <a href="{% url 'resume-editor' draft.pk %}" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+          Editor
+        </a>
         {% endif %}
-
-        {% if draft.content %}
-        <!-- Section-Level AI Assist -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mt-6">
-            <div class="px-8 py-6 border-b border-gray-100">
-                <h2 class="text-lg font-bold text-gray-800">Section AI Assist</h2>
-                <div class="text-sm text-gray-600 mt-1">Regenerate only a specific section.</div>
-            </div>
-            <div class="p-8 flex flex-wrap gap-2">
-                <form method="post" action="{% url 'draft-regenerate-section' draft.pk %}">
-                    {% csrf_token %}
-                    <input type="hidden" name="section" value="summary">
-                    <button class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg text-xs">
-                        Rewrite Summary
-                    </button>
-                </form>
-                <form method="post" action="{% url 'draft-regenerate-section' draft.pk %}">
-                    {% csrf_token %}
-                    <input type="hidden" name="section" value="skills">
-                    <button class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg text-xs">
-                        Rewrite Skills
-                    </button>
-                </form>
-                <form method="post" action="{% url 'draft-regenerate-section' draft.pk %}">
-                    {% csrf_token %}
-                    <input type="hidden" name="section" value="experience">
-                    <button class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg text-xs">
-                        Rewrite Experience Bullets
-                    </button>
-                </form>
-                <form method="post" action="{% url 'draft-regenerate-section' draft.pk %}">
-                    {% csrf_token %}
-                    <input type="hidden" name="section" value="education">
-                    <button class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg text-xs">
-                        Rewrite Education
-                    </button>
-                </form>
-                <form method="post" action="{% url 'draft-regenerate-section' draft.pk %}">
-                    {% csrf_token %}
-                    <input type="hidden" name="section" value="header">
-                    <button class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg text-xs">
-                        Rewrite Header
-                    </button>
-                </form>
-            </div>
-        </div>
-        {% endif %}
-
-        {% if draft.content %}
-        <!-- Quality Checks -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mt-6">
-            <div class="px-8 py-6 border-b border-gray-100">
-                <h2 class="text-lg font-bold text-gray-800">Quality Checks</h2>
-                <div class="text-sm text-gray-600 mt-1">Validation results.</div>
-            </div>
-            <div class="p-8 space-y-4">
-                {% if draft.validation_errors %}
-                <div class="bg-red-50 border border-red-200 rounded p-4">
-                    <div class="font-semibold text-red-800 mb-2">Validation Errors</div>
-                    <ul class="list-disc ml-5 text-sm text-red-700">
-                        {% for e in draft.validation_errors %}
-                        <li>{{ e }}</li>
-                        {% endfor %}
-                    </ul>
-                </div>
-                {% endif %}
-                {% if draft.validation_warnings %}
-                <div class="bg-yellow-50 border border-yellow-200 rounded p-4">
-                    <div class="font-semibold text-yellow-800 mb-2">Warnings</div>
-                    <ul class="list-disc ml-5 text-sm text-yellow-700">
-                        {% for w in draft.validation_warnings %}
-                        <li>{{ w }}</li>
-                        {% endfor %}
-                    </ul>
-                </div>
-                {% endif %}
-                {% if not draft.validation_errors and not draft.validation_warnings %}
-                <div class="text-sm text-green-700">No validation issues detected.</div>
-                {% endif %}
-            </div>
-        </div>
-        {% endif %}
-
-        {{ llm_builder_data|json_script:"llm-builder-data" }}
-
-        <!-- LLM Input Builder -->
-        <div id="llm-builder" class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mt-6">
-            <div class="px-8 py-6 border-b border-gray-100 flex justify-between items-center">
-                <h2 class="text-lg font-bold text-gray-800">LLM Input Builder</h2>
-            </div>
-            <div class="p-8 space-y-4">
-                <form method="post" action="{% url 'draft-regenerate' draft.pk %}">
-                    {% csrf_token %}
-                    <input type="hidden" id="sections-defaults" name="sections_defaults" value="">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-700">
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" name="sections" value="name" {% if 'name' in llm_builder_defaults %}checked{% endif %}>
-                            Name
-                        </label>
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" name="sections" value="email" {% if 'email' in llm_builder_defaults %}checked{% endif %}>
-                            Email
-                        </label>
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" name="sections" value="phone" {% if 'phone' in llm_builder_defaults %}checked{% endif %}>
-                            Phone
-                        </label>
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" name="sections" value="jd_location" {% if 'jd_location' in llm_builder_defaults %}checked{% endif %}>
-                            JD Location
-                        </label>
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" name="sections" value="base_resume" {% if 'base_resume' in llm_builder_defaults %}checked{% endif %}>
-                            Base Resume (required)
-                        </label>
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" name="sections" value="professional_summary" checked disabled>
-                            Professional Summary (always)
-                        </label>
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" name="sections" value="skills" checked>
-                            Core Skills (AI)
-                        </label>
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" name="sections" value="experience" {% if 'experience' in llm_builder_defaults %}checked{% endif %}>
-                            Experience (required)
-                        </label>
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" name="sections" value="education" {% if 'education' in llm_builder_defaults %}checked{% endif %}>
-                            Education (required)
-                        </label>
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" name="sections" value="jd_description" checked disabled>
-                            JD Description (always)
-                        </label>
-                        <label class="flex items-center gap-2 text-gray-500">
-                            <input type="checkbox" checked disabled>
-                            Prompt Rules (system prompt, always)
-                        </label>
-                    </div>
-
-                    <div class="mt-4 bg-gray-50 border border-gray-200 rounded-lg p-4">
-                        <div class="text-xs font-semibold text-gray-600 mb-2">LLM Input Checklist</div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-700">
-                            <div class="flex items-center gap-2">
-                                <span id="check-jd" class="inline-block w-2.5 h-2.5 rounded-full bg-gray-300"></span>
-                                Job Description included
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <span id="check-base" class="inline-block w-2.5 h-2.5 rounded-full bg-gray-300"></span>
-                                Base Resume included
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <span id="check-profile"
-                                    class="inline-block w-2.5 h-2.5 rounded-full bg-gray-300"></span>
-                                Profile details included
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <span id="check-skills"
-                                    class="inline-block w-2.5 h-2.5 rounded-full bg-gray-300"></span>
-                                Skills included
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <span id="check-exp" class="inline-block w-2.5 h-2.5 rounded-full bg-gray-300"></span>
-                                Experience entries: <span id="count-exp" class="font-semibold">0</span>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <span id="check-edu" class="inline-block w-2.5 h-2.5 rounded-full bg-gray-300"></span>
-                                Education entries: <span id="count-edu" class="font-semibold">0</span>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-                                System prompt included
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="mt-6">
-                        <div class="text-xs font-semibold text-gray-600 mb-1">User Prompt Preview</div>
-                        <textarea id="llm-builder-preview" readonly
-                            class="w-full border rounded px-3 py-2 text-xs bg-gray-50 h-56 whitespace-pre-wrap"></textarea>
-                    </div>
-
-                    <div class="mt-4">
-                        <div class="text-xs font-semibold text-gray-600 mb-1">Payload Preview</div>
-                        <textarea id="llm-builder-payload" readonly
-                            class="w-full border rounded px-3 py-2 text-xs bg-gray-50 h-40 whitespace-pre-wrap"></textarea>
-                    </div>
-
-                    <div class="mt-4 flex gap-2">
-                        <button type="button" id="select-all-sections"
-                            class="bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-lg text-xs">
-                            Select All
-                        </button>
-                        <button type="button" id="select-none-sections"
-                            class="bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-lg text-xs">
-                            Select None
-                        </button>
-                        <button type="submit" form="save-defaults-form" id="save-defaults"
-                            class="bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-lg text-xs">
-                            Save as Default
-                        </button>
-                        <div id="sections-error" class="text-red-600 text-xs font-semibold self-center"></div>
-                    </div>
-
-                    <div class="mt-2 text-xs text-gray-500">
-                        Default selections are stored in your account.
-                    </div>
-
-                    <div class="mt-4 flex gap-4 items-center">
-                        <button type="submit" id="regen-submit"
-                            class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg text-xs">
-                            Regenerate With Selected Inputs
-                        </button>
-                        <label class="flex items-center gap-2 text-xs text-gray-600 cursor-pointer"
-                            title="Check this to force a new API call even if the prompts haven't changed. Unchecked = reuse cached response (0 tokens).">
-                            <input type="checkbox" name="force_new"
-                                class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                            Force New (costs tokens)
-                        </label>
-                    </div>
-                    <div id="regen-progress" class="hidden mt-4">
-                        <div class="text-xs font-semibold text-indigo-700 mb-2">Regenerating draft…</div>
-                        <div class="w-full h-2 rounded-full bg-indigo-100 overflow-hidden">
-                            <div id="regen-progress-bar" class="h-2 bg-indigo-600 w-0 transition-all duration-300">
-                            </div>
-                        </div>
-                    </div>
-                </form>
-                <form id="save-defaults-form" method="post" action="{% url 'llm-input-defaults' draft.pk %}">
-                    {% csrf_token %}
-                    <input type="hidden" name="sections_json" id="save-defaults-sections" value="">
-                </form>
-            </div>
-        </div>
-
-        {% if request.user.is_superuser or request.user.role == 'ADMIN' %}
-        <!-- Admin Debug: LLM Input -->
-        <details id="llm-debug" class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mt-6">
-            <summary class="px-8 py-6 border-b border-gray-100 flex justify-between items-center cursor-pointer">
-                <h2 class="text-lg font-bold text-gray-800">LLM Debug (Admin Only)</h2>
-                <span class="text-sm text-gray-500">Expand</span>
-            </summary>
-            <div class="px-8 py-6 border-b border-gray-100 flex justify-between items-center">
-                <div></div>
-                <div class="flex gap-2">
-                    <button id="copy-debug-prompts"
-                        class="bg-gray-800 hover:bg-gray-900 text-white font-bold py-1.5 px-4 rounded-lg text-sm">
-                        Copy System+User
-                    </button>
-                    <button id="copy-debug-payload"
-                        class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1.5 px-4 rounded-lg text-sm">
-                        Copy Payload
-                    </button>
-                </div>
-            </div>
-            <div class="p-8 space-y-4">
-                <div>
-                    <div class="text-xs font-semibold text-gray-600 mb-1">System Prompt</div>
-                    <textarea id="debug-system" readonly
-                        class="w-full border rounded px-3 py-2 text-xs bg-gray-50 h-36 whitespace-pre-wrap">{{ llm_system_prompt }}</textarea>
-                </div>
-                <div>
-                    <div class="text-xs font-semibold text-gray-600 mb-1">User Prompt</div>
-                    <textarea id="debug-user" readonly
-                        class="w-full border rounded px-3 py-2 text-xs bg-gray-50 h-56 whitespace-pre-wrap">{{ llm_user_prompt }}</textarea>
-                </div>
-                <div>
-                    <div class="text-xs font-semibold text-gray-600 mb-1">Full Request Payload</div>
-                    <textarea id="debug-payload" readonly
-                        class="w-full border rounded px-3 py-2 text-xs bg-gray-50 h-40 whitespace-pre-wrap">{{ llm_request_payload }}</textarea>
-                </div>
-            </div>
-        </details>
-        {% endif %}
-
+        <a href="{% url 'consultant-detail' draft.consultant.user.pk %}" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition">Back</a>
+      </div>
     </div>
+  </div>
+
+  {% if draft.status == 'ERROR' %}
+  <div class="bg-red-50 border border-red-200 rounded-2xl p-5">
+    <h3 class="font-bold text-red-800 mb-1 flex items-center gap-2">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+      Generation Failed
+    </h3>
+    <p class="text-red-700 text-sm">{{ draft.error_message }}</p>
+  </div>
+  {% endif %}
+
+  {# ━━ MAIN GRID ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+    {# ── LEFT: Resume content (2 cols) ──────────────────────────── #}
+    <div class="lg:col-span-2 space-y-5">
+      {% if draft.content %}
+      <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+          <h2 class="text-sm font-bold text-gray-900">Generated Resume</h2>
+          <button id="copy-resume" type="button" @click="copied = true; setTimeout(() => copied = false, 1800)"
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 bg-gray-50 border border-gray-200 hover:bg-gray-100 transition">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h8m-8 4h8m-8 4h6M8 3h8a2 2 0 012 2v14a2 2 0 01-2 2H8a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg>
+            <span x-show="!copied">Copy</span><span x-show="copied" x-cloak class="text-emerald-600">Copied!</span>
+          </button>
+        </div>
+        <div class="p-5 sm:p-6">
+          <pre id="resume-content" class="whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-gray-800 bg-gray-50 border border-gray-200 rounded-xl p-5 overflow-x-auto">{{ draft.content }}</pre>
+        </div>
+      </div>
+
+      {# Section regenerate — clean button row #}
+      <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-3 border-b border-gray-100">
+          <h2 class="text-sm font-bold text-gray-900">Regenerate a Section</h2>
+          <p class="text-[11px] text-gray-400 mt-0.5">Rewrite just one part without redoing the whole resume.</p>
+        </div>
+        <div class="p-5 flex flex-wrap gap-2">
+          {% for sec, label in section_buttons %}
+          <form method="post" action="{% url 'draft-regenerate-section' draft.pk %}" class="section-regen-form">
+            {% csrf_token %}
+            <input type="hidden" name="section" value="{{ sec }}">
+            <button type="submit" class="section-regen-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 transition disabled:opacity-50">
+              {{ label }}
+            </button>
+          </form>
+          {% endfor %}
+        </div>
+      </div>
+      {% else %}
+      <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-12 text-center">
+        <svg class="w-10 h-10 text-gray-200 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        <p class="text-sm text-gray-400">No content generated yet.</p>
+      </div>
+      {% endif %}
+    </div>
+
+    {# ── RIGHT: Sidebar (1 col) ─────────────────────────────────── #}
+    <div class="space-y-5">
+
+      {# ATS Score #}
+      <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+        <h3 class="text-xs font-bold text-gray-600 uppercase tracking-wider mb-3">ATS Score</h3>
+        <div class="flex items-center gap-4">
+          <p class="text-3xl font-extrabold {% if draft.ats_score >= 65 %}text-emerald-600{% elif draft.ats_score >= 40 %}text-amber-600{% else %}text-red-600{% endif %}">{{ draft.ats_score }}%</p>
+          <div class="flex-1">
+            <div class="w-full bg-gray-100 rounded-full h-2.5">
+              <div class="h-2.5 rounded-full {% if draft.ats_score >= 65 %}bg-emerald-500{% elif draft.ats_score >= 40 %}bg-amber-400{% else %}bg-red-500{% endif %}" style="width: {{ draft.ats_score }}%"></div>
+            </div>
+            <p class="text-[10px] text-gray-400 mt-1">Keyword match vs the job description</p>
+          </div>
+        </div>
+      </div>
+
+      {# Quality Checks #}
+      {% if draft.content %}
+      <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-3 border-b border-gray-100">
+          <h3 class="text-xs font-bold text-gray-600 uppercase tracking-wider">Quality Checks</h3>
+        </div>
+        <div class="p-5 space-y-2">
+          {% if draft.validation_errors %}
+          {% for e in draft.validation_errors %}
+          <div class="flex items-start gap-2 text-xs text-red-700 bg-red-50 rounded-lg px-3 py-2"><span class="text-red-400 mt-0.5 shrink-0">&#9679;</span>{{ e }}</div>
+          {% endfor %}
+          {% endif %}
+          {% if draft.validation_warnings %}
+          {% for w in draft.validation_warnings %}
+          <div class="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2"><span class="text-amber-400 mt-0.5 shrink-0">&#9679;</span>{{ w }}</div>
+          {% endfor %}
+          {% endif %}
+          {% if not draft.validation_errors and not draft.validation_warnings %}
+          <div class="flex items-center gap-2 text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2">
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+            All checks passed
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+
+      {# Actions #}
+      <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-2">
+        <h3 class="text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">Actions</h3>
+        {% if draft.content and request.user.is_superuser or request.user.role == 'ADMIN' %}
+        {% if draft.status == 'DRAFT' or draft.status == 'REVIEW' %}
+        <form method="post" action="{% url 'draft-promote' draft.pk %}" class="block">
+          {% csrf_token %}
+          <button type="submit" class="flex items-center justify-center gap-2 w-full px-3 py-2.5 rounded-lg text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+            Promote to Final
+          </button>
+        </form>
+        {% endif %}
+        {% endif %}
+        <form method="post" action="{% url 'draft-regenerate' draft.pk %}" class="block" id="regen-form">
+          {% csrf_token %}
+          <button type="submit" id="regen-submit" class="flex items-center justify-center gap-2 w-full px-3 py-2.5 rounded-lg text-sm font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 transition disabled:opacity-50">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            Regenerate
+          </button>
+        </form>
+        <a href="{% url 'job-detail' draft.job.pk %}" class="flex items-center justify-center gap-2 w-full px-3 py-2.5 rounded-lg text-sm font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 transition">
+          View Job Description
+        </a>
+      </div>
+
+      {# Generation Info #}
+      <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+        <h3 class="text-xs font-bold text-gray-600 uppercase tracking-wider mb-3">Generation Info</h3>
+        <div class="text-xs space-y-2">
+          <div class="flex justify-between gap-3"><span class="text-gray-400">JD Parsed</span><span class="font-semibold text-gray-700">{{ jd_parse_status|default:"N/A" }}</span></div>
+          {% if jd_parse_updated_at %}<div class="flex justify-between gap-3"><span class="text-gray-400">Parsed</span><span class="text-gray-600">{{ jd_parse_updated_at|date:"M d, g:i A" }}</span></div>{% endif %}
+          <div class="flex justify-between gap-3"><span class="text-gray-400">Summary lines</span><span class="font-semibold text-gray-700">{{ summary_line_count }}</span></div>
+          {% if draft.tokens_used %}<div class="flex justify-between gap-3"><span class="text-gray-400">Tokens</span><span class="font-semibold text-gray-700">{{ draft.tokens_used|intcomma }}</span></div>{% endif %}
+          {% if jd_parse_error %}<div class="flex items-start gap-2 text-red-600 bg-red-50 rounded px-2 py-1.5 mt-1">{{ jd_parse_error }}</div>{% endif %}
+        </div>
+        {% if draft.generation_id %}
+        <p class="text-[10px] text-gray-300 mt-3 pt-3 border-t border-gray-100 font-mono break-all">{{ draft.generation_id }}</p>
+        {% endif %}
+      </div>
+
+      {# Admin debug — collapsible #}
+      {% if request.user.is_superuser or request.user.role == 'ADMIN' %}
+      <details class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden" x-data>
+        <summary class="px-5 py-3 cursor-pointer text-xs font-bold text-gray-600 uppercase tracking-wider hover:bg-gray-50 transition flex items-center justify-between">
+          LLM Debug
+          <span class="text-[10px] text-gray-400 normal-case font-normal">Expand</span>
+        </summary>
+        <div class="p-5 space-y-3 border-t border-gray-100">
+          <div>
+            <div class="text-[10px] font-bold text-gray-400 uppercase mb-1">Prompt Sent</div>
+            <pre class="text-[10px] text-gray-600 bg-gray-50 border border-gray-200 rounded-lg p-3 overflow-x-auto max-h-72 whitespace-pre-wrap">{{ llm_user_prompt }}</pre>
+          </div>
+          <div>
+            <div class="text-[10px] font-bold text-gray-400 uppercase mb-1">Request Payload</div>
+            <pre class="text-[10px] text-gray-600 bg-gray-50 border border-gray-200 rounded-lg p-3 overflow-x-auto max-h-40 whitespace-pre-wrap">{{ llm_request_payload }}</pre>
+          </div>
+        </div>
+      </details>
+      {% endif %}
+    </div>
+  </div>
+
 </div>
 
+{# Hidden raw content for copy #}
+<textarea id="resume-content-raw" class="hidden">{{ draft.content }}</textarea>
+
 <script>
-    (function () {
-        const dataTag = document.getElementById('llm-builder-data');
-        if (!dataTag) return;
-        const data = JSON.parse(dataTag.textContent || '{}');
-        const preview = document.getElementById('llm-builder-preview');
-        const payload = document.getElementById('llm-builder-payload');
-        const checkboxes = Array.from(document.querySelectorAll('input[name="sections"]'));
-        const required = new Set(['experience', 'education', 'base_resume']);
-        const submitBtn = document.getElementById('regen-submit');
-        const selectAllBtn = document.getElementById('select-all-sections');
-        const selectNoneBtn = document.getElementById('select-none-sections');
-        const saveDefaultsBtn = document.getElementById('save-defaults');
-        const errorEl = document.getElementById('sections-error');
-        const checkJd = document.getElementById('check-jd');
-        const checkBase = document.getElementById('check-base');
-        const checkExp = document.getElementById('check-exp');
-        const checkEdu = document.getElementById('check-edu');
-        const checkProfile = document.getElementById('check-profile');
-        const checkSkills = document.getElementById('check-skills');
-        const countExp = document.getElementById('count-exp');
-        const countEdu = document.getElementById('count-edu');
-        const regenProgress = document.getElementById('regen-progress');
-        const regenBar = document.getElementById('regen-progress-bar');
-        const regenForm = submitBtn ? submitBtn.closest('form') : null;
-        const defaultsInput = document.getElementById('sections-defaults');
-        const saveDefaultsInput = document.getElementById('save-defaults-sections');
-        if (!preview || !payload || !checkboxes.length) return;
-
-        const buildPrompt = () => {
-            const selected = new Set(checkboxes.filter(c => c.checked).map(c => c.value));
-            const missingRequired = Array.from(required).filter(r => !selected.has(r));
-            const baseMissing = selected.has('base_resume') && !data.has_base_resume;
-            if (missingRequired.length || baseMissing) {
-                const parts = [];
-                if (missingRequired.length) parts.push(`Required: ${missingRequired.join(', ')}`);
-                if (baseMissing) parts.push('Base Resume is empty');
-                errorEl.textContent = parts.join(' • ');
-                if (submitBtn) submitBtn.disabled = true;
-            } else {
-                errorEl.textContent = '';
-                if (submitBtn) submitBtn.disabled = false;
-            }
-            const parts = [];
-
-            if (selected.has('name')) parts.push(`Name: ${data.name || 'Not provided.'}`);
-            if (selected.has('email')) parts.push(`Email: ${data.email || 'Not provided.'}`);
-            if (selected.has('phone')) parts.push(`Phone: ${data.phone || 'Not provided.'}`);
-            if (selected.has('jd_location')) parts.push(`Location (use JD location): ${data.jd_location || 'Not provided.'}`);
-
-            if (selected.has('professional_summary')) {
-                parts.push('Professional Summary: Generate a concise summary using the prompt rules and the inputs below.');
-            }
-
-            if (selected.has('skills')) {
-                if (data.skills && data.skills.length) {
-                    parts.push(`Core Skills (from profile): ${data.skills.join(', ')}`);
-                } else {
-                    parts.push('Core Skills: Generate a categorized skills list based on JD and consultant profile.');
-                }
-            }
-
-            if (selected.has('experience')) {
-                parts.push('Experience:');
-                if (data.experience && data.experience.length) {
-                    data.experience.forEach(e => {
-                        const end = e.end_year || 'Present';
-                        let line = `- ${e.title} at ${e.company} (${e.start_year}–${end})`;
-                        if (e.description) {
-                            line += `\n  Responsibilities: ${e.description}`;
-                        } else {
-                            line += `\n  Responsibilities: Generate bullets for this role using only the JD and base resume. Most recent role needs 7–10 bullets; all other roles need exactly 6. Keep title, company, and dates exactly as provided.`;
-                        }
-                        parts.push(line);
-                    });
-                } else {
-                    parts.push('- No experience listed.');
-                }
-            }
-
-            if (selected.has('education')) {
-                parts.push('Education:');
-                if (data.education && data.education.length) {
-                    data.education.forEach(e => {
-                        parts.push(`- ${e.degree} in ${e.field_of_study} at ${e.institution} (${e.start_year}–${e.end_year})`);
-                    });
-                } else {
-                    parts.push('- No education listed.');
-                }
-            }
-
-            if (selected.has('jd_description')) {
-                parts.push('--- JOB DESCRIPTION ---');
-                parts.push(data.jd_description || 'Not provided.');
-            }
-
-            if (selected.has('base_resume')) {
-                parts.push('--- BASE RESUME ---');
-                parts.push(data.base_resume || 'Not provided.');
-            }
-
-            const userPrompt = parts.join('\n');
-            preview.value = userPrompt;
-
-            const payloadObj = {
-                model: data.model || 'gpt-4o-mini',
-                messages: [
-                    { role: 'system', content: data.system_prompt || '' },
-                    { role: 'user', content: userPrompt },
-                ],
-                temperature: data.temperature ?? 0.7,
-                max_tokens: data.max_tokens ?? 2000,
-            };
-            payload.value = JSON.stringify(payloadObj, null, 2);
-            if (defaultsInput) defaultsInput.value = JSON.stringify(Array.from(selected));
-            if (saveDefaultsInput) saveDefaultsInput.value = JSON.stringify(Array.from(selected));
-
-            if (checkJd) checkJd.className = `inline-block w-2.5 h-2.5 rounded-full ${data.has_jd ? 'bg-emerald-500' : 'bg-rose-500'}`;
-            if (checkBase) checkBase.className = `inline-block w-2.5 h-2.5 rounded-full ${data.has_base_resume ? 'bg-emerald-500' : 'bg-rose-500'}`;
-            if (checkExp) checkExp.className = `inline-block w-2.5 h-2.5 rounded-full ${data.experience_count > 0 ? 'bg-emerald-500' : 'bg-rose-500'}`;
-            if (checkEdu) checkEdu.className = `inline-block w-2.5 h-2.5 rounded-full ${data.education_count > 0 ? 'bg-emerald-500' : 'bg-rose-500'}`;
-            if (countExp) countExp.textContent = data.experience_count ?? 0;
-            if (countEdu) countEdu.textContent = data.education_count ?? 0;
-            if (checkProfile) {
-                const hasProfile = selected.has('name') || selected.has('email') || selected.has('phone') || selected.has('jd_location');
-                checkProfile.className = `inline-block w-2.5 h-2.5 rounded-full ${hasProfile ? 'bg-emerald-500' : 'bg-rose-500'}`;
-            }
-            if (checkSkills) {
-                const hasSkills = selected.has('skills');
-                checkSkills.className = `inline-block w-2.5 h-2.5 rounded-full ${hasSkills ? 'bg-emerald-500' : 'bg-rose-500'}`;
-            }
-
-            const missing = [];
-            if (!data.has_jd) missing.push('Job Description');
-            if (!data.has_base_resume) missing.push('Base Resume');
-            if ((data.experience_count ?? 0) < 1) missing.push('Experience');
-            if ((data.education_count ?? 0) < 1) missing.push('Education');
-        };
-
-        checkboxes.forEach(c => c.addEventListener('change', buildPrompt));
-        if (selectAllBtn) {
-            selectAllBtn.addEventListener('click', () => {
-                checkboxes.forEach(c => {
-                    if (!c.disabled) c.checked = true;
-                });
-                buildPrompt();
-            });
-        }
-        if (selectNoneBtn) {
-            selectNoneBtn.addEventListener('click', () => {
-                checkboxes.forEach(c => {
-                    if (!c.disabled) c.checked = false;
-                });
-                buildPrompt();
-            });
-        }
-        if (saveDefaultsBtn) {
-            saveDefaultsBtn.addEventListener('click', () => {
-                saveDefaultsBtn.textContent = 'Saving...';
-                setTimeout(() => saveDefaultsBtn.textContent = 'Save as Default', 1500);
-            });
-        }
-
-        buildPrompt();
-
-        if (regenForm && submitBtn && regenProgress && regenBar) {
-            regenForm.addEventListener('submit', () => {
-                submitBtn.disabled = true;
-                submitBtn.classList.add('opacity-70', 'cursor-not-allowed');
-                regenProgress.classList.remove('hidden');
-                let width = 0;
-                const timer = setInterval(() => {
-                    width = Math.min(width + Math.random() * 18 + 6, 92);
-                    regenBar.style.width = `${Math.floor(width)}%`;
-                }, 300);
-                regenForm.dataset.progressTimer = timer;
-            });
-        }
-    })();
-
-    (function () {
-        const btnPrompts = document.getElementById('copy-debug-prompts');
-        const btnPayload = document.getElementById('copy-debug-payload');
-        if (!btnPrompts || !btnPayload) return;
-
-        btnPrompts.addEventListener('click', async () => {
-            const sys = document.getElementById('debug-system')?.value || '';
-            const user = document.getElementById('debug-user')?.value || '';
-            const all = `SYSTEM PROMPT\\n${sys}\\n\\nUSER PROMPT\\n${user}`.trim();
-            try {
-                await navigator.clipboard.writeText(all);
-                btnPrompts.textContent = 'Copied';
-                setTimeout(() => btnPrompts.textContent = 'Copy System+User', 1500);
-            } catch (e) {
-                alert('Copy failed. Select text manually.');
-            }
-        });
-
-        btnPayload.addEventListener('click', async () => {
-            const payload = document.getElementById('debug-payload')?.value || '';
-            try {
-                await navigator.clipboard.writeText(payload);
-                btnPayload.textContent = 'Copied';
-                setTimeout(() => btnPayload.textContent = 'Copy Payload', 1500);
-            } catch (e) {
-                alert('Copy failed. Select text manually.');
-            }
-        });
-    })();
-
-    (function () {
-        const copyBtn = document.getElementById('copy-resume');
-        const contentEl = document.getElementById('resume-content');
-        if (!copyBtn || !contentEl) return;
-        copyBtn.addEventListener('click', async () => {
-            const text = contentEl.innerText || contentEl.textContent || '';
-            try {
-                await navigator.clipboard.writeText(text.trim());
-                copyBtn.textContent = 'Copied';
-                setTimeout(() => copyBtn.textContent = 'Copy Resume', 1500);
-            } catch (e) {
-                alert('Copy failed. Select text manually.');
-            }
-        });
-    })();
+(function () {
+  // Copy resume to clipboard
+  var copyBtn = document.getElementById('copy-resume');
+  var raw = document.getElementById('resume-content-raw');
+  if (copyBtn && raw) {
+    copyBtn.addEventListener('click', function () {
+      navigator.clipboard.writeText(raw.value || '').catch(function () {});
+    });
+  }
+  // Guard double-click on section regenerate (contract §9)
+  document.querySelectorAll('.section-regen-form').forEach(function (form) {
+    form.addEventListener('submit', function () {
+      var btn = form.querySelector('.section-regen-btn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Rewriting…'; }
+    });
+  });
+  // Guard double-click on full regenerate
+  var regenForm = document.getElementById('regen-form');
+  if (regenForm) {
+    regenForm.addEventListener('submit', function () {
+      var btn = document.getElementById('regen-submit');
+      if (btn) { btn.disabled = true; btn.innerHTML = 'Regenerating…'; }
+    });
+  }
+})();
 </script>
 {% endblock %}
