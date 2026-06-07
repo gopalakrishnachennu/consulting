@@ -131,6 +131,21 @@ Use sequential (foreground) agents when:
 
 ## Template conventions
 
+**BEFORE building ANY UI, read `docs/ui-style-contract.md` and reuse the documented
+component classes.** Do NOT invent new one-off card/button/badge/table styles — this is
+the #1 cause of UI drift. Add a new pattern only if nothing in the contract fits, and
+document it in that file in the same session.
+
+Hard rules from the contract:
+- **Brand color ≠ status color.** Brand (`--brand-*`, `.btn-primary`, `.brand-link`) =
+  navigation/primary actions. Status (fixed `emerald/blue/violet/amber/red/gray`) =
+  success/warning/error/info. Never use brand vars for a status badge.
+- Every list view needs empty + loading + error + no-permission states.
+- Destructive actions (delete/purge/bulk) = red button + confirm modal + impact text + POST.
+- Long text (titles, companies, URLs) = `truncate`/`line-clamp-2`/`overflow-x-auto`.
+- Admin-only UI gated in BOTH view (`test_func`) and template (`{% if is_admin %}`).
+
+Stack:
 - All templates use Tailwind CSS utility classes
 - Alpine.js for interactivity (x-data, x-show, @click, x-model)
 - HTMX for partial page updates (hx-get, hx-trigger, hx-swap)

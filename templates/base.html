@@ -20,19 +20,7 @@
     {# ── Brand color theme — CSS variables driven by PlatformConfig.color_theme ── #}
     <style>
     {% with t=PLATFORM_CONFIG.color_theme|default:"indigo" %}
-    {% if t == "indigo" %}
-    :root {
-      --brand-50:  #eef2ff; --brand-100: #e0e7ff; --brand-200: #c7d2fe;
-      --brand-300: #a5b4fc; --brand-400: #818cf8; --brand-500: #6366f1;
-      --brand-600: #4f46e5; --brand-700: #4338ca; --brand-800: #3730a3;
-      --brand-nav:      #4f46e5;
-      --brand-nav-dark: #4338ca;
-      --brand-gradient: linear-gradient(135deg,#4f46e5 0%,#3b82f6 50%,#06b6d4 100%);
-      --brand-ring:     rgba(99,102,241,.25);
-      --brand-text:     #4f46e5;
-      --brand-text-hover: #4338ca;
-    }
-    {% elif t == "violet" %}
+    {% if t == "violet" %}
     :root {
       --brand-50:  #f5f3ff; --brand-100: #ede9fe; --brand-200: #ddd6fe;
       --brand-300: #c4b5fd; --brand-400: #a78bfa; --brand-500: #8b5cf6;
@@ -115,6 +103,19 @@
       --brand-ring:     rgba(100,116,139,.25);
       --brand-text:     #475569;
       --brand-text-hover: #334155;
+    }
+    {% else %}
+    {# Default + fallback for any unknown/invalid color_theme value (#13) #}
+    :root {
+      --brand-50:  #eef2ff; --brand-100: #e0e7ff; --brand-200: #c7d2fe;
+      --brand-300: #a5b4fc; --brand-400: #818cf8; --brand-500: #6366f1;
+      --brand-600: #4f46e5; --brand-700: #4338ca; --brand-800: #3730a3;
+      --brand-nav:      #4f46e5;
+      --brand-nav-dark: #4338ca;
+      --brand-gradient: linear-gradient(135deg,#4f46e5 0%,#3b82f6 50%,#06b6d4 100%);
+      --brand-ring:     rgba(99,102,241,.25);
+      --brand-text:     #4f46e5;
+      --brand-text-hover: #4338ca;
     }
     {% endif %}
     {% endwith %}
