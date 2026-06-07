@@ -1,0 +1,86 @@
+name: Uptime — Health Monitor
+
+# Item 11: External uptime monitoring every 15 minutes
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # Every 15 minutes
+  workflow_dispatch:
+
+jobs:
+  health:
+    name: "Health check — chennu.co"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check /health/ endpoint
+        id: health
+        run: |
+          set -e
+          START=$(date +%s)
+          HTTP_CODE=$(curl -s -o /tmp/health_response.txt -w "%{http_code}" \
+            --max-time 30 --connect-timeout 10 \
+            https://chennu.co/health/ 2>&1 || echo "000")
+          LATENCY=$(( $(date +%s) - START ))
+
+          echo "HTTP_CODE=$HTTP_CODE" >> $GITHUB_OUTPUT
+          echo "LATENCY=${LATENCY}s" >> $GITHUB_OUTPUT
+
+          echo "HTTP Code: $HTTP_CODE"
+          echo "Latency: ${LATENCY}s"
+          cat /tmp/health_response.txt || true
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ Site DOWN — HTTP $HTTP_CODE"
+            exit 1
+          fi
+          echo "✅ Site UP — HTTP $HTTP_CODE in ${LATENCY}s"
+
+      - name: Alert on failure
+        if: failure()
+        run: |
+          echo "::error::🚨 SITE DOWN: chennu.co returned HTTP ${{ steps.health.outputs.HTTP_CODE }}"
+          echo "## 🚨 Site Down Alert" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL**: https://chennu.co/health/" >> $GITHUB_STEP_SUMMARY
+          echo "- **HTTP Code**: ${{ steps.health.outputs.HTTP_CODE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Time**: $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Check: https://github.com/${{ github.repository }}/actions" >> $GITHUB_STEP_SUMMARY
+
+  # Item 12: Celery health check
+  celery-health:
+    name: "Health check — Celery workers"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Celery workers via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: false
+          command_timeout: 2m
+          script: |
+            cd /opt/consulting
+            # Check web container
+            WEB_STATUS=$(docker inspect --format='{{.State.Status}}' consulting-web-1 2>/dev/null || echo "missing")
+            WORKER_STATUS=$(docker inspect --format='{{.State.Status}}' consulting-celery_worker-1 2>/dev/null || echo "missing")
+            BEAT_STATUS=$(docker inspect --format='{{.State.Status}}' consulting-celery_beat-1 2>/dev/null || echo "missing")
+
+            echo "Web: $WEB_STATUS | Worker: $WORKER_STATUS | Beat: $BEAT_STATUS"
+
+            # Disk usage check
+            DISK=$(df / | awk 'NR==2 {print $5}' | sed 's/%//')
+            echo "Disk usage: ${DISK}%"
+
+            if [ "$WEB_STATUS" != "running" ]; then
+              echo "❌ Web container is $WEB_STATUS"
+              exit 1
+            fi
+            if [ "$WORKER_STATUS" != "running" ]; then
+              echo "❌ Celery worker is $WORKER_STATUS"
+              exit 1
+            fi
+            if [ "$DISK" -gt "85" ]; then
+              echo "⚠️  Disk usage critical: ${DISK}%"
+              exit 1
+            fi
+            echo "✅ All services healthy. Disk: ${DISK}%"

@@ -1,0 +1,90 @@
+name: Rollback — Deploy Previous Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_sha:
+        description: "Image SHA digest to roll back to (e.g. sha256:abc123def456). Find in GHCR or deploy.log on VPS."
+        required: true
+      reason:
+        description: "Reason for rollback (for audit log)"
+        required: true
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+jobs:
+  rollback:
+    name: "Rollback to ${{ github.event.inputs.image_sha }}"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Log rollback intent
+        run: |
+          echo "🔄 ROLLBACK initiated by ${{ github.actor }}"
+          echo "   Target SHA: ${{ github.event.inputs.image_sha }}"
+          echo "   Reason: ${{ github.event.inputs.reason }}"
+
+      - name: Deploy previous image over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          ROLLBACK_IMAGE: "ghcr.io/${{ github.repository }}@${{ github.event.inputs.image_sha }}"
+          ROLLBACK_REASON: ${{ github.event.inputs.reason }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: GHCR_TOKEN,GHCR_USER,ROLLBACK_IMAGE,ROLLBACK_REASON
+          script_stop: true
+          command_timeout: 20m
+          script: |
+            set -e
+            echo "🔄 Rolling back to: $ROLLBACK_IMAGE"
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+            # Pull the rollback image
+            docker pull "$ROLLBACK_IMAGE"
+
+            cd /opt/consulting
+
+            # Update compose to use exact image
+            export IMAGE="$ROLLBACK_IMAGE"
+            export IMAGE_WORKER="$ROLLBACK_IMAGE"
+            export IMAGE_BEAT="$ROLLBACK_IMAGE"
+            export IMAGE_HARVEST="$ROLLBACK_IMAGE"
+            export WEB_CONCURRENCY=2
+            export WORKER_CONCURRENCY=2
+            export HARVEST_CONCURRENCY=2
+
+            # Rollback: skip migrations (going back, not forward)
+            RUN_MIGRATIONS=0 docker compose -f docker-compose.prod.yml --env-file .env.production up -d
+
+            # Log the rollback
+            echo "ROLLBACK: $ROLLBACK_IMAGE — Reason: $ROLLBACK_REASON" >> /opt/consulting/deploy.log
+            date >> /opt/consulting/deploy.log
+
+            # Health check
+            for i in $(seq 1 20); do
+              if curl -fsS --max-time 5 https://chennu.co/health/ >/dev/null 2>&1; then
+                echo "✅ Rollback health check passed."
+                exit 0
+              fi
+              echo "Waiting ($i/20)..."
+              sleep 3
+            done
+
+            echo "❌ Rollback health check failed."
+            docker compose -f docker-compose.prod.yml --env-file .env.production logs --tail=50 web
+            exit 1
+
+      - name: Summary
+        run: |
+          echo "## Rollback Complete" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: \`${{ github.event.inputs.image_sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Reason**: ${{ github.event.inputs.reason }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY

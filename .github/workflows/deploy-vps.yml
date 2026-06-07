@@ -6,64 +6,159 @@ on:
       confirm:
         description: "Type DEPLOY to confirm production restart"
         required: true
+      image_sha:
+        description: "Optional: pin exact image SHA (e.g. sha256:abc123). Leave blank to use :main."
+        required: false
+        default: ""
 
 concurrency:
   group: deploy-production
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  # ── Item 6: Guard — ensure latest CI + Docker image passed ────────────────
+  preflight:
+    name: "Preflight — CI + image check"
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: read   # allows GITHUB_TOKEN to pull images from GHCR
+      actions: read
+      packages: read
     steps:
+      - name: Confirm DEPLOY input
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "DEPLOY" ]; then
+            echo "❌ Confirmation must be exactly DEPLOY"
+            exit 1
+          fi
+
+      - name: Check latest CI run on main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPO="${{ github.repository }}"
+          SHA=$(gh api repos/$REPO/commits/main --jq '.sha')
+          echo "Main SHA: $SHA"
+
+          # Check CI workflow conclusion for this SHA
+          CONCLUSION=$(gh api "repos/$REPO/commits/$SHA/check-runs" \
+            --jq '[.check_runs[] | select(.name | startswith("Smoke") or startswith("Tests")) | .conclusion] | unique | @json')
+          echo "CI conclusions: $CONCLUSION"
+
+          if echo "$CONCLUSION" | grep -q "failure\|cancelled"; then
+            echo "❌ CI failed or was cancelled on main — refusing deploy"
+            exit 1
+          fi
+          echo "✅ CI passed"
+
+      - name: Check Docker image exists for main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPO="${{ github.repository }}"
+          SHA=$(gh api repos/$REPO/commits/main --jq '.sha' | cut -c1-7)
+          echo "Looking for image with SHA tag: sha-$SHA"
+
+          # Check GHCR for image
+          STATUS=$(gh api "repos/$REPO/packages/container/$(basename $REPO)/versions" \
+            --jq "[.[] | .metadata.container.tags[] | select(. == \"sha-$SHA\")] | length" 2>/dev/null || echo "0")
+
+          if [ "$STATUS" = "0" ]; then
+            echo "⚠️  Could not verify image SHA tag — proceeding with :main tag"
+          else
+            echo "✅ Image sha-$SHA found in GHCR"
+          fi
+
+  # ── Item 7: Deploy pinned image SHA ───────────────────────────────────────
+  deploy:
+    name: "Deploy"
+    runs-on: ubuntu-latest
+    needs: preflight
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Resolve image reference
+        id: image
+        run: |
+          REPO="${{ github.repository }}"
+          if [ -n "${{ github.event.inputs.image_sha }}" ]; then
+            # User-specified SHA digest (for rollback)
+            IMAGE="ghcr.io/${REPO}@${{ github.event.inputs.image_sha }}"
+            echo "Using pinned digest: $IMAGE"
+          else
+            # Use :main tag (always latest built image)
+            IMAGE="ghcr.io/${REPO}:main"
+            echo "Using :main tag: $IMAGE"
+          fi
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.0.3
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.actor }}
+          DEPLOY_IMAGE: ${{ steps.image.outputs.image }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          envs: GHCR_TOKEN,GHCR_USER
+          envs: GHCR_TOKEN,GHCR_USER,DEPLOY_IMAGE
           script_stop: true
           command_timeout: 30m
           script: |
             set -e
-            if [ "${{ github.event.inputs.confirm }}" != "DEPLOY" ]; then
-              echo "Refusing production deploy: confirmation input must be exactly DEPLOY."
-              exit 1
-            fi
             cd /opt/consulting
             git pull --ff-only origin main
-            # Pull the pre-built image from GHCR (built by CI, not rebuilt on VPS).
-            # This drops deploy time from ~8 min to ~30 sec.
+
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-            export IMAGE=ghcr.io/${{ github.repository }}:main
-            export IMAGE_WORKER=ghcr.io/${{ github.repository }}:main
-            export IMAGE_BEAT=ghcr.io/${{ github.repository }}:main
-            docker compose -f docker-compose.prod.yml --env-file .env.production pull web celery_worker celery_harvest celery_beat
-            # Keep Redis/Postgres up during deploy. Never use `down` here; it
-            # interrupts workers and can create avoidable downtime.
+
+            # Pull the specific image (pinned SHA or :main)
+            export IMAGE="$DEPLOY_IMAGE"
+            export IMAGE_WORKER="$DEPLOY_IMAGE"
+            export IMAGE_BEAT="$DEPLOY_IMAGE"
+            export IMAGE_HARVEST="$DEPLOY_IMAGE"
+
+            # Override image in compose if pinned
+            if echo "$DEPLOY_IMAGE" | grep -q "@sha256:"; then
+              sed -i "s|ghcr.io.*/consulting:main|$DEPLOY_IMAGE|g" docker-compose.prod.yml || true
+            fi
+
+            docker pull "$DEPLOY_IMAGE"
+            docker compose -f docker-compose.prod.yml --env-file .env.production pull web celery_worker celery_harvest celery_beat 2>/dev/null || true
+
             export WEB_CONCURRENCY=2
             export WORKER_CONCURRENCY=2
             export HARVEST_CONCURRENCY=2
+
             docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --no-deps web python manage.py migrate --no-input
             docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --no-deps web python manage.py repair_harvest_migration_state
             docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --no-deps -e RUN_MIGRATIONS=0 web python manage.py check
-            docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --no-deps web python manage.py shell -c "from harvest.models import HarvestEngineConfig; cfg=HarvestEngineConfig.get(); cfg.worker_concurrency=2; cfg.task_rate_limit=3; cfg.api_stagger_ms=1000; cfg.scraper_stagger_ms=5000; cfg.full_fetch_cooldown_minutes=360; cfg.backfill_jd_workers=1; cfg.auto_backfill_jd=False; cfg.auto_sync_to_pool=False; cfg.save(); print('Applied strict harvest uptime config')"
+
+            docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --no-deps web python manage.py shell -c "\
+              from harvest.models import HarvestEngineConfig; \
+              cfg=HarvestEngineConfig.get(); \
+              cfg.worker_concurrency=2; cfg.task_rate_limit=3; \
+              cfg.api_stagger_ms=1000; cfg.scraper_stagger_ms=5000; \
+              cfg.full_fetch_cooldown_minutes=360; cfg.backfill_jd_workers=1; \
+              cfg.auto_backfill_jd=False; cfg.auto_sync_to_pool=False; \
+              cfg.save(); print('Applied strict harvest uptime config')"
+
             RUN_MIGRATIONS=0 docker compose -f docker-compose.prod.yml --env-file .env.production up -d
+
+            echo "Deployed image: $DEPLOY_IMAGE" >> /opt/consulting/deploy.log
+            date >> /opt/consulting/deploy.log
+
             for i in $(seq 1 30); do
-              if curl -fsS --max-time 5 https://chennu.co/ >/dev/null; then
-                echo "Production health check passed."
+              if curl -fsS --max-time 5 https://chennu.co/health/ >/dev/null 2>&1; then
+                echo "✅ Production health check passed."
                 exit 0
               fi
               echo "Waiting for production health check ($i/30)..."
               sleep 2
             done
+
             docker compose -f docker-compose.prod.yml --env-file .env.production ps
             docker compose -f docker-compose.prod.yml --env-file .env.production logs --tail=120 web
-            echo "Production deploy failed health check."
+            echo "❌ Production deploy failed health check."
             exit 1

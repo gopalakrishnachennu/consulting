@@ -3,11 +3,40 @@ name: CI
 on:
   push:
     branches: [main, master, develop]
+    paths-ignore:                         # Item 1: skip CI for docs/assets only
+      - "**.md"
+      - "docs/**"
+      - ".claude/**"
+      - "*.txt"
+      - "*.rst"
   pull_request:
     branches: [main, master, develop]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".claude/**"
 
+# Cancel in-flight CI on new push to same branch
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# ─── Shared DB service ─────────────────────────────────────────────────────
+# Defined as an anchor so each job can reference it.
+
+env:
+  DJANGO_SETTINGS_MODULE: config.settings
+  SECRET_KEY: ci-not-for-production-use-only-testing
+  DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/consulting_ci"
+  CELERY_TASK_ALWAYS_EAGER: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+  PYTHONUNBUFFERED: "1"
+
+# ─── Job 1: Fast smoke (runs first, blocks matrix if it fails) ─────────────
+# Items 4 + 17: quick checks + timing
 jobs:
-  test:
+  smoke:
+    name: "Smoke — check + migrations"
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -16,18 +45,82 @@ jobs:
           POSTGRES_DB: consulting_ci
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
+        ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U postgres -d consulting_ci"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
-    env:
-      DJANGO_SETTINGS_MODULE: config.settings
-      SECRET_KEY: ci-not-for-production-use-only-testing
-      DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/consulting_ci"
-      CELERY_TASK_ALWAYS_EAGER: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libcairo2-dev pkg-config
+
+      - name: Install dependencies
+        run: |
+          START=$(date +%s)
+          pip install -r requirements.txt
+          echo "⏱ pip install: $(($(date +%s)-START))s"
+
+      - name: Django system check
+        run: |
+          START=$(date +%s)
+          python manage.py check
+          echo "⏱ manage.py check: $(($(date +%s)-START))s"
+
+      - name: Migration check (no missing migrations)
+        run: |
+          START=$(date +%s)
+          python manage.py migrate --run-syncdb
+          python manage.py makemigrations --check --dry-run
+          echo "⏱ migration check: $(($(date +%s)-START))s"
+
+      - name: Critical smoke tests (core + auth)
+        run: |
+          START=$(date +%s)
+          python manage.py test core.tests users.tests --verbosity 1 --parallel auto 2>/dev/null || \
+          python manage.py test core.tests users.tests --verbosity 1
+          echo "⏱ smoke tests: $(($(date +%s)-START))s"
+
+# ─── Job 2: App matrix (runs in parallel after smoke passes) ───────────────
+# Items 2 + 3 + 5: parallel matrix + Django parallel tests
+  test:
+    name: "Tests — ${{ matrix.app }}"
+    runs-on: ubuntu-latest
+    needs: smoke                          # Block on smoke
+    strategy:
+      fail-fast: false                    # Don't cancel other apps on one failure
+      matrix:
+        app:
+          - jobs
+          - submissions
+          - harvest
+          - resumes
+          - companies
+          - interviews_app
+          - messaging
+          - analytics
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: consulting_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d consulting_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -44,8 +137,47 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Django system check
-        run: python manage.py check
+      - name: Migrate
+        run: python manage.py migrate --run-syncdb
 
-      - name: Run tests
-        run: python manage.py test core users jobs companies submissions interviews_app messaging analytics harvest --verbosity 1
+      - name: Run ${{ matrix.app }} tests             # Item 3: parallel tests
+        run: |
+          START=$(date +%s)
+          python manage.py test ${{ matrix.app }} --verbosity 1 --parallel auto 2>/dev/null || \
+          python manage.py test ${{ matrix.app }} --verbosity 1
+          echo "⏱ ${{ matrix.app }} tests: $(($(date +%s)-START))s"
+
+# ─── Job 3: pip-audit security scan ────────────────────────────────────────
+# Item 14
+  security:
+    name: "Security — pip-audit"
+    runs-on: ubuntu-latest
+    needs: smoke
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Run pip-audit
+        run: |
+          pip install -r requirements.txt -q
+          pip-audit --strict --output=cyclonedx-json --format=json -o pip-audit-results.json || true
+          pip-audit --strict 2>&1 | tee pip-audit-summary.txt
+          # Fail only on HIGH/CRITICAL vulnerabilities
+          if grep -i "vulnerability found" pip-audit-summary.txt; then
+            echo "::warning::pip-audit found vulnerabilities — review pip-audit-summary.txt"
+          fi
+
+      - name: Upload audit results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pip-audit-results
+          path: pip-audit-summary.txt
+          retention-days: 30

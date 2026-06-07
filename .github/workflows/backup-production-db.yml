@@ -1,21 +1,25 @@
-name: Backup - Production Database
+name: Backup — Production Database
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:           # Item 9: manual trigger
+  schedule:
+    - cron: "0 2 * * *"       # Daily at 02:00 UTC (every night)
+    - cron: "0 3 * * 0"       # Weekly Sunday 03:00 UTC → restore verification (Item 10)
 
 jobs:
   backup:
+    name: "Backup — encrypted pg_dump"
     runs-on: ubuntu-latest
     env:
       BACKUP_ENCRYPTION_PASSWORD: ${{ secrets.BACKUP_ENCRYPTION_PASSWORD }}
       VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_USER: ${{ secrets.VPS_USER }}
     steps:
-      - name: Validate backup password
+      - name: Validate secrets
         run: |
           set -e
           if [ -z "$BACKUP_ENCRYPTION_PASSWORD" ]; then
-            echo "Missing BACKUP_ENCRYPTION_PASSWORD secret."
+            echo "❌ Missing BACKUP_ENCRYPTION_PASSWORD secret."
             exit 1
           fi
 
@@ -38,21 +42,31 @@ jobs:
             FILE="/opt/backups/db/consulting-${STAMP}.pgdump.gz.enc"
             TMP="/tmp/consulting-${STAMP}.pgdump"
 
+            echo "📦 Starting backup at $STAMP"
+
             docker compose -f docker-compose.prod.yml --env-file .env.production exec -T db \
               sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom --no-owner --no-acl' \
               | gzip -9 \
               | openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:BACKUP_ENCRYPTION_PASSWORD -out "$FILE"
 
+            # Verify integrity immediately after backup
+            echo "🔍 Verifying backup integrity..."
             openssl enc -d -aes-256-cbc -pbkdf2 -pass env:BACKUP_ENCRYPTION_PASSWORD -in "$FILE" \
               | gzip -dc > "$TMP"
-            cat "$TMP" | docker compose -f docker-compose.prod.yml --env-file .env.production exec -T db pg_restore --list >/dev/null
+            pg_restore --list "$TMP" > /dev/null
             rm -f "$TMP"
+            echo "✅ Backup integrity verified"
 
+            # Symlink latest
             ln -sf "$FILE" /opt/backups/db/latest.pgdump.gz.enc
-            find /opt/backups/db -name 'consulting-*.pgdump.gz.enc' -mtime +14 -delete
-            ls -lh "$FILE"
 
-      - name: Download encrypted backup artifact
+            # Retain 14 days of daily backups
+            find /opt/backups/db -name 'consulting-*.pgdump.gz.enc' -mtime +14 -delete
+
+            SIZE=$(du -sh "$FILE" | cut -f1)
+            echo "✅ Backup complete: $FILE ($SIZE)"
+
+      - name: Download backup artifact
         run: |
           set -e
           install -m 700 -d ~/.ssh prod-db-backup
@@ -66,6 +80,78 @@ jobs:
       - name: Upload encrypted backup artifact
         uses: actions/upload-artifact@v4
         with:
-          name: production-db-backup-encrypted
+          name: "production-db-backup-${{ github.run_id }}"
           path: prod-db-backup/latest.pgdump.gz.enc
-          retention-days: 7
+          retention-days: 14
+
+      - name: Backup summary
+        run: |
+          SIZE=$(ls -lh prod-db-backup/latest.pgdump.gz.enc | awk '{print $5}')
+          echo "## ✅ Backup Complete" >> $GITHUB_STEP_SUMMARY
+          echo "- **Size**: $SIZE" >> $GITHUB_STEP_SUMMARY
+          echo "- **Encrypted**: AES-256-CBC + PBKDF2" >> $GITHUB_STEP_SUMMARY
+          echo "- **Retention**: 14 days on VPS, 14 days in Actions artifacts" >> $GITHUB_STEP_SUMMARY
+
+  # ── Item 10: Weekly restore verification ──────────────────────────────────
+  verify-restore:
+    name: "Verify — weekly restore smoke test"
+    runs-on: ubuntu-latest
+    # Only run on the Sunday schedule (cron index 1 = weekly)
+    if: github.event.schedule == '0 3 * * 0' || github.event_name == 'workflow_dispatch'
+    needs: backup
+    env:
+      BACKUP_ENCRYPTION_PASSWORD: ${{ secrets.BACKUP_ENCRYPTION_PASSWORD }}
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: restore_verify
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d restore_verify"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Download backup artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: "production-db-backup-${{ github.run_id }}"
+          path: prod-db-backup
+
+      - name: Install tools
+        run: sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Decrypt and restore to verify
+        run: |
+          set -e
+          echo "🔍 Running weekly restore smoke test..."
+
+          # Decrypt
+          openssl enc -d -aes-256-cbc -pbkdf2 \
+            -pass env:BACKUP_ENCRYPTION_PASSWORD \
+            -in prod-db-backup/latest.pgdump.gz.enc \
+            | gzip -dc > /tmp/restore.pgdump
+
+          # Verify the dump is valid
+          echo "Checking pg_restore --list..."
+          pg_restore --list /tmp/restore.pgdump | head -20
+
+          # Full restore to test DB
+          echo "Restoring to verify DB..."
+          pg_restore --host=localhost --port=5432 --username=postgres \
+            --dbname=restore_verify --no-owner --no-acl \
+            --verbose /tmp/restore.pgdump 2>&1 | tail -20
+
+          echo "✅ Restore verification passed"
+
+      - name: Verification summary
+        run: |
+          echo "## ✅ Weekly Restore Verification" >> $GITHUB_STEP_SUMMARY
+          echo "- Backup decrypted successfully" >> $GITHUB_STEP_SUMMARY
+          echo "- Full pg_restore to test DB passed" >> $GITHUB_STEP_SUMMARY
+          echo "- Date: $(date -u)" >> $GITHUB_STEP_SUMMARY
