@@ -133,21 +133,60 @@
 
 {% if jobs %}
 <!-- BULK ACTION FORM -->
-<form method="post" action="{% url 'job-bulk-approve' %}" id="pool-bulk-form">
+<form method="post" action="{% url 'job-bulk-approve' %}" id="pool-bulk-form"
+      x-data="bulkApprove()">
     {% csrf_token %}
     <div class="card mb-4 px-4 py-3 flex items-center gap-4">
         <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
             <input type="checkbox" id="select-all" class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
             Select all on page
         </label>
-        <button type="submit"
-            class="btn-primary bg-green-600 hover:bg-green-700 flex items-center gap-2">
+        {# Destructive bulk action (contract §5): confirm + impact text before submit #}
+        <button type="button" @click="openConfirm()"
+            class="btn-primary bg-green-600 hover:bg-green-700 flex items-center gap-2 disabled:opacity-50"
+            :disabled="submitting">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
             </svg>
-            Bulk Approve Selected
+            <span x-show="!submitting">Bulk Approve Selected</span>
+            <span x-show="submitting" x-cloak>Approving…</span>
         </button>
         <span class="text-xs text-gray-400">Blacklisted companies will be skipped automatically.</span>
+    </div>
+
+    {# ── Bulk Approve confirmation modal (Alpine) ── #}
+    <div x-show="confirmOpen" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center p-4"
+         style="background: rgba(0,0,0,0.5);">
+        <div @click.outside="confirmOpen = false"
+             class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div class="flex items-start gap-4 mb-4">
+                <div class="bg-green-100 rounded-full p-2 flex-shrink-0">
+                    <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                </div>
+                <div>
+                    <h3 class="text-lg font-bold text-gray-900">Approve Jobs to Go Live</h3>
+                    <p class="text-sm text-gray-600 mt-1">
+                        You're about to approve <span class="font-bold text-gray-900" x-text="count"></span>
+                        <span x-text="count === 1 ? 'job' : 'jobs'"></span>.
+                        Approved jobs become <strong>visible to consultants</strong> immediately.
+                        Blacklisted companies are skipped automatically.
+                    </p>
+                </div>
+            </div>
+            <div class="flex gap-3 justify-end">
+                <button type="button" @click="confirmOpen = false"
+                    class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold rounded-lg transition">
+                    Cancel
+                </button>
+                <button type="button" @click="doSubmit()"
+                    class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg transition">
+                    Yes, Approve <span x-text="count"></span>
+                </button>
+            </div>
+        </div>
     </div>
 
     <!-- JOB TABLE -->
@@ -481,6 +520,28 @@
         selectAll.addEventListener('change', function () {
             document.querySelectorAll('.job-checkbox').forEach(cb => cb.checked = this.checked);
         });
+    }
+
+    // Bulk approve confirmation (contract §5: destructive bulk action)
+    function bulkApprove() {
+        return {
+            confirmOpen: false,
+            submitting: false,
+            count: 0,
+            openConfirm() {
+                this.count = document.querySelectorAll('.job-checkbox:checked').length;
+                if (this.count === 0) {
+                    alert('Select at least one job to approve.');
+                    return;
+                }
+                this.confirmOpen = true;
+            },
+            doSubmit() {
+                this.submitting = true;
+                this.confirmOpen = false;
+                document.getElementById('pool-bulk-form').submit();
+            },
+        };
     }
 
     // Alpine reject modal
