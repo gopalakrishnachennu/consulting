@@ -135,14 +135,7 @@ jobs:
             docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --no-deps web python manage.py repair_harvest_migration_state
             docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --no-deps -e RUN_MIGRATIONS=0 web python manage.py check
 
-            docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --no-deps web python manage.py shell -c "\
-              from harvest.models import HarvestEngineConfig; \
-              cfg=HarvestEngineConfig.get(); \
-              cfg.worker_concurrency=2; cfg.task_rate_limit=3; \
-              cfg.api_stagger_ms=1000; cfg.scraper_stagger_ms=5000; \
-              cfg.full_fetch_cooldown_minutes=360; cfg.backfill_jd_workers=1; \
-              cfg.auto_backfill_jd=False; cfg.auto_sync_to_pool=False; \
-              cfg.save(); print('Applied strict harvest uptime config')"
+            docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --no-deps web python manage.py shell -c "from harvest.models import HarvestEngineConfig; cfg=HarvestEngineConfig.get(); cfg.worker_concurrency=2; cfg.task_rate_limit=3; cfg.api_stagger_ms=1000; cfg.scraper_stagger_ms=5000; cfg.full_fetch_cooldown_minutes=360; cfg.backfill_jd_workers=1; cfg.auto_backfill_jd=False; cfg.auto_sync_to_pool=False; cfg.save(); print('Applied strict harvest uptime config')"
 
             RUN_MIGRATIONS=0 docker compose -f docker-compose.prod.yml --env-file .env.production up -d
 
