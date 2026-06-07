@@ -21,7 +21,7 @@ from .matching import build_compatibility_matrix
 from .llm_client import PipelineLLMClient
 from .generators.header import generate_header
 from .generators.education import generate_education, generate_certifications
-from .prompts import build_prompt, DEFAULT_PROMPT_TEMPLATE
+from .prompts import build_prompt, SYSTEM_MESSAGE
 from .utils import validate_resume, score_ats
 
 logger = logging.getLogger("apps.resumes.pipeline")
@@ -90,20 +90,12 @@ def generate_resume_pipeline(job, consultant, actor=None, input_sections=None):
         # ── Phase 3: ONE LLM call ──────────────────────────────────────
         phase_start = time.time()
 
-        # Get prompt template from MasterPrompt (admin-editable)
-        # Admin writes the full prompt with {variables} in system_prompt field
-        prompt_template = None
-        if master_prompt:
-            # Combine system_prompt + generation_rules into one template
-            parts = []
-            if master_prompt.system_prompt:
-                parts.append(master_prompt.system_prompt)
-            if master_prompt.generation_rules:
-                parts.append(master_prompt.generation_rules)
-            if parts:
-                prompt_template = "\n\n".join(parts)
+        # Admin rules from MasterPrompt.generation_rules (the ONLY part admin writes)
+        admin_rules = None
+        if master_prompt and master_prompt.generation_rules:
+            admin_rules = master_prompt.generation_rules
 
-        # Build prompt by filling {variables} with real data
+        # Code builds ALL data sections, admin rules go at the end
         full_prompt = build_prompt(
             jd_intel=jd_intel,
             matching=matching,
@@ -111,13 +103,11 @@ def generate_resume_pipeline(job, consultant, actor=None, input_sections=None):
             header=header,
             education=education_text,
             certifications=certs_text,
-            prompt_template=prompt_template,
+            admin_rules=admin_rules,
         )
 
-        # Single prompt — sent as user message with minimal system instruction
-        system_msg = "Generate a resume. Follow the instructions exactly. Output plain text only."
         content, tokens, error = llm.call(
-            system_msg,
+            SYSTEM_MESSAGE,
             full_prompt,
             request_type="pipeline_v3_generate",
             temperature=0.6,
@@ -174,7 +164,7 @@ def generate_resume_pipeline(job, consultant, actor=None, input_sections=None):
             k: v for k, v in matching.items()
             if k != "_job_pk"
         }
-        metadata["system_prompt"] = system_msg
+        metadata["system_prompt"] = SYSTEM_MESSAGE
         metadata["user_prompt"] = full_prompt
 
         logger.info(
