@@ -29,7 +29,7 @@ jobs:
           echo "   Reason: ${{ github.event.inputs.reason }}"
 
       - name: Deploy previous image over SSH
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.actor }}

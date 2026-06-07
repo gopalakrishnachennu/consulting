@@ -24,7 +24,7 @@ jobs:
           fi
 
       - name: Create encrypted backup on VPS
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         env:
           BACKUP_ENCRYPTION_PASSWORD: ${{ secrets.BACKUP_ENCRYPTION_PASSWORD }}
         with:
@@ -78,7 +78,7 @@ jobs:
           ls -lh prod-db-backup/latest.pgdump.gz.enc
 
       - name: Upload encrypted backup artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: "production-db-backup-${{ github.run_id }}"
           path: prod-db-backup/latest.pgdump.gz.enc
@@ -118,7 +118,7 @@ jobs:
           --health-retries 10
     steps:
       - name: Download backup artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: "production-db-backup-${{ github.run_id }}"
           path: prod-db-backup
