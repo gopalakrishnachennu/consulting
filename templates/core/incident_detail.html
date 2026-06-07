@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+
+  {# Breadcrumb #}
+  <nav class="flex items-center gap-2 text-sm text-gray-500">
+    <a href="{% url 'admin-dashboard' %}" class="hover:text-gray-700 transition">Dashboard</a>
+    <svg class="w-3.5 h-3.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+    <a href="{% url 'incident-list' %}" class="hover:text-gray-700 transition">Incidents</a>
+    <svg class="w-3.5 h-3.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+    <span class="text-gray-900 font-medium">#{{ incident.pk }}</span>
+  </nav>
+
+  {# Header #}
+  <div class="flex items-center justify-between">
+    <div class="flex items-center gap-4">
+      <div class="h-12 w-12 rounded-xl flex items-center justify-center shadow-sm
+        {% if incident.severity == 'ERROR' %}bg-gradient-to-br from-red-500 to-rose-600 text-white
+        {% elif incident.severity == 'SLOW' %}bg-gradient-to-br from-amber-400 to-orange-500 text-white
+        {% else %}bg-gray-200 text-gray-600{% endif %}">
+        {% if incident.severity == 'ERROR' %}
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+        {% else %}
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        {% endif %}
+      </div>
+      <div>
+        <h1 class="text-xl font-extrabold text-gray-900">{{ incident.method }} {{ incident.path }}</h1>
+        <p class="text-sm text-gray-500">{{ incident.created_at|date:"M d, Y g:i:s A" }} · {{ incident.severity }} · {{ incident.status_code }}</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <form method="post" action="{% url 'incident-resolve' incident.pk %}">
+        {% csrf_token %}
+        {% if incident.resolved %}
+        <button type="submit" class="px-4 py-2 rounded-lg text-sm font-semibold border border-gray-300 text-gray-700 hover:bg-gray-50 transition">Reopen</button>
+        {% else %}
+        <button type="submit" class="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 transition">Mark Resolved</button>
+        {% endif %}
+      </form>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+    {# Left: Details #}
+    <div class="lg:col-span-2 space-y-5">
+
+      {# Error Info #}
+      {% if incident.error_type or incident.error_message %}
+      <div class="bg-white rounded-xl border border-red-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-3 border-b border-red-100 bg-red-50/50">
+          <h2 class="text-xs font-bold text-red-600 uppercase tracking-wider">Error</h2>
+        </div>
+        <div class="p-5">
+          {% if incident.error_type %}
+          <p class="text-sm font-bold text-red-800 mb-1">{{ incident.error_type }}</p>
+          {% endif %}
+          {% if incident.error_message %}
+          <p class="text-sm text-red-700">{{ incident.error_message }}</p>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+
+      {# Traceback #}
+      {% if incident.traceback %}
+      <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-3 border-b border-gray-100">
+          <h2 class="text-xs font-bold text-gray-600 uppercase tracking-wider">Traceback</h2>
+        </div>
+        <div class="p-5">
+          <pre class="text-[11px] text-gray-700 bg-gray-50 rounded-lg p-4 overflow-x-auto max-h-[400px] whitespace-pre-wrap font-mono">{{ incident.traceback }}</pre>
+        </div>
+      </div>
+      {% endif %}
+
+      {# Request Data #}
+      {% if incident.request_data %}
+      <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-3 border-b border-gray-100">
+          <h2 class="text-xs font-bold text-gray-600 uppercase tracking-wider">Request Data</h2>
+        </div>
+        <div class="p-5">
+          <pre class="text-[11px] text-gray-700 bg-gray-50 rounded-lg p-4 overflow-x-auto whitespace-pre-wrap font-mono">{{ incident.request_data|pprint }}</pre>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    {# Right: Meta #}
+    <div class="space-y-5">
+      <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-3">
+        <h3 class="text-xs font-bold text-gray-600 uppercase tracking-wider">Details</h3>
+        <div class="text-xs space-y-2">
+          <div class="flex justify-between"><span class="text-gray-400">Status</span>
+            {% if incident.resolved %}<span class="font-bold text-emerald-600">Resolved</span>
+            {% else %}<span class="font-bold text-red-600">Open</span>{% endif %}
+          </div>
+          <div class="flex justify-between"><span class="text-gray-400">Severity</span><span class="font-bold text-gray-800">{{ incident.severity }}</span></div>
+          <div class="flex justify-between"><span class="text-gray-400">HTTP Status</span><span class="font-bold text-gray-800">{{ incident.status_code }}</span></div>
+          <div class="flex justify-between"><span class="text-gray-400">Method</span><span class="font-bold text-gray-800">{{ incident.method }}</span></div>
+          <div class="flex justify-between"><span class="text-gray-400">Response Time</span><span class="font-bold text-gray-800">{{ incident.response_time_ms }}ms</span></div>
+          <div class="flex justify-between"><span class="text-gray-400">User</span><span class="font-bold text-gray-800">{{ incident.user.get_full_name|default:incident.user.username|default:"anonymous" }}</span></div>
+          <div class="flex justify-between"><span class="text-gray-400">IP</span><span class="font-mono text-gray-600">{{ incident.ip_address|default:"—" }}</span></div>
+          <div class="flex justify-between"><span class="text-gray-400">When</span><span class="text-gray-600">{{ incident.created_at|timesince }} ago</span></div>
+        </div>
+      </div>
+
+      {% if incident.user_agent %}
+      <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <h3 class="text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">User Agent</h3>
+        <p class="text-[10px] text-gray-500 break-all">{{ incident.user_agent }}</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

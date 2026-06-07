@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+
+  {# Header #}
+  <div class="flex items-center justify-between">
+    <div class="flex items-center gap-4">
+      <div class="h-12 w-12 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 text-white flex items-center justify-center shadow-sm">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+      </div>
+      <div>
+        <h1 class="text-2xl font-extrabold text-gray-900">Incidents</h1>
+        <p class="text-sm text-gray-500">Errors, crashes, and slow requests — auto-captured</p>
+      </div>
+    </div>
+  </div>
+
+  {# KPI Strip #}
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+      <p class="text-[10px] font-bold text-gray-400 uppercase">Errors</p>
+      <p class="text-2xl font-extrabold {% if total_errors > 0 %}text-red-600{% else %}text-gray-900{% endif %}">{{ total_errors }}</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+      <p class="text-[10px] font-bold text-gray-400 uppercase">Slow Requests</p>
+      <p class="text-2xl font-extrabold {% if total_slow > 0 %}text-amber-600{% else %}text-gray-900{% endif %}">{{ total_slow }}</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+      <p class="text-[10px] font-bold text-gray-400 uppercase">Unresolved</p>
+      <p class="text-2xl font-extrabold {% if unresolved > 0 %}text-red-600{% else %}text-emerald-600{% endif %}">{{ unresolved }}</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+      <p class="text-[10px] font-bold text-gray-400 uppercase">Today</p>
+      <p class="text-2xl font-extrabold text-gray-900">{{ today_count }}</p>
+    </div>
+  </div>
+
+  {# Filters #}
+  <div class="bg-white rounded-xl border border-gray-200 p-4">
+    <form method="get" class="flex flex-wrap items-center gap-3">
+      <select name="severity" class="px-3 py-2 border border-gray-200 rounded-lg text-sm" onchange="this.form.submit()">
+        <option value="">All Severity</option>
+        <option value="ERROR" {% if request.GET.severity == 'ERROR' %}selected{% endif %}>Errors (500)</option>
+        <option value="SLOW" {% if request.GET.severity == 'SLOW' %}selected{% endif %}>Slow Requests</option>
+        <option value="WARNING" {% if request.GET.severity == 'WARNING' %}selected{% endif %}>Warnings</option>
+      </select>
+      <select name="resolved" class="px-3 py-2 border border-gray-200 rounded-lg text-sm" onchange="this.form.submit()">
+        <option value="">All Status</option>
+        <option value="0" {% if request.GET.resolved == '0' %}selected{% endif %}>Unresolved</option>
+        <option value="1" {% if request.GET.resolved == '1' %}selected{% endif %}>Resolved</option>
+      </select>
+      <input type="text" name="q" value="{{ request.GET.q|default:'' }}" placeholder="Search path, error, type..." class="flex-1 min-w-[200px] px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+      <button type="submit" class="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition">Filter</button>
+      <a href="{% url 'incident-list' %}" class="text-xs text-gray-500 hover:text-gray-700">Reset</a>
+    </form>
+  </div>
+
+  {# Table #}
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+    {% if incidents %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-100 bg-gray-50">
+            <th class="px-4 py-3">Severity</th>
+            <th class="px-4 py-3">Path</th>
+            <th class="px-4 py-3">Error</th>
+            <th class="px-4 py-3">User</th>
+            <th class="px-4 py-3">Time</th>
+            <th class="px-4 py-3">Status</th>
+            <th class="px-4 py-3"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          {% for inc in incidents %}
+          <tr class="hover:bg-gray-50 transition {% if not inc.resolved %}{% if inc.severity == 'ERROR' %}bg-red-50/30{% elif inc.severity == 'SLOW' %}bg-amber-50/30{% endif %}{% endif %}">
+            <td class="px-4 py-3">
+              {% if inc.severity == 'ERROR' %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700">
+                <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>Error
+              </span>
+              {% elif inc.severity == 'SLOW' %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>Slow
+              </span>
+              {% else %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-600">
+                <span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>{{ inc.severity }}
+              </span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3">
+              <a href="{% url 'incident-detail' inc.pk %}" class="font-mono text-xs text-gray-800 hover:text-blue-600">
+                {{ inc.method }} {{ inc.path|truncatechars:50 }}
+              </a>
+              <span class="text-[10px] text-gray-400 ml-1">({{ inc.status_code }})</span>
+            </td>
+            <td class="px-4 py-3 text-xs text-gray-600 max-w-[250px] truncate">
+              {% if inc.error_type %}{{ inc.error_type }}: {% endif %}{{ inc.error_message|truncatechars:80 }}
+              {% if inc.severity == 'SLOW' %}{{ inc.response_time_ms }}ms{% endif %}
+            </td>
+            <td class="px-4 py-3 text-xs text-gray-500">
+              {{ inc.user.get_full_name|default:inc.user.username|default:"anonymous" }}
+            </td>
+            <td class="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{{ inc.created_at|timesince }} ago</td>
+            <td class="px-4 py-3">
+              {% if inc.resolved %}
+              <span class="text-[10px] font-bold text-emerald-600">Resolved</span>
+              {% else %}
+              <span class="text-[10px] font-bold text-red-500">Open</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3">
+              <a href="{% url 'incident-detail' inc.pk %}" class="text-xs text-indigo-600 hover:underline">View</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {# Pagination #}
+    {% if is_paginated %}
+    <div class="px-4 py-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+      <span>Showing {{ page_obj.start_index }}-{{ page_obj.end_index }} of {{ page_obj.paginator.count }}</span>
+      <div class="flex gap-1">
+        {% if page_obj.has_previous %}
+        <a href="?{% if request.GET.severity %}severity={{ request.GET.severity }}&{% endif %}page={{ page_obj.previous_page_number }}" class="px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 font-semibold">Prev</a>
+        {% endif %}
+        {% if page_obj.has_next %}
+        <a href="?{% if request.GET.severity %}severity={{ request.GET.severity }}&{% endif %}page={{ page_obj.next_page_number }}" class="px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 font-semibold">Next</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="text-center py-16">
+      <svg class="w-12 h-12 text-emerald-200 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      <p class="text-lg font-semibold text-emerald-600">All clear!</p>
+      <p class="text-sm text-gray-400 mt-1">No incidents found matching your filters.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

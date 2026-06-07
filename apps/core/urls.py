@@ -35,6 +35,9 @@ from .views import (
     TaskProgressAPIView,
     SystemOpsCenterView,
     SystemOpsCenterApiView,
+    IncidentListView,
+    IncidentDetailView,
+    IncidentResolveView,
 )
 
 urlpatterns = [
@@ -77,4 +80,9 @@ urlpatterns = [
     path('task-scheduler/<int:pk>/toggle/', TaskToggleView.as_view(), name='task-toggle'),
     path('task-scheduler/<int:pk>/edit/', TaskEditScheduleView.as_view(), name='task-edit-schedule'),
     path('task-scheduler/<int:pk>/run/', TaskRunNowView.as_view(), name='task-run-now'),
+
+    # Incident Tracking
+    path('incidents/', IncidentListView.as_view(), name='incident-list'),
+    path('incidents/<int:pk>/', IncidentDetailView.as_view(), name='incident-detail'),
+    path('incidents/<int:pk>/resolve/', IncidentResolveView.as_view(), name='incident-resolve'),
 ]

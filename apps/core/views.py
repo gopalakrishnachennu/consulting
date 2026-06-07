@@ -30,6 +30,7 @@ from .models import (
     BroadcastDelivery,
     FeatureFlag,
     EmployeeDesignation,
+    ErrorLog,
 )
 from .forms import PlatformConfigForm, LLMConfigForm, BroadcastForm
 from .broadcast_utils import deliver_broadcast
@@ -2266,3 +2267,60 @@ class TaskRunNowView(AdminRequiredMixin, View):
             messages.error(request, f"❌ {msg}")
 
         return redirect(_ops_next_url(request))
+
+
+# ── Incident Log (Error Tracking) ─────────────────────────────────────
+
+class IncidentListView(AdminRequiredMixin, ListView):
+    """Error log page — shows 500 errors, slow requests, and other incidents."""
+    model = ErrorLog
+    template_name = 'core/incident_list.html'
+    context_object_name = 'incidents'
+    paginate_by = 50
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related('user')
+        p = self.request.GET
+        if p.get('severity'):
+            qs = qs.filter(severity=p['severity'])
+        if p.get('resolved') == '1':
+            qs = qs.filter(resolved=True)
+        elif p.get('resolved') == '0':
+            qs = qs.filter(resolved=False)
+        if p.get('path'):
+            qs = qs.filter(path__icontains=p['path'].strip())
+        if p.get('q'):
+            q = p['q'].strip()
+            qs = qs.filter(
+                Q(path__icontains=q) |
+                Q(error_message__icontains=q) |
+                Q(error_type__icontains=q)
+            )
+        return qs
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        qs = ErrorLog.objects.all()
+        ctx['total_errors'] = qs.filter(severity='ERROR').count()
+        ctx['total_slow'] = qs.filter(severity='SLOW').count()
+        ctx['unresolved'] = qs.filter(resolved=False).count()
+        ctx['today_count'] = qs.filter(
+            created_at__date=timezone.now().date()
+        ).count()
+        return ctx
+
+
+class IncidentDetailView(AdminRequiredMixin, DetailView):
+    model = ErrorLog
+    template_name = 'core/incident_detail.html'
+    context_object_name = 'incident'
+
+
+class IncidentResolveView(AdminRequiredMixin, View):
+    """Toggle resolved status on an incident."""
+    def post(self, request, pk):
+        incident = get_object_or_404(ErrorLog, pk=pk)
+        incident.resolved = not incident.resolved
+        incident.save(update_fields=['resolved'])
+        messages.success(request, f"Incident #{pk} {'resolved' if incident.resolved else 'reopened'}.")
+        return redirect('incident-list')
