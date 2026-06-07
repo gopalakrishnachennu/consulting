@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Configure provider, run diagnostic, optionally backfill
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         env:
           MAPBOX_TOKEN: ${{ secrets.MAPBOX_ACCESS_TOKEN }}
           STAGE: ${{ github.event.inputs.stage }}
