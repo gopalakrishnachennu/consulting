@@ -654,7 +654,7 @@ from django.http import JsonResponse
 from django.utils.text import slugify
 from .models import ResumeTemplate, ResumeEditorState
 from .parser import parse_resume
-from .export_utils import export_docx, export_pdf, export_pdf_html, render_resume_html
+from .export_utils import export_docx, export_pdf, export_pdf_html
 
 
 class ResumeEditorView(DraftAccessMixin, BaseView):
@@ -744,20 +744,9 @@ class ResumeEditorSaveView(AdminOrEmployeeMixin, BaseView):
         return JsonResponse({'ok': True, 'saved_at': state.updated_at.isoformat()})
 
 
-class ResumeEditorPreviewView(AdminOrEmployeeMixin, BaseView):
-    """Return rendered resume HTML fragment for the live preview (HTMX fallback)."""
-
-    def post(self, request, pk):
-        draft = get_object_or_404(ResumeDraft, pk=pk)
-        try:
-            body = _json.loads(request.body)
-        except Exception:
-            return HttpResponse('')
-
-        sections = body.get('sections', {})
-        tpl_cfg  = body.get('template', {})
-        html = render_resume_html(sections, tpl_cfg, for_print=False)
-        return HttpResponse(html)
+# ResumeEditorPreviewView removed — the editor renders its live preview
+# client-side (renderPreview() in editor.html), so this server endpoint was
+# never called. See resumes/editor.html for the actual preview logic.
 
 
 class ResumeExportDOCXView(DraftAccessMixin, BaseView):

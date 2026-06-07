@@ -6,7 +6,7 @@ from .views import (
     ResumeGeneratePageView, ResumeGenerateActionView,
     PreflightCheckView, DraftReviewView, PipelineResultsView,
     # Template editor
-    ResumeEditorView, ResumeEditorSaveView, ResumeEditorPreviewView,
+    ResumeEditorView, ResumeEditorSaveView,
     ResumeExportDOCXView, ResumeExportPDFView,
     ResumeTemplateSaveView, ResumeTemplateDeleteView, ResumeTemplateListView,
     # Consultant self-resume & cover letter
@@ -34,7 +34,6 @@ urlpatterns = [
     # ── Template Editor ──────────────────────────────────────────────
     path('drafts/<int:pk>/editor/', ResumeEditorView.as_view(), name='resume-editor'),
     path('drafts/<int:pk>/editor/save/', ResumeEditorSaveView.as_view(), name='resume-editor-save'),
-    path('drafts/<int:pk>/editor/preview/', ResumeEditorPreviewView.as_view(), name='resume-editor-preview'),
     path('drafts/<int:pk>/export/docx/', ResumeExportDOCXView.as_view(), name='resume-export-docx'),
     path('drafts/<int:pk>/export/pdf/', ResumeExportPDFView.as_view(), name='resume-export-pdf'),
 

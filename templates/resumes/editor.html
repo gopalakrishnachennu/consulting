@@ -77,23 +77,23 @@
       <span x-show="saving" class="text-xs text-indigo-500 animate-pulse hidden sm:block">Saving…</span>
       <span x-show="!saving && !dirty" x-cloak class="text-xs text-emerald-600 hidden sm:block">Saved</span>
 
-      {# Export buttons #}
-      <a href="{% url 'resume-export-docx' draft.pk %}"
-         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition">
+      {# Export buttons — flush pending edits before exporting (no stale downloads) #}
+      <button type="button" @click="exportAs('{% url 'resume-export-docx' draft.pk %}')"
+         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition disabled:opacity-50" :disabled="exporting">
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
             d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
         </svg>
         DOCX
-      </a>
-      <a href="{% url 'resume-export-pdf' draft.pk %}"
-         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition">
+      </button>
+      <button type="button" @click="exportAs('{% url 'resume-export-pdf' draft.pk %}')"
+         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition disabled:opacity-50" :disabled="exporting">
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
             d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
         </svg>
         PDF
-      </a>
+      </button>
     </div>
   </header>
 
@@ -103,18 +103,16 @@
     {# ──────────────────────────── LEFT PANEL: section editors ──── #}
     <aside class="w-[400px] flex-none flex flex-col bg-white border-r border-gray-200 overflow-hidden">
 
-      {# Section nav tabs #}
+      {# Section nav tabs — driven by the Alpine navTabs getter #}
       <nav class="flex-none flex gap-1 p-2 bg-gray-50 border-b border-gray-200 overflow-x-auto">
-        {% for tab_id, tab_label, tab_icon in sections_nav %}
-        <button @click="activeSection = '{{ tab_id }}'"
-                :class="activeSection === '{{ tab_id }}' ? 'bg-white text-indigo-700 shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700'"
-                class="flex-none flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition whitespace-nowrap">
-          {{ tab_icon }} {{ tab_label }}
-        </button>
-        {% endfor %}
-        {# Hardcode since Django template can't call Python loops easily #}
+        <template x-for="tab in navTabs" :key="tab.id">
+          <button @click="activeSection = tab.id"
+                  :class="activeSection === tab.id ? 'bg-white text-indigo-700 shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700'"
+                  class="flex-none flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition whitespace-nowrap">
+            <span x-text="tab.icon"></span> <span x-text="tab.label"></span>
+          </button>
+        </template>
       </nav>
-      {# Override nav with static tabs since we can't do the above cleanly #}
 
       {# Section editor body — scrollable #}
       <div class="flex-1 overflow-y-auto p-4 space-y-4">
@@ -486,6 +484,7 @@ function resumeEditor() {
     savingTpl: false,
     tplSaveMsg: '',
     previewHtml: '',
+    exporting: false,
 
     init() {
       this.sections = {{ sections_json|safe }};
@@ -537,6 +536,19 @@ function resumeEditor() {
         this.dirty = false;
       } catch(e) { console.error('Save failed', e); }
       finally { this.saving = false; }
+    },
+
+    // ── Export (flush pending edits first, then download) ────────────
+    async exportAs(url) {
+      this.exporting = true;
+      try {
+        if (this.saveTimer) clearTimeout(this.saveTimer);
+        if (this.dirty) { await this.save(); }   // never export stale content
+        window.location.href = url;
+      } finally {
+        // Re-enable shortly after navigation kicks off
+        setTimeout(() => { this.exporting = false; }, 1500);
+      }
     },
 
     // ── Template switch (from header dropdown) ───────────────────────
