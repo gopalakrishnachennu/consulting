@@ -70,7 +70,7 @@ jobs:
 
             # Health check
             for i in $(seq 1 20); do
-              if curl -fsS --max-time 5 https://chennu.co/health/ >/dev/null 2>&1; then
+              if curl -fsS --max-time 5 https://chennu.co/core/health/ >/dev/null 2>&1; then
                 echo "✅ Rollback health check passed."
                 exit 0
               fi

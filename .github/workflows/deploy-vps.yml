@@ -150,7 +150,7 @@ jobs:
             date >> /opt/consulting/deploy.log
 
             for i in $(seq 1 30); do
-              if curl -fsS --max-time 5 https://chennu.co/health/ >/dev/null 2>&1; then
+              if curl -fsS --max-time 5 https://chennu.co/core/health/ >/dev/null 2>&1; then
                 echo "✅ Production health check passed."
                 exit 0
               fi

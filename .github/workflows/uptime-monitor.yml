@@ -18,7 +18,7 @@ jobs:
           START=$(date +%s)
           HTTP_CODE=$(curl -s -o /tmp/health_response.txt -w "%{http_code}" \
             --max-time 30 --connect-timeout 10 \
-            https://chennu.co/health/ 2>&1 || echo "000")
+            https://chennu.co/core/health/ 2>&1 || echo "000")
           LATENCY=$(( $(date +%s) - START ))
 
           echo "HTTP_CODE=$HTTP_CODE" >> $GITHUB_OUTPUT
@@ -39,7 +39,7 @@ jobs:
         run: |
           echo "::error::🚨 SITE DOWN: chennu.co returned HTTP ${{ steps.health.outputs.HTTP_CODE }}"
           echo "## 🚨 Site Down Alert" >> $GITHUB_STEP_SUMMARY
-          echo "- **URL**: https://chennu.co/health/" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL**: https://chennu.co/core/health/" >> $GITHUB_STEP_SUMMARY
           echo "- **HTTP Code**: ${{ steps.health.outputs.HTTP_CODE }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Time**: $(date -u)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
