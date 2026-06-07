@@ -203,7 +203,13 @@ class ErrorTrackingMiddleware:
         return response
 
     def process_exception(self, request, exception):
-        """Capture unhandled exceptions with full traceback."""
+        """Capture unhandled exceptions with full traceback.
+        Skips Http404 — those are normal user-facing 404s, not crashes.
+        """
+        from django.http import Http404
+        if isinstance(exception, Http404):
+            return None  # Normal 404 — not an incident
+
         try:
             self._log_incident(
                 request=request,
