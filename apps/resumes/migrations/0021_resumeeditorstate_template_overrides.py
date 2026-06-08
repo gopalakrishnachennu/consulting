@@ -15,9 +15,9 @@ class Migration(migrations.Migration):
                 blank=True,
                 default=dict,
                 help_text=(
-                    "Per-draft template tweaks from the Customise panel (font, sizes, "
-                    "colors, margins...). Merged over the selected template for both "
-                    "preview and export, so the live preview matches the downloaded file."
+                    "Per-draft template tweaks from the Customise panel (font, sizes, colors, "
+                    "margins...). Merged over the selected template for both preview and export, "
+                    "so the live preview matches the downloaded file exactly."
                 ),
             ),
         ),
