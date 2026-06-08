@@ -19,28 +19,19 @@
       <p class="text-xs text-gray-400 mt-1">A label to identify this version (e.g. "v1.0 — Master Resume Engine")</p>
     </div>
 
-    <!-- System Prompt -->
+    <!-- Master Prompt (single source of truth) -->
     <div class="bg-white shadow rounded-lg p-6 mb-6">
-      <label class="block text-sm font-medium text-gray-700 mb-1">System Prompt</label>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Master Prompt — Generation Format &amp; Rules</label>
       <p class="text-xs text-gray-500 mb-2">
-        This is the SYSTEM role sent to the LLM. Defines who the AI is and its core rules.
-        Think of it as the "personality + constraints" layer.
+        This is the <strong>only</strong> prompt you write. The system automatically assembles all
+        the candidate data (header, experience, education, skills, total years) and the target job
+        (title, required/preferred skills, ATS keywords, skill-match) <em>before</em> this text.
+        You write the <strong>output format + section rules</strong>: how each section should look,
+        bullet style, ATS checklist, edge cases, quality gates. Supports Markdown. Plain-text resume only.
       </p>
-      <textarea name="system_prompt" rows="12" required
+      <textarea name="generation_rules" rows="28"
         class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-        placeholder="You are a Senior Resume Architect with 15 years of experience...">{{ prompt.system_prompt|default:'' }}</textarea>
-    </div>
-
-    <!-- Generation Rules -->
-    <div class="bg-white shadow rounded-lg p-6 mb-6">
-      <label class="block text-sm font-medium text-gray-700 mb-1">Generation Rules</label>
-      <p class="text-xs text-gray-500 mb-2">
-        Appended after the candidate profile + JD in the user message. Use this for output format,
-        section-by-section rules, edge cases, ATS checklist, quality gates. Supports Markdown.
-      </p>
-      <textarea name="generation_rules" rows="20"
-        class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-        placeholder="## PROCESSING PIPELINE&#10;&#10;### PHASE 1: JD DEEP ANALYSIS...">{{ prompt.generation_rules|default:'' }}</textarea>
+        placeholder="## OUTPUT FORMAT&#10;&#10;### PROFESSIONAL SUMMARY&#10;3-4 lines, lead with years + domain...&#10;&#10;### CORE SKILLS&#10;Grouped by category, max 8 per category...&#10;&#10;### PROFESSIONAL EXPERIENCE&#10;Most recent: 7-10 bullets, each quantified...">{{ prompt.generation_rules|default:'' }}</textarea>
     </div>
 
     <!-- Default candidate data (Master Prompt) -->

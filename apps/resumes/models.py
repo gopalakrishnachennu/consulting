@@ -14,7 +14,10 @@ class MasterPrompt(models.Model):
     """
     name = models.CharField(max_length=200, help_text="Version label, e.g. 'v2.1 — ATS focus'")
     system_prompt = models.TextField(
-        help_text="The SYSTEM role text sent to the LLM (defines who it is and the rules)."
+        blank=True,
+        default="",
+        help_text="Legacy/unused: the active pipeline uses a fixed system message and reads "
+                  "only generation_rules. Kept for the legacy single-call path and history.",
     )
     generation_rules = models.TextField(
         blank=True,

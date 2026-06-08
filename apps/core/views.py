@@ -612,7 +612,10 @@ class MasterPromptEditView(AdminRequiredMixin, View):
 
         mp = get_object_or_404(MasterPrompt, pk=pk)
         mp.name = request.POST.get('name', mp.name)
-        mp.system_prompt = request.POST.get('system_prompt', '')
+        # System Prompt is no longer edited in the UI (the pipeline uses a fixed system
+        # message and reads only generation_rules). Preserve any existing value rather
+        # than wiping it when the field isn't submitted.
+        mp.system_prompt = request.POST.get('system_prompt', mp.system_prompt)
         mp.generation_rules = request.POST.get('generation_rules', '')
         mp.is_active = request.POST.get('is_active') == 'on'
         sections = {
