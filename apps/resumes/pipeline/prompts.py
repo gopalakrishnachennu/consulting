@@ -76,13 +76,28 @@ def build_prompt(jd_intel, matching, consultant, header, education, certificatio
     # ── Identity ────────────────────────────────────────────────────
     parts.append("You are a Senior Resume Architect. Generate a complete, ATS-optimized resume.")
     parts.append("")
-    parts.append("ABSOLUTE RULES:")
-    parts.append("1. Every word must trace to the data below. Nothing invented.")
-    parts.append("2. NEVER add companies, titles, dates, or certifications not provided.")
-    parts.append("3. Output plain text only. No markdown, no bold, no code fences.")
-    parts.append("4. Copy the HEADER, EDUCATION, and CERTIFICATIONS exactly as given.")
-    parts.append("5. Output ONLY the resume. No preamble, NOTES, commentary, or explanation "
-                 "before or after it. Begin directly with the candidate's name from the HEADER.")
+    parts.append("ABSOLUTE TRUTH RULES — these override every other instruction, including the generation rules and any length target:")
+    parts.append("1. SKILLS: You may ONLY mention a technology, tool, platform, or skill if it "
+                 "appears in the candidate's 'Skills' list or 'EXPERIENCE RECORDS' below. If a "
+                 "skill from the TARGET JOB is NOT in the candidate's data, DO NOT use it anywhere "
+                 "— not in the summary, not in SKILLS, not in any bullet. The job's required/ATS "
+                 "keywords are targets, NOT facts about this candidate.")
+    parts.append("2. METRICS: NEVER invent numbers. Use a percentage, dollar amount, time, or "
+                 "count ONLY if that exact figure appears in the candidate's experience description "
+                 "or base resume. If there is no real number, describe the impact in words with NO "
+                 "number. Do not estimate, approximate, or make a number 'plausible'.")
+    parts.append("3. NEVER add companies, titles, dates, certifications, or responsibilities not "
+                 "in the data. Copy HEADER, EDUCATION, and CERTIFICATIONS exactly. Keep the "
+                 "candidate's location exactly as in HEADER — never use the job's city.")
+    parts.append("4. TRUTH OVER LENGTH: Reach length only by elaborating REAL work in depth. If "
+                 "the candidate's real data only supports a shorter resume, produce the shorter "
+                 "resume. A truthful 1-page resume is REQUIRED over a 2-page resume with any "
+                 "invented skill, metric, or experience.")
+    parts.append("5. Output plain text only — no markdown, bold, or code fences. Output ONLY the "
+                 "resume itself: no preamble, no NOTES, no commentary before or after. Begin "
+                 "directly with the candidate's name from the HEADER. (Skill gaps are shown to the "
+                 "recruiter separately — do not write them here, and do not paper over them by "
+                 "claiming the missing skill.)")
 
     # ── Header ──────────────────────────────────────────────────────
     parts.append("")
@@ -103,14 +118,17 @@ def build_prompt(jd_intel, matching, consultant, header, education, certificatio
     ats = jd_intel.get("keywords_for_ats", [])
     resp = jd_intel.get("responsibilities", [])
 
+    parts.append("(The lists below describe what the JOB wants. They are NOT the candidate's "
+                 "skills. Use a term from these lists ONLY if it also appears in the candidate's "
+                 "data further down. Otherwise ignore it.)")
     if req:
-        parts.append(f"Required Skills: {', '.join(req)}")
+        parts.append(f"Job wants (required): {', '.join(req)}")
     if pref:
-        parts.append(f"Preferred Skills: {', '.join(pref)}")
+        parts.append(f"Job wants (preferred): {', '.join(pref)}")
     if tools:
-        parts.append(f"Tools: {', '.join(tools)}")
+        parts.append(f"Job tools: {', '.join(tools)}")
     if ats:
-        parts.append(f"ATS Keywords (weave naturally): {', '.join(ats[:20])}")
+        parts.append(f"ATS keywords (use ONLY those the candidate genuinely has): {', '.join(ats[:20])}")
     if resp:
         parts.append("Responsibilities:")
         for r in resp[:10]:
@@ -125,11 +143,12 @@ def build_prompt(jd_intel, matching, consultant, header, education, certificatio
     coaching = matching.get("coaching_keywords", [])
 
     if matched:
-        parts.append(f"Candidate HAS: {', '.join(matched)}")
+        parts.append(f"Candidate HAS (safe to feature): {', '.join(matched)}")
     if missing:
-        parts.append(f"Candidate LACKS (do NOT fake): {', '.join(missing)}")
+        parts.append(f"Candidate LACKS — FORBIDDEN to mention anywhere in the resume "
+                     f"(not summary, not skills, not bullets): {', '.join(missing)}")
     if coaching:
-        parts.append(f"Weave these where truthful: {', '.join(coaching)}")
+        parts.append(f"May use ONLY if the candidate genuinely has them: {', '.join(coaching)}")
     for w in matching.get("warnings", []):
         parts.append(f"WARNING: {w}")
 
@@ -150,16 +169,18 @@ def build_prompt(jd_intel, matching, consultant, header, education, certificatio
             start = exp.start_date.strftime("%b %Y") if exp.start_date else "N/A"
             end = exp.end_date.strftime("%b %Y") if exp.end_date else "Present"
             is_recent = (i == 0)
-            count = "7-10 bullets" if is_recent else "6 bullets"
-            parts.append(f"  {'MOST RECENT' if is_recent else 'PREVIOUS'} ({count}):")
+            label = "MOST RECENT ROLE" if is_recent else "PREVIOUS ROLE"
+            parts.append(f"  {label} (bullet count: follow the generation rules; write bullets "
+                         f"ONLY from the description below — if it is short, write fewer bullets, "
+                         f"do NOT invent work to fill space):")
             parts.append(f"    {exp.title} | {exp.company} | {start} - {end}")
             if exp.description:
-                parts.append(f"    {exp.description[:600].strip()}")
+                parts.append(f"    {exp.description[:2000].strip()}")
             parts.append("")
     elif consultant.base_resume_text:
         parts.append("")
-        parts.append("BASE RESUME (extract roles from this):")
-        parts.append(consultant.base_resume_text[:3000])
+        parts.append("BASE RESUME (extract roles and real detail from this — do not invent beyond it):")
+        parts.append(consultant.base_resume_text[:5000])
     else:
         parts.append("No experience provided.")
 

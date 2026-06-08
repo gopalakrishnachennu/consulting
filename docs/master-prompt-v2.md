@@ -21,7 +21,9 @@ employer, domain, or responsibility that is not supported by the candidate data.
 If truth and keyword optimization ever conflict, TRUTH WINS.
 
 When something the JD wants is NOT supported by the candidate data, do not invent
-it — record it under NOTES (see Output Format) and move on.
+it and do not write it anywhere in the resume — simply omit it. (The recruiter sees
+skill gaps in the match panel separately; the resume must never claim a missing skill
+and must never contain a NOTES/disclaimer block.)
 
 ---
 
@@ -92,7 +94,7 @@ Format: `Category: skill, skill, skill`.
 - Order by JD relevance: the JD's top requirements drive the first categories.
 - Mirror the JD's exact naming for skills the candidate actually has.
 - NEVER list a technology the candidate does not have, even if the JD requires it.
-  Missing required tech goes in NOTES, not here.
+  Missing required tech is simply omitted here (the gap shows in the match panel).
 - Use the verified candidate skills pool as the source of truth.
 - Min 3 items per category; max 8. Drop tiny/duplicate categories. If the candidate
   has more skills than fit, keep the JD-relevant and strongest ones.
@@ -140,7 +142,7 @@ HOW TO REACH 2 PAGES TRUTHFULLY (read carefully):
   (e.g. "ETL development" → one bullet on pipeline build, one on data integration/sources).
 - Draw additional real detail from the base resume if the structured profile is terse.
 - If, after honest elaboration, the candidate's data still cannot fill ~2 pages, STOP —
-  do NOT invent work. Add a NOTES line that the profile needs more detail to reach 2 pages.
+  do NOT invent work — produce the shorter, truthful resume instead.
 
 Each bullet: action verb → what was done → with which technology → context/outcome.
 The outcome may be non-numeric. Bullets may run 1–2 lines. Keep them specific to this
@@ -189,7 +191,7 @@ Bad (delete these): "Responsible for database management." /
 - No degree provided → omit the Education section entirely (do not invent one).
 - Certifications: list as given. Include a date only if provided. Don't flag a cert
   as expired unless the data says so. Never fabricate a cert the JD asks for —
-  surface that gap in NOTES instead.
+  simply omit it; the gap is shown to the recruiter in the match panel.
 - If the candidate has NO certifications, OMIT the CERTIFICATIONS section entirely.
   Do NOT print "None", "None provided", or an empty heading.
 
@@ -217,12 +219,12 @@ the data and the JD values it. Never add by default. Never fabricate.
   bullet ranges (4C), in-depth elaboration of real work, a 3–4 sentence summary, and full
   skill coverage (Section 3) — NEVER through invented facts, fake metrics, or filler.
 - If genuinely too long, tighten wording and trim the oldest role first. If genuinely too
-  short after honest elaboration, the candidate's profile lacks detail — say so in NOTES;
+  short after honest elaboration, produce the shorter truthful resume;
   do not fabricate to fill space.
 
 ---
 
-# EDGE CASES (apply silently; only surface a NOTES item when there is real risk)
+# EDGE CASES (apply silently — never write NOTES in the resume; gaps show in the match panel)
 
 CONTACT / HEADER
 - No location → omit location token. Country only → country only, no invented city.
@@ -250,14 +252,14 @@ EDUCATION / CERTS
   the date. Expired cert → only mark expired if the data says so.
 
 JD vs CANDIDATE MISMATCH
-- Required tech candidate lacks → NOTES, not Core Skills, not a bullet.
+- Required tech candidate lacks → omit entirely (not in skills, not in a bullet); never claim it.
 - Preferred tech candidate lacks → simply omit.
-- 3+ required techs missing, or match clearly low → add a brief NOTES line; still
+- 3+ required techs missing, or match clearly low → still
   produce the best truthful resume from transferable skills.
-- JD wants clearance / visa / citizenship / certification candidate lacks → NOTES;
+- JD wants clearance / visa / citizenship / certification candidate lacks → omit it;
   never claim it.
 - JD asks more years than candidate has → use the real number; gap of 1–2 yrs can be
-  framed as "progressive experience"; larger gaps stay honest (NOTES if severe).
+  framed as "progressive experience"; larger gaps stay honest with the real number.
 - JD title far more senior → do not adopt it; align only to a truthful variant.
 - JD is hybrid/onsite in another city → ignore for the resume (location = candidate's).
 - JD company already in the candidate's history → keep it as their real employer; never
@@ -265,7 +267,7 @@ JD vs CANDIDATE MISMATCH
 - JD vague / extremely long / has conflicting or duplicate skills → focus on the
   candidate's strongest real overlap; de-duplicate; ignore boilerplate.
 - JD requires management but candidate is IC (or coding vs ops, or a cloud provider the
-  candidate never used) → present closest truthful experience; gap → NOTES.
+  candidate never used) → present closest truthful experience; never fake the gap.
 - JD pollution (salary, benefits, EEO text, recruiter boilerplate, repeated company
   name, "nice to have", "e.g." example tools) → do not treat these as required keywords.
 
@@ -280,8 +282,8 @@ CANDIDATE DATA QUALITY
   don't invent achievements. Achievements but no tech → keep the achievement, add tech
   only if known.
 - Missing personal details / responsibilities / education → proceed with what exists;
-  omit empty sections; never fabricate; NOTES if a critical field is missing.
-- Domain experience doesn't match JD / low overlap → emphasize transferable skills; NOTES.
+  omit empty sections; never fabricate.
+- Domain experience doesn't match JD / low overlap → emphasize transferable skills truthfully.
 
 OUTPUT QUALITY (self-check before finishing)
 - Too keyword-stuffed → thin it out so it reads naturally.
@@ -293,12 +295,9 @@ OUTPUT QUALITY (self-check before finishing)
 
 # OUTPUT FORMAT
 
-Output ONLY the resume as plain text. If (and only if) there is real risk
-(missing required skills/certs, large experience gap, low overlap), put a short
-NOTES block FIRST, then the resume. If there is no risk, output no NOTES block.
-
-NOTES (only when risk exists)
-- <one short line per risk>
+Output ONLY the resume as plain text — no NOTES block, no preamble, no commentary.
+Begin directly with the candidate's name. Skill gaps are surfaced to the recruiter
+in the match panel, never inside the resume; never claim a missing skill to hide a gap.
 
 [FULL NAME]
 [Location from PERSONAL DETAILS] | [Email] | [Phone] | [LinkedIn if provided]
