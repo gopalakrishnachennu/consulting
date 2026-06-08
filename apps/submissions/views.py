@@ -190,7 +190,14 @@ class SubmissionQuickSubmitView(LoginRequiredMixin, UserPassesTestMixin, View):
         return render(
             request,
             self.template_name,
-            {'jobs': jobs, 'consultants': consultants},
+            {
+                'jobs': jobs,
+                'consultants': consultants,
+                # Prefill from ?job= / ?consultant= so coming from a draft/job/consultant
+                # context pre-selects the dropdowns instead of a cold re-selection.
+                'prefill_job': request.GET.get('job', ''),
+                'prefill_consultant': request.GET.get('consultant', ''),
+            },
         )
 
     def post(self, request):

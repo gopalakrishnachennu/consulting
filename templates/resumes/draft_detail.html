@@ -166,11 +166,19 @@
       {# Actions #}
       <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-2">
         <h3 class="text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">Actions</h3>
+        {% if draft.content %}
+        {# Primary next step in the funnel: generate → review → SUBMIT → track → place #}
+        <a href="{% url 'submission-create' %}?resume_id={{ draft.pk }}"
+           class="flex items-center justify-center gap-2 w-full px-3 py-2.5 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-sm transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7m6-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          Submit Application
+        </a>
+        {% endif %}
         {% if draft.content and request.user.is_superuser or request.user.role == 'ADMIN' %}
         {% if draft.status == 'DRAFT' or draft.status == 'REVIEW' %}
         <form method="post" action="{% url 'draft-promote' draft.pk %}" class="block">
           {% csrf_token %}
-          <button type="submit" class="flex items-center justify-center gap-2 w-full px-3 py-2.5 rounded-lg text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition">
+          <button type="submit" class="flex items-center justify-center gap-2 w-full px-3 py-2.5 rounded-lg text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
             Promote to Final
           </button>
