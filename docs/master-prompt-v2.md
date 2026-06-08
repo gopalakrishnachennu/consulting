@@ -86,19 +86,34 @@ Format (single line, pipe-separated, no icons/emojis):
 
 ---
 
-# SECTION 3 — CORE SKILLS
+# SECTION 3 — TECHNICAL SKILLS
 
-8–10 categorized lines (use the candidate's full real skill set for coverage).
-Format: `Category: skill, skill, skill`.
+Heading must read exactly: TECHNICAL SKILLS
+Format: `Category: skill, skill, skill` (one category per line).
 
-- Order by JD relevance: the JD's top requirements drive the first categories.
-- Mirror the JD's exact naming for skills the candidate actually has.
-- NEVER list a technology the candidate does not have, even if the JD requires it.
-  Missing required tech is simply omitted here (the gap shows in the match panel).
-- Use the verified candidate skills pool as the source of truth.
-- Min 3 items per category; max 8. Drop tiny/duplicate categories. If the candidate
-  has more skills than fit, keep the JD-relevant and strongest ones.
-- Collapse JD duplicates (same skill under two names) into one entry.
+COUNT: minimum 6 category lines, ideally 8–10. Never fewer than 6.
+DENSITY: 3–8 real skills per category. No category with only 1–2 items — merge or drop it.
+
+ATS OPTIMIZATION (this is what makes it score well):
+- The FIRST 2–3 categories must cover the JD's top required skills THAT THE CANDIDATE HAS,
+  using the JD's exact wording (e.g. if the JD says "ETL/ELT", write "ETL/ELT", not "data
+  integration"). This puts the keywords a scanner looks for at the top.
+- Use specific named tools/versions, not vague phrases. "SQL Server, PostgreSQL, MySQL" —
+  not "various databases". "AWS (EC2, S3, Lambda, RDS)" — not "cloud".
+- Spell out an acronym once where it helps both human + ATS, e.g. "CI/CD (Continuous
+  Integration / Continuous Delivery)".
+- Pick clear category names from: Programming Languages, Databases, Data Warehousing,
+  ETL / Data Integration, Cloud Platforms, Infrastructure as Code, CI/CD & DevOps,
+  Containers & Orchestration, Data Modeling, Monitoring & Observability, Scripting &
+  Automation, Data Governance & Security, Tools & Collaboration, Operating Systems.
+
+TRUTH (unchanged, overrides the above):
+- List ONLY skills present in the candidate's data. NEVER add a JD skill the candidate
+  lacks just to hit 6 categories or match keywords — omit it (the gap shows in the match
+  panel). If the candidate genuinely doesn't have enough skills for 6 categories, use as
+  many real categories as the data supports rather than inventing one.
+- Mirror the JD's naming only for skills the candidate actually has.
+- Collapse duplicates (same skill under two names) into one entry.
 
 ---
 
@@ -209,7 +224,7 @@ the data and the JD values it. Never add by default. Never fabricate.
 - Single column, no tables, no headers/footers, no images/icons.
 - Output characters limited to letters, numbers, spaces, and `- | – . , / ( ) % $ @ : +`.
   No emojis, arrows, or checkmarks in the OUTPUT.
-- Section headings exactly: PROFESSIONAL SUMMARY, CORE SKILLS,
+- Section headings exactly: PROFESSIONAL SUMMARY, TECHNICAL SKILLS,
   PROFESSIONAL EXPERIENCE, EDUCATION (, CERTIFICATIONS).
 - One consistent date format throughout (e.g. "Mon YYYY"). Normalize messy/partial
   source dates ("2020/04" → "Apr 2020"; missing month → "YYYY"). Keep "Present"
@@ -303,11 +318,11 @@ in the match panel, never inside the resume; never claim a missing skill to hide
 [Location from PERSONAL DETAILS] | [Email] | [Phone] | [LinkedIn if provided]
 
 PROFESSIONAL SUMMARY
-<2–4 sentences>
+<3–4 sentences>
 
-CORE SKILLS
+TECHNICAL SKILLS
 <Category>: <skills>
-... (7–10 lines)
+... (minimum 6 lines, ideally 8–10)
 
 PROFESSIONAL EXPERIENCE
 
