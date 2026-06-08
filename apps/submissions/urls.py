@@ -1,6 +1,6 @@
 from django.urls import path
 from .views import (
-    SubmissionCreateView, SubmissionQuickSubmitView, SubmitWorkspaceView, SubmissionListView, SubmissionUpdateView,
+    SubmissionCreateView, SubmitWorkspaceView, SubmissionListView, SubmissionUpdateView,
     SubmissionKanbanView, SubmissionKanbanMoveView,
     SubmissionClaimView, SubmissionDetailView, SubmissionExportCSVView,
     SubmissionBulkStatusView, SubmissionInlineStatusView,
@@ -28,7 +28,6 @@ urlpatterns = [
     path('', SubmissionListView.as_view(), name='submission-list'),
     path('kanban/', SubmissionKanbanView.as_view(), name='submission-kanban'),
     path('kanban/move/', SubmissionKanbanMoveView.as_view(), name='submission-kanban-move'),
-    path('quick-submit/', SubmissionQuickSubmitView.as_view(), name='submission-quick-submit'),
     path('workspace/', SubmitWorkspaceView.as_view(), name='submit-workspace'),
     path('export/', SubmissionExportCSVView.as_view(), name='submission-export-csv'),
     path('bulk-status/', SubmissionBulkStatusView.as_view(), name='submission-bulk-status'),

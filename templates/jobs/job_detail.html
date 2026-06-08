@@ -359,9 +359,9 @@
       {# Quick Apply / CTA #}
       {% if object.status == 'OPEN' %}
         {% if user.role == 'CONSULTANT' %}
-        <a href="{% url 'submission-quick-submit' %}" class="flex items-center justify-center gap-2 w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm transition shadow-sm">
+        <a href="{% url 'submit-workspace' %}?job={{ object.pk }}" class="flex items-center justify-center gap-2 w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm transition shadow-sm">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-          Quick Submit Application
+          Submit Application
         </a>
         {% endif %}
       {% endif %}
