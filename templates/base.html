@@ -236,7 +236,9 @@
         <div class="htmx-indicator h-full animate-loading-bar" style="background-color:var(--brand-500)"></div>
     </div>
 
-    {% if PLATFORM_CONFIG.nav_layout == 'left' %}
+    {% if hide_chrome %}
+    {# ═══ Distraction-free pages (e.g. resume editor) render no global nav ═══ #}
+    {% elif PLATFORM_CONFIG.nav_layout == 'left' %}
     {# ═══════════════ LEFT SIDEBAR — fixed panel ═══════════════ #}
     {# Mobile: sidebar overlay with backdrop #}
     <div x-data="{ sidebarOpen: false }" @keydown.escape.window="sidebarOpen = false">

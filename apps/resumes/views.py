@@ -692,6 +692,7 @@ class ResumeEditorView(DraftAccessMixin, BaseView):
         return render(request, 'resumes/editor.html', {
             'draft': draft,
             'state': state,
+            'hide_chrome': True,  # distraction-free: no global app sidebar/nav in the editor
             'sections_json': _json.dumps(state.sections_json),
             'template_config': _json.dumps(effective_tpl),
             'preview_html': preview_html,

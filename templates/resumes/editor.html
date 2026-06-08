@@ -4,7 +4,7 @@
 {% block hide_container %}style="display:none"{% endblock %}
 
 {% block fullscreen_content %}
-<div x-data="resumeEditor()" x-init="init()" class="flex flex-col h-screen overflow-hidden bg-gray-100 {% if PLATFORM_CONFIG.nav_layout == 'left' %}lg:ml-64{% endif %}">
+<div x-data="resumeEditor()" x-init="init()" class="flex flex-col h-screen overflow-hidden bg-gray-100">
 
   {# ═══════════════════════════════════════════════════════ TOP BAR ══ #}
   <header class="flex-none flex items-center justify-between h-14 px-4 bg-white border-b border-gray-200 shadow-sm z-20">
@@ -694,26 +694,4 @@ function resumeEditor() {
 }
 </script>
 
-{# ── Inject section nav tabs via inline script (avoids Django template loop issue) ── #}
-<script>
-document.addEventListener('alpine:init', () => {});
-// Replace the static nav with Alpine-driven tabs
-document.addEventListener('DOMContentLoaded', () => {
-  const nav = document.querySelector('aside nav');
-  if (!nav) return;
-  const tabs = [
-    ['personal','Personal','👤'],['summary','Summary','📝'],
-    ['skills','Skills','⚡'],['experience','Experience','💼'],
-    ['education','Education','🎓'],['certifications','Certs','🏆'],
-  ];
-  nav.innerHTML = tabs.map(([id, label, icon]) =>
-    `<button onclick="void(0)"
-       @click="activeSection = '${id}'"
-       :class="activeSection === '${id}' ? 'bg-white text-indigo-700 shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700'"
-       class="flex-none flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition whitespace-nowrap">
-       ${icon} ${label}
-     </button>`
-  ).join('');
-});
-</script>
 {% endblock fullscreen_content %}
