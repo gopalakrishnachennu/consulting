@@ -138,40 +138,58 @@ def _parse_skills(lines: list[str]) -> list[dict]:
 
 def _parse_experience(lines: list[str]) -> list[dict]:
     """
-    Each role block:
-        Job Title               ← new role title (no bullet, no |+date)
-        Company | Date - Date   ← company|dates line  (has | AND a date token)
-        - Bullet ...            ← bullet lines
+    Handles BOTH header layouts the LLM may emit:
+
+      One-line header (current prompt):
+        Job Title | Company | Date - Date
+        - Bullet ...
+
+      Two-line header (legacy):
+        Job Title
+        Company | Date - Date
+        - Bullet ...
     """
     roles: list[dict] = []
     current: dict | None = None
+
+    def start_role(title='', company='', dates=''):
+        nonlocal current
+        current = {'title': title, 'company': company, 'dates': dates, 'bullets': []}
+        roles.append(current)
 
     for ln in lines:
         s = ln.strip()
         if not s:
             continue
 
-        is_bullet = bool(re.match(r'^[-•*·]\s+', s))
-        is_company_dates = ('|' in s) and bool(_DATE_TOKEN.search(s))
-
-        if is_bullet:
+        if re.match(r'^[-•*·]\s+', s):                       # bullet
             if current is not None:
-                bullet_text = re.sub(r'^[-•*·]\s*', '', s)
-                current['bullets'].append(bullet_text)
+                current['bullets'].append(re.sub(r'^[-•*·]\s*', '', s))
             continue
 
-        if is_company_dates and current is not None:
-            parts = [p.strip() for p in s.split('|')]
-            current['company'] = parts[0]
-            current['dates']   = ' | '.join(parts[1:]) if len(parts) > 2 else (parts[1] if len(parts) > 1 else '')
+        parts = [p.strip() for p in s.split('|')]
+        has_date = bool(_DATE_TOKEN.search(s))
+
+        # One-line header: Title | Company | Dates  (3+ parts, ends with a date)
+        if len(parts) >= 3 and has_date:
+            start_role(parts[0], parts[1], ' | '.join(parts[2:]))
             continue
 
-        # New role title
-        current = {'title': s, 'company': '', 'dates': '', 'bullets': []}
-        roles.append(current)
+        # Two-part line WITH a date.
+        if len(parts) == 2 and has_date:
+            # Continuation of a freshly-started two-line role (title set, nothing else yet)
+            if current is not None and not current['company'] and not current['dates'] and not current['bullets']:
+                current['company'], current['dates'] = parts[0], parts[1]
+            else:
+                # A new role written as "Title | Dates" (company omitted)
+                start_role(parts[0], '', parts[1])
+            continue
 
-    # Remove empty ghost roles (just a title, no bullets or company)
-    return [r for r in roles if r['bullets'] or r['company']]
+        # Bare line, no date → a Title line (two-line layout) → begin a new role
+        start_role(title=s)
+
+    # Drop ghost roles that captured nothing real
+    return [r for r in roles if r['bullets'] or r['company'] or r['dates']]
 
 
 def _parse_education(lines: list[str]) -> list[dict]:
