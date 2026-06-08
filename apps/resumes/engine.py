@@ -526,6 +526,9 @@ def generate_resume(job, consultant, actor=None, input_sections=None, coaching_k
         latency_ms = int((time.time() - start) * 1000)
 
         content = response.choices[0].message.content
+        # Strip any leading LLM meta-commentary (NOTES:/preamble) before the resume.
+        from .pipeline import _clean_llm_output
+        content = _clean_llm_output(content or "")
         prompt_tokens = response.usage.prompt_tokens if response.usage else 0
         completion_tokens = response.usage.completion_tokens if response.usage else 0
         total_tokens = response.usage.total_tokens if response.usage else 0

@@ -81,6 +81,8 @@ def build_prompt(jd_intel, matching, consultant, header, education, certificatio
     parts.append("2. NEVER add companies, titles, dates, or certifications not provided.")
     parts.append("3. Output plain text only. No markdown, no bold, no code fences.")
     parts.append("4. Copy the HEADER, EDUCATION, and CERTIFICATIONS exactly as given.")
+    parts.append("5. Output ONLY the resume. No preamble, NOTES, commentary, or explanation "
+                 "before or after it. Begin directly with the candidate's name from the HEADER.")
 
     # ── Header ──────────────────────────────────────────────────────
     parts.append("")

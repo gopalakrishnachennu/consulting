@@ -194,6 +194,16 @@ def _clean_llm_output(text):
     text = re.sub(r'^```\w*\s*\n?', '', text, flags=re.MULTILINE)
     text = re.sub(r'\n?```\s*$', '', text, flags=re.MULTILINE)
 
+    # Strip leading LLM meta-commentary (e.g. "NOTES: this JD has limited overlap...")
+    # before the resume actually starts. The model sometimes prepends a strategy note
+    # when the skill match is low. Drop a leading NOTE/NOTES block up to the first
+    # blank line, plus common "Here is ..." preambles.
+    text = text.lstrip()
+    text = re.sub(r'^(NOTES?|DISCLAIMER)\s*:.*?(\n\s*\n|\Z)', '', text,
+                  flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r'^(Here(\'s| is)|Sure|Certainly|Below is)\b.*?(\n\s*\n|\Z)', '', text,
+                  flags=re.IGNORECASE | re.DOTALL)
+
     # Remove bold/italic markdown (**text** → text, *text* → text)
     text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
     text = re.sub(r'\*(.+?)\*', r'\1', text)
