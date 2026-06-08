@@ -231,6 +231,104 @@ class SubmissionQuickSubmitView(LoginRequiredMixin, UserPassesTestMixin, View):
         return redirect(f"{reverse('submission-create')}?resume_id={draft.pk}")
 
 
+class SubmitWorkspaceView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
+    """
+    Unified 'Submit a Consultant' workspace — the whole match → generate →
+    review → submit flow on ONE page. Steps reveal based on URL state
+    (?consultant=&job=) + whether a draft exists. Orchestrates existing
+    endpoints (resume-generate-run, submission-create), almost no new logic.
+    """
+    template_name = 'submissions/workspace.html'
+
+    def test_func(self):
+        u = self.request.user
+        return u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE, User.Role.CONSULTANT)
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        from jobs.models import Job
+        from resumes.engine import preflight_check, get_resume_location
+
+        user = self.request.user
+        is_consultant = (user.role == User.Role.CONSULTANT)
+
+        # Consultant options — consultants can only pick themselves
+        if is_consultant and hasattr(user, 'consultant_profile'):
+            consultants = ConsultantProfile.objects.filter(
+                pk=user.consultant_profile.pk
+            ).select_related('user')
+        else:
+            consultants = (
+                ConsultantProfile.objects.filter(status=ConsultantProfile.Status.ACTIVE)
+                .select_related('user')
+                .order_by('user__first_name', 'user__last_name')[:500]
+            )
+        ctx['consultants'] = consultants
+
+        # Read selection from query state
+        consultant_id = self.request.GET.get('consultant') or ''
+        job_id = self.request.GET.get('job') or ''
+        ctx['selected_consultant_id'] = consultant_id
+        ctx['selected_job_id'] = job_id
+
+        consultant = None
+        job = None
+        if consultant_id:
+            consultant = ConsultantProfile.objects.filter(pk=consultant_id).select_related('user').first()
+            if is_consultant and consultant and consultant.pk != getattr(user, 'consultant_profile', None).pk:
+                consultant = None  # consultants restricted to self
+        if job_id:
+            job = Job.objects.filter(pk=job_id).first()
+
+        # Job options — scoped to consultant's marketing roles when a consultant is chosen,
+        # else all OPEN jobs.
+        if consultant and consultant.marketing_roles.exists():
+            jobs = (
+                Job.objects.filter(status='OPEN', marketing_roles__in=consultant.marketing_roles.all())
+                .select_related('company_obj').distinct().order_by('-created_at')[:500]
+            )
+        else:
+            jobs = Job.objects.filter(status='OPEN').select_related('company_obj').order_by('-created_at')[:500]
+        ctx['jobs'] = jobs
+
+        ctx['consultant_obj'] = consultant
+        ctx['job_obj'] = job
+
+        # When both selected → match panel + draft detection + submit form
+        if consultant and job:
+            try:
+                ctx['preflight'] = preflight_check(job, consultant)
+            except Exception:
+                ctx['preflight'] = None
+            try:
+                loc, src = get_resume_location(consultant, job, use_preferred=False)
+                ctx['resolved_location'] = loc
+                ctx['location_source'] = src
+            except Exception:
+                ctx['resolved_location'] = None
+
+            existing_draft = (
+                ResumeDraft.objects.filter(consultant=consultant, job=job)
+                .exclude(status=ResumeDraft.Status.ERROR)
+                .order_by('-version')
+                .first()
+            )
+            if existing_draft and not (existing_draft.content or '').strip():
+                existing_draft = None
+            ctx['existing_draft'] = existing_draft
+
+            # Embedded submission form, prefilled, when a draft exists (State C)
+            if existing_draft:
+                ctx['submit_form'] = ApplicationSubmissionForm(initial={
+                    'job': job, 'consultant': consultant, 'resume': existing_draft,
+                })
+
+            # Back-to-workspace URL for the generate form's `next` param
+            ctx['workspace_next'] = f"{reverse('submit-workspace')}?consultant={consultant.pk}&job={job.pk}"
+
+        return ctx
+
+
 class SubmissionListView(LoginRequiredMixin, ListView):
     model = ApplicationSubmission
     template_name = 'submissions/submission_list.html'
