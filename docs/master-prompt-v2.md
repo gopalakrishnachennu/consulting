@@ -70,7 +70,7 @@ Format (single line, pipe-separated, no icons/emojis):
 
 # SECTION 2 — PROFESSIONAL SUMMARY
 
-2–4 sentences. Lead with the candidate's actual seniority and years.
+3–4 sentences. Lead with the candidate's actual seniority and years.
 
 - Sentence 1: role focus + years of experience (from TOTAL YEARS) + 3–4 of the
   candidate's strongest technologies that also matter to the JD.
@@ -86,7 +86,8 @@ Format (single line, pipe-separated, no icons/emojis):
 
 # SECTION 3 — CORE SKILLS
 
-7–10 categorized lines. Format: `Category: skill, skill, skill`.
+8–10 categorized lines (use the candidate's full real skill set for coverage).
+Format: `Category: skill, skill, skill`.
 
 - Order by JD relevance: the JD's top requirements drive the first categories.
 - Mirror the JD's exact naming for skills the candidate actually has.
@@ -122,21 +123,36 @@ Header format:
   (no IC → "Manager") or specialty the candidate never did.
 - Show natural progression across older roles; don't rewrite history.
 
-### 4C. Bullets (counts are ranges, not fixed)
-- Current / most recent role: 5–7 bullets.
-- Recent relevant roles: 4–6 bullets.
-- Older or less relevant roles: 3–5 bullets.
-- Only 1 role: 8–10 bullets. Only 2 roles: 6–8 then 5–7.
-- Expand by adding real detail, never by padding or repeating.
+### 4C. Bullets (TARGET ~2 PAGES — aim for the high end of these ranges)
+- Current / most recent role: 6–8 bullets.
+- Recent relevant roles: 5–7 bullets.
+- Older or less relevant roles: 4–6 bullets.
+- Only 1 role: 10–12 bullets. Only 2 roles: 8–10 then 6–8.
 
-Each bullet: action verb → what was done → with which technology → outcome.
-The outcome may be non-numeric. Keep bullets specific to this candidate's work.
+HOW TO REACH 2 PAGES TRUTHFULLY (read carefully):
+- Reach length by ELABORATING real work in depth, NOT by inventing facts or padding.
+- Take each genuine responsibility and expand it into a full, specific bullet: what was
+  done, WHICH technologies/tools were used (from the candidate's real stack), the context
+  (system, scale, team, environment), and the outcome. A thin "Managed databases" becomes
+  "Administered and tuned SQL Server databases supporting reporting workloads, handling
+  indexing, backups, and recovery procedures to maintain data integrity."
+- Split a broad responsibility into 2 distinct bullets when it genuinely covers two areas
+  (e.g. "ETL development" → one bullet on pipeline build, one on data integration/sources).
+- Draw additional real detail from the base resume if the structured profile is terse.
+- If, after honest elaboration, the candidate's data still cannot fill ~2 pages, STOP —
+  do NOT invent work. Add a NOTES line that the profile needs more detail to reach 2 pages.
+
+Each bullet: action verb → what was done → with which technology → context/outcome.
+The outcome may be non-numeric. Bullets may run 1–2 lines. Keep them specific to this
+candidate's real work; never repeat the same idea twice.
 
 Bad (delete these): "Responsible for database management." /
 "Worked with the team to improve systems." / "Utilized various tools."
 
 ### 4D. Verbs
-- Past tense for past roles, present tense for the current role.
+- Present tense for the CURRENT role (end date "Present"): "Design", "Develop",
+  "Administer". Past tense for ALL previous roles: "Designed", "Developed". This is
+  mandatory — check every bullet's tense against whether the role is current.
 - Don't reuse the same opening verb twice in a row or more than ~3 times total.
 - Let scope grow over time (operate/support → build/automate → design/lead) ONLY
   if the candidate's real trajectory supports it.
@@ -174,6 +190,8 @@ Bad (delete these): "Responsible for database management." /
 - Certifications: list as given. Include a date only if provided. Don't flag a cert
   as expired unless the data says so. Never fabricate a cert the JD asks for —
   surface that gap in NOTES instead.
+- If the candidate has NO certifications, OMIT the CERTIFICATIONS section entirely.
+  Do NOT print "None", "None provided", or an empty heading.
 
 ---
 
@@ -195,8 +213,12 @@ the data and the JD values it. Never add by default. Never fabricate.
   source dates ("2020/04" → "Apr 2020"; missing month → "YYYY"). Keep "Present"
   on the current role(s) only as supported by the data.
 - No first-person pronouns. No passive voice. Bullets start with a verb.
-- Target 1–2 pages; if long, tighten wording and trim the oldest role first — do not
-  drop required real content to hit a page count.
+- TARGET LENGTH: a full ~2 pages (roughly 1.75–2). Reach it through the high end of the
+  bullet ranges (4C), in-depth elaboration of real work, a 3–4 sentence summary, and full
+  skill coverage (Section 3) — NEVER through invented facts, fake metrics, or filler.
+- If genuinely too long, tighten wording and trim the oldest role first. If genuinely too
+  short after honest elaboration, the candidate's profile lacks detail — say so in NOTES;
+  do not fabricate to fill space.
 
 ---
 
