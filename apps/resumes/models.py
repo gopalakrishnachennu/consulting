@@ -250,7 +250,18 @@ class ResumeEditorState(models.Model):
                                  on_delete=models.SET_NULL, related_name='editor_states')
     sections_json = models.JSONField(default=dict, blank=True,
         help_text='Parsed sections: name, contact, summary, skills[], experience[], education[], certifications[]')
+    template_overrides = models.JSONField(default=dict, blank=True,
+        help_text='Per-draft template tweaks from the Customise panel (font, sizes, colors, '
+                  'margins...). Merged over the selected template for both preview and export, '
+                  'so the live preview matches the downloaded file exactly.')
     updated_at = models.DateTimeField(auto_now=True)
+
+    def effective_template(self):
+        """Selected template's values with this draft's Customise overrides merged on top."""
+        from .export_utils import DEFAULT_TEMPLATE  # lazy to avoid import cycles
+        base = self.template.to_dict() if self.template else dict(DEFAULT_TEMPLATE)
+        base.update(self.template_overrides or {})
+        return base
 
     def __str__(self):
         return f'EditorState for Draft #{self.draft_id}'

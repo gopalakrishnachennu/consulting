@@ -14,6 +14,18 @@ if TYPE_CHECKING:
     pass
 
 
+# Fallback template values — match render_resume_html's .get() defaults exactly,
+# so a draft with no selected template still renders identically in preview + export.
+DEFAULT_TEMPLATE = {
+    'font_family': 'Georgia, serif',
+    'name_size': 22, 'header_size': 13, 'body_size': 11, 'contact_size': 10,
+    'accent_color': '#1e3a5f', 'name_color': '#111827', 'body_color': '#374151',
+    'margin_top': 0.75, 'margin_bottom': 0.75, 'margin_left': 0.75, 'margin_right': 0.75,
+    'line_height': 1.3, 'para_spacing': 5, 'section_spacing': 10,
+    'header_style': 'underline', 'bullet_char': '•',
+}
+
+
 # ─── Colour helper ───────────────────────────────────────────────────────────
 
 def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:

@@ -654,7 +654,7 @@ from django.http import JsonResponse
 from django.utils.text import slugify
 from .models import ResumeTemplate, ResumeEditorState
 from .parser import parse_resume
-from .export_utils import export_docx, export_pdf, export_pdf_html
+from .export_utils import export_docx, export_pdf, export_pdf_html, render_resume_html, DEFAULT_TEMPLATE
 
 
 class ResumeEditorView(DraftAccessMixin, BaseView):
@@ -684,11 +684,17 @@ class ResumeEditorView(DraftAccessMixin, BaseView):
             _Q(is_builtin=True) | _Q(created_by=request.user)
         ).order_by('-is_builtin', 'name'))
 
+        # Effective template = selected template + this draft's Customise overrides.
+        # Render the preview with the SAME renderer the PDF uses → preview == export.
+        effective_tpl = state.effective_template()
+        preview_html = render_resume_html(state.sections_json, effective_tpl, for_print=False)
+
         return render(request, 'resumes/editor.html', {
             'draft': draft,
             'state': state,
             'sections_json': _json.dumps(state.sections_json),
-            'template_config': _json.dumps(template.to_dict() if template else {}),
+            'template_config': _json.dumps(effective_tpl),
+            'preview_html': preview_html,
             'all_templates': all_templates,
             'all_templates_json': _json.dumps([t.to_dict() for t in all_templates]),
             'active_template': template,
@@ -740,13 +746,41 @@ class ResumeEditorSaveView(AdminOrEmployeeMixin, BaseView):
             else:
                 state.template = None
 
+        # Per-draft Customise tweaks (font/sizes/colors/margins). Stored so the
+        # export merges them too — keeping the download identical to the preview.
+        if 'tpl' in body and isinstance(body['tpl'], dict):
+            keys = set(DEFAULT_TEMPLATE.keys())
+            state.template_overrides = {k: v for k, v in body['tpl'].items() if k in keys}
+
         state.save()
         return JsonResponse({'ok': True, 'saved_at': state.updated_at.isoformat()})
 
+    def get_object(self):
+        return get_object_or_404(ResumeDraft, pk=self.kwargs['pk'])
 
-# ResumeEditorPreviewView removed — the editor renders its live preview
-# client-side (renderPreview() in editor.html), so this server endpoint was
-# never called. See resumes/editor.html for the actual preview logic.
+
+class ResumeEditorPreviewView(DraftAccessMixin, BaseView):
+    """Render the live preview server-side with the SAME renderer the PDF export
+    uses, so the on-screen preview matches the downloaded file exactly."""
+
+    def post(self, request, pk):
+        draft = get_object_or_404(ResumeDraft, pk=pk)
+        self._draft = draft
+        try:
+            body = _json.loads(request.body)
+        except Exception:
+            return JsonResponse({'ok': False, 'error': 'Invalid JSON'}, status=400)
+
+        sections = body.get('sections') or {}
+        tpl = dict(DEFAULT_TEMPLATE)
+        if isinstance(body.get('tpl'), dict):
+            tpl.update({k: v for k, v in body['tpl'].items() if k in DEFAULT_TEMPLATE})
+
+        html = render_resume_html(sections, tpl, for_print=False)
+        return JsonResponse({'ok': True, 'html': html})
+
+    def get_object(self):
+        return getattr(self, '_draft', None) or get_object_or_404(ResumeDraft, pk=self.kwargs['pk'])
 
 
 class ResumeExportDOCXView(DraftAccessMixin, BaseView):
@@ -758,9 +792,7 @@ class ResumeExportDOCXView(DraftAccessMixin, BaseView):
 
         state = getattr(draft, 'editor_state', None)
         sections = state.sections_json if state else parse_resume(draft.content or '')
-        tpl = (state.template if state and state.template else
-               ResumeTemplate.objects.filter(is_builtin=True).first())
-        tpl_cfg = tpl.to_dict() if tpl else {}
+        tpl_cfg = state.effective_template() if state else dict(DEFAULT_TEMPLATE)
 
         docx_bytes = export_docx(sections, tpl_cfg)
         consultant = draft.consultant.user.get_full_name() or draft.consultant.user.username
@@ -787,9 +819,7 @@ class ResumeExportPDFView(DraftAccessMixin, BaseView):
 
         state    = getattr(draft, 'editor_state', None)
         sections = state.sections_json if state else parse_resume(draft.content or '')
-        tpl      = (state.template if state and state.template else
-                    ResumeTemplate.objects.filter(is_builtin=True).first())
-        tpl_cfg  = tpl.to_dict() if tpl else {}
+        tpl_cfg  = state.effective_template() if state else dict(DEFAULT_TEMPLATE)
 
         consultant = draft.consultant.user.get_full_name() or draft.consultant.user.username
         job_title  = draft.job.title.replace(' ', '_')[:40]

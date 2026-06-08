@@ -296,20 +296,53 @@
       {# We embed the nav INSIDE the aside instead, handled via JS #}
     </aside>
 
-    {# ──────────────────────────── RIGHT PANEL: live A4 preview ─── #}
-    <main class="flex-1 overflow-y-auto bg-gray-200 flex flex-col items-center py-6 px-4 relative">
+    {# ─────────────────────── RIGHT PANEL: true US-Letter preview ─── #}
+    {# Initial preview HTML, rendered server-side by the same engine as the PDF #}
+    {{ preview_html|json_script:"initial-preview" }}
 
-      {# Hint badge #}
-      <p class="flex-none text-xs text-gray-400 mb-4 self-start ml-2 sm:ml-8">
-        Live preview updates as you edit &nbsp;·&nbsp; Exports use the selected template
-      </p>
+    <main class="flex-1 flex flex-col bg-gray-300/50 overflow-hidden relative">
 
-      {# A4 paper container #}
-      <div class="w-full max-w-[850px]">
-        <div id="a4-preview-wrapper" class="bg-white shadow-xl rounded-sm overflow-hidden"
-             style="min-height:1100px;">
-          <div id="a4-preview-content" x-html="previewHtml"
-               class="w-full h-full" style="font-size:11pt; line-height:1.35;">
+      {# Preview toolbar: fidelity note · page count · zoom #}
+      <div class="flex-none flex items-center justify-between gap-3 px-4 py-2 bg-white/80 backdrop-blur border-b border-gray-200">
+        <span class="text-xs text-gray-500 hidden md:inline">
+          Exact preview — matches your <span class="font-medium text-gray-700">DOCX / PDF</span> download
+        </span>
+
+        <div class="flex items-center gap-3 ml-auto">
+          {# page count — turns red past 2 pages #}
+          <span :class="pageCount > 2 ? 'bg-red-100 text-red-700' : (pageCount === 2 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600')"
+                class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+            <span x-text="pageCount"></span><span x-text="pageCount === 1 ? 'page' : 'pages'"></span>
+          </span>
+
+          {# zoom controls #}
+          <div class="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
+            <button @click="setZoom(zoom - 0.1)" class="w-7 h-7 rounded-md hover:bg-white text-gray-600 flex items-center justify-center" title="Zoom out">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6"/></svg>
+            </button>
+            <button @click="fitZoom()" class="px-2 h-7 rounded-md hover:bg-white text-gray-700 text-xs font-medium min-w-[3rem]"
+                    x-text="Math.round(zoom*100)+'%'" title="Fit to width"></button>
+            <button @click="setZoom(zoom + 0.1)" class="w-7 h-7 rounded-md hover:bg-white text-gray-600 flex items-center justify-center" title="Zoom in">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v12M18 12H6"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {# Scroll area #}
+      <div id="preview-scroll" class="flex-1 overflow-auto p-7 flex justify-center items-start">
+        {# zoom wrapper #}
+        <div :style="`transform:scale(${zoom});transform-origin:top center;`" class="transition-transform duration-100">
+          {# the US-Letter sheet — 8.5in wide, template margins as padding #}
+          <div x-ref="sheet" id="resume-sheet"
+               class="bg-white shadow-2xl ring-1 ring-black/5 relative"
+               :style="`width:8.5in;min-height:11in;box-sizing:border-box;padding:${(tpl.margin_top||0.75)}in ${(tpl.margin_right||0.75)}in ${(tpl.margin_bottom||0.75)}in ${(tpl.margin_left||0.75)}in;`">
+            {# page-break guide — faint dashed line at every 11in boundary #}
+            <div class="pointer-events-none absolute inset-0 z-10"
+                 style="background-image:repeating-linear-gradient(to bottom, transparent 0, transparent calc(11in - 1px), rgba(239,68,68,0.35) calc(11in - 1px), rgba(239,68,68,0.35) 11in);"></div>
+            {# rendered resume (canonical renderer output) #}
+            <div x-html="previewHtml" class="relative z-0"></div>
           </div>
         </div>
       </div>
@@ -485,6 +518,9 @@ function resumeEditor() {
     tplSaveMsg: '',
     previewHtml: '',
     exporting: false,
+    zoom: 1,
+    pageCount: 1,
+    previewTimer: null,
 
     init() {
       this.sections = {{ sections_json|safe }};
@@ -496,12 +532,14 @@ function resumeEditor() {
       if (!Array.isArray(this.sections.education))      this.sections.education = [];
       if (!Array.isArray(this.sections.certifications)) this.sections.certifications = [];
 
-      // Initial render
-      this.previewHtml = this.renderPreview();
+      // Initial preview comes pre-rendered from the server (same renderer as the PDF).
+      this.previewHtml = JSON.parse(document.getElementById('initial-preview').textContent || '""');
+      this.$nextTick(() => { this.fitZoom(); this.measurePages(); });
+      window.addEventListener('resize', () => this.fitZoom());
 
-      // Watch sections + template for changes
-      this.$watch('sections', () => { this.dirty = true; this.previewHtml = this.renderPreview(); this.scheduleSave(); });
-      this.$watch('tpl', () => { this.previewHtml = this.renderPreview(); });
+      // Watch sections + template for changes → re-render via server, autosave.
+      this.$watch('sections', () => { this.dirty = true; this.schedulePreview(); this.scheduleSave(); });
+      this.$watch('tpl',      () => { this.dirty = true; this.schedulePreview(); this.scheduleSave(); });
     },
 
     // ── Section nav tab helpers ──────────────────────────────────────
@@ -531,7 +569,7 @@ function resumeEditor() {
             'Content-Type': 'application/json',
             'X-CSRFToken': '{{ csrf_token }}',
           },
-          body: JSON.stringify({ sections: this.sections, template_id: this.tpl.id || null }),
+          body: JSON.stringify({ sections: this.sections, template_id: this.tpl.id || null, tpl: this.tpl }),
         });
         this.dirty = false;
       } catch(e) { console.error('Save failed', e); }
@@ -557,7 +595,7 @@ function resumeEditor() {
       const found = this.allTemplates.find(t => String(t.id) === String(tplId));
       if (found) {
         this.tpl = { ...found };
-        this.previewHtml = this.renderPreview();
+        this.schedulePreview();
         await this.save();
       }
     },
@@ -616,110 +654,41 @@ function resumeEditor() {
     addCert()              { this.sections.certifications.push(''); },
     removeCert(i)          { this.sections.certifications.splice(i, 1); },
 
-    // ── Live preview renderer (pure JS, zero server calls) ───────────
-    renderPreview() {
-      const s   = this.sections;
-      const t   = this.tpl;
-      const fnt = t.font_family  || 'Georgia, serif';
-      const ns  = (t.name_size   || 22)  + 'pt';
-      const hs  = (t.header_size || 13)  + 'pt';
-      const bs  = (t.body_size   || 11)  + 'pt';
-      const cs  = (t.contact_size|| 10)  + 'pt';
-      const acc = t.accent_color  || '#1e3a5f';
-      const nc  = t.name_color    || '#111827';
-      const bc  = t.body_color    || '#374151';
-      const mt  = (t.margin_top   || 0.75) + 'in';
-      const mr  = (t.margin_right || 0.75) + 'in';
-      const mb  = (t.margin_bottom|| 0.75) + 'in';
-      const ml  = (t.margin_left  || 0.75) + 'in';
-      const lh  = t.line_height   || 1.3;
-      const ps  = (t.para_spacing || 5)   + 'pt';
-      const ss  = (t.section_spacing||10) + 'pt';
-      const hs2 = t.header_style  || 'underline';
-      const bul = t.bullet_char   || '•';
-      const bodyStyle = `font-family:${fnt};font-size:${bs};color:${bc};line-height:${lh};`;
+    // ── Live preview: server-rendered with the SAME renderer the PDF/DOCX use,
+    //    so what you see is exactly what downloads. (debounced, no per-keystroke spam)
+    renderPreview() { this.schedulePreview(); return this.previewHtml; },
 
-      const esc = (str) => String(str||'')
-        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    schedulePreview() {
+      if (this.previewTimer) clearTimeout(this.previewTimer);
+      this.previewTimer = setTimeout(() => this.doPreview(), 250);
+    },
 
-      const secHdr = (title) => {
-        const t2 = esc(title.toUpperCase());
-        const spanStyle = `font-size:${hs};font-weight:bold;font-family:${fnt};color:${acc};letter-spacing:0.8px;`;
-        const wrap = `margin-top:${ss};margin-bottom:4pt;`;
-        if (hs2 === 'bar')
-          return `<div style="${wrap}background:${acc};padding:3px 7px;"><span style="font-size:${hs};font-weight:bold;font-family:${fnt};color:#fff;letter-spacing:0.8px;">${t2}</span></div>`;
-        if (hs2 === 'caps')
-          return `<div style="${wrap}border-bottom:1px solid ${acc};padding-bottom:2px;"><span style="${spanStyle}letter-spacing:1.8px;">${t2}</span></div>`;
-        if (hs2 === 'plain')
-          return `<div style="${wrap}"><span style="font-size:${hs};font-weight:bold;font-family:${fnt};color:${bc};">${t2}</span></div>`;
-        // underline (default)
-        return `<div style="${wrap}border-bottom:1.5px solid ${acc};padding-bottom:2px;"><span style="${spanStyle}">${t2}</span></div>`;
-      };
-
-      let html = `<div style="padding:${mt} ${mr} ${mb} ${ml};background:#fff;font-family:${fnt};font-size:${bs};color:${bc};line-height:${lh};">`;
-
-      // Header
-      html += `<div style="text-align:center;margin-bottom:6pt;">
-        <div style="font-size:${ns};font-weight:bold;font-family:${fnt};color:${nc};letter-spacing:0.5px;">${esc(s.name||'')}</div>
-        <div style="font-size:${cs};font-family:${fnt};color:${bc};margin-top:3pt;">${esc(s.contact||'')}</div>
-      </div>`;
-
-      // Summary
-      if (s.summary) {
-        html += secHdr('Professional Summary');
-        html += `<p style="${bodyStyle}margin:0 0 ${ps};">${esc(s.summary)}</p>`;
-      }
-
-      // Skills
-      const skills = (s.skills||[]).filter(sk => sk.items || sk.category);
-      if (skills.length) {
-        html += secHdr('Core Skills');
-        skills.forEach(sk => {
-          const cat = sk.category ? `<strong>${esc(sk.category)}:</strong> ` : '';
-          html += `<div style="${bodyStyle}margin-bottom:3pt;">${cat}${esc(sk.items||'')}</div>`;
+    async doPreview() {
+      try {
+        const resp = await fetch('{% url "resume-editor-preview" draft.pk %}', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+          body: JSON.stringify({ sections: this.sections, tpl: this.tpl }),
         });
-      }
+        const data = await resp.json();
+        if (data.ok) {
+          this.previewHtml = data.html;
+          this.$nextTick(() => this.measurePages());
+        }
+      } catch (e) { console.error('Preview failed', e); }
+    },
 
-      // Experience
-      const exps = (s.experience||[]).filter(e => e.title);
-      if (exps.length) {
-        html += secHdr('Professional Experience');
-        exps.forEach(exp => {
-          const compLine = exp.company + (exp.dates ? ' &nbsp;|&nbsp; ' + esc(exp.dates) : '');
-          const bullets  = (exp.bullets||[]).filter(b=>b);
-          html += `<div style="margin-bottom:${ps};">
-            <div style="font-size:${(parseInt(t.body_size||11)+1)+'pt'};font-weight:bold;font-family:${fnt};color:${nc};">${esc(exp.title||'')}</div>
-            <div style="${bodyStyle}margin-bottom:3pt;">${esc(exp.company||'')}${exp.dates ? ' &nbsp;|&nbsp; '+esc(exp.dates) : ''}</div>`;
-          bullets.forEach(bl => {
-            html += `<div style="${bodyStyle}display:flex;gap:6px;padding-left:10pt;margin-bottom:2pt;">
-              <span style="min-width:8pt;">${bul}</span><span>${esc(bl)}</span>
-            </div>`;
-          });
-          html += '</div>';
-        });
-      }
-
-      // Education
-      const edu = (s.education||[]).filter(e => e.degree);
-      if (edu.length) {
-        html += secHdr('Education');
-        edu.forEach(e => {
-          const l2 = e.school && e.dates ? `${esc(e.school)} &nbsp;|&nbsp; ${esc(e.dates)}` : esc(e.school||e.dates||'');
-          html += `<div style="${bodyStyle}margin-bottom:${ps};"><strong>${esc(e.degree||'')}</strong>${l2 ? '<br>'+l2 : ''}</div>`;
-        });
-      }
-
-      // Certifications
-      const certs = (s.certifications||[]).filter(c=>c);
-      if (certs.length) {
-        html += secHdr('Certifications');
-        certs.forEach(c => {
-          html += `<div style="${bodyStyle}display:flex;gap:6px;padding-left:10pt;margin-bottom:2pt;"><span>${bul}</span><span>${esc(c)}</span></div>`;
-        });
-      }
-
-      html += '</div>';
-      return html;
+    // ── Zoom + page-count (US Letter = 8.5in × 11in @ 96 CSS px/in) ──
+    measurePages() {
+      const sheet = this.$refs.sheet;
+      if (!sheet) return;
+      this.pageCount = Math.max(1, Math.ceil((sheet.scrollHeight - 4) / (11 * 96)));
+    },
+    setZoom(z) { this.zoom = Math.min(1.6, Math.max(0.4, Math.round(z * 100) / 100)); },
+    fitZoom() {
+      const scroll = document.getElementById('preview-scroll');
+      if (!scroll) { this.zoom = 1; return; }
+      this.setZoom(Math.min(1, (scroll.clientWidth - 56) / (8.5 * 96)));
     },
   };
 }
