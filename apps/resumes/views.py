@@ -664,16 +664,21 @@ class ResumeEditorView(DraftAccessMixin, BaseView):
         draft = get_object_or_404(ResumeDraft, pk=pk)
         self._draft = draft  # for DraftAccessMixin.get_object
 
+        from .parser import PARSER_VERSION
+
         # Get or create editor state (parse draft on first open)
         state, created = ResumeEditorState.objects.get_or_create(
             draft=draft,
-            defaults={'sections_json': parse_resume(draft.content or '')}
+            defaults={'sections_json': parse_resume(draft.content or ''),
+                      'parser_version': PARSER_VERSION}
         )
 
-        # If state exists but sections are empty (e.g. draft was regenerated), re-parse
-        if not state.sections_json:
+        # Re-parse when the cached structure is empty OR was built by an older parser
+        # (e.g. a draft parsed before the role-splitting fix → roles had collapsed).
+        if not state.sections_json or (state.parser_version or 0) < PARSER_VERSION:
             state.sections_json = parse_resume(draft.content or '')
-            state.save(update_fields=['sections_json'])
+            state.parser_version = PARSER_VERSION
+            state.save(update_fields=['sections_json', 'parser_version'])
 
         # Template: use saved one, or default to first builtin
         template = state.template
@@ -782,6 +787,30 @@ class ResumeEditorPreviewView(DraftAccessMixin, BaseView):
 
     def get_object(self):
         return getattr(self, '_draft', None) or get_object_or_404(ResumeDraft, pk=self.kwargs['pk'])
+
+
+class ResumeEditorResyncView(AdminOrEmployeeMixin, BaseView):
+    """Rebuild the editor's structured sections from the originally generated resume
+    text, using the current parser. Lets the user fix a draft whose cached structure
+    is wrong (e.g. parsed before a parser fix) without regenerating."""
+
+    def post(self, request, pk):
+        from .parser import PARSER_VERSION
+        draft = get_object_or_404(ResumeDraft, pk=pk)
+        state, _ = ResumeEditorState.objects.get_or_create(draft=draft)
+        state.sections_json = parse_resume(draft.content or '')
+        state.parser_version = PARSER_VERSION
+        state.save(update_fields=['sections_json', 'parser_version'])
+
+        tpl = state.effective_template()
+        return JsonResponse({
+            'ok': True,
+            'sections': state.sections_json,
+            'html': render_resume_html(state.sections_json, tpl, for_print=False),
+        })
+
+    def get_object(self):
+        return get_object_or_404(ResumeDraft, pk=self.kwargs['pk'])
 
 
 class ResumeExportDOCXView(DraftAccessMixin, BaseView):

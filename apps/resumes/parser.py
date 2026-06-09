@@ -29,6 +29,13 @@ Expected format (matches master prompt OUTPUT FORMAT):
 import re
 
 
+# Bump whenever parse_resume's structure logic changes, so cached editor states
+# (ResumeEditorState.sections_json) are automatically re-parsed on next open.
+#   1 = original (two-line headers only)
+#   2 = handles one-line 'Title | Company | Dates' headers (role-collapse fix)
+PARSER_VERSION = 2
+
+
 # ─── Section boundary patterns ───────────────────────────────────────────────
 
 _SECTION_PATTERNS = {

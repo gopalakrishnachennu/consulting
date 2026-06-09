@@ -254,6 +254,9 @@ class ResumeEditorState(models.Model):
         help_text='Per-draft template tweaks from the Customise panel (font, sizes, colors, '
                   'margins...). Merged over the selected template for both preview and export, '
                   'so the live preview matches the downloaded file exactly.')
+    parser_version = models.PositiveIntegerField(default=0,
+        help_text='Parser version that produced sections_json. When the parser is upgraded, '
+                  'the editor re-parses stale states automatically.')
     updated_at = models.DateTimeField(auto_now=True)
 
     def effective_template(self):

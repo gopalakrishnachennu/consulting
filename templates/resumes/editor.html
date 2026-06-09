@@ -60,6 +60,15 @@
         </svg>
         Customise
       </button>
+
+      <button @click="resync()" :disabled="resyncing"
+              class="border border-gray-200 bg-white text-gray-600 rounded-lg px-2.5 py-1.5 text-xs font-medium hover:bg-gray-50 transition flex items-center gap-1 disabled:opacity-50"
+              title="Rebuild the editor from the originally generated resume (fixes structure issues)">
+        <svg class="w-3.5 h-3.5" :class="resyncing ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+        <span x-text="resyncing ? 'Syncing…' : 'Re-sync'"></span>
+      </button>
     </div>
 
     {# Right — ATS + save + export #}
@@ -521,6 +530,7 @@ function resumeEditor() {
     zoom: 1,
     pageCount: 1,
     previewTimer: null,
+    resyncing: false,
 
     init() {
       this.sections = {{ sections_json|safe }};
@@ -661,6 +671,25 @@ function resumeEditor() {
     schedulePreview() {
       if (this.previewTimer) clearTimeout(this.previewTimer);
       this.previewTimer = setTimeout(() => this.doPreview(), 250);
+    },
+
+    // Rebuild structured sections from the originally generated resume text.
+    async resync() {
+      if (!confirm('Rebuild the editor from the originally generated resume?\n\nThis re-reads the resume and fixes structure (e.g. split roles). Any manual edits in the editor will be replaced.')) return;
+      this.resyncing = true;
+      try {
+        const resp = await fetch('{% url "resume-editor-resync" draft.pk %}', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          this.sections = data.sections;
+          this.previewHtml = data.html;
+          this.$nextTick(() => this.measurePages());
+        }
+      } catch (e) { console.error('Re-sync failed', e); }
+      finally { this.resyncing = false; }
     },
 
     async doPreview() {
