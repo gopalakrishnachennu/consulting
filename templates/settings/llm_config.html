@@ -55,20 +55,48 @@
         {% endif %}
         <form method="post">
             {% csrf_token %}
+            {# model autocomplete shared by both model fields #}
+            <datalist id="model-suggestions">
+                {% for m in model_suggestions %}<option value="{{ m }}">{% endfor %}
+            </datalist>
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Provider
+                        <span class="ml-1 text-gray-500 cursor-help" title="LLM provider. All are OpenAI-API-compatible. Pick one; the base URL auto-fills.">[?]</span>
+                    </label>
+                    {% render_field form.provider class="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" %}
+                    <div class="text-xs text-gray-600 mt-1">
+                        OpenAI · DeepSeek (cheap) · OpenRouter (any model) · Together · Custom
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Base URL
+                        <span class="ml-1 text-gray-500 cursor-help" title="OpenAI-compatible endpoint. Leave blank to use the provider default.">[?]</span>
+                    </label>
+                    {% render_field form.base_url class="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" %}
+                    <div class="text-xs text-gray-600 mt-1">Blank = provider default. DeepSeek: <code>https://api.deepseek.com</code> · OpenRouter: <code>https://openrouter.ai/api/v1</code></div>
+                </div>
+                <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-1">API Key
-                        <span class="ml-1 text-gray-500 cursor-help" title="Your OpenAI key. Stored encrypted. Leave blank to keep the current key.">[?]</span>
+                        <span class="ml-1 text-gray-500 cursor-help" title="Key for the selected provider. Stored encrypted. Leave blank to keep the current key.">[?]</span>
                     </label>
                     {% render_field form.api_key class="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" %}
                     {% if api_key_masked %}<div class="text-xs text-gray-600 mt-1">Current: {{ api_key_masked }}</div>{% endif %}
                 </div>
                 <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">Active Model
-                        <span class="ml-1 text-gray-500 cursor-help" title="The model used for resume generation. Sorted by lowest cost first; labels show input/output cost per 1M tokens.">[?]</span>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Generation Model
+                        <span class="ml-1 text-gray-500 cursor-help" title="Model for resume generation (strong model recommended).">[?]</span>
                     </label>
                     {% render_field form.active_model class="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" %}
-                    <div class="text-xs text-gray-600 mt-1">Set API key and click "Test API Key" to fetch the full model list.</div>
+                    <div class="text-xs text-gray-600 mt-1">e.g. <code>gpt-4o</code>, <code>deepseek-chat</code>, <code>openai/gpt-4o</code> (OpenRouter).</div>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Validation Model
+                        <span class="ml-1 text-gray-500 cursor-help" title="Cheaper model for validation/classification. Blank = same as generation.">[?]</span>
+                    </label>
+                    {% render_field form.validation_model class="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" %}
+                    <div class="text-xs text-gray-600 mt-1">Cheap model for checks/classify. Blank = use generation model.</div>
                 </div>
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-1">Temperature

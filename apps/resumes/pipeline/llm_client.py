@@ -33,12 +33,22 @@ class PipelineLLMClient:
     @property
     def client(self):
         if self._client is None:
-            self._client = openai.OpenAI(api_key=self.api_key)
+            # base_url lets us point at any OpenAI-compatible provider
+            # (OpenAI, DeepSeek, OpenRouter, Together…). None = OpenAI default.
+            self._client = openai.OpenAI(
+                api_key=self.api_key,
+                base_url=self.config.effective_base_url(),
+            )
         return self._client
 
     @property
     def default_model(self):
         return self.config.active_model or "gpt-4o-mini"
+
+    @property
+    def validation_model(self):
+        """Cheaper model for validation/classification; falls back to the generation model."""
+        return (self.config.validation_model or "").strip() or self.default_model
 
     @property
     def default_temperature(self):
@@ -47,7 +57,7 @@ class PipelineLLMClient:
     def is_available(self):
         """Check if LLM generation is available."""
         if not self.api_key or self.api_key.startswith("sk-your"):
-            return False, "No valid OpenAI API key configured."
+            return False, "No valid API key configured for the selected provider."
         if not self.config.generation_enabled:
             return False, "Resume generation is disabled."
         return True, None
@@ -77,6 +87,7 @@ class PipelineLLMClient:
         user_prompt,
         *,
         request_type="pipeline_generic",
+        model=None,
         temperature=None,
         max_tokens=None,
         job=None,
@@ -86,9 +97,12 @@ class PipelineLLMClient:
         """
         Single LLM call with full logging.
 
+        `model` overrides the configured generation model for this call (e.g. pass
+        the cheaper validation model). Defaults to the configured active_model.
+
         Returns: (content, tokens_used, error_msg_or_none)
         """
-        model = self.default_model
+        model = model or self.default_model
         temp = temperature if temperature is not None else self.default_temperature
         max_tok = max_tokens or (self.config.max_output_tokens or 4000)
 

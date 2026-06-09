@@ -417,8 +417,33 @@ class LLMConfig(models.Model):
     """
     Singleton model to store LLM configuration and API credentials.
     """
-    encrypted_api_key = models.TextField(blank=True, help_text="Encrypted OpenAI API key")
-    active_model = models.CharField(max_length=100, default="gpt-4o-mini")
+    class Provider(models.TextChoices):
+        OPENAI = "openai", "OpenAI"
+        DEEPSEEK = "deepseek", "DeepSeek"
+        OPENROUTER = "openrouter", "OpenRouter (any model)"
+        TOGETHER = "together", "Together AI"
+        CUSTOM = "custom", "Custom (OpenAI-compatible)"
+
+    # Default base URL per provider (blank = OpenAI's own default endpoint)
+    PROVIDER_BASE_URLS = {
+        "openai": "",
+        "deepseek": "https://api.deepseek.com",
+        "openrouter": "https://openrouter.ai/api/v1",
+        "together": "https://api.together.xyz/v1",
+        "custom": "",
+    }
+
+    encrypted_api_key = models.TextField(blank=True, help_text="Encrypted API key for the selected provider")
+    provider = models.CharField(max_length=20, choices=Provider.choices, default=Provider.OPENAI,
+        help_text="LLM provider. All are OpenAI-API-compatible.")
+    base_url = models.CharField(max_length=300, blank=True, default="",
+        help_text="OpenAI-compatible API base URL. Blank = use the provider default "
+                  "(DeepSeek: https://api.deepseek.com · OpenRouter: https://openrouter.ai/api/v1).")
+    active_model = models.CharField(max_length=100, default="gpt-4o-mini",
+        help_text="Model for resume generation (e.g. gpt-4o, deepseek-chat, openai/gpt-4o via OpenRouter).")
+    validation_model = models.CharField(max_length=100, blank=True, default="",
+        help_text="Cheaper model for validation / classification (e.g. gpt-4o-mini, deepseek-chat). "
+                  "Blank = use the generation model.")
     temperature = models.DecimalField(max_digits=3, decimal_places=2, default=0.70)
     max_output_tokens = models.PositiveIntegerField(default=2000)
 
@@ -433,6 +458,12 @@ class LLMConfig(models.Model):
 
     def __str__(self):
         return "LLM Configuration"
+
+    def effective_base_url(self):
+        """Resolved API base URL: explicit base_url > provider default > None (OpenAI default)."""
+        if (self.base_url or "").strip():
+            return self.base_url.strip()
+        return self.PROVIDER_BASE_URLS.get(self.provider, "") or None
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None

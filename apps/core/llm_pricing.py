@@ -28,4 +28,20 @@ PRICING_PER_1M = {
     "gpt-realtime-mini": {"input": 0.60, "output": 2.40},
     "gpt-4o-realtime-preview": {"input": 5.00, "output": 20.00},
     "gpt-4o-mini-realtime-preview": {"input": 0.60, "output": 2.40},
+
+    # ── DeepSeek (direct api.deepseek.com) — approx, per 1M tokens ──
+    "deepseek-chat": {"input": 0.27, "output": 1.10},          # V3
+    "deepseek-reasoner": {"input": 0.55, "output": 2.19},      # R1
+
+    # ── OpenRouter model ids (provider/model) — approx ──
+    "openai/gpt-4o": {"input": 2.50, "output": 10.00},
+    "openai/gpt-4o-mini": {"input": 0.15, "output": 0.60},
+    "deepseek/deepseek-chat": {"input": 0.27, "output": 1.10},
+    "deepseek/deepseek-r1": {"input": 0.55, "output": 2.19},
+    "qwen/qwen-2.5-72b-instruct": {"input": 0.35, "output": 0.40},
+    "meta-llama/llama-3.1-70b-instruct": {"input": 0.30, "output": 0.30},
+
+    # ── Together AI ──
+    "Qwen/Qwen2.5-72B-Instruct-Turbo": {"input": 0.88, "output": 0.88},
+    "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo": {"input": 0.88, "output": 0.88},
 }

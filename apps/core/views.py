@@ -388,17 +388,22 @@ class LLMConfigView(AdminRequiredMixin, View):
             choices.append((m, label))
         return choices
 
+    def _model_suggestions(self):
+        """Known model ids (across providers) for the <datalist> autocomplete."""
+        return sort_models_by_cost(list(PRICING_PER_1M.keys()))
+
     def get(self, request):
         config = LLMConfig.load()
         api_key = decrypt_value(config.encrypted_api_key)
         form = LLMConfigForm(instance=config)
-        form.fields['active_model'].choices = self._build_model_choices(api_key)
 
         context = self._build_metrics_context()
         context.update({
             'form': form,
             'api_key_masked': (api_key[:4] + '…' + api_key[-4:]) if api_key else '',
             'model_error': getattr(self, '_model_error', ''),
+            'model_suggestions': self._model_suggestions(),
+            'provider_base_urls': LLMConfig.PROVIDER_BASE_URLS,
         })
         return render(request, self.template_name, context)
 
@@ -407,7 +412,6 @@ class LLMConfigView(AdminRequiredMixin, View):
         api_key = decrypt_value(config.encrypted_api_key)
         api_key_for_models = request.POST.get('api_key') or api_key
         form = LLMConfigForm(request.POST, instance=config)
-        form.fields['active_model'].choices = self._build_model_choices(api_key_for_models)
 
         action = request.POST.get('action')
         if action == 'test_key':
@@ -415,15 +419,22 @@ class LLMConfigView(AdminRequiredMixin, View):
             if not test_key:
                 messages.error(request, "Please enter an API key to test.")
             else:
+                # Test against the chosen provider/base_url (works for any OpenAI-compatible API)
+                provider = request.POST.get('provider') or config.provider
+                base_url = (request.POST.get('base_url') or '').strip() \
+                    or LLMConfig.PROVIDER_BASE_URLS.get(provider, '') or None
                 try:
-                    _ = list_openai_models(test_key)
-                    messages.success(request, "API key is valid. Models fetched successfully.")
+                    import openai as _openai
+                    _openai.OpenAI(api_key=test_key, base_url=base_url).models.list()
+                    messages.success(request, f"API key valid for {provider}. Connection OK.")
                 except Exception as exc:
                     messages.error(request, f"API key test failed: {exc}")
             context = self._build_metrics_context()
             context.update({
                 'form': form,
                 'api_key_masked': (api_key[:4] + '…' + api_key[-4:]) if api_key else '',
+                'model_suggestions': self._model_suggestions(),
+                'provider_base_urls': LLMConfig.PROVIDER_BASE_URLS,
             })
             return render(request, self.template_name, context)
 
@@ -436,6 +447,8 @@ class LLMConfigView(AdminRequiredMixin, View):
         context.update({
             'form': form,
             'api_key_masked': (api_key[:4] + '…' + api_key[-4:]) if api_key else '',
+            'model_suggestions': self._model_suggestions(),
+            'provider_base_urls': LLMConfig.PROVIDER_BASE_URLS,
         })
         return render(request, self.template_name, context)
 

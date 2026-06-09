@@ -511,7 +511,7 @@ def generate_resume(job, consultant, actor=None, input_sections=None, coaching_k
     }
 
     # Single LLM call
-    client = openai.OpenAI(api_key=api_key)
+    client = openai.OpenAI(api_key=api_key, base_url=config.effective_base_url())
     try:
         start = time.time()
         response = client.chat.completions.create(
@@ -588,7 +588,7 @@ def generate_section(system_prompt, user_prompt, actor=None):
     temperature = float(config.temperature)
     max_tokens = min(config.max_output_tokens or 2000, 1500)  # sections are shorter
 
-    client = openai.OpenAI(api_key=api_key)
+    client = openai.OpenAI(api_key=api_key, base_url=config.effective_base_url())
     try:
         response = client.chat.completions.create(
             model=model,

@@ -4,17 +4,26 @@ from .security import encrypt_value, decrypt_value
 
 
 class LLMConfigForm(forms.ModelForm):
-    active_model = forms.ChoiceField(required=False)
+    # Free-text so any provider's model id works (gpt-4o, deepseek-chat, openai/gpt-4o…)
+    active_model = forms.CharField(required=False,
+        widget=forms.TextInput(attrs={'list': 'model-suggestions', 'placeholder': 'gpt-4o'}))
+    validation_model = forms.CharField(required=False,
+        widget=forms.TextInput(attrs={'list': 'model-suggestions', 'placeholder': 'gpt-4o-mini (blank = same as generation)'}))
+    base_url = forms.CharField(required=False,
+        widget=forms.TextInput(attrs={'placeholder': 'blank = provider default'}))
     api_key = forms.CharField(
         required=False,
         widget=forms.PasswordInput(render_value=True),
-        help_text="Enter OpenAI API key (stored encrypted). Leave blank to keep existing."
+        help_text="Enter the provider's API key (stored encrypted). Leave blank to keep existing."
     )
 
     class Meta:
         model = LLMConfig
         fields = [
+            'provider',
+            'base_url',
             'active_model',
+            'validation_model',
             'temperature',
             'max_output_tokens',
             'monthly_token_cap',
@@ -23,7 +32,7 @@ class LLMConfigForm(forms.ModelForm):
             'data_pipelines_connected',
         ]
         widgets = {
-            'active_model': forms.Select(),
+            'provider': forms.Select(),
         }
 
     def __init__(self, *args, **kwargs):
