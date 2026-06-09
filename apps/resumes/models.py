@@ -173,6 +173,11 @@ class ResumeTemplate(models.Model):
         ('Calibri, Arial, sans-serif',   'Calibri'),
         ('"Trebuchet MS", sans-serif',   'Trebuchet MS'),
         ('"Open Sans", sans-serif',      'Open Sans'),
+        ('Inter, "Helvetica Neue", Arial, sans-serif', 'Inter (Modern)'),
+        ('Lato, Arial, sans-serif',      'Lato (Modern)'),
+        ('Roboto, Arial, sans-serif',    'Roboto (Modern)'),
+        ('Cambria, Georgia, serif',      'Cambria'),
+        ('Verdana, sans-serif',          'Verdana'),
     ]
     HEADER_STYLE_CHOICES = [
         ('underline', 'Underline'),

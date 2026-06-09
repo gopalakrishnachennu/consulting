@@ -46,6 +46,27 @@ def _esc(text: str) -> str:
     )
 
 
+_BOLD_RE = re.compile(r'\*\*(.+?)\*\*', re.S)
+
+
+def _rich(text: str) -> str:
+    """HTML-escape, then render **bold** markdown as <strong> for inline keyword emphasis."""
+    return _BOLD_RE.sub(r'<strong>\1</strong>', _esc(text))
+
+
+def _bold_segments(text: str):
+    """Split text into (segment, is_bold) tuples on **bold** markers — for DOCX runs."""
+    out, last, bold = [], 0, False
+    for m in _BOLD_RE.finditer(str(text or '')):
+        if m.start() > last:
+            out.append((text[last:m.start()], False))
+        out.append((m.group(1), True))
+        last = m.end()
+    if last < len(str(text or '')):
+        out.append((str(text)[last:], False))
+    return out or [(str(text or ''), False)]
+
+
 # ─── HTML renderer (shared between preview & PDF) ────────────────────────────
 
 def render_resume_html(sections: dict, tpl: dict, for_print: bool = False) -> str:
@@ -126,7 +147,7 @@ def render_resume_html(sections: dict, tpl: dict, for_print: bool = False) -> st
         parts.append(section_header('Professional Summary'))
         parts.append(
             f'<p style="{body_style}margin:{para_sp}pt 0 0 0;">'
-            f'{_esc(sections["summary"])}</p>'
+            f'{_rich(sections["summary"])}</p>'
         )
 
     # ── Skills ───────────────────────────────────────────────────────
@@ -135,7 +156,7 @@ def render_resume_html(sections: dict, tpl: dict, for_print: bool = False) -> st
         parts.append(section_header('Core Skills'))
         for sk in skills:
             cat   = _esc(sk.get('category', ''))
-            items = _esc(sk.get('items', ''))
+            items = _rich(sk.get('items', ''))
             label = f'<strong>{cat}:</strong> ' if cat else ''
             parts.append(
                 f'<div style="{body_style}margin-bottom:{para_sp // 2}pt;">'
@@ -160,7 +181,7 @@ def render_resume_html(sections: dict, tpl: dict, for_print: bool = False) -> st
             for bl in bullets:
                 parts.append(
                     f'<div style="{body_style}padding-left:16pt;text-indent:-11pt;'
-                    f'margin-bottom:2pt;">{_esc(bullet)}&nbsp;{_esc(bl)}</div>'
+                    f'margin-bottom:2pt;">{_esc(bullet)}&nbsp;{_rich(bl)}</div>'
                 )
             parts.append('</div>')
 
@@ -186,7 +207,7 @@ def render_resume_html(sections: dict, tpl: dict, for_print: bool = False) -> st
         for cert in certs:
             parts.append(
                 f'<div style="{body_style}padding-left:16pt;text-indent:-11pt;'
-                f'margin-bottom:2pt;">{_esc(bullet)}&nbsp;{_esc(cert)}</div>'
+                f'margin-bottom:2pt;">{_esc(bullet)}&nbsp;{_rich(cert)}</div>'
             )
 
     inner = '\n'.join(parts)
@@ -325,6 +346,14 @@ def export_docx(sections: dict, tpl: dict) -> bytes:
             run.font.color.rgb = color
         return run
 
+    def _run_rich(para, text, size=None, color=None, prefix=''):
+        """Add runs honoring **bold** markers (so DOCX matches the bolded preview/PDF)."""
+        if prefix:
+            _run(para, prefix, size=size, color=color)
+        for seg, is_bold in _bold_segments(text):
+            if seg:
+                _run(para, seg, bold=is_bold, size=size, color=color)
+
     def _add_section_header(title: str):
         p = doc.add_paragraph()
         p.paragraph_format.space_before = Pt(10)
@@ -359,7 +388,7 @@ def export_docx(sections: dict, tpl: dict) -> bytes:
         _add_section_header('Professional Summary')
         p = doc.add_paragraph()
         p.paragraph_format.space_after = para_sp
-        _run(p, sections['summary'])
+        _run_rich(p, sections['summary'])
 
     # ── Skills ───────────────────────────────────────────────────────
     skills = [s for s in (sections.get('skills') or []) if s.get('items')]
@@ -370,7 +399,7 @@ def export_docx(sections: dict, tpl: dict) -> bytes:
             p.paragraph_format.space_after = Pt(2)
             if sk.get('category'):
                 _run(p, sk['category'] + ': ', bold=True)
-            _run(p, sk.get('items', ''))
+            _run_rich(p, sk.get('items', ''))
 
     # ── Experience ───────────────────────────────────────────────────
     experience = [e for e in (sections.get('experience') or []) if e.get('title')]
@@ -394,7 +423,7 @@ def export_docx(sections: dict, tpl: dict) -> bytes:
                 p3 = doc.add_paragraph()
                 p3.paragraph_format.left_indent = Inches(0.15)
                 p3.paragraph_format.space_after = Pt(1)
-                _run(p3, f'{bullet_chr}  {bl}')
+                _run_rich(p3, bl, prefix=f'{bullet_chr}  ')
 
     # ── Education ────────────────────────────────────────────────────
     education = [e for e in (sections.get('education') or []) if e.get('degree')]
@@ -420,7 +449,7 @@ def export_docx(sections: dict, tpl: dict) -> bytes:
             p = doc.add_paragraph()
             p.paragraph_format.left_indent = Inches(0.15)
             p.paragraph_format.space_after = Pt(1)
-            _run(p, f'{bullet_chr}  {cert}')
+            _run_rich(p, cert, prefix=f'{bullet_chr}  ')
 
     buf = BytesIO()
     doc.save(buf)

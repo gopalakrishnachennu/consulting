@@ -204,12 +204,13 @@ def _clean_llm_output(text):
     text = re.sub(r'^(Here(\'s| is)|Sure|Certainly|Below is)\b.*?(\n\s*\n|\Z)', '', text,
                   flags=re.IGNORECASE | re.DOTALL)
 
-    # Remove bold/italic markdown (**text** → text, *text* → text)
-    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
-    text = re.sub(r'\*(.+?)\*', r'\1', text)
+    # KEEP **bold** — the resume renderer (preview, PDF, DOCX) now styles it for
+    # keyword emphasis. Only strip lone *italic* markers (the renderer ignores those),
+    # without touching the double asterisks of **bold**.
+    text = re.sub(r'(?<!\*)\*(?!\*)([^*\n]+?)\*(?!\*)', r'\1', text)
 
-    # Remove separator lines (====, ----, ****)
-    text = re.sub(r'^[=\-*]{4,}\s*$', '', text, flags=re.MULTILINE)
+    # Remove separator lines (====, ----) — but not bold; require 4+ of = or - only
+    text = re.sub(r'^[=\-]{4,}\s*$', '', text, flags=re.MULTILINE)
 
     # Remove trailing whitespace per line
     text = re.sub(r'[ \t]+$', '', text, flags=re.MULTILINE)

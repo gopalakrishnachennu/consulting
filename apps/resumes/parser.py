@@ -33,7 +33,8 @@ import re
 # (ResumeEditorState.sections_json) are automatically re-parsed on next open.
 #   1 = original (two-line headers only)
 #   2 = handles one-line 'Title | Company | Dates' headers (role-collapse fix)
-PARSER_VERSION = 2
+#   3 = preserves **bold** markers in skills/items (no longer strips asterisks)
+PARSER_VERSION = 3
 
 
 # ─── Section boundary patterns ───────────────────────────────────────────────
@@ -131,13 +132,14 @@ def _parse_skills(lines: list[str]) -> list[dict]:
         s = ln.strip()
         if not s:
             continue
-        # Strip leading bullets/asterisks
-        s = re.sub(r'^[-•*]\s*', '', s)
-        # Bold markdown: **Category**: items  or  **Category** items
-        s = re.sub(r'\*{1,2}', '', s)
+        # Strip a leading bullet marker only (keep **bold** inside the line)
+        s = re.sub(r'^[-•]\s*', '', s)
+        s = re.sub(r'^\*(?!\*)\s*', '', s)  # leading single "* " bullet, but not "**bold"
         if ':' in s:
             cat, _, items = s.partition(':')
-            skills.append({'category': cat.strip(), 'items': items.strip()})
+            # Category is rendered bold already → drop its ** markers; keep ** in items.
+            cat = cat.replace('**', '').strip()
+            skills.append({'category': cat, 'items': items.strip()})
         elif s:
             skills.append({'category': '', 'items': s})
     return skills

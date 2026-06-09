@@ -43,6 +43,20 @@ and must never contain a NOTES/disclaimer block.)
 
 ---
 
+# KEYWORD EMPHASIS (bold)
+
+Wrap the candidate's most important, JD-relevant skills/technologies in **double
+asterisks** so they render bold for recruiter skim + ATS emphasis. Rules:
+- Bold the key REAL technology/skill terms (e.g. **SQL Server**, **Azure**, **Python**,
+  **Terraform**) and headline capabilities — NOT whole sentences or filler words.
+- In the PROFESSIONAL SUMMARY: bold the 3–5 standout skills/qualifiers.
+- In each EXPERIENCE bullet: bold at most 1–3 key terms — the ones a scanner looks for.
+- In TECHNICAL SKILLS: do NOT add asterisks (the category labels are already styled).
+- Only bold terms the candidate genuinely has. Bold is emphasis, never a way to sneak
+  in a skill — the truth rules still apply.
+
+---
+
 # EVIDENCE RULE (internal — do not print)
 
 Every bullet must trace to ONE of these sources:
