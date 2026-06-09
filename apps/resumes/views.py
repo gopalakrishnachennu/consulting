@@ -876,6 +876,95 @@ class ResumeExportPDFView(DraftAccessMixin, BaseView):
         return getattr(self, '_draft', None) or get_object_or_404(ResumeDraft, pk=self.kwargs['pk'])
 
 
+# ─── Draft history & compare ──────────────────────────────────────────────────
+
+def _render_draft_html(draft):
+    """Render a draft to preview HTML using its saved editor template (if any),
+    so the comparison matches what the user has styled / would download."""
+    state = getattr(draft, 'editor_state', None)
+    sections = (state.sections_json if (state and state.sections_json)
+                else parse_resume(draft.content or ''))
+    tpl = state.effective_template() if state else dict(DEFAULT_TEMPLATE)
+    return render_resume_html(sections, tpl, for_print=False)
+
+
+class ResumeHistoryView(LoginRequiredMixin, UserPassesTestMixin, BaseView):
+    """All resume drafts for a consultant: versions per job + latest across jobs, with compare."""
+
+    def test_func(self):
+        u = self.request.user
+        if u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE):
+            return True
+        cp = get_object_or_404(ConsultantProfile, pk=self.kwargs['consultant_pk'])
+        return (u.role == User.Role.CONSULTANT and hasattr(u, 'consultant_profile')
+                and u.consultant_profile.pk == cp.pk)
+
+    def get(self, request, consultant_pk):
+        from collections import OrderedDict
+        consultant = get_object_or_404(
+            ConsultantProfile.objects.select_related('user'), pk=consultant_pk)
+        drafts = (ResumeDraft.objects.filter(consultant=consultant)
+                  .select_related('job').order_by('job_id', '-version'))
+
+        by_job = OrderedDict()           # {job: [drafts, newest version first]}
+        for d in drafts:
+            by_job.setdefault(d.job, []).append(d)
+        # group dicts ordered by most-recently-created job first
+        groups = sorted(by_job.items(), key=lambda kv: kv[1][0].created_at, reverse=True)
+        across = [versions[0] for _job, versions in groups]   # latest per job
+
+        return render(request, 'resumes/history.html', {
+            'consultant': consultant,
+            'groups': groups,            # [(job, [versions desc]), ...]
+            'across': across,            # [latest draft per job]
+            'total': drafts.count(),
+        })
+
+    def get_object(self):
+        return get_object_or_404(ConsultantProfile, pk=self.kwargs['consultant_pk'])
+
+
+class ResumeCompareView(LoginRequiredMixin, UserPassesTestMixin, BaseView):
+    """Side-by-side rendered comparison of two drafts."""
+
+    def _load(self, key):
+        pk = self.request.GET.get(key)
+        if not pk:
+            return None
+        return (ResumeDraft.objects
+                .filter(pk=pk).select_related('job', 'consultant__user').first())
+
+    def test_func(self):
+        u = self.request.user
+        self._a = self._load('a')
+        self._b = self._load('b')
+        if u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE):
+            return True
+        if u.role == User.Role.CONSULTANT and hasattr(u, 'consultant_profile'):
+            cp = u.consultant_profile
+            return all(d is None or d.consultant_id == cp.pk for d in (self._a, self._b))
+        return False
+
+    def get(self, request):
+        a, b = self._a, self._b
+        if not a or not b or a.pk == b.pk:
+            messages.error(request, "Pick two different drafts to compare.")
+            ref = a or b
+            if ref:
+                return redirect('resume-history', consultant_pk=ref.consultant_id)
+            return redirect('resume-generate')
+        return render(request, 'resumes/compare.html', {
+            'a': a, 'b': b,
+            'a_html': _render_draft_html(a),
+            'b_html': _render_draft_html(b),
+            'consultant': a.consultant,
+            'same_pair': (a.consultant_id == b.consultant_id and a.job_id == b.job_id),
+        })
+
+    def get_object(self):
+        return getattr(self, '_a', None) or get_object_or_404(ResumeDraft, pk=self.request.GET.get('a'))
+
+
 # ─── Template CRUD ────────────────────────────────────────────────────────────
 
 class ResumeTemplateSaveView(AdminOrEmployeeMixin, BaseView):

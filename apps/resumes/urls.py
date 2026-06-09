@@ -5,6 +5,7 @@ from .views import (
     DraftRegenerateSectionView,
     ResumeGeneratePageView, ResumeGenerateActionView,
     PreflightCheckView, DraftReviewView, PipelineResultsView,
+    ResumeHistoryView, ResumeCompareView,
     # Template editor
     ResumeEditorView, ResumeEditorSaveView, ResumeEditorPreviewView, ResumeEditorResyncView,
     ResumeExportDOCXView, ResumeExportPDFView,
@@ -20,6 +21,8 @@ urlpatterns = [
     path('generate/', ResumeGeneratePageView.as_view(), name='resume-generate'),
     path('generate/run/', ResumeGenerateActionView.as_view(), name='resume-generate-run'),
     path('generate/preflight/', PreflightCheckView.as_view(), name='resume-preflight'),
+    path('consultant/<int:consultant_pk>/history/', ResumeHistoryView.as_view(), name='resume-history'),
+    path('compare/', ResumeCompareView.as_view(), name='resume-compare'),
     path('drafts/<int:pk>/review/', DraftReviewView.as_view(), name='draft-review'),
     path('drafts/<int:pk>/pipeline/', PipelineResultsView.as_view(), name='pipeline-results'),
 

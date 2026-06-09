@@ -58,6 +58,10 @@
           Editor
         </a>
         {% endif %}
+        <a href="{% url 'resume-history' draft.consultant.pk %}" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 transition" title="All versions / compare">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
+          Versions
+        </a>
         <a href="{% url 'consultant-detail' draft.consultant.user.pk %}" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition">Back</a>
       </div>
     </div>

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% load humanize %}
+{% block title %}Compare Drafts — {{ consultant.user.get_full_name|default:consultant.user.username }}{% endblock %}
+
+{% block content %}
+<div class="max-w-[1400px] mx-auto">
+
+  {# Header #}
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Compare Drafts</h1>
+      <p class="text-sm text-gray-500">{{ consultant.user.get_full_name|default:consultant.user.username }}</p>
+    </div>
+    <a href="{% url 'resume-history' consultant.pk %}" class="text-sm text-gray-500 hover:underline">&larr; Back to history</a>
+  </div>
+
+  {% if not same_pair %}
+  <div class="mb-4 text-xs bg-amber-50 border border-amber-200 text-amber-700 rounded-lg px-3 py-2">
+    These drafts target different jobs — you're comparing how the consultant is positioned across roles.
+  </div>
+  {% endif %}
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+    {% include 'resumes/_compare_side.html' with d=a html=a_html %}
+    {% include 'resumes/_compare_side.html' with d=b html=b_html %}
+  </div>
+</div>
+{% endblock %}

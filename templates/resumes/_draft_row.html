@@ -1,0 +1,36 @@
+{% load humanize %}
+<div class="flex flex-wrap items-center gap-3 px-4 py-3 hover:bg-gray-50/60">
+  {# select checkbox — disabled for empty/error drafts (nothing to render) #}
+  <input type="checkbox" value="{{ d.pk }}"
+         :checked="selected.includes({{ d.pk }})"
+         @change="toggle({{ d.pk }})"
+         {% if not d.content %}disabled title="No content to compare"{% endif %}
+         class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4 disabled:opacity-30">
+
+  <span class="inline-flex items-center justify-center min-w-[2.5rem] px-2 py-0.5 rounded-md bg-gray-100 text-gray-700 text-xs font-semibold">v{{ d.version }}</span>
+
+  {% if show_job %}
+    <span class="text-sm font-medium text-gray-900 truncate max-w-[16rem]">{{ d.job.title }}</span>
+  {% endif %}
+
+  {# ATS #}
+  {% if d.ats_score %}
+  <span class="text-xs font-semibold px-2 py-0.5 rounded-full
+    {% if d.ats_score >= 80 %}bg-emerald-100 text-emerald-700{% elif d.ats_score >= 60 %}bg-amber-100 text-amber-700{% else %}bg-red-100 text-red-600{% endif %}">
+    ATS {{ d.ats_score }}%
+  </span>
+  {% endif %}
+
+  {# status #}
+  <span class="text-xs px-2 py-0.5 rounded-full
+    {% if d.status == 'COMPLETE' %}bg-green-50 text-green-700{% elif d.status == 'ERROR' %}bg-red-50 text-red-600{% else %}bg-gray-100 text-gray-500{% endif %}">
+    {{ d.get_status_display|default:d.status }}
+  </span>
+
+  <span class="text-xs text-gray-400">{{ d.created_at|naturaltime }}</span>
+
+  <div class="ml-auto flex items-center gap-3 text-xs">
+    <a href="{% url 'draft-detail' d.pk %}" class="text-indigo-600 hover:underline">View</a>
+    {% if d.content %}<a href="{% url 'resume-editor' d.pk %}" class="text-gray-500 hover:text-gray-700 hover:underline">Editor</a>{% endif %}
+  </div>
+</div>

@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% load humanize %}
+{% block title %}Resume History — {{ consultant.user.get_full_name|default:consultant.user.username }}{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto" x-data="{
+        tab: 'byjob',
+        selected: [],
+        toggle(id) {
+          const i = this.selected.indexOf(id);
+          if (i > -1) this.selected.splice(i, 1);
+          else { if (this.selected.length >= 2) this.selected.shift(); this.selected.push(id); }
+        },
+        compare() {
+          if (this.selected.length === 2)
+            window.location = '{% url 'resume-compare' %}?a=' + this.selected[0] + '&b=' + this.selected[1];
+        }
+     }">
+
+  {# Header #}
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Resume History</h1>
+      <p class="text-sm text-gray-500">
+        {{ consultant.user.get_full_name|default:consultant.user.username }} · {{ total }} draft{{ total|pluralize }}
+      </p>
+    </div>
+    <button @click="compare()" :disabled="selected.length !== 2"
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
+      Compare <span x-text="'(' + selected.length + '/2)'"></span>
+    </button>
+  </div>
+
+  {# Tabs #}
+  <div class="flex gap-1 border-b border-gray-200 mb-5">
+    <button @click="tab='byjob'" :class="tab==='byjob' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-gray-500 hover:text-gray-700'"
+            class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition">By Job (versions)</button>
+    <button @click="tab='across'" :class="tab==='across' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-gray-500 hover:text-gray-700'"
+            class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition">Across Jobs</button>
+  </div>
+
+  {% if total == 0 %}
+    <div class="bg-white border border-gray-200 rounded-xl p-10 text-center text-gray-500">
+      No resume drafts yet for this consultant.
+    </div>
+  {% endif %}
+
+  {# ── By Job: versions grouped per job ── #}
+  <div x-show="tab==='byjob'" class="space-y-5">
+    {% for job, versions in groups %}
+    <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <div class="px-4 py-3 border-b border-gray-100 bg-gray-50">
+        <p class="font-semibold text-gray-900 text-sm">{{ job.title }}</p>
+        <p class="text-xs text-gray-500">{{ job.company }} · {{ versions|length }} version{{ versions|length|pluralize }}</p>
+      </div>
+      <div class="divide-y divide-gray-100">
+        {% for d in versions %}
+          {% include 'resumes/_draft_row.html' with d=d %}
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {# ── Across Jobs: latest per job ── #}
+  <div x-show="tab==='across'" x-cloak class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+    <div class="px-4 py-3 border-b border-gray-100 bg-gray-50">
+      <p class="font-semibold text-gray-900 text-sm">Latest resume per job</p>
+      <p class="text-xs text-gray-500">Compare how this consultant is positioned across different roles</p>
+    </div>
+    <div class="divide-y divide-gray-100">
+      {% for d in across %}
+        {% include 'resumes/_draft_row.html' with d=d show_job=1 %}
+      {% empty %}
+        <p class="px-4 py-6 text-sm text-gray-500 text-center">No drafts yet.</p>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}
