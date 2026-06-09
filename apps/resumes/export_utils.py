@@ -70,6 +70,11 @@ def render_resume_html(sections: dict, tpl: dict, for_print: bool = False) -> st
     sec_sp     = tpl.get('section_spacing', 10)
     hdr_style  = tpl.get('header_style', 'underline')
     bullet     = tpl.get('bullet_char', '•')
+    # The PDF engine (xhtml2pdf) can only render glyphs in its core WinAnsi fonts.
+    # Coerce exotic bullets (◦ ▪ ‣ ○ …) to '•' so the PDF doesn't show a ■ box and the
+    # preview (which uses this same renderer) stays identical to the download.
+    if bullet not in ('•', '-', '*', '·', '–'):
+        bullet = '•'
 
     def section_header(title: str) -> str:
         t = _esc(title.upper())
@@ -154,10 +159,8 @@ def render_resume_html(sections: dict, tpl: dict, for_print: bool = False) -> st
             )
             for bl in bullets:
                 parts.append(
-                    f'<div style="{body_style}display:flex;gap:6px;padding-left:10pt;'
-                    f'margin-bottom:2pt;">'
-                    f'<span style="min-width:8pt;">{_esc(bullet)}</span>'
-                    f'<span>{_esc(bl)}</span></div>'
+                    f'<div style="{body_style}padding-left:16pt;text-indent:-11pt;'
+                    f'margin-bottom:2pt;">{_esc(bullet)}&nbsp;{_esc(bl)}</div>'
                 )
             parts.append('</div>')
 
@@ -182,9 +185,8 @@ def render_resume_html(sections: dict, tpl: dict, for_print: bool = False) -> st
         parts.append(section_header('Certifications'))
         for cert in certs:
             parts.append(
-                f'<div style="{body_style}display:flex;gap:6px;padding-left:10pt;'
-                f'margin-bottom:2pt;">'
-                f'<span>{_esc(bullet)}</span><span>{_esc(cert)}</span></div>'
+                f'<div style="{body_style}padding-left:16pt;text-indent:-11pt;'
+                f'margin-bottom:2pt;">{_esc(bullet)}&nbsp;{_esc(cert)}</div>'
             )
 
     inner = '\n'.join(parts)
