@@ -14,6 +14,16 @@ if TYPE_CHECKING:
     pass
 
 
+# Default section order / labels / visibility. Each section can be reordered,
+# hidden, or relabelled from the editor's Customise panel.
+DEFAULT_SECTION_LAYOUT = [
+    {'key': 'summary',        'label': 'Professional Summary',    'visible': True},
+    {'key': 'skills',         'label': 'Technical Skills',        'visible': True},
+    {'key': 'experience',     'label': 'Professional Experience', 'visible': True},
+    {'key': 'education',      'label': 'Education',                'visible': True},
+    {'key': 'certifications', 'label': 'Certifications',           'visible': True},
+]
+
 # Fallback template values — match render_resume_html's .get() defaults exactly,
 # so a draft with no selected template still renders identically in preview + export.
 DEFAULT_TEMPLATE = {
@@ -23,6 +33,9 @@ DEFAULT_TEMPLATE = {
     'margin_top': 0.75, 'margin_bottom': 0.75, 'margin_left': 0.75, 'margin_right': 0.75,
     'line_height': 1.3, 'para_spacing': 5, 'section_spacing': 10,
     'header_style': 'underline', 'bullet_char': '•',
+    # Phase 2 layout controls
+    'sections_layout': DEFAULT_SECTION_LAYOUT,
+    'skills_layout': 'categorized',  # 'categorized' | 'inline'
 }
 
 
@@ -129,10 +142,85 @@ def render_resume_html(sections: dict, tpl: dict, for_print: bool = False) -> st
             )
 
     body_style = f'font-family:{font};font-size:{body_sz}pt;color:{body_col};line-height:{lh};'
+    skills_layout = tpl.get('skills_layout', 'categorized')
+
+    # ── Per-section builders (return '' when there's nothing to show) ──
+    def build_summary(label):
+        if not sections.get('summary'):
+            return ''
+        return (section_header(label) +
+                f'<p style="{body_style}margin:{para_sp}pt 0 0 0;">{_rich(sections["summary"])}</p>')
+
+    def build_skills(label):
+        sk_list = [s for s in (sections.get('skills') or []) if s.get('items') or s.get('category')]
+        if not sk_list:
+            return ''
+        html = section_header(label)
+        if skills_layout == 'inline':
+            joined = ', '.join(s.get('items', '').strip() for s in sk_list if s.get('items'))
+            html += f'<div style="{body_style}margin-bottom:{para_sp // 2}pt;">{_rich(joined)}</div>'
+        else:
+            for sk in sk_list:
+                cat   = _esc(sk.get('category', ''))
+                items = _rich(sk.get('items', ''))
+                lbl   = f'<strong>{cat}:</strong> ' if cat else ''
+                html += (f'<div style="{body_style}margin-bottom:{para_sp // 2}pt;">'
+                         f'{lbl}{items}</div>')
+        return html
+
+    def build_experience(label):
+        exp_list = [e for e in (sections.get('experience') or []) if e.get('title')]
+        if not exp_list:
+            return ''
+        html = section_header(label)
+        for exp in exp_list:
+            company_line = _esc(exp.get('company', ''))
+            if exp.get('dates'):
+                company_line += f' &nbsp;|&nbsp; {_esc(exp["dates"])}'
+            html += (
+                f'<div style="margin-bottom:{para_sp}pt;">'
+                f'<div style="font-size:{body_sz + 1}pt;font-weight:bold;font-family:{font};'
+                f'color:{name_col};">{_esc(exp.get("title", ""))}</div>'
+                f'<div style="{body_style}margin-bottom:3pt;">{company_line}</div>'
+            )
+            for bl in [b for b in (exp.get('bullets') or []) if b]:
+                html += (f'<div style="{body_style}padding-left:16pt;text-indent:-11pt;'
+                         f'margin-bottom:2pt;">{_esc(bullet)}&nbsp;{_rich(bl)}</div>')
+            html += '</div>'
+        return html
+
+    def build_education(label):
+        edu_list = [e for e in (sections.get('education') or []) if e.get('degree')]
+        if not edu_list:
+            return ''
+        html = section_header(label)
+        for edu in edu_list:
+            school = _esc(edu.get('school', ''))
+            dates  = _esc(edu.get('dates', ''))
+            line2  = f'{school} &nbsp;|&nbsp; {dates}' if (school and dates) else school or dates
+            html += (f'<div style="{body_style}margin-bottom:{para_sp}pt;">'
+                     f'<strong>{_esc(edu.get("degree", ""))}</strong>'
+                     f'{"<br>" + line2 if line2 else ""}</div>')
+        return html
+
+    def build_certifications(label):
+        cert_list = [c for c in (sections.get('certifications') or []) if c]
+        if not cert_list:
+            return ''
+        html = section_header(label)
+        for cert in cert_list:
+            html += (f'<div style="{body_style}padding-left:16pt;text-indent:-11pt;'
+                     f'margin-bottom:2pt;">{_esc(bullet)}&nbsp;{_rich(cert)}</div>')
+        return html
+
+    builders = {
+        'summary': build_summary, 'skills': build_skills, 'experience': build_experience,
+        'education': build_education, 'certifications': build_certifications,
+    }
 
     parts: list[str] = []
 
-    # ── Personal header ──────────────────────────────────────────────
+    # ── Personal header (always first) ───────────────────────────────
     parts.append(
         f'<div style="text-align:center;margin-bottom:6pt;">'
         f'<div style="font-size:{name_sz}pt;font-weight:bold;font-family:{font};'
@@ -142,73 +230,17 @@ def render_resume_html(sections: dict, tpl: dict, for_print: bool = False) -> st
         f'</div>'
     )
 
-    # ── Summary ──────────────────────────────────────────────────────
-    if sections.get('summary'):
-        parts.append(section_header('Professional Summary'))
-        parts.append(
-            f'<p style="{body_style}margin:{para_sp}pt 0 0 0;">'
-            f'{_rich(sections["summary"])}</p>'
-        )
-
-    # ── Skills ───────────────────────────────────────────────────────
-    skills = [s for s in (sections.get('skills') or []) if s.get('items') or s.get('category')]
-    if skills:
-        parts.append(section_header('Core Skills'))
-        for sk in skills:
-            cat   = _esc(sk.get('category', ''))
-            items = _rich(sk.get('items', ''))
-            label = f'<strong>{cat}:</strong> ' if cat else ''
-            parts.append(
-                f'<div style="{body_style}margin-bottom:{para_sp // 2}pt;">'
-                f'{label}{items}</div>'
-            )
-
-    # ── Experience ───────────────────────────────────────────────────
-    experience = [e for e in (sections.get('experience') or []) if e.get('title')]
-    if experience:
-        parts.append(section_header('Professional Experience'))
-        for exp in experience:
-            company_line = _esc(exp.get('company', ''))
-            if exp.get('dates'):
-                company_line += f' &nbsp;|&nbsp; {_esc(exp["dates"])}'
-            bullets = [b for b in (exp.get('bullets') or []) if b]
-            parts.append(
-                f'<div style="margin-bottom:{para_sp}pt;">'
-                f'<div style="font-size:{body_sz + 1}pt;font-weight:bold;font-family:{font};'
-                f'color:{name_col};">{_esc(exp.get("title", ""))}</div>'
-                f'<div style="{body_style}margin-bottom:3pt;">{company_line}</div>'
-            )
-            for bl in bullets:
-                parts.append(
-                    f'<div style="{body_style}padding-left:16pt;text-indent:-11pt;'
-                    f'margin-bottom:2pt;">{_esc(bullet)}&nbsp;{_rich(bl)}</div>'
-                )
-            parts.append('</div>')
-
-    # ── Education ────────────────────────────────────────────────────
-    education = [e for e in (sections.get('education') or []) if e.get('degree')]
-    if education:
-        parts.append(section_header('Education'))
-        for edu in education:
-            school = _esc(edu.get('school', ''))
-            dates  = _esc(edu.get('dates', ''))
-            line2  = f'{school} &nbsp;|&nbsp; {dates}' if (school and dates) else school or dates
-            parts.append(
-                f'<div style="{body_style}margin-bottom:{para_sp}pt;">'
-                f'<strong>{_esc(edu.get("degree", ""))}</strong>'
-                f'{"<br>" + line2 if line2 else ""}'
-                f'</div>'
-            )
-
-    # ── Certifications ───────────────────────────────────────────────
-    certs = [c for c in (sections.get('certifications') or []) if c]
-    if certs:
-        parts.append(section_header('Certifications'))
-        for cert in certs:
-            parts.append(
-                f'<div style="{body_style}padding-left:16pt;text-indent:-11pt;'
-                f'margin-bottom:2pt;">{_esc(bullet)}&nbsp;{_rich(cert)}</div>'
-            )
+    # ── Body sections in the configured order / visibility / labels ──
+    layout = tpl.get('sections_layout') or DEFAULT_SECTION_LAYOUT
+    for item in layout:
+        if not item.get('visible', True):
+            continue
+        build = builders.get(item.get('key'))
+        if not build:
+            continue
+        block = build(item.get('label') or item.get('key', '').title())
+        if block:
+            parts.append(block)
 
     inner = '\n'.join(parts)
 
@@ -383,29 +415,41 @@ def export_docx(sections: dict, tpl: dict) -> bytes:
     p.paragraph_format.space_after = Pt(6)
     _run(p, sections.get('contact', ''), size=contact_sz)
 
-    # ── Summary ──────────────────────────────────────────────────────
-    if sections.get('summary'):
-        _add_section_header('Professional Summary')
+    skills_layout = tpl.get('skills_layout', 'categorized')
+
+    # ── Per-section builders (honor the configured order/labels/visibility) ──
+    def docx_summary(label):
+        if not sections.get('summary'):
+            return
+        _add_section_header(label)
         p = doc.add_paragraph()
         p.paragraph_format.space_after = para_sp
         _run_rich(p, sections['summary'])
 
-    # ── Skills ───────────────────────────────────────────────────────
-    skills = [s for s in (sections.get('skills') or []) if s.get('items')]
-    if skills:
-        _add_section_header('Core Skills')
-        for sk in skills:
+    def docx_skills(label):
+        sk_list = [s for s in (sections.get('skills') or []) if s.get('items') or s.get('category')]
+        if not sk_list:
+            return
+        _add_section_header(label)
+        if skills_layout == 'inline':
+            joined = ', '.join(s.get('items', '').strip() for s in sk_list if s.get('items'))
             p = doc.add_paragraph()
             p.paragraph_format.space_after = Pt(2)
-            if sk.get('category'):
-                _run(p, sk['category'] + ': ', bold=True)
-            _run_rich(p, sk.get('items', ''))
+            _run_rich(p, joined)
+        else:
+            for sk in sk_list:
+                p = doc.add_paragraph()
+                p.paragraph_format.space_after = Pt(2)
+                if sk.get('category'):
+                    _run(p, sk['category'] + ': ', bold=True)
+                _run_rich(p, sk.get('items', ''))
 
-    # ── Experience ───────────────────────────────────────────────────
-    experience = [e for e in (sections.get('experience') or []) if e.get('title')]
-    if experience:
-        _add_section_header('Professional Experience')
-        for exp in experience:
+    def docx_experience(label):
+        exp_list = [e for e in (sections.get('experience') or []) if e.get('title')]
+        if not exp_list:
+            return
+        _add_section_header(label)
+        for exp in exp_list:
             p = doc.add_paragraph()
             p.paragraph_format.space_before = Pt(4)
             p.paragraph_format.space_after  = Pt(1)
@@ -425,11 +469,12 @@ def export_docx(sections: dict, tpl: dict) -> bytes:
                 p3.paragraph_format.space_after = Pt(1)
                 _run_rich(p3, bl, prefix=f'{bullet_chr}  ')
 
-    # ── Education ────────────────────────────────────────────────────
-    education = [e for e in (sections.get('education') or []) if e.get('degree')]
-    if education:
-        _add_section_header('Education')
-        for edu in education:
+    def docx_education(label):
+        edu_list = [e for e in (sections.get('education') or []) if e.get('degree')]
+        if not edu_list:
+            return
+        _add_section_header(label)
+        for edu in edu_list:
             p = doc.add_paragraph()
             p.paragraph_format.space_after = Pt(2)
             _run(p, edu.get('degree', ''), bold=True)
@@ -441,15 +486,27 @@ def export_docx(sections: dict, tpl: dict) -> bytes:
                 p2.paragraph_format.space_after = para_sp
                 _run(p2, line2)
 
-    # ── Certifications ────────────────────────────────────────────────
-    certs = [c for c in (sections.get('certifications') or []) if c]
-    if certs:
-        _add_section_header('Certifications')
-        for cert in certs:
+    def docx_certs(label):
+        cert_list = [c for c in (sections.get('certifications') or []) if c]
+        if not cert_list:
+            return
+        _add_section_header(label)
+        for cert in cert_list:
             p = doc.add_paragraph()
             p.paragraph_format.left_indent = Inches(0.15)
             p.paragraph_format.space_after = Pt(1)
             _run_rich(p, cert, prefix=f'{bullet_chr}  ')
+
+    docx_builders = {
+        'summary': docx_summary, 'skills': docx_skills, 'experience': docx_experience,
+        'education': docx_education, 'certifications': docx_certs,
+    }
+    for item in (tpl.get('sections_layout') or DEFAULT_SECTION_LAYOUT):
+        if not item.get('visible', True):
+            continue
+        b = docx_builders.get(item.get('key'))
+        if b:
+            b(item.get('label') or item.get('key', '').title())
 
     buf = BytesIO()
     doc.save(buf)

@@ -478,6 +478,49 @@
           </div>
         </div>
 
+        {# ── Sections: reorder ▲▼ · show/hide · rename ── #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-2">Sections — reorder, show/hide, rename</label>
+          <div class="space-y-1.5">
+            <template x-for="(sec, i) in tpl.sections_layout" :key="sec.key">
+              <div class="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5">
+                <div class="flex flex-col leading-none">
+                  <button type="button" @click="moveSection(i,-1)" :disabled="i===0"
+                          class="text-gray-400 hover:text-indigo-600 disabled:opacity-25 text-[11px]">▲</button>
+                  <button type="button" @click="moveSection(i,1)" :disabled="i===tpl.sections_layout.length-1"
+                          class="text-gray-400 hover:text-indigo-600 disabled:opacity-25 text-[11px]">▼</button>
+                </div>
+                <input type="checkbox" x-model="sec.visible" @change="schedulePreview(); scheduleSave()"
+                       class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4" title="Show / hide section">
+                <input type="text" x-model="sec.label" @input="schedulePreview(); scheduleSave()"
+                       :placeholder="sec.key" :class="sec.visible ? '' : 'opacity-40 line-through'"
+                       class="flex-1 min-w-0 rounded border border-gray-300 px-2 py-1 text-xs focus:ring-2 focus:ring-indigo-500">
+              </div>
+            </template>
+          </div>
+        </div>
+
+        {# ── Skills layout ── #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1">Skills Layout</label>
+          <select x-model="tpl.skills_layout" @change="schedulePreview(); scheduleSave()"
+                  class="w-full rounded border border-gray-300 px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500">
+            <option value="categorized">Categorized — Category: items</option>
+            <option value="inline">Inline — one combined list</option>
+          </select>
+        </div>
+
+        {# ── Spacing presets ── #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-2">Spacing Preset</label>
+          <div class="grid grid-cols-3 gap-2">
+            <button type="button" @click="setSpacing('compact')"  class="py-1.5 rounded-lg border border-gray-300 text-xs font-medium hover:bg-indigo-50 hover:border-indigo-300 transition">Compact</button>
+            <button type="button" @click="setSpacing('standard')" class="py-1.5 rounded-lg border border-gray-300 text-xs font-medium hover:bg-indigo-50 hover:border-indigo-300 transition">Standard</button>
+            <button type="button" @click="setSpacing('relaxed')"  class="py-1.5 rounded-lg border border-gray-300 text-xs font-medium hover:bg-indigo-50 hover:border-indigo-300 transition">Relaxed</button>
+          </div>
+          <p class="text-[11px] text-gray-400 mt-1">Quick-sets margins, line height &amp; spacing. Fine-tune with the sliders above.</p>
+        </div>
+
       </div>{# /settings body #}
 
       {# Save template actions #}
@@ -541,6 +584,11 @@ function resumeEditor() {
       if (!Array.isArray(this.sections.experience))     this.sections.experience = [];
       if (!Array.isArray(this.sections.education))      this.sections.education = [];
       if (!Array.isArray(this.sections.certifications)) this.sections.certifications = [];
+
+      // Phase 2 layout defaults (selected templates don't carry these)
+      if (!Array.isArray(this.tpl.sections_layout) || !this.tpl.sections_layout.length)
+        this.tpl.sections_layout = this.defaultSectionsLayout();
+      if (!this.tpl.skills_layout) this.tpl.skills_layout = 'categorized';
 
       // Initial preview comes pre-rendered from the server (same renderer as the PDF).
       this.previewHtml = JSON.parse(document.getElementById('initial-preview').textContent || '""');
@@ -671,6 +719,34 @@ function resumeEditor() {
     schedulePreview() {
       if (this.previewTimer) clearTimeout(this.previewTimer);
       this.previewTimer = setTimeout(() => this.doPreview(), 250);
+    },
+
+    // ── Phase 2: section layout + spacing ────────────────────────────
+    defaultSectionsLayout() {
+      return [
+        { key: 'summary',        label: 'Professional Summary',    visible: true },
+        { key: 'skills',         label: 'Technical Skills',        visible: true },
+        { key: 'experience',     label: 'Professional Experience', visible: true },
+        { key: 'education',      label: 'Education',                visible: true },
+        { key: 'certifications', label: 'Certifications',           visible: true },
+      ];
+    },
+    moveSection(i, dir) {
+      const arr = this.tpl.sections_layout;
+      const j = i + dir;
+      if (j < 0 || j >= arr.length) return;
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+      this.tpl.sections_layout = [...arr];   // new ref → reliable reactivity
+      this.schedulePreview(); this.scheduleSave();
+    },
+    setSpacing(preset) {
+      const presets = {
+        compact:  { margin_top:0.5,  margin_bottom:0.5,  margin_left:0.6,  margin_right:0.6,  line_height:1.15, para_spacing:3, section_spacing:7 },
+        standard: { margin_top:0.75, margin_bottom:0.75, margin_left:0.75, margin_right:0.75, line_height:1.3,  para_spacing:5, section_spacing:10 },
+        relaxed:  { margin_top:1.0,  margin_bottom:1.0,  margin_left:1.0,  margin_right:1.0,  line_height:1.5,  para_spacing:7, section_spacing:14 },
+      };
+      Object.assign(this.tpl, presets[preset] || presets.standard);
+      this.schedulePreview(); this.scheduleSave();
     },
 
     // Rebuild structured sections from the originally generated resume text.
