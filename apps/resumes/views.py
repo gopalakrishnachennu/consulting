@@ -915,6 +915,8 @@ class ResumeTemplateSaveView(AdminOrEmployeeMixin, BaseView):
             'margin_top', 'margin_bottom', 'margin_left', 'margin_right',
             'line_height', 'para_spacing', 'section_spacing',
             'header_style', 'show_dividers', 'bullet_char',
+            # Phase 2/3 design fields — so a saved template carries the full design
+            'header_align', 'skills_layout', 'sections_layout',
         ]
         for f in fields:
             if f in body:

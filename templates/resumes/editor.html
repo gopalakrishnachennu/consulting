@@ -626,11 +626,8 @@ function resumeEditor() {
       if (!Array.isArray(this.sections.education))      this.sections.education = [];
       if (!Array.isArray(this.sections.certifications)) this.sections.certifications = [];
 
-      // Phase 2 layout defaults (selected templates don't carry these)
-      if (!Array.isArray(this.tpl.sections_layout) || !this.tpl.sections_layout.length)
-        this.tpl.sections_layout = this.defaultSectionsLayout();
-      if (!this.tpl.skills_layout) this.tpl.skills_layout = 'categorized';
-      if (!this.tpl.header_align) this.tpl.header_align = 'center';
+      // Phase 2/3 layout defaults (older/builtin templates may not carry these)
+      this.ensureTplDefaults();
 
       // Initial preview comes pre-rendered from the server (same renderer as the PDF).
       this.previewHtml = JSON.parse(document.getElementById('initial-preview').textContent || '""');
@@ -695,6 +692,7 @@ function resumeEditor() {
       const found = this.allTemplates.find(t => String(t.id) === String(tplId));
       if (found) {
         this.tpl = { ...found };
+        this.ensureTplDefaults();
         this.schedulePreview();
         await this.save();
       }
@@ -772,6 +770,12 @@ function resumeEditor() {
         { key: 'education',      label: 'Education',                visible: true },
         { key: 'certifications', label: 'Certifications',           visible: true },
       ];
+    },
+    ensureTplDefaults() {
+      if (!Array.isArray(this.tpl.sections_layout) || !this.tpl.sections_layout.length)
+        this.tpl.sections_layout = this.defaultSectionsLayout();
+      if (!this.tpl.skills_layout) this.tpl.skills_layout = 'categorized';
+      if (!this.tpl.header_align)  this.tpl.header_align  = 'center';
     },
     moveSection(i, dir) {
       const arr = this.tpl.sections_layout;

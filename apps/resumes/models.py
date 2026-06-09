@@ -219,6 +219,12 @@ class ResumeTemplate(models.Model):
     header_style   = models.CharField(max_length=20, default='underline', choices=HEADER_STYLE_CHOICES)
     show_dividers  = models.BooleanField(default=True)
     bullet_char    = models.CharField(max_length=5, default='•')
+    header_align   = models.CharField(max_length=10, default='center')  # 'center' | 'left'
+
+    # Layout (Phase 2/3) — captured so a saved template carries the full design
+    skills_layout    = models.CharField(max_length=20, default='categorized')  # 'categorized' | 'inline'
+    sections_layout  = models.JSONField(default=list, blank=True,
+        help_text='Section order/visibility/labels: [{key,label,visible}, ...]. Empty = default.')
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -245,6 +251,9 @@ class ResumeTemplate(models.Model):
             'para_spacing': self.para_spacing, 'section_spacing': self.section_spacing,
             'header_style': self.header_style,
             'show_dividers': self.show_dividers, 'bullet_char': self.bullet_char,
+            'header_align': self.header_align,
+            'skills_layout': self.skills_layout,
+            'sections_layout': self.sections_layout or [],
         }
 
 
