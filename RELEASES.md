@@ -13,7 +13,7 @@ Resume engine + editor overhaul.
 - NEW: resume draft history + side-by-side compare (versions per job & across jobs).
 - CI: use the runner's built-in PostgreSQL (kills Docker pull rate-limit flakes).
 - Tooling: /release, /feature, /modify skills + this release log.
-Status: pending
+Status: deployed (ac1762c · health 200 · 2026-06-09)
 
 ## v4.0.0 — baseline (2026-06-09)
 Baseline tag prior to the consistent-release flow. Everything before this was deployed ad-hoc via
