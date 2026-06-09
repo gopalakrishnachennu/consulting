@@ -36,6 +36,8 @@ DEFAULT_TEMPLATE = {
     # Phase 2 layout controls
     'sections_layout': DEFAULT_SECTION_LAYOUT,
     'skills_layout': 'categorized',  # 'categorized' | 'inline'
+    # Phase 3
+    'header_align': 'center',  # 'center' | 'left'
 }
 
 
@@ -221,8 +223,9 @@ def render_resume_html(sections: dict, tpl: dict, for_print: bool = False) -> st
     parts: list[str] = []
 
     # ── Personal header (always first) ───────────────────────────────
+    header_align = tpl.get('header_align', 'center')
     parts.append(
-        f'<div style="text-align:center;margin-bottom:6pt;">'
+        f'<div style="text-align:{header_align};margin-bottom:6pt;">'
         f'<div style="font-size:{name_sz}pt;font-weight:bold;font-family:{font};'
         f'color:{name_col};letter-spacing:0.5px;">{_esc(sections.get("name", ""))}</div>'
         f'<div style="font-size:{contact_sz}pt;font-family:{font};color:{body_col};margin-top:3pt;">'
@@ -403,15 +406,18 @@ def export_docx(sections: dict, tpl: dict) -> bytes:
         pPr.append(pBdr)
         return p
 
+    head_align = (WD_ALIGN_PARAGRAPH.LEFT if tpl.get('header_align') == 'left'
+                  else WD_ALIGN_PARAGRAPH.CENTER)
+
     # ── Name ─────────────────────────────────────────────────────────
     p = doc.add_paragraph()
-    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.alignment = head_align
     p.paragraph_format.space_after = Pt(2)
     _run(p, sections.get('name', ''), bold=True, size=name_sz, color=name_rgb)
 
     # ── Contact ──────────────────────────────────────────────────────
     p = doc.add_paragraph()
-    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.alignment = head_align
     p.paragraph_format.space_after = Pt(6)
     _run(p, sections.get('contact', ''), size=contact_sz)
 

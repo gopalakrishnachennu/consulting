@@ -325,6 +325,13 @@
             <span x-text="pageCount"></span><span x-text="pageCount === 1 ? 'page' : 'pages'"></span>
           </span>
 
+          {# Fit to 2 pages — shows only when over 2 pages #}
+          <button x-show="pageCount > 2" @click="fitToTwoPages()" :disabled="fitting"
+                  class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition" x-cloak>
+            <svg class="w-3.5 h-3.5" :class="fitting ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-5v4m0-4h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+            <span x-text="fitting ? 'Fitting…' : 'Fit to 2 pages'"></span>
+          </button>
+
           {# zoom controls #}
           <div class="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
             <button @click="setZoom(zoom - 0.1)" class="w-7 h-7 rounded-md hover:bg-white text-gray-600 flex items-center justify-center" title="Zoom out">
@@ -403,9 +410,34 @@
           {% endfor %}
         </div>
 
+        {# Color theme presets #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-2">Color Theme</label>
+          <div class="flex flex-wrap gap-2">
+            <template x-for="th in colorThemes" :key="th.name">
+              <button type="button" @click="applyTheme(th)" :title="th.name"
+                      class="w-7 h-7 rounded-full border-2 border-white ring-1 ring-gray-300 hover:ring-indigo-400 transition"
+                      :style="`background:${th.accent}`"></button>
+            </template>
+          </div>
+        </div>
+
+        {# Header alignment #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-2">Header Alignment</label>
+          <div class="grid grid-cols-2 gap-2">
+            <button type="button" @click="tpl.header_align='center'; schedulePreview(); scheduleSave()"
+                    :class="tpl.header_align !== 'left' ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-600'"
+                    class="py-1.5 rounded-lg border text-xs font-medium transition">Centered</button>
+            <button type="button" @click="tpl.header_align='left'; schedulePreview(); scheduleSave()"
+                    :class="tpl.header_align === 'left' ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-600'"
+                    class="py-1.5 rounded-lg border text-xs font-medium transition">Left</button>
+          </div>
+        </div>
+
         {# Colors #}
         <div>
-          <label class="block text-xs font-semibold text-gray-600 mb-2">Colors</label>
+          <label class="block text-xs font-semibold text-gray-600 mb-2">Colors (custom)</label>
           <div class="grid grid-cols-3 gap-3">
             <div class="text-center">
               <input type="color" x-model="tpl.accent_color" @input="previewHtml = renderPreview()"
@@ -574,6 +606,15 @@ function resumeEditor() {
     pageCount: 1,
     previewTimer: null,
     resyncing: false,
+    fitting: false,
+    colorThemes: [
+      { name: 'Navy',     accent: '#1e3a5f', name_c: '#111827', body: '#374151' },
+      { name: 'Slate',    accent: '#334155', name_c: '#0f172a', body: '#475569' },
+      { name: 'Black',    accent: '#111111', name_c: '#000000', body: '#333333' },
+      { name: 'Teal',     accent: '#0f766e', name_c: '#134e4a', body: '#374151' },
+      { name: 'Burgundy', accent: '#7f1d1d', name_c: '#450a0a', body: '#3f3f46' },
+      { name: 'Indigo',   accent: '#4338ca', name_c: '#1e1b4b', body: '#374151' },
+    ],
 
     init() {
       this.sections = {{ sections_json|safe }};
@@ -589,6 +630,7 @@ function resumeEditor() {
       if (!Array.isArray(this.tpl.sections_layout) || !this.tpl.sections_layout.length)
         this.tpl.sections_layout = this.defaultSectionsLayout();
       if (!this.tpl.skills_layout) this.tpl.skills_layout = 'categorized';
+      if (!this.tpl.header_align) this.tpl.header_align = 'center';
 
       // Initial preview comes pre-rendered from the server (same renderer as the PDF).
       this.previewHtml = JSON.parse(document.getElementById('initial-preview').textContent || '""');
@@ -738,6 +780,31 @@ function resumeEditor() {
       [arr[i], arr[j]] = [arr[j], arr[i]];
       this.tpl.sections_layout = [...arr];   // new ref → reliable reactivity
       this.schedulePreview(); this.scheduleSave();
+    },
+    applyTheme(th) {
+      this.tpl.accent_color = th.accent;
+      this.tpl.name_color   = th.name_c;
+      this.tpl.body_color   = th.body;
+      this.schedulePreview(); this.scheduleSave();
+    },
+    async fitToTwoPages() {
+      this.fitting = true;
+      try {
+        for (let n = 0; n < 12; n++) {
+          await this.doPreview();
+          await this.$nextTick();
+          this.measurePages();
+          if (this.pageCount <= 2) break;
+          // Tighten a notch each pass (floors keep it readable)
+          this.tpl.body_size       = Math.max(9,    (this.tpl.body_size || 11) - 0.5);
+          this.tpl.line_height     = Math.max(1.05, +((this.tpl.line_height || 1.3) - 0.05).toFixed(2));
+          this.tpl.section_spacing = Math.max(5,    (this.tpl.section_spacing || 10) - 1);
+          this.tpl.para_spacing    = Math.max(2,    (this.tpl.para_spacing || 5) - 1);
+          this.tpl.margin_top      = Math.max(0.4,  +((this.tpl.margin_top || 0.75) - 0.05).toFixed(2));
+          this.tpl.margin_bottom   = Math.max(0.4,  +((this.tpl.margin_bottom || 0.75) - 0.05).toFixed(2));
+        }
+        this.scheduleSave();
+      } finally { this.fitting = false; }
     },
     setSpacing(preset) {
       const presets = {
