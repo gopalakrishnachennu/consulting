@@ -3110,12 +3110,15 @@ class JobLocationReconcileTests(TestCase):
     """Country drift propagation: RawJob country resolved post-sync → pool Job updated."""
 
     def _make_pair(self, raw_country, job_country):
+        from companies.models import Company
         from harvest.models import RawJob
         from jobs.models import Job
         from users.models import User
         emp = User.objects.create_user(username=f"emp_{raw_country}_{job_country}",
                                        password="p", role=User.Role.EMPLOYEE)
+        company = Company.objects.create(name=f"Co {raw_country}{job_country}")
         rj = RawJob.objects.create(
+            company=company,
             title="T", company_name="C", country=raw_country,
             original_url=f"https://x.example/{raw_country}-{job_country}",
             url_hash=f"h-{raw_country}-{job_country}",
