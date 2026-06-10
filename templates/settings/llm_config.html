@@ -142,6 +142,46 @@
         </form>
     </div>
 
+    {# ── Usage by service & model — who calls which API ── #}
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div class="flex items-center justify-between mb-1">
+            <h2 class="text-xl font-bold text-gray-800">Usage by Service &amp; Model</h2>
+        </div>
+        <p class="text-xs text-gray-500 mb-4">Which feature (request type) used which model/API — calls, tokens, cost (all-time).</p>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Service (request type)</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Model / API</th>
+                        <th class="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wide">Calls</th>
+                        <th class="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wide">Tokens</th>
+                        <th class="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wide">Cost (USD)</th>
+                        <th class="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase tracking-wide">Fails</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    {% for row in usage_breakdown %}
+                    <tr>
+                        <td class="px-4 py-2 text-sm font-medium text-gray-800">{{ row.request_type|default:"—" }}</td>
+                        <td class="px-4 py-2 text-sm text-gray-700"><code>{{ row.model_name|default:"—" }}</code></td>
+                        <td class="px-4 py-2 text-sm text-right text-gray-800">{{ row.calls }}</td>
+                        <td class="px-4 py-2 text-sm text-right text-gray-800">{{ row.tokens|default:0 }}</td>
+                        <td class="px-4 py-2 text-sm text-right text-gray-800">${{ row.cost|default:0|floatformat:4 }}</td>
+                        <td class="px-4 py-2 text-sm text-right {% if row.fails %}text-red-600 font-semibold{% else %}text-gray-400{% endif %}">{{ row.fails }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="px-4 py-6 text-sm text-gray-500 text-center">No LLM calls logged yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="text-[11px] text-gray-400 mt-3">
+            Note: only services that call through the central LLM client are logged here (resume generation + pipeline).
+            Harvest job classification currently uses a separate OpenAI key and isn't logged — see the docs to unify it.
+        </p>
+    </div>
+
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div class="flex items-center justify-between mb-4">
             <h2 class="text-xl font-bold text-gray-800">Recent Usage</h2>

@@ -474,6 +474,19 @@ class LLMConfigView(AdminRequiredMixin, View):
         total_latency = agg['total_latency'] or 0
         avg_latency = int(total_latency / total_calls) if total_calls else 0
 
+        # Which service (request_type) used which model/API — calls, tokens, cost
+        usage_breakdown = list(
+            LLMUsageLog.objects
+            .values('request_type', 'model_name')
+            .annotate(
+                calls=Count('id'),
+                tokens=Sum('total_tokens'),
+                cost=Sum('cost_total'),
+                fails=Count('id', filter=Q(success=False)),
+            )
+            .order_by('-cost')[:40]
+        )
+
         return {
             'llm_config': LLMConfig.load(),
             'total_calls': total_calls,
@@ -485,6 +498,7 @@ class LLMConfigView(AdminRequiredMixin, View):
             'calls_today': agg['calls_today'] or 0,
             'calls_week': agg['calls_week'] or 0,
             'calls_month': agg['calls_month'] or 0,
+            'usage_breakdown': usage_breakdown,
             'recent_logs': LLMUsageLog.objects.order_by('-created_at')[:20],
         }
 
