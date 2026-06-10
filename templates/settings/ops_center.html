@@ -40,6 +40,52 @@
     <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><p class="text-xs uppercase tracking-wide text-slate-500">Failed 24h</p><p id="kpi-failed" class="mt-2 text-3xl font-black text-rose-700">0</p></div>
   </section>
 
+  {# ── System Health — server metrics with zero SSH ── #}
+  {% if system_health %}
+  <section class="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div class="mb-3 flex items-center justify-between">
+      <h2 class="text-sm font-bold uppercase tracking-wide text-slate-600">System Health</h2>
+      <span class="text-[11px] text-slate-400">Disk auto-pruned on every deploy · refreshed on page load</span>
+    </div>
+    <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-7">
+      <div class="rounded-xl border border-slate-200 p-3">
+        <p class="text-[11px] uppercase tracking-wide text-slate-500">Disk</p>
+        {% if system_health.disk_pct is not None %}
+        <p class="mt-1 text-2xl font-black {% if system_health.disk_pct >= 85 %}text-rose-600{% elif system_health.disk_pct >= 70 %}text-amber-600{% else %}text-emerald-700{% endif %}">{{ system_health.disk_pct }}%</p>
+        <p class="text-[11px] text-slate-400">{{ system_health.disk_used_gb }} / {{ system_health.disk_total_gb }} GB</p>
+        {% else %}<p class="mt-1 text-2xl font-black text-slate-300">—</p>{% endif %}
+      </div>
+      <div class="rounded-xl border border-slate-200 p-3">
+        <p class="text-[11px] uppercase tracking-wide text-slate-500">Database</p>
+        <p class="mt-1 text-2xl font-black text-slate-900">{{ system_health.db_size|default:"—" }}</p>
+      </div>
+      <div class="rounded-xl border border-slate-200 p-3">
+        <p class="text-[11px] uppercase tracking-wide text-slate-500">Errors 24h</p>
+        <p class="mt-1 text-2xl font-black {% if system_health.errors_24h %}text-rose-600{% else %}text-emerald-700{% endif %}">{{ system_health.errors_24h|default:"0" }}</p>
+        <a href="{% url 'incident-list' %}" class="text-[11px] text-blue-600 hover:underline">incidents →</a>
+      </div>
+      <div class="rounded-xl border border-slate-200 p-3">
+        <p class="text-[11px] uppercase tracking-wide text-slate-500">LLM spend (mo)</p>
+        <p class="mt-1 text-2xl font-black text-slate-900">${{ system_health.llm_cost_month|floatformat:2|default:"—" }}</p>
+        <a href="{% url 'llm-config' %}" class="text-[11px] text-blue-600 hover:underline">by service →</a>
+      </div>
+      <div class="rounded-xl border border-slate-200 p-3">
+        <p class="text-[11px] uppercase tracking-wide text-slate-500">Queues</p>
+        <p class="mt-1 text-2xl font-black text-slate-900">{{ system_health.queue_default|default:"—" }}<span class="text-sm font-semibold text-slate-400"> / {{ system_health.queue_harvest|default:"—" }}</span></p>
+        <p class="text-[11px] text-slate-400">default / harvest</p>
+      </div>
+      <div class="rounded-xl border border-slate-200 p-3">
+        <p class="text-[11px] uppercase tracking-wide text-slate-500">Raw Jobs</p>
+        <p class="mt-1 text-2xl font-black text-slate-900">{{ system_health.rawjob_count|default:"—" }}</p>
+      </div>
+      <div class="rounded-xl border border-slate-200 p-3">
+        <p class="text-[11px] uppercase tracking-wide text-slate-500">Pool Jobs</p>
+        <p class="mt-1 text-2xl font-black text-slate-900">{{ system_health.job_count|default:"—" }}</p>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
   <div id="transportError" class="mt-4 hidden rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800"></div>
 
   <section class="mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm">

@@ -293,7 +293,8 @@
 
         {% if rawjob.quality_score is not None %}
         <section class="card-padded">
-          <h3 class="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Data Quality</h3>
+          <h3 class="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500">Harvest Data Quality</h3>
+          <p class="mb-3 text-[11px] text-slate-400">Raw field completeness at harvest time. The synced Job shows a different, recomputed pool-quality score — they are not the same metric.</p>
           <div class="mb-2 h-2 overflow-hidden rounded bg-slate-100">
             <div class="h-2 rounded {% if rawjob.quality_score >= 0.8 %}bg-emerald-500{% elif rawjob.quality_score >= 0.5 %}bg-amber-500{% else %}bg-red-500{% endif %}" style="width:{% widthratio rawjob.quality_score 1 100 %}%"></div>
           </div>
@@ -303,7 +304,8 @@
         {% endif %}
 
         <section class="card-padded">
-          <h3 class="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Resume JD Gate</h3>
+          <h3 class="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500">Resume JD Gate</h3>
+          <p class="mb-3 text-[11px] text-slate-400">Checks the JD <em>text</em> is long/usable enough for resume generation. Separate from the Job's structured "JD parse" step.</p>
           {% if resume_jd_gate.usable %}
           <span class="badge-green mb-2">Ready for resume</span>
           {% else %}

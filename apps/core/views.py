@@ -2152,6 +2152,75 @@ def _build_ops_snapshot() -> dict:
     return payload
 
 
+def _build_system_health():
+    """Server health metrics visible in the Ops Center — no SSH needed.
+    Every probe is fail-safe: a failure shows '—' instead of breaking the page."""
+    health = {}
+
+    # Disk (the container root reflects the host overlay filesystem)
+    try:
+        import shutil
+        du = shutil.disk_usage("/")
+        health["disk_total_gb"] = round(du.total / 1e9, 1)
+        health["disk_used_gb"] = round(du.used / 1e9, 1)
+        health["disk_pct"] = round(du.used / du.total * 100)
+    except Exception:
+        health["disk_pct"] = None
+
+    # Database size
+    try:
+        from django.db import connection
+        with connection.cursor() as cur:
+            cur.execute("SELECT pg_size_pretty(pg_database_size(current_database()))")
+            health["db_size"] = cur.fetchone()[0]
+    except Exception:
+        health["db_size"] = None
+
+    # Errors (24h) from the in-app error log
+    try:
+        from .models import ErrorLog
+        day_ago = timezone.now() - timedelta(hours=24)
+        health["errors_24h"] = ErrorLog.objects.filter(created_at__gte=day_ago).count()
+    except Exception:
+        health["errors_24h"] = None
+
+    # LLM spend this month
+    try:
+        from django.db.models import Sum as _Sum
+        from .models import LLMUsageLog
+        month_start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        health["llm_cost_month"] = float(
+            LLMUsageLog.objects.filter(created_at__gte=month_start)
+            .aggregate(c=_Sum("cost_total"))["c"] or 0)
+    except Exception:
+        health["llm_cost_month"] = None
+
+    # Celery queue depth (Redis list lengths for default + harvest queues)
+    try:
+        import redis as _redis
+        from django.conf import settings as _settings
+        broker = getattr(_settings, "CELERY_BROKER_URL", "") or ""
+        if broker.startswith("redis"):
+            r = _redis.Redis.from_url(broker, socket_timeout=2)
+            health["queue_default"] = r.llen("celery")
+            health["queue_harvest"] = r.llen("harvest")
+        else:
+            health["queue_default"] = None
+    except Exception:
+        health["queue_default"] = None
+
+    # Pipeline volume counters
+    try:
+        from harvest.models import RawJob
+        from jobs.models import Job
+        health["rawjob_count"] = RawJob.objects.count()
+        health["job_count"] = Job.objects.count()
+    except Exception:
+        pass
+
+    return health
+
+
 class SystemOpsCenterView(AdminRequiredMixin, TemplateView):
     template_name = "settings/ops_center.html"
 
@@ -2165,6 +2234,7 @@ class SystemOpsCenterView(AdminRequiredMixin, TemplateView):
         from harvest.models import FetchBatch
 
         ctx["latest_fetch_batch"] = FetchBatch.objects.order_by("-created_at").first()
+        ctx["system_health"] = _build_system_health()
         return ctx
 
 
