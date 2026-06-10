@@ -3079,3 +3079,28 @@ class SelectiveHarvestRoleFilterTests(SimpleTestCase):
         )
 
         self.assertEqual(result.decision, COLD)
+
+
+class HarvestLLMResolveTests(TestCase):
+    """Safety: with the flag off (default), harvest LLM routing is unchanged."""
+
+    def test_flag_off_uses_caller_defaults(self):
+        from harvest.llm_classifier import _resolve_llm
+        key, base_url, model, do_log = _resolve_llm("explicit-key", "gpt-4o-mini")
+        self.assertEqual(key, "explicit-key")
+        self.assertIsNone(base_url)              # OpenAI default endpoint
+        self.assertEqual(model, "gpt-4o-mini")   # caller's model preserved
+        self.assertFalse(do_log)                 # no logging when flag off
+
+    def test_flag_on_uses_central_config(self):
+        from core.models import FeatureFlag, LLMConfig
+        FeatureFlag.objects.update_or_create(key="harvest_use_central_llm", defaults={"is_enabled": True})
+        cfg = LLMConfig.load()
+        cfg.provider, cfg.base_url, cfg.active_model = "deepseek", "", "deepseek-chat"
+        cfg.validation_model = ""
+        cfg.save()
+        from harvest.llm_classifier import _resolve_llm
+        key, base_url, model, do_log = _resolve_llm(None, "gpt-4o-mini")
+        self.assertEqual(base_url, "https://api.deepseek.com")
+        self.assertEqual(model, "deepseek-chat")  # central model overrides caller default
+        self.assertTrue(do_log)

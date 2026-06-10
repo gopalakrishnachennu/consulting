@@ -92,6 +92,55 @@ def _parse_llm_response(text: str) -> list[dict]:
     return []
 
 
+def _resolve_llm(api_key: str | None, model: str):
+    """Resolve (key, base_url, model, do_log) for a harvest LLM call.
+
+    Central LLMConfig routing is OPT-IN via the 'harvest_use_central_llm' feature
+    flag. Default (flag off / missing) = unchanged behavior: caller/env key, the
+    caller's model, OpenAI default endpoint, and no usage logging — so the
+    scheduled harvest is byte-identical until the flag is deliberately turned on.
+    """
+    try:
+        from core.models import FeatureFlag
+        ff = FeatureFlag.objects.filter(key="harvest_use_central_llm").first()
+        use_central = bool(ff and ff.is_enabled)
+    except Exception:
+        use_central = False
+
+    if use_central:
+        try:
+            from core.models import LLMConfig
+            from core.security import decrypt_value
+            cfg = LLMConfig.load()
+            key = decrypt_value(cfg.encrypted_api_key) or api_key or os.environ.get("OPENAI_API_KEY", "")
+            cfg_model = (cfg.validation_model or "").strip() or cfg.active_model
+            return key, cfg.effective_base_url(), (cfg_model or model), True
+        except Exception:
+            logger.exception("llm_classifier: central LLMConfig resolve failed; using defaults")
+
+    return (api_key or os.environ.get("OPENAI_API_KEY", "")), None, model, False
+
+
+def _log_harvest_usage(model: str, response, request_type: str) -> None:
+    """Best-effort: record a harvest LLM call in LLMUsageLog (one row per batch)."""
+    try:
+        from core.models import LLMUsageLog
+        from core.llm_services import calculate_cost
+        u = getattr(response, "usage", None)
+        pt = getattr(u, "prompt_tokens", 0) or 0
+        ct = getattr(u, "completion_tokens", 0) or 0
+        tt = getattr(u, "total_tokens", 0) or 0
+        costs = calculate_cost(model, pt, ct)
+        LLMUsageLog.objects.create(
+            request_type=request_type, model_name=model,
+            prompt_tokens=pt, completion_tokens=ct, total_tokens=tt,
+            cost_input=costs["input"], cost_output=costs["output"], cost_total=costs["total"],
+            success=True,
+        )
+    except Exception:
+        logger.debug("llm_classifier: usage logging skipped", exc_info=True)
+
+
 def classify_batch(
     jobs: list[dict],
     *,
@@ -113,9 +162,9 @@ def classify_batch(
     if not jobs:
         return {}
 
-    key = api_key or os.environ.get("OPENAI_API_KEY", "")
+    key, base_url, model, do_log = _resolve_llm(api_key, model)
     if not key:
-        logger.warning("llm_classifier: OPENAI_API_KEY not set — skipping LLM pass")
+        logger.warning("llm_classifier: no API key available — skipping LLM pass")
         return {}
 
     try:
@@ -124,7 +173,7 @@ def classify_batch(
         logger.warning("llm_classifier: openai package not installed")
         return {}
 
-    client = openai.OpenAI(api_key=key)
+    client = openai.OpenAI(api_key=key, base_url=base_url)
     user_prompt = _make_user_prompt(jobs)
 
     try:
@@ -140,6 +189,9 @@ def classify_batch(
     except Exception as exc:
         logger.error("llm_classifier: API call failed: %s", exc)
         return {}
+
+    if do_log:
+        _log_harvest_usage(model, response, "harvest_classification")
 
     raw_text = (response.choices[0].message.content or "").strip()
     items = _parse_llm_response(raw_text)
@@ -258,9 +310,9 @@ def gate_jobs_batch(
     if not jobs:
         return {}
 
-    key = api_key or os.environ.get("OPENAI_API_KEY", "")
+    key, base_url, model, do_log = _resolve_llm(api_key, model)
     if not key:
-        logger.warning("gate_jobs_batch: OPENAI_API_KEY not set — skipping JD gate")
+        logger.warning("gate_jobs_batch: no API key available — skipping JD gate")
         return {}
 
     try:
@@ -269,7 +321,7 @@ def gate_jobs_batch(
         logger.warning("gate_jobs_batch: openai package not installed")
         return {}
 
-    client = openai.OpenAI(api_key=key)
+    client = openai.OpenAI(api_key=key, base_url=base_url)
     user_prompt = _make_gate_prompt(jobs)
 
     try:
@@ -285,6 +337,9 @@ def gate_jobs_batch(
     except Exception as exc:
         logger.error("gate_jobs_batch: API call failed: %s", exc)
         return {}
+
+    if do_log:
+        _log_harvest_usage(model, response, "harvest_jd_gate")
 
     raw_text = (response.choices[0].message.content or "").strip()
     items = _parse_llm_response(raw_text)

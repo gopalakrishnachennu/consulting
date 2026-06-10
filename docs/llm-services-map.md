@@ -42,13 +42,18 @@ flowchart TD
   end
 ```
 
-## Recommended improvement
-**Unify harvest classification onto `LLMConfig`** so:
-1. one place controls the provider/model (switch everything to DeepSeek at once),
-2. its cost shows up in the usage breakdown, and
-3. there's a single encrypted key instead of an env var.
+## Unify harvest onto the central config — IMPLEMENTED (opt-in)
+`llm_classifier.py` can now route through `LLMConfig` (central key/base_url/model) and log to
+`LLMUsageLog` — but it's **opt-in via the `harvest_use_central_llm` feature flag** so the
+scheduled harvest stays byte-identical until you deliberately enable it.
 
-Implementation sketch (a `/modify`): have `llm_classifier.py` read `LLMConfig` (key via
-`decrypt_value`, `base_url` via `effective_base_url()`, model via `validation_model` or a new
-`classification_model`) and log to `LLMUsageLog` with `request_type="harvest_classification"`.
-Keep the env-var fallback for local/offline ops.
+- **Flag OFF (default):** exactly the current behavior — `OPENAI_API_KEY` env, the caller's model
+  (e.g. `HarvestEngineConfig.jd_gate_model`), OpenAI endpoint, no usage logging.
+- **Flag ON:** key from `LLMConfig` (env fallback), `base_url` via `effective_base_url()`, model =
+  `validation_model` or `active_model`, and each batch logs to `LLMUsageLog`
+  (`harvest_classification` / `harvest_jd_gate`) → shows up in the usage breakdown.
+
+**To enable (after setting up the provider on `/core/llm/`):** create/enable FeatureFlag
+`harvest_use_central_llm`. Test on a small run first — the JD gate is fault-tolerant (any error →
+jobs stay UNCERTAIN, never crashes), but verify classification quality on the new model before
+relying on it for the nightly harvest.

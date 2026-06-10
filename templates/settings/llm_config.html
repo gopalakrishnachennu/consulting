@@ -177,8 +177,9 @@
             </table>
         </div>
         <p class="text-[11px] text-gray-400 mt-3">
-            Note: only services that call through the central LLM client are logged here (resume generation + pipeline).
-            Harvest job classification currently uses a separate OpenAI key and isn't logged — see the docs to unify it.
+            Note: resume generation + pipeline always log here. Harvest job classification logs here
+            too only when the <code>harvest_use_central_llm</code> feature flag is ON (off by default —
+            it then uses a separate OpenAI key). See docs/llm-services-map.md.
         </p>
     </div>
 
