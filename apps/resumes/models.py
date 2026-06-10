@@ -92,6 +92,15 @@ class ResumeDraft(models.Model):
     ats_score = models.PositiveIntegerField(default=0)
     validation_errors = models.JSONField(default=list, blank=True)
     validation_warnings = models.JSONField(default=list, blank=True)
+
+    class ReviewStatus(models.TextChoices):
+        PASS = "pass", "Passed"
+        REVIEW = "review", "Needs review"
+        BLOCK = "block", "Blocked — fabrication risk"
+
+    review_status = models.CharField(
+        max_length=10, choices=ReviewStatus.choices, default=ReviewStatus.PASS, blank=True,
+        help_text="Deterministic truth-guardrail result (pass / review / block).")
     tokens_used = models.PositiveIntegerField(default=0, help_text="Total tokens consumed")
     auto_generated = models.BooleanField(
         default=False,

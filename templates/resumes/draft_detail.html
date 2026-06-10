@@ -82,6 +82,29 @@
 
     {# ── LEFT: Resume content (2 cols) ──────────────────────────── #}
     <div class="lg:col-span-2 space-y-5">
+
+      {# Truth-guardrail banner — shows when generation may have fabricated #}
+      {% if draft.review_status == 'block' or draft.review_status == 'review' %}
+      <div class="rounded-2xl border {% if draft.review_status == 'block' %}border-red-200 bg-red-50{% else %}border-amber-200 bg-amber-50{% endif %} p-4">
+        <div class="flex items-center gap-2 mb-1">
+          <svg class="w-5 h-5 {% if draft.review_status == 'block' %}text-red-600{% else %}text-amber-600{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75L13.74 4a2 2 0 00-3.48 0L3.16 16.25A2 2 0 005 19z"/></svg>
+          <p class="text-sm font-bold {% if draft.review_status == 'block' %}text-red-700{% else %}text-amber-700{% endif %}">
+            {% if draft.review_status == 'block' %}Fabrication risk — review before sending{% else %}Needs review{% endif %}
+          </p>
+        </div>
+        {% if draft.validation_errors %}
+        <ul class="list-disc ml-6 text-sm text-red-700 space-y-0.5">
+          {% for e in draft.validation_errors %}<li>{{ e }}</li>{% endfor %}
+        </ul>
+        {% endif %}
+        {% if draft.validation_warnings %}
+        <ul class="list-disc ml-6 text-sm text-amber-700 space-y-0.5 mt-1">
+          {% for w in draft.validation_warnings %}<li>{{ w }}</li>{% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+      {% endif %}
+
       {% if draft.content %}
       <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
         <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">

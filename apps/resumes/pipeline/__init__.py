@@ -133,6 +133,30 @@ def generate_resume_pipeline(job, consultant, actor=None, input_sections=None):
         phase_start = time.time()
         val_errors, val_warnings = validate_resume(content)
 
+        # ── Phase 4b: Deterministic truth guardrails (model-agnostic) ──
+        # Checks the output against the candidate's REAL data so fabrication is
+        # caught regardless of which model wrote it. Enabled unless flag is off.
+        review_status = "pass"
+        try:
+            from core.models import FeatureFlag
+            _ff = FeatureFlag.objects.filter(key="resume_guardrails").first()
+            guardrails_on = _ff.is_enabled if _ff else True
+        except Exception:
+            guardrails_on = True
+        if guardrails_on:
+            try:
+                from .guardrails import run_guardrails
+                guard = run_guardrails(content, consultant, jd_intel)
+                val_errors = list(val_errors) + guard["errors"]
+                val_warnings = list(val_warnings) + guard["warnings"]
+                review_status = guard["status"]
+                metadata["guardrails"] = guard
+            except Exception as ge:
+                logger.exception("Guardrails failed (non-fatal): %s", ge)
+        metadata["review_status"] = review_status
+        metadata["validation_errors"] = val_errors
+        metadata["validation_warnings"] = val_warnings
+
         # ATS score using structured keywords
         ats_keywords = jd_intel.get("keywords_for_ats", [])
         if ats_keywords:

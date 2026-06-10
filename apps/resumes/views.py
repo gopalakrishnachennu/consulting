@@ -532,12 +532,18 @@ class ResumeGenerateActionView(ResumeGenerateActionAccessMixin, BaseView):
         draft.content = content
         draft.tokens_used = tokens
         draft.ats_score = ats
+        # Persist validation + truth-guardrail result (was previously dropped)
+        draft.validation_errors = metadata.get('validation_errors', []) or []
+        draft.validation_warnings = metadata.get('validation_warnings', []) or []
+        draft.review_status = metadata.get('review_status', 'pass') or 'pass'
         draft.llm_system_prompt = metadata.get('system_prompt', '')
         draft.llm_user_prompt = metadata.get('user_prompt', '')
         draft.llm_input_summary = metadata
         draft.llm_request_payload = metadata.get('totals', {})
         draft.status = ResumeDraft.Status.DRAFT
         draft.save(skip_version=True)
+        if draft.review_status == 'block':
+            messages.warning(request, "⚠ Truth-guardrails flagged possible fabrication in this draft — review the flagged items before sending.")
 
         # Save PipelineRun if pipeline V3 was used
         if metadata.get('pipeline_version'):
