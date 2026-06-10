@@ -1,13 +1,13 @@
 # Releases
 
+Production release log for GoCareers. Newest first. Created/updated by the `/release` skill
+(verify CI green → version + changelog → deploy → health-verify → auto-rollback → record).
+
 ## v4.3.0 — System Health dashboard + VPS hygiene (2026-06-10)
 - Ops Center System Health card: disk, DB size, errors, LLM spend, queues, pipeline counts — zero SSH.
 - Deploys auto-prune old Docker images/build cache (disk was 81%, now 39%).
 - RawJob vs Job metric labels disambiguated (harvest quality vs pool quality, validation at-sync, JD gate vs JD parse).
-Status: pending
-
-Production release log for GoCareers. Newest first. Created/updated by the `/release` skill
-(verify CI green → version + changelog → deploy → health-verify → auto-rollback → record).
+Status: deployed (2097f37 · health 200 · 2026-06-10)
 
 ## v4.2.0 — Multi-provider LLM + truth guardrails (2026-06-09)
 - LLMConfig: switch provider from settings — OpenAI / DeepSeek / OpenRouter / Together / custom
