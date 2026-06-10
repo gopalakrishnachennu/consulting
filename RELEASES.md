@@ -10,7 +10,7 @@ Production release log for GoCareers. Newest first. Created/updated by the `/rel
   data (employers / JD-company / certs = block; fake metrics / missing headings = review).
   ResumeDraft.review_status + banner; pipeline now persists validation to the draft.
 - /explain skill (trace any feature → steps + Mermaid diagrams, read-only).
-Status: pending
+Status: deployed (354081f · health 200 · 2026-06-09)
 
 ## v4.1.0 — Resume editor customization + draft compare (2026-06-09)
 Resume engine + editor overhaul.
