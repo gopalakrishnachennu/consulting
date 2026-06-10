@@ -162,3 +162,55 @@ class EngineInputSectionsTests(TestCase):
             }
         )
         self.assertIsNotNone(err)
+
+
+class GuardrailsTests(TestCase):
+    """Deterministic truth-guardrails: fabrication blocks, clean passes."""
+
+    HDR = ("Gopala\nNV\nPROFESSIONAL SUMMARY\nData engineer.\n"
+           "PROFESSIONAL EXPERIENCE\n")
+
+    def setUp(self):
+        from datetime import date
+        from users.models import Experience
+        self.cu = User.objects.create_user(
+            username="g_con", password="p", role=User.Role.CONSULTANT)
+        self.profile = ConsultantProfile.objects.create(
+            user=self.cu, bio="b", skills=["Python"])
+        Experience.objects.create(
+            consultant_profile=self.profile, title="Database Engineer",
+            company="ExxonMobil", start_date=date(2025, 7, 1), is_current=True)
+
+    def _run(self, content, jd_company="BrightHorizons"):
+        from resumes.pipeline.guardrails import run_guardrails
+        return run_guardrails(content, self.profile, {"company": jd_company})
+
+    def test_clean_passes(self):
+        r = self._run(self.HDR + "Database Engineer | ExxonMobil | Jul 2025 - Present\n- Built pipelines.")
+        self.assertEqual(r["status"], "pass")
+
+    def test_fabricated_employer_blocks(self):
+        r = self._run(self.HDR + "Engineer | Google | 2025\n- x.")
+        self.assertEqual(r["status"], "block")
+
+    def test_jd_company_as_employer_blocks(self):
+        r = self._run(self.HDR + "Engineer | BrightHorizons | 2025\n- x.")
+        self.assertEqual(r["status"], "block")
+
+    def test_fake_metric_flags_review(self):
+        r = self._run(self.HDR + "Database Engineer | ExxonMobil | 2025\n- Boosted throughput by 42%.")
+        self.assertEqual(r["status"], "review")
+
+
+class LLMConfigProviderTests(TestCase):
+    """Multi-provider base_url resolution."""
+
+    def test_effective_base_url(self):
+        from core.models import LLMConfig
+        cfg = LLMConfig.load()
+        cfg.provider, cfg.base_url = "openai", ""
+        self.assertIsNone(cfg.effective_base_url())
+        cfg.provider, cfg.base_url = "deepseek", ""
+        self.assertEqual(cfg.effective_base_url(), "https://api.deepseek.com")
+        cfg.provider, cfg.base_url = "custom", "https://x.y/v1"
+        self.assertEqual(cfg.effective_base_url(), "https://x.y/v1")
