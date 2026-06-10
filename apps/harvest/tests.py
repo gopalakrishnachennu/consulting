@@ -3104,3 +3104,43 @@ class HarvestLLMResolveTests(TestCase):
         self.assertEqual(base_url, "https://api.deepseek.com")
         self.assertEqual(model, "deepseek-chat")  # central model overrides caller default
         self.assertTrue(do_log)
+
+
+class JobLocationReconcileTests(TestCase):
+    """Country drift propagation: RawJob country resolved post-sync → pool Job updated."""
+
+    def _make_pair(self, raw_country, job_country):
+        from harvest.models import RawJob
+        from jobs.models import Job
+        from users.models import User
+        emp = User.objects.create_user(username=f"emp_{raw_country}_{job_country}",
+                                       password="p", role=User.Role.EMPLOYEE)
+        rj = RawJob.objects.create(
+            title="T", company_name="C", country=raw_country,
+            original_url=f"https://x.example/{raw_country}-{job_country}",
+            url_hash=f"h-{raw_country}-{job_country}",
+        )
+        job = Job.objects.create(
+            title="T", company="C", description="d",
+            original_link=f"https://x.example/{raw_country}-{job_country}",
+            posted_by=emp, country=job_country, source_raw_job=rj,
+        )
+        return rj, job
+
+    def test_propagates_resolved_country(self):
+        from harvest.tasks import _reconcile_synced_job_locations
+        _rj, job = self._make_pair("United States", "")
+        out = _reconcile_synced_job_locations()
+        job.refresh_from_db()
+        self.assertEqual(job.country, "United States")
+        self.assertGreaterEqual(out["updated"], 1)
+
+    def test_flag_off_skips(self):
+        from core.models import FeatureFlag
+        from harvest.tasks import _reconcile_synced_job_locations
+        FeatureFlag.objects.update_or_create(key="job_location_sync", defaults={"is_enabled": False})
+        _rj, job = self._make_pair("Canada", "")
+        out = _reconcile_synced_job_locations()
+        job.refresh_from_db()
+        self.assertEqual(job.country, "")
+        self.assertEqual(out, {"enabled": False, "updated": 0})

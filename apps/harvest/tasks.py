@@ -2822,6 +2822,44 @@ def cleanup_harvested_jobs_task(self):
 
 
 
+def _reconcile_synced_job_locations(cap: int = 500) -> dict:
+    """Propagate post-sync country corrections from RawJob → linked pool Job.
+
+    Only touches Job.country, only when the RawJob has a non-empty country that
+    differs from the Job's, capped per run. Gated by the 'job_location_sync'
+    feature flag (missing = ON — it is a bounded data correction; disable the
+    flag in the UI if a manual country edit must be preserved).
+    """
+    try:
+        from core.models import FeatureFlag
+        ff = FeatureFlag.objects.filter(key="job_location_sync").first()
+        if ff is not None and not ff.is_enabled:
+            return {"enabled": False, "updated": 0}
+    except Exception:
+        pass
+
+    from django.db.models import F
+    from jobs.models import Job
+
+    qs = (
+        Job.objects.filter(source_raw_job__isnull=False)
+        .exclude(source_raw_job__country="")
+        .exclude(source_raw_job__country__isnull=True)
+        .exclude(country=F("source_raw_job__country"))
+        .select_related("source_raw_job")[:cap]
+    )
+    updated = 0
+    for job in qs:
+        new_country = (job.source_raw_job.country or "")[:100]
+        if new_country and job.country != new_country:
+            job.country = new_country
+            job.save(update_fields=["country"])
+            updated += 1
+    if updated:
+        logger.info("location reconcile: propagated country to %d pool jobs", updated)
+    return {"enabled": True, "updated": updated, "cap": cap}
+
+
 @shared_task(bind=True, name="harvest.sync_harvested_to_pool")
 def sync_harvested_to_pool_task(
     self,
@@ -3242,6 +3280,14 @@ def sync_harvested_to_pool_task(
             "failed": failed,
             "skipped_reasons": skipped_reasons,
         }
+        # Reconcile location/country drift on already-synced jobs (flag-gated).
+        # When a RawJob's country is resolved AFTER sync, the pool Job kept the
+        # stale value — this propagates the corrected value forward.
+        try:
+            out["location_reconcile"] = _reconcile_synced_job_locations()
+        except Exception as _re:
+            logger.exception("location reconcile failed (non-fatal): %s", _re)
+            out["location_reconcile"] = {"error": str(_re)[:200]}
         finish_ops_run(ops_run, HarvestOpsRun.Status.SUCCESS, out)
         return out
 
