@@ -3,6 +3,11 @@
 Production release log for GoCareers. Newest first. Created/updated by the `/release` skill
 (verify CI green → version + changelog → deploy → health-verify → auto-rollback → record).
 
+## v4.3.1 — Country drift propagation (2026-06-10)
+- Daily sync now propagates post-sync RawJob country corrections to linked pool Jobs
+  (capped 500/run, ops-run logged, 'job_location_sync' flag = UI kill-switch).
+Status: deployed (45f25b7 · health 200 · 2026-06-10)
+
 ## v4.3.0 — System Health dashboard + VPS hygiene (2026-06-10)
 - Ops Center System Health card: disk, DB size, errors, LLM spend, queues, pipeline counts — zero SSH.
 - Deploys auto-prune old Docker images/build cache (disk was 81%, now 39%).
