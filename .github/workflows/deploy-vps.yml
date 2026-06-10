@@ -142,6 +142,13 @@ jobs:
             echo "Deployed image: $DEPLOY_IMAGE" >> /opt/consulting/deploy.log
             date >> /opt/consulting/deploy.log
 
+            # Disk hygiene: drop unused images older than 7 days + stale build cache.
+            # NEVER prunes volumes. Rollback is unaffected — rollback.yml re-pulls any
+            # image by SHA digest from GHCR (the registry keeps every published image).
+            docker image prune -af --filter "until=168h" >/dev/null 2>&1 || true
+            docker builder prune -af --filter "until=168h" >/dev/null 2>&1 || true
+            df -h / | tail -1 >> /opt/consulting/deploy.log
+
             for i in $(seq 1 30); do
               if curl -fsS --max-time 5 https://chennu.co/core/health/ >/dev/null 2>&1; then
                 echo "✅ Production health check passed."
