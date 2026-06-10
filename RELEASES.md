@@ -3,6 +3,15 @@
 Production release log for GoCareers. Newest first. Created/updated by the `/release` skill
 (verify CI green → version + changelog → deploy → health-verify → auto-rollback → record).
 
+## v4.2.0 — Multi-provider LLM + truth guardrails (2026-06-09)
+- LLMConfig: switch provider from settings — OpenAI / DeepSeek / OpenRouter / Together / custom
+  (provider, base_url, validation_model fields; per-call model override; DeepSeek/OpenRouter pricing).
+- Deterministic truth guardrails: post-generation, model-agnostic checks vs the candidate's real
+  data (employers / JD-company / certs = block; fake metrics / missing headings = review).
+  ResumeDraft.review_status + banner; pipeline now persists validation to the draft.
+- /explain skill (trace any feature → steps + Mermaid diagrams, read-only).
+Status: pending
+
 ## v4.1.0 — Resume editor customization + draft compare (2026-06-09)
 Resume engine + editor overhaul.
 - Truthful generation: no fabricated skills/metrics; fixed pipeline prompt assembly + Master Prompt v2.
