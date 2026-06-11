@@ -2993,6 +2993,13 @@ def sync_harvested_to_pool_task(
             "failed": 0,
             "skipped_reasons": {},
         }
+        # Location reconcile must run even when there is nothing new to promote —
+        # post-sync country corrections are independent of new candidates.
+        try:
+            out["location_reconcile"] = _reconcile_synced_job_locations()
+        except Exception as _re:
+            logger.exception("location reconcile failed (non-fatal): %s", _re)
+            out["location_reconcile"] = {"error": str(_re)[:200]}
         finish_ops_run(ops_run, HarvestOpsRun.Status.SUCCESS, out)
         return out
 
