@@ -9,7 +9,7 @@
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
       <div>
         <h1 class="text-3xl font-extrabold text-white tracking-tight">Jobs Command Center</h1>
-        <p class="text-blue-100 text-sm mt-1">Harvest → Vet → Live — the full pipeline in one place</p>
+        <p class="text-blue-100 text-sm mt-1">Raw Intake → Vetting → Live — the full jobs pipeline in one place</p>
       </div>
       <div class="flex items-center gap-2 flex-wrap">
         {% if request.user.is_superuser %}
@@ -20,7 +20,7 @@
           <input type="hidden" name="return_tab" value="raw">
           <button type="submit" class="btn bg-white/15 border border-white/30 text-white text-sm hover:bg-white/25">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-          Run Harvest
+          Fetch Raw Jobs
           </button>
         </form>
         {% endif %}
@@ -67,7 +67,7 @@
       </a>
       <a href="?tab=raw" class="hero-stat group">
         <div class="text-blue-200 text-xs font-semibold uppercase tracking-wide mb-1 flex items-center gap-1.5">
-          <span class="w-2 h-2 rounded-full bg-blue-300 inline-block animate-pulse"></span>Harvesting
+          <span class="w-2 h-2 rounded-full bg-blue-300 inline-block animate-pulse"></span>Raw Jobs
         </div>
         <div class="text-3xl font-extrabold text-white">{{ raw_total|default:"0" }}</div>
         <div class="text-blue-200 text-xs mt-0.5">production raw jobs</div>
@@ -198,7 +198,7 @@
 <div class="section-hdr">
   <div>
     <h2 class="section-title-sm">Vetting Queue</h2>
-    <p class="section-subtitle">Review and approve harvested jobs before they go live to consultants</p>
+    <p class="section-subtitle">Review and approve sourced jobs before they go live to consultants</p>
   </div>
   <div class="flex gap-2 flex-wrap items-center">
     <form method="post" action="{% url 'job-pool-refresh-links' %}">{% csrf_token %}
@@ -422,9 +422,9 @@
 <div class="empty-state">
   <svg class="w-10 h-10 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
   <p class="text-gray-700 text-sm font-semibold mb-1">Vetting queue is clear{% if score_tab != 'all' or lane_tab != 'all' %} for this filter{% endif %}.</p>
-  <p class="text-gray-400 text-xs">Jobs will appear here once harvested.
+  <p class="text-gray-400 text-xs">Jobs will appear here once raw jobs are fetched.
     <a href="?tab=raw" class="text-indigo-600 hover:underline">Check Raw Jobs</a> or
-    <a href="{% url 'jobs-pipeline' %}?tab=raw#raw-controls-panel" class="text-indigo-600 hover:underline">run a harvest</a>.
+    <a href="{% url 'jobs-pipeline' %}?tab=raw#raw-controls-panel" class="text-indigo-600 hover:underline">fetch raw jobs</a>.
   </p>
 </div>
 {% endif %}
@@ -462,18 +462,18 @@
 {% endif %}
 
 <!-- ══════════════════════════════════════════════════════════════════════════ -->
-<!-- TAB: HARVEST (raw)                                                        -->
+<!-- TAB: RAW JOB INTAKE                                                       -->
 <!-- ══════════════════════════════════════════════════════════════════════════ -->
 {% if tab == 'raw' %}
 <div class="section-hdr">
   <div>
-    <h2 class="section-title-sm">Harvested Raw Jobs</h2>
-    <p class="section-subtitle">Jobs scraped from ATS platforms — only qualified jobs (active + JD + confidence) should move to Vet Queue</p>
+    <h2 class="section-title-sm">Raw Job Intake</h2>
+    <p class="section-subtitle">Jobs collected from source platforms — only qualified jobs (active + JD + confidence) should move to Vet Queue</p>
   </div>
   <div class="flex gap-2 flex-wrap items-center">
     <a href="{% url 'jobs-pipeline' %}?tab=raw#raw-jobs-table" class="btn-secondary btn-sm">Raw Table</a>
     <a href="{% url 'ops-center' %}#pipelines" class="btn-secondary btn-sm">Run Monitor</a>
-    <a href="{% url 'harvest-batch-activity' %}" class="btn-secondary btn-sm" title="Centralized metrics for Quick / Full fetch">Harvest activity</a>
+    <a href="{% url 'harvest-batch-activity' %}" class="btn-secondary btn-sm" title="Centralized metrics for Quick / Full fetch">Pipeline Activity</a>
     <form method="post" action="{% url 'jobs-pipeline-run-sync' %}" onsubmit="return confirm('Sync only production READY rows to Vet Queue. Test/smoke, filtered-out, missing-JD, inactive, weak-domain, and low-confidence rows stay blocked. Continue?')">{% csrf_token %}
       <input type="hidden" name="qualified_only" value="1">
       <input type="hidden" name="max_jobs" value="0">
@@ -538,7 +538,7 @@
     <form method="post" action="{% url 'jobs-pipeline-run-detect' %}">
       {% csrf_token %}
       <button type="submit" class="btn-sm rounded-lg px-3 py-2 font-semibold text-white bg-indigo-600 hover:bg-indigo-700"
-        title="Batch size: {{ engine_config.detect_batch_size }} (set in Engine Config)">
+        title="Batch size: {{ engine_config.detect_batch_size }} (set in Pipeline Settings)">
         Run Detection
       </button>
     </form>
@@ -551,7 +551,7 @@
       <input type="hidden" name="return_to" value="jobs-pipeline">
       <input type="hidden" name="return_tab" value="raw">
       <button type="submit" class="btn-sm rounded-lg px-3 py-2 font-semibold text-white bg-amber-600 hover:bg-amber-700"
-        title="Workers: {{ engine_config.backfill_jd_workers }} | Reset locks: {{ engine_config.backfill_jd_reset_locks }} | Include cold: {{ engine_config.backfill_jd_include_cold }} (all configurable in Engine Config)">
+        title="Workers: {{ engine_config.backfill_jd_workers }} | Reset locks: {{ engine_config.backfill_jd_reset_locks }} | Include cold: {{ engine_config.backfill_jd_include_cold }} (all configurable in Pipeline Settings)">
         Backfill JD
       </button>
     </form>
@@ -564,7 +564,7 @@
       <input type="hidden" name="return_to" value="jobs-pipeline">
       <input type="hidden" name="return_tab" value="raw">
       <button type="submit" class="btn-sm rounded-lg px-3 py-2 font-semibold text-white bg-rose-600 hover:bg-rose-700"
-        title="Validates {% if engine_config.validate_links_include_synced %}PENDING + SYNCED{% else %}PENDING only{% endif %} | Window: {{ engine_config.validate_links_recent_hours }}h (configurable in Engine Config)">
+        title="Validates {% if engine_config.validate_links_include_synced %}PENDING + SYNCED{% else %}PENDING only{% endif %} | Window: {{ engine_config.validate_links_recent_hours }}h (configurable in Pipeline Settings)">
         Validate Live Links
       </button>
     </form>
@@ -588,7 +588,7 @@
       <input type="hidden" name="return_to" value="jobs-pipeline">
       <input type="hidden" name="return_tab" value="raw">
       <button type="submit" class="btn-sm rounded-lg px-3 py-2 font-semibold text-white bg-orange-600 hover:bg-orange-700"
-        title="Retries FAILED fetches from last {{ engine_config.retry_failed_days }} days (configurable in Engine Config)">
+        title="Retries FAILED fetches from last {{ engine_config.retry_failed_days }} days (configurable in Pipeline Settings)">
         Retry Failed
       </button>
     </form>
@@ -597,14 +597,14 @@
     <form method="post" action="{% url 'jobs-pipeline-run-cleanup' %}">
       {% csrf_token %}
       <button type="submit" class="btn-sm rounded-lg px-3 py-2 font-semibold text-white bg-red-700 hover:bg-red-800"
-        title="Inactive age: {{ engine_config.cleanup_inactive_age_days }}d | PENDING safe buffer: {{ engine_config.cleanup_pending_safe_minutes }}min (configurable in Engine Config)">
+        title="Inactive age: {{ engine_config.cleanup_inactive_age_days }}d | PENDING safe buffer: {{ engine_config.cleanup_pending_safe_minutes }}min (configurable in Pipeline Settings)">
         Cleanup
       </button>
     </form>
 
     {# ── Classify Jobs — lock TTL / chunk limit from config ──────────────── #}
     <button onclick="triggerClassify(false)" class="classify-trigger-btn btn-sm rounded-lg px-3 py-2 font-semibold text-white bg-purple-600 hover:bg-purple-700"
-      title="Lock TTL: {{ engine_config.classify_lock_ttl_minutes }}min | Chunk limit: {% if engine_config.classify_chunk_limit %}{{ engine_config.classify_chunk_limit }}{% else %}unlimited{% endif %} (configurable in Engine Config)">
+      title="Lock TTL: {{ engine_config.classify_lock_ttl_minutes }}min | Chunk limit: {% if engine_config.classify_chunk_limit %}{{ engine_config.classify_chunk_limit }}{% else %}unlimited{% endif %} (configurable in Pipeline Settings)">
       Classify Jobs
     </button>
     <button onclick="confirmForceClassify()" class="classify-trigger-btn btn-sm rounded-lg px-3 py-2 font-semibold text-white bg-purple-900 hover:bg-purple-950">
@@ -1173,7 +1173,7 @@
         <th class="tbl-th min-w-[160px]">Country / Scope</th>
         <th class="tbl-th">Gate</th>
         <th class="tbl-th">Posted</th>
-        <th class="tbl-th">Harvested</th>
+        <th class="tbl-th">Fetched</th>
         <th class="tbl-th min-w-[220px]" data-raw-col="location">Location</th>
         <th class="tbl-th" data-raw-col="work_mode">Remote / Onsite</th>
         <th class="tbl-th min-w-[180px]" data-raw-col="salary">Salary</th>
@@ -1277,10 +1277,10 @@
 {% else %}
 <div class="empty-state">
   <svg class="w-10 h-10 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
-  <p class="text-gray-700 text-sm font-semibold mb-1">No raw jobs harvested yet.</p>
+  <p class="text-gray-700 text-sm font-semibold mb-1">No raw jobs fetched yet.</p>
   <p class="text-gray-400 text-xs">
-    <a href="{% url 'harvest-platforms' %}" class="text-indigo-600 hover:underline">Configure platforms</a> to start scraping, or
-    <a href="{% url 'harvest-jarvis' %}" class="text-indigo-600 hover:underline">paste a URL via Jarvis</a>.
+    <a href="{% url 'harvest-platforms' %}" class="text-indigo-600 hover:underline">Configure source platforms</a> to start fetching, or
+    <a href="{% url 'harvest-jarvis' %}" class="text-indigo-600 hover:underline">paste a URL via Manual Import</a>.
   </p>
 </div>
 {% endif %}

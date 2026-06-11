@@ -85,7 +85,7 @@
                 <a href="{% url 'job-list' %}" class="sidebar-nav-item sidebar-nav-item--sub {% if url_name == 'job-list' %}sidebar-nav-item--active{% endif %}">All Jobs</a>
                 <a href="{% url 'company-list' %}" class="sidebar-nav-item sidebar-nav-item--sub {% if url_name == 'company-list' %}sidebar-nav-item--active{% endif %}">Companies</a>
                 {% if request.user.is_superuser %}
-                <a href="{% url 'harvest-platforms' %}" class="sidebar-nav-item sidebar-nav-item--sub">Harvest Engine</a>
+                <a href="{% url 'harvest-platforms' %}" class="sidebar-nav-item sidebar-nav-item--sub">Source Engine</a>
                 {% endif %}
             </div>
         </div>

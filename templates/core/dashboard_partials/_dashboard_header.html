@@ -11,15 +11,15 @@
 </div>
 {% endif %}
 
-{# ━━ HARVEST STALE ALERT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
+{# ━━ SOURCE SYNC STALE ALERT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
 {% if harvest_health.harvest_stale %}
 <div class="flex items-center gap-3 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-red-800 text-xs font-medium" x-data="{ dismissed: false }" x-show="!dismissed" x-cloak>
   <svg class="h-5 w-5 text-red-500 shrink-0 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.27 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
   <div class="flex-1">
     {% if harvest_health.last_batch_at %}
-    <span class="font-bold">⚠ Harvest Stale!</span> Last batch ran <strong>{{ harvest_health.last_batch_at|timesince }} ago</strong> ({{ harvest_health.harvest_stale_hours }}h). Pipeline may be down or stuck.
+    <span class="font-bold">Source Sync Stale</span> — last batch ran <strong>{{ harvest_health.last_batch_at|timesince }} ago</strong> ({{ harvest_health.harvest_stale_hours }}h). Pipeline may be down or stuck.
     {% else %}
-    <span class="font-bold">⚠ No Harvest Data!</span> No harvest batches have ever run. The pipeline needs setup.
+    <span class="font-bold">No Source Sync Data</span> — no source sync batches have ever run. The pipeline needs setup.
     {% endif %}
     <a href="{% url 'ops-center' %}" class="ml-2 underline hover:text-red-900 font-bold">Check Ops Center →</a>
   </div>
@@ -29,12 +29,12 @@
 </div>
 {% endif %}
 
-{# Harvest drop alert: new jobs in last 24h significantly lower than 7d average #}
+{# Source sync drop alert: new jobs in last 24h significantly lower than 7d average #}
 {% if harvest_health.new_rawjobs_24h == 0 and harvest_health.new_rawjobs_7d > 50 and not harvest_health.harvest_stale %}
 <div class="flex items-center gap-3 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium" x-data="{ dismissed: false }" x-show="!dismissed" x-cloak>
   <svg class="h-5 w-5 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"/></svg>
   <div class="flex-1">
-    <span class="font-bold">Job Count Drop</span> — 0 new raw jobs in the last 24h (7d avg: ~{{ harvest_health.new_rawjobs_7d }}). Possible scraper issue.
+    <span class="font-bold">Job Count Drop</span> — 0 new raw jobs in the last 24h (7d avg: ~{{ harvest_health.new_rawjobs_7d }}). Possible source sync issue.
     <a href="{% url 'ops-center' %}" class="ml-1 underline hover:text-amber-900">Investigate →</a>
   </div>
   <button @click="dismissed=true" class="p-1 hover:bg-amber-100 rounded shrink-0">

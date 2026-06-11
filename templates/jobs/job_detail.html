@@ -142,7 +142,7 @@
           {% if object.quality_score >= 0.7 %}bg-emerald-50 text-emerald-700
           {% elif object.quality_score >= 0.4 %}bg-amber-50 text-amber-700
           {% else %}bg-red-50 text-red-700{% endif %}"
-          title="Pool quality — recomputed when this job entered the pool. Differs from the Raw Job's harvest data quality (different formula).">
+          title="Pool quality — recomputed when this job entered the pool. Differs from the Raw Job's intake data quality (different formula).">
         Pool Q: {{ object.quality_score }}
       </span>
       {% endif %}
@@ -403,7 +403,7 @@
       <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-3">
         <div class="flex items-center justify-between">
           <h3 class="text-xs font-bold text-gray-800 uppercase tracking-wider"
-              title="Snapshot from the vet gate when this job was synced from harvest — not re-run automatically.">Validation <span class="text-gray-400 font-normal normal-case">(at sync)</span></h3>
+              title="Snapshot from the vet gate when this job was synced from raw intake — not re-run automatically.">Validation <span class="text-gray-400 font-normal normal-case">(at sync)</span></h3>
           {% if object.validation_score >= 80 %}
           <span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full">Passed</span>
           {% elif object.validation_score >= 50 %}
@@ -463,8 +463,8 @@
       {# JD Parse Status #}
       <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
         <h3 class="text-xs font-bold text-gray-800 uppercase tracking-wider mb-1"
-            title="Structured extraction of skills/keywords from the JD (used by resume generation). Separate from the harvest 'Resume JD Gate', which only checks the text is usable.">JD Parse Status</h3>
-        <p class="text-[11px] text-gray-400 mb-3">Structured skill extraction — separate from the harvest JD gate. Run "Parse JD" above if Not parsed.</p>
+            title="Structured extraction of skills/keywords from the JD (used by resume generation). Separate from the source intake JD gate, which only checks the text is usable.">JD Parse Status</h3>
+        <p class="text-[11px] text-gray-400 mb-3">Structured skill extraction — separate from the source intake JD gate. Run "Parse JD" above if Not parsed.</p>
         <div class="flex items-center gap-2">
           {% if object.parsed_jd_status == 'OK' %}
           <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
