@@ -860,9 +860,33 @@
       ${progressBar(pct, col.bar, isRunning)}
       ${r.progress_message ? `<div style="color:#cbd5e1;font-size:11px;font-family:monospace;margin-top:4px;word-break:break-all">${r.progress_message.slice(0,220)}</div>` : ""}
       ${statParts.length ? `<div style="color:#64748b;font-size:10px;margin-top:3px">${statParts.join(" · ")}</div>` : ""}
+      ${renderRunDetail(r)}
       ${stuckWarning}
       ${staleMarked}
     </div>`;
+  }
+
+  // ── In-depth expandable detail: exact params, trigger source, full result ──
+  function renderRunDetail(r) {
+    const params = r.params || {};
+    const c = r.completion || {};
+    const stale = r.stale_info || {};
+    const paramStr = Object.entries(params).map(([k,v]) => `${k}=${JSON.stringify(v)}`).join("  ");
+    const resultStr = Object.entries(c).filter(([k]) => k !== "error")
+      .map(([k,v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join("  ·  ");
+    const lines = [];
+    lines.push(`<span style="color:#94a3b8">trigger:</span> ${r.triggered_by || "scheduler"} · started ${r.created_at ? r.created_at.replace("T"," ").slice(0,16) : "?"}`);
+    if (paramStr) lines.push(`<span style="color:#94a3b8">params:</span> ${paramStr}`);
+    if (resultStr) lines.push(`<span style="color:#94a3b8">result:</span> ${resultStr}`);
+    if (c.error) lines.push(`<span style="color:#f87171">error:</span> ${String(c.error).slice(0,200)}`);
+    if (stale.reason) lines.push(`<span style="color:#f59e0b">stale-marked:</span> ${stale.reason} (heartbeat ${stale.last_heartbeat_at || "none"})`);
+    if (!lines.length) return "";
+    return `<details style="margin-top:4px">
+      <summary style="cursor:pointer;color:#64748b;font-size:10px;font-family:monospace">▸ details — what this run did</summary>
+      <div style="margin-top:4px;padding:6px 8px;background:#0f172a;border:1px solid #1e293b;border-radius:6px;font-size:10px;font-family:monospace;color:#cbd5e1;line-height:1.7;word-break:break-all">
+        ${lines.join("<br>")}
+      </div>
+    </details>`;
   }
 
   // ── Render a SKIPPED summary pill ───────────────────────────────────────────

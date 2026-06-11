@@ -1813,7 +1813,7 @@ class OpsRunLiveApiView(LoginRequiredMixin, UserPassesTestMixin, View):
 
         # Load more rows than we'll show — to collapse SKIPPED groups
         shown_success_ops: set[str] = set()
-        for run in HarvestOpsRun.objects.order_by("-created_at")[:60]:
+        for run in HarvestOpsRun.objects.select_related("triggered_by_user").order_by("-created_at")[:60]:
             if run.status == HarvestOpsRun.Status.SKIPPED:
                 skipped_counts[run.operation] = skipped_counts.get(run.operation, 0) + 1
                 continue  # don't surface individual SKIPPED rows
@@ -1876,7 +1876,8 @@ class OpsRunLiveApiView(LoginRequiredMixin, UserPassesTestMixin, View):
                 int((run.finished_at - run.created_at).total_seconds())
                 if run.finished_at and run.created_at else None
             )
-            completion = (run.audit_payload or {}).get("completion") or {}
+            payload = run.audit_payload or {}
+            completion = payload.get("completion") or {}
             runs.append({
                 "id": run.pk,
                 "operation": run.operation,
@@ -1890,8 +1891,14 @@ class OpsRunLiveApiView(LoginRequiredMixin, UserPassesTestMixin, View):
                 "progress_pct": live_pct,
                 "progress_message": live_msg[:200],
                 "completion": completion,
+                # In-depth context: exact params the run started with, who started it,
+                # and why it was stale-marked — so the monitor explains itself.
+                "params": payload.get("queue") or {},
+                "triggered_by": (run.triggered_by_user.username
+                                 if run.triggered_by_user_id else "scheduler"),
+                "stale_info": payload.get("stale") or {},
                 "stuck_warning": stuck_warning,
-                "stale_marked": bool((run.audit_payload or {}).get("stale")),
+                "stale_marked": bool(payload.get("stale")),
                 "detail_url": f"/harvest/raw-jobs/ops-runs/{run.pk}/",
                 "created_at": run.created_at.isoformat() if run.created_at else "",
             })

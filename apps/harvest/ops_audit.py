@@ -61,15 +61,28 @@ def tick_ops_run_progress(
         logger.debug("tick_ops_run_progress: DB write skipped (run=%s)", run.pk)
 
 
+# Hard ceiling: no harvest op legitimately runs this long. A hung worker that keeps
+# heartbeating ("zombie") would otherwise hold the duplicate guard forever — this is
+# what produced "scheduler skipped (duplicate guard): backfill jd ×60".
+MAX_OPS_RUNTIME_MINUTES = 360  # 6 hours
+
+
 def mark_stale_running_ops(
     operation: str | None = None,
     *,
     exclude_operations: list[str] | tuple[str, ...] | set[str] | None = None,
     stale_after_minutes: int = DEFAULT_STALE_HEARTBEAT_MINUTES,
+    max_runtime_minutes: int = MAX_OPS_RUNTIME_MINUTES,
     reason: str = "heartbeat_stale",
 ) -> int:
-    """Downgrade orphaned RUNNING ops so monitors and duplicate guards stay truthful."""
-    cutoff = timezone.now() - timedelta(minutes=max(1, int(stale_after_minutes)))
+    """Downgrade orphaned RUNNING ops so monitors and duplicate guards stay truthful.
+
+    Two rules: (a) heartbeat older than stale_after_minutes — dead worker;
+    (b) total runtime past max_runtime_minutes — zombie worker that still heartbeats.
+    """
+    now_ts = timezone.now()
+    cutoff = now_ts - timedelta(minutes=max(1, int(stale_after_minutes)))
+    runtime_ceiling = now_ts - timedelta(minutes=max(1, int(max_runtime_minutes)))
     qs = HarvestOpsRun.objects.filter(status=HarvestOpsRun.Status.RUNNING)
     if operation:
         qs = qs.filter(operation=operation)
@@ -78,22 +91,29 @@ def mark_stale_running_ops(
     qs = qs.filter(
         Q(last_heartbeat_at__lt=cutoff)
         | Q(last_heartbeat_at__isnull=True, created_at__lt=cutoff)
+        | Q(created_at__lt=runtime_ceiling)
     ).order_by("created_at")
 
     marked = 0
     now = timezone.now()
     for run in qs[:100]:
+        runtime_exceeded = run.created_at < runtime_ceiling
         payload = dict(run.audit_payload or {})
         payload["stale"] = {
             "marked_at": now.isoformat(),
-            "reason": reason,
+            "reason": ("max_runtime_exceeded" if runtime_exceeded else reason),
             "stale_after_minutes": max(1, int(stale_after_minutes)),
+            "max_runtime_minutes": max(1, int(max_runtime_minutes)),
             "last_heartbeat_at": run.last_heartbeat_at.isoformat() if run.last_heartbeat_at else "",
         }
         run.audit_payload = payload
         run.status = HarvestOpsRun.Status.PARTIAL
         run.finished_at = now
-        run.progress_message = "Marked partial: no worker heartbeat; safe to re-run."
+        run.progress_message = (
+            "Marked partial: exceeded max runtime (zombie guard); safe to re-run."
+            if runtime_exceeded else
+            "Marked partial: no worker heartbeat; safe to re-run."
+        )
         run.save(update_fields=["audit_payload", "status", "finished_at", "progress_message"])
         marked += 1
     if marked:

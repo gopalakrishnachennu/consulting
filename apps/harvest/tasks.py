@@ -2485,26 +2485,38 @@ def retry_failed_raw_jobs_task(self):
     Look-back window is configurable via HarvestEngineConfig.retry_failed_days
     (default 7 days). Increase to recover from longer outages.
     """
-    from .models import CompanyFetchRun, HarvestEngineConfig
+    from .models import CompanyFetchRun, HarvestEngineConfig, HarvestOpsRun
+    from .ops_audit import begin_ops_run, finish_ops_run
 
     days = HarvestEngineConfig.get().retry_failed_days
-    cutoff = timezone.now() - timedelta(days=days)
-    failed_runs = CompanyFetchRun.objects.filter(
-        status=CompanyFetchRun.Status.FAILED,
-        started_at__gte=cutoff,
-    ).select_related("label")
+    ops_run = begin_ops_run(
+        HarvestOpsRun.Operation.RETRY_FAILED,
+        getattr(self.request, "id", "") or "",
+        queue={"retry_failed_days": days},
+    )
+    try:
+        cutoff = timezone.now() - timedelta(days=days)
+        failed_runs = CompanyFetchRun.objects.filter(
+            status=CompanyFetchRun.Status.FAILED,
+            started_at__gte=cutoff,
+        ).select_related("label")
 
-    queued = 0
-    for run in failed_runs:
-        fetch_raw_jobs_for_company_task.delay(
-            run.label_id,
-            run.batch_id,
-            "SCHEDULED",
-        )
-        queued += 1
+        queued = 0
+        for run in failed_runs:
+            fetch_raw_jobs_for_company_task.delay(
+                run.label_id,
+                run.batch_id,
+                "SCHEDULED",
+            )
+            queued += 1
 
-    logger.info("retry_failed_raw_jobs: re-queued %d tasks", queued)
-    return {"queued": queued}
+        logger.info("retry_failed_raw_jobs: re-queued %d tasks", queued)
+        finish_ops_run(ops_run, HarvestOpsRun.Status.SUCCESS,
+                       {"queued": queued, "lookback_days": days})
+        return {"queued": queued}
+    except Exception as e:
+        finish_ops_run(ops_run, HarvestOpsRun.Status.FAILED, {"error": str(e)[:300]})
+        raise
 
 
 @shared_task(

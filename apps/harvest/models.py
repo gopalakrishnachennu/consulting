@@ -554,6 +554,7 @@ class HarvestOpsRun(models.Model):
         REFETCH_LOCATIONS = "refetch_locations", "Refetch ambiguous locations"
         BACKFILL_ENRICHMENT = "backfill_enrichment", "Backfill enrichment"
         CONFIG_FAILURE = "config_failure", "Config read failure"
+        RETRY_FAILED = "retry_failed", "Retry failed fetches"
 
     class Status(models.TextChoices):
         RUNNING = "RUNNING", "Running"
