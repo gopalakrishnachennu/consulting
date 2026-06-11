@@ -265,7 +265,7 @@
             {% endif %}
 
             {% if rawjob.sync_status == 'PENDING' and rawjob.is_active %}
-            <form method="post" action="{% url 'harvest-run-sync-selected' %}">
+            <form method="post" action="{% url 'jobs-pipeline-run-sync-selected' %}">
               {% csrf_token %}
               <input type="hidden" name="raw_job_ids" value="{{ rawjob.id }}">
               <button type="submit" class="btn-success w-full justify-center">Sync to Vet Queue</button>

@@ -34,15 +34,15 @@
     <div class="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md hover:border-violet-200 transition group">
       <div class="flex items-center justify-between mb-2">
         <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Harvested</span>
-        <a href="{% url 'harvest-rawjobs' %}" class="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center text-violet-600 group-hover:bg-violet-100 transition">
+        <a href="{% url 'jobs-pipeline' %}?tab=raw" class="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center text-violet-600 group-hover:bg-violet-100 transition">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
         </a>
       </div>
-      <a href="{% url 'harvest-rawjobs' %}" class="text-2xl font-extrabold text-gray-900 hover:text-violet-700 transition">{{ rawjob_total|intcomma }}</a>
+      <a href="{% url 'jobs-pipeline' %}?tab=raw" class="text-2xl font-extrabold text-gray-900 hover:text-violet-700 transition">{{ rawjob_total|intcomma }}</a>
       <p class="text-[11px] text-gray-400 mt-1">
-        <a href="{% url 'harvest-rawjobs' %}?sync_status=SYNCED" class="hover:text-emerald-600 hover:underline">{{ rawjob_sync.SYNCED|default:"0"|intcomma }} synced</a>
+        <a href="{% url 'jobs-pipeline' %}?tab=raw&sync_status=SYNCED" class="hover:text-emerald-600 hover:underline">{{ rawjob_sync.SYNCED|default:"0"|intcomma }} synced</a>
         &middot;
-        <a href="{% url 'harvest-rawjobs' %}?sync_status=PENDING" class="hover:text-amber-600 hover:underline">{{ rawjob_sync.PENDING|default:"0"|intcomma }} pending</a>
+        <a href="{% url 'jobs-pipeline' %}?tab=raw&sync_status=PENDING" class="hover:text-amber-600 hover:underline">{{ rawjob_sync.PENDING|default:"0"|intcomma }} pending</a>
       </p>
     </div>
     <div x-show="tip" x-transition.opacity.duration.150ms class="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-2 w-56 bg-gray-900 text-white rounded-lg shadow-xl p-3 text-xs pointer-events-none" x-cloak>

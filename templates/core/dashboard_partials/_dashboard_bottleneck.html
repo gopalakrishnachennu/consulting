@@ -43,7 +43,7 @@
       <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Raw Job Scope Status</h3>
       <div class="space-y-1.5">
         {% for status, count in bottleneck_scope.items %}
-        <a href="{% url 'harvest-rawjobs' %}?scope_status={{ status }}"
+        <a href="{% url 'jobs-pipeline' %}?tab=raw&scope_status={{ status }}"
            class="flex items-center gap-2 text-xs group hover:bg-gray-50 rounded px-2 py-1 transition">
           <span class="w-24 text-gray-500 truncate">{{ status|title }}</span>
           <div class="flex-1 bg-gray-100 rounded-full h-2.5 overflow-hidden">
@@ -93,7 +93,7 @@
     <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Sync Pipeline</h3>
     <div class="flex items-center gap-2 flex-wrap">
       {% for status, count in bottleneck_sync.items %}
-      <a href="{% url 'harvest-rawjobs' %}?sync_status={{ status }}"
+      <a href="{% url 'jobs-pipeline' %}?tab=raw&sync_status={{ status }}"
          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition hover:shadow-sm
             {% if status == 'SYNCED' %}bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100
             {% elif status == 'PENDING' %}bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100

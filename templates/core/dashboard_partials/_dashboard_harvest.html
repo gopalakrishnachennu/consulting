@@ -11,23 +11,23 @@
   {# Pipeline funnel bar - each number links to filtered rawjob list #}
   <div class="grid grid-cols-5 gap-2 mb-4">
     {% with scope=rawjob_scope %}
-    <a href="{% url 'harvest-rawjobs' %}?scope_status=PRIORITY_TARGET" class="text-center p-2.5 rounded-lg bg-blue-50 hover:bg-blue-100 transition">
+    <a href="{% url 'jobs-pipeline' %}?tab=raw&scope_status=PRIORITY_TARGET" class="text-center p-2.5 rounded-lg bg-blue-50 hover:bg-blue-100 transition">
       <p class="text-lg font-extrabold text-blue-700">{{ scope.PRIORITY_TARGET|default:"0"|intcomma }}</p>
       <p class="text-[10px] font-semibold text-blue-500 uppercase">Priority</p>
     </a>
-    <a href="{% url 'harvest-rawjobs' %}?scope_status=UNSCOPED" class="text-center p-2.5 rounded-lg bg-gray-50 hover:bg-gray-100 transition">
+    <a href="{% url 'jobs-pipeline' %}?tab=raw&scope_status=UNSCOPED" class="text-center p-2.5 rounded-lg bg-gray-50 hover:bg-gray-100 transition">
       <p class="text-lg font-extrabold text-gray-700">{{ scope.UNSCOPED|default:"0"|intcomma }}</p>
       <p class="text-[10px] font-semibold text-gray-400 uppercase">Unscoped</p>
     </a>
-    <a href="{% url 'harvest-rawjobs' %}?scope_status=REVIEW_UNKNOWN_COUNTRY" class="text-center p-2.5 rounded-lg bg-amber-50 hover:bg-amber-100 transition">
+    <a href="{% url 'jobs-pipeline' %}?tab=raw&scope_status=REVIEW_UNKNOWN_COUNTRY" class="text-center p-2.5 rounded-lg bg-amber-50 hover:bg-amber-100 transition">
       <p class="text-lg font-extrabold text-amber-700">{{ scope.REVIEW_UNKNOWN_COUNTRY|default:"0"|intcomma }}</p>
       <p class="text-[10px] font-semibold text-amber-500 uppercase">Review</p>
     </a>
-    <a href="{% url 'harvest-rawjobs' %}?scope_status=COLD_NON_TARGET_COUNTRY" class="text-center p-2.5 rounded-lg bg-slate-50 hover:bg-slate-100 transition">
+    <a href="{% url 'jobs-pipeline' %}?tab=raw&scope_status=COLD_NON_TARGET_COUNTRY" class="text-center p-2.5 rounded-lg bg-slate-50 hover:bg-slate-100 transition">
       <p class="text-lg font-extrabold text-slate-600">{{ scope.COLD_NON_TARGET_COUNTRY|default:"0"|intcomma }}</p>
       <p class="text-[10px] font-semibold text-slate-400 uppercase">Cold</p>
     </a>
-    <a href="{% url 'harvest-rawjobs' %}?scope_status=COLD_NO_LOCATION" class="text-center p-2.5 rounded-lg bg-rose-50 hover:bg-rose-100 transition">
+    <a href="{% url 'jobs-pipeline' %}?tab=raw&scope_status=COLD_NO_LOCATION" class="text-center p-2.5 rounded-lg bg-rose-50 hover:bg-rose-100 transition">
       <p class="text-lg font-extrabold text-rose-600">{{ scope.COLD_NO_LOCATION|default:"0"|intcomma }}</p>
       <p class="text-[10px] font-semibold text-rose-400 uppercase">No Loc</p>
     </a>
@@ -37,19 +37,19 @@
   {# Sync status bar - each status links to filtered rawjob list #}
   <div class="flex items-center gap-3 text-[11px]">
     <span class="font-semibold text-gray-500 uppercase tracking-wider">Sync:</span>
-    <a href="{% url 'harvest-rawjobs' %}?sync_status=SYNCED" class="inline-flex items-center gap-1 hover:text-emerald-700">
+    <a href="{% url 'jobs-pipeline' %}?tab=raw&sync_status=SYNCED" class="inline-flex items-center gap-1 hover:text-emerald-700">
       <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
       <span class="text-gray-600">{{ rawjob_sync.SYNCED|default:"0"|intcomma }} synced</span>
     </a>
-    <a href="{% url 'harvest-rawjobs' %}?sync_status=PENDING" class="inline-flex items-center gap-1 hover:text-amber-700">
+    <a href="{% url 'jobs-pipeline' %}?tab=raw&sync_status=PENDING" class="inline-flex items-center gap-1 hover:text-amber-700">
       <span class="w-2 h-2 rounded-full bg-amber-400"></span>
       <span class="text-gray-600">{{ rawjob_sync.PENDING|default:"0"|intcomma }} pending</span>
     </a>
-    <a href="{% url 'harvest-rawjobs' %}?sync_status=FAILED" class="inline-flex items-center gap-1 hover:text-red-700">
+    <a href="{% url 'jobs-pipeline' %}?tab=raw&sync_status=FAILED" class="inline-flex items-center gap-1 hover:text-red-700">
       <span class="w-2 h-2 rounded-full bg-red-400"></span>
       <span class="text-gray-600">{{ rawjob_sync.FAILED|default:"0"|intcomma }} failed</span>
     </a>
-    <a href="{% url 'harvest-rawjobs' %}?sync_status=SKIPPED" class="inline-flex items-center gap-1 hover:text-gray-700">
+    <a href="{% url 'jobs-pipeline' %}?tab=raw&sync_status=SKIPPED" class="inline-flex items-center gap-1 hover:text-gray-700">
       <span class="w-2 h-2 rounded-full bg-gray-300"></span>
       <span class="text-gray-600">{{ rawjob_sync.SKIPPED|default:"0"|intcomma }} skipped</span>
     </a>

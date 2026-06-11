@@ -1,11 +1,41 @@
-from django.test import TestCase, Client
-from django.urls import reverse
+from django.test import Client, RequestFactory, SimpleTestCase, TestCase
+from django.urls import resolve, reverse
 from django.utils import timezone
 
 from jobs.models import Job
 from submissions.models import ApplicationSubmission
 from .models import User, ConsultantProfile, EmployeeProfile, Department
 from .journey_utils import compute_consultant_readiness, at_risk_submissions_queryset
+
+
+class EmployeeRouteTests(SimpleTestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    def test_employee_routes_are_canonical_under_employees_prefix(self):
+        self.assertEqual(reverse('employee-list'), '/employees/')
+        self.assertEqual(reverse('employee-add'), '/employees/add/')
+        self.assertEqual(reverse('employee-create'), '/employees/create/')
+        self.assertEqual(reverse('employee-export-csv'), '/employees/export/')
+        self.assertEqual(reverse('employee-detail', kwargs={'pk': 7}), '/employees/7/')
+        self.assertEqual(reverse('employee-edit', kwargs={'pk': 7}), '/employees/7/edit/')
+        self.assertEqual(reverse('employee-delete', kwargs={'pk': 7}), '/employees/7/delete/')
+
+    def test_legacy_consultant_employee_urls_redirect_to_canonical_routes(self):
+        legacy = {
+            '/consultants/employees/': '/employees/',
+            '/consultants/employees/export/': '/employees/export/',
+            '/consultants/employees/create/': '/employees/add/',
+            '/consultants/employees/7/': '/employees/7/',
+            '/consultants/employees/7/edit/': '/employees/7/edit/',
+            '/consultants/employees/7/delete/': '/employees/7/delete/',
+        }
+        for old_path, new_path in legacy.items():
+            with self.subTest(old_path=old_path):
+                match = resolve(old_path)
+                response = match.func(self.factory.get(old_path), **match.kwargs)
+                self.assertEqual(response.status_code, 301)
+                self.assertEqual(response['Location'], new_path)
 
 
 class ConsultantExportCSVTests(TestCase):

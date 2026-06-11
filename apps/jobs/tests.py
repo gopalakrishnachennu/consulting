@@ -3,8 +3,8 @@ import hashlib
 import io
 from unittest.mock import patch
 
-from django.test import TestCase, Client
-from django.urls import reverse
+from django.test import TestCase, Client, SimpleTestCase
+from django.urls import resolve, reverse
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 
@@ -24,6 +24,29 @@ from .marketing_role_routing import (
 from .services import match_jobs_for_consultant
 from .tasks import classify_jobs_task
 from .tasks import validate_job_urls_task, auto_close_jobs_task
+
+
+class JobsPipelineRouteOwnershipTests(SimpleTestCase):
+    def test_jobs_pipeline_owns_raw_action_routes(self):
+        expected = {
+            "jobs-pipeline-run-fetch-batch": "/jobs/pipeline/run/fetch-batch/",
+            "jobs-pipeline-run-sync": "/jobs/pipeline/run/sync/",
+            "jobs-pipeline-run-sync-selected": "/jobs/pipeline/run/sync-selected/",
+            "jobs-pipeline-run-detect": "/jobs/pipeline/run/detect/",
+            "jobs-pipeline-run-backfill-descriptions": "/jobs/pipeline/run/backfill-descriptions/",
+            "jobs-pipeline-run-validate-urls": "/jobs/pipeline/run/validate-urls/",
+            "jobs-pipeline-run-retry-failed-fetches": "/jobs/pipeline/run/retry-failed-fetches/",
+            "jobs-pipeline-run-cleanup": "/jobs/pipeline/run/cleanup/",
+        }
+        for route_name, path in expected.items():
+            with self.subTest(route_name=route_name):
+                self.assertEqual(reverse(route_name), path)
+                self.assertEqual(resolve(path).url_name, route_name)
+
+    def test_legacy_harvest_action_routes_remain_available(self):
+        self.assertEqual(reverse("harvest-run-sync"), "/harvest/run/sync/")
+        self.assertEqual(reverse("harvest-run-fetch-batch"), "/harvest/run/fetch-batch/")
+        self.assertEqual(reverse("harvest-rawjobs"), "/harvest/raw-jobs/")
 
 
 @patch("jobs.tasks.run_job_validation.delay")

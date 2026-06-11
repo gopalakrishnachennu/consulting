@@ -1018,7 +1018,7 @@ class AdminDashboardView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
             action_items.append({
                 'type': 'error', 'icon': '❌',
                 'text': f'{failed_sync} RawJobs failed to sync',
-                'url': reverse('harvest-rawjobs') + '?sync_status=FAILED',
+                'url': reverse('jobs-pipeline') + '?tab=raw&sync_status=FAILED',
             })
         if context.get('pending_applications_count', 0):
             action_items.append({
@@ -1043,7 +1043,7 @@ class AdminDashboardView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
             action_items.append({
                 'type': 'warning', 'icon': '\U0001f50d',
                 'text': f'{unscoped:,} unscoped raw jobs need evaluation',
-                'url': reverse('harvest-rawjobs') + '?scope_status=UNSCOPED',
+                'url': reverse('jobs-pipeline') + '?tab=raw&scope_status=UNSCOPED',
             })
         resume_errors = context.get('resume_stats', {}).get('ERROR', 0)
         if resume_errors:

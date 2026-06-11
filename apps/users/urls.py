@@ -1,8 +1,8 @@
 from django.urls import path
+from django.views.generic import RedirectView
 from .views import (
     ConsultantListView, ConsultantExportCSVView,
-    EmployeeListView, EmployeeExportCSVView, EmployeeDetailView, EmployeeCreateView,
-    EmployeeEditView, EmployeeDeleteView, ConsultantEditView, ConsultantDetailView, ConsultantDashboardView,
+    ConsultantEditView, ConsultantDetailView, ConsultantDashboardView,
     ConsultantJourneyView,
     ConsultantOnboardingView,
     EmailNotificationPreferencesView,
@@ -19,12 +19,37 @@ from resumes.preview_views import draft_preview_llm
 
 
 urlpatterns = [
-    path('employees/export/', EmployeeExportCSVView.as_view(), name='employee-export-csv'),
-    path('employees/', EmployeeListView.as_view(), name='employee-list'),
-    path('employees/create/', EmployeeCreateView.as_view(), name='employee-create'),
-    path('employees/<int:pk>/', EmployeeDetailView.as_view(), name='employee-detail'),
-    path('employees/<int:pk>/edit/', EmployeeEditView.as_view(), name='employee-edit'),
-    path('employees/<int:pk>/delete/', EmployeeDeleteView.as_view(), name='employee-delete'),
+    # Legacy redirects: employee CRUD is canonical under /employees/.
+    path(
+        'employees/export/',
+        RedirectView.as_view(pattern_name='employee-export-csv', permanent=True),
+        name='legacy-employee-export-csv',
+    ),
+    path(
+        'employees/',
+        RedirectView.as_view(pattern_name='employee-list', permanent=True),
+        name='legacy-employee-list',
+    ),
+    path(
+        'employees/create/',
+        RedirectView.as_view(pattern_name='employee-add', permanent=True),
+        name='legacy-employee-create',
+    ),
+    path(
+        'employees/<int:pk>/',
+        RedirectView.as_view(pattern_name='employee-detail', permanent=True),
+        name='legacy-employee-detail',
+    ),
+    path(
+        'employees/<int:pk>/edit/',
+        RedirectView.as_view(pattern_name='employee-edit', permanent=True),
+        name='legacy-employee-edit',
+    ),
+    path(
+        'employees/<int:pk>/delete/',
+        RedirectView.as_view(pattern_name='employee-delete', permanent=True),
+        name='legacy-employee-delete',
+    ),
 
     path('account/email-notifications/', EmailNotificationPreferencesView.as_view(), name='email-notification-preferences'),
     path('settings/', SettingsView.as_view(), name='settings-dashboard'),

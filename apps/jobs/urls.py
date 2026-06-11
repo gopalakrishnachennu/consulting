@@ -16,10 +16,30 @@ from .views import (
     # Bulk actions
     JobBulkActionView,
 )
+from harvest.views import (
+    RunBackfillDescriptionsView,
+    RunCleanupNowView,
+    RunDetectNowView,
+    RunRetryFailedFetchesView,
+    RunSyncNowView,
+    RunSyncSelectedRawJobsView,
+    RunValidateRawUrlsView,
+    TriggerBatchFetchView,
+)
 
 urlpatterns = [
     path('', JobListView.as_view(), name='job-list'),
     path('pipeline/', JobsPipelineView.as_view(), name='jobs-pipeline'),
+    # Jobs Pipeline owns the user-facing raw job workflow. Legacy /harvest/run/*
+    # endpoints remain available for existing links and Harvest Engine settings.
+    path('pipeline/run/fetch-batch/', TriggerBatchFetchView.as_view(), name='jobs-pipeline-run-fetch-batch'),
+    path('pipeline/run/sync/', RunSyncNowView.as_view(), name='jobs-pipeline-run-sync'),
+    path('pipeline/run/sync-selected/', RunSyncSelectedRawJobsView.as_view(), name='jobs-pipeline-run-sync-selected'),
+    path('pipeline/run/detect/', RunDetectNowView.as_view(), name='jobs-pipeline-run-detect'),
+    path('pipeline/run/backfill-descriptions/', RunBackfillDescriptionsView.as_view(), name='jobs-pipeline-run-backfill-descriptions'),
+    path('pipeline/run/validate-urls/', RunValidateRawUrlsView.as_view(), name='jobs-pipeline-run-validate-urls'),
+    path('pipeline/run/retry-failed-fetches/', RunRetryFailedFetchesView.as_view(), name='jobs-pipeline-run-retry-failed-fetches'),
+    path('pipeline/run/cleanup/', RunCleanupNowView.as_view(), name='jobs-pipeline-run-cleanup'),
     path('export/', JobExportCSVView.as_view(), name='job-export-csv'),
     path('duplicate-check/', JobDuplicateCheckView.as_view(), name='job-duplicate-check'),
     path('url-check/', JobUrlCheckView.as_view(), name='job-url-check'),

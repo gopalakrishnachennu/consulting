@@ -12,10 +12,18 @@
         <p class="text-blue-100 text-sm mt-1">Harvest → Vet → Live — the full pipeline in one place</p>
       </div>
       <div class="flex items-center gap-2 flex-wrap">
-        <a href="{% url 'harvest-run-fetch-batch' %}" class="btn bg-white/15 border border-white/30 text-white text-sm hover:bg-white/25">
+        {% if request.user.is_superuser %}
+        <form method="post" action="{% url 'jobs-pipeline-run-fetch-batch' %}">
+          {% csrf_token %}
+          <input type="hidden" name="fetch_mode" value="quick">
+          <input type="hidden" name="return_to" value="jobs-pipeline">
+          <input type="hidden" name="return_tab" value="raw">
+          <button type="submit" class="btn bg-white/15 border border-white/30 text-white text-sm hover:bg-white/25">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
           Run Harvest
-        </a>
+          </button>
+        </form>
+        {% endif %}
         <a href="{% url 'pipeline-health' %}" class="btn bg-white/15 border border-white/30 text-white text-sm hover:bg-white/25">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
           Health
@@ -407,7 +415,7 @@
   <p class="text-gray-700 text-sm font-semibold mb-1">Vetting queue is clear{% if score_tab != 'all' or lane_tab != 'all' %} for this filter{% endif %}.</p>
   <p class="text-gray-400 text-xs">Jobs will appear here once harvested.
     <a href="?tab=raw" class="text-indigo-600 hover:underline">Check Raw Jobs</a> or
-    <a href="{% url 'harvest-run-fetch-batch' %}" class="text-indigo-600 hover:underline">run a harvest</a>.
+    <a href="{% url 'jobs-pipeline' %}?tab=raw#raw-controls-panel" class="text-indigo-600 hover:underline">run a harvest</a>.
   </p>
 </div>
 {% endif %}
@@ -457,7 +465,7 @@
     <a href="{% url 'jobs-pipeline' %}?tab=raw#raw-jobs-table" class="btn-secondary btn-sm">Raw Table</a>
     <a href="{% url 'ops-center' %}#pipelines" class="btn-secondary btn-sm">Run Monitor</a>
     <a href="{% url 'harvest-batch-activity' %}" class="btn-secondary btn-sm" title="Centralized metrics for Quick / Full fetch">Harvest activity</a>
-    <form method="post" action="{% url 'harvest-run-sync' %}" onsubmit="return confirm('Sync only production READY rows to Vet Queue. Test/smoke, filtered-out, missing-JD, inactive, weak-domain, and low-confidence rows stay blocked. Continue?')">{% csrf_token %}
+    <form method="post" action="{% url 'jobs-pipeline-run-sync' %}" onsubmit="return confirm('Sync only production READY rows to Vet Queue. Test/smoke, filtered-out, missing-JD, inactive, weak-domain, and low-confidence rows stay blocked. Continue?')">{% csrf_token %}
       <input type="hidden" name="qualified_only" value="1">
       <input type="hidden" name="max_jobs" value="0">
       <input type="hidden" name="chunk_size" value="500">
@@ -495,7 +503,7 @@
   </div>
   <div class="flex flex-wrap gap-2">
     {# ── Full Fetch Jobs — configurable cooldown enforced server-side ────── #}
-    <form method="post" action="{% url 'harvest-run-fetch-batch' %}" onsubmit="return confirm('Full Fetch can create a large production crawl. Use Quick Fetch for normal refresh. Continue Full Fetch?')">
+    <form method="post" action="{% url 'jobs-pipeline-run-fetch-batch' %}" onsubmit="return confirm('Full Fetch can create a large production crawl. Use Quick Fetch for normal refresh. Continue Full Fetch?')">
       {% csrf_token %}
       <input type="hidden" name="fetch_mode" value="full">
       <input type="hidden" name="return_to" value="jobs-pipeline">
@@ -507,7 +515,7 @@
     </form>
 
     {# ── Quick Fetch — incremental 25h window ───────────────────────────── #}
-    <form method="post" action="{% url 'harvest-run-fetch-batch' %}">
+    <form method="post" action="{% url 'jobs-pipeline-run-fetch-batch' %}">
       {% csrf_token %}
       <input type="hidden" name="fetch_mode" value="quick">
       <input type="hidden" name="return_to" value="jobs-pipeline">
@@ -518,7 +526,7 @@
     </form>
 
     {# ── Run Detection — batch size from config ─────────────────────────── #}
-    <form method="post" action="{% url 'harvest-run-detect' %}">
+    <form method="post" action="{% url 'jobs-pipeline-run-detect' %}">
       {% csrf_token %}
       <button type="submit" class="btn-sm rounded-lg px-3 py-2 font-semibold text-white bg-indigo-600 hover:bg-indigo-700"
         title="Batch size: {{ engine_config.detect_batch_size }} (set in Engine Config)">
@@ -527,7 +535,7 @@
     </form>
 
     {# ── Backfill JD — workers / reset_locks / include_cold from config ── #}
-    <form method="post" action="{% url 'harvest-run-backfill-descriptions' %}">
+    <form method="post" action="{% url 'jobs-pipeline-run-backfill-descriptions' %}">
       {% csrf_token %}
       <input type="hidden" name="batch_size" value="200">
       {# parallel_workers intentionally omitted → task reads from HarvestEngineConfig #}
@@ -540,7 +548,7 @@
     </form>
 
     {# ── Validate Live Links — pending_only / recent_hours from config ─── #}
-    <form method="post" action="{% url 'harvest-run-validate-urls' %}">
+    <form method="post" action="{% url 'jobs-pipeline-run-validate-urls' %}">
       {% csrf_token %}
       {# pending_only and recent_hours intentionally omitted → view reads from HarvestEngineConfig #}
       <input type="hidden" name="max_jobs" value="0">
@@ -553,7 +561,7 @@
     </form>
 
     {# ── Sync Qualified — qualified_only + unlimited from config ────────── #}
-    <form method="post" action="{% url 'harvest-run-sync' %}" onsubmit="return confirm('Sync only production READY rows to Vet Queue. Test/smoke and filtered rows remain blocked. Continue?')">
+    <form method="post" action="{% url 'jobs-pipeline-run-sync' %}" onsubmit="return confirm('Sync only production READY rows to Vet Queue. Test/smoke and filtered rows remain blocked. Continue?')">
       {% csrf_token %}
       <input type="hidden" name="qualified_only" value="1">
       <input type="hidden" name="max_jobs" value="0">
@@ -566,7 +574,7 @@
     </form>
 
     {# ── Retry Failed — look-back window from config ─────────────────────── #}
-    <form method="post" action="{% url 'harvest-run-retry-failed-fetches' %}">
+    <form method="post" action="{% url 'jobs-pipeline-run-retry-failed-fetches' %}">
       {% csrf_token %}
       <input type="hidden" name="return_to" value="jobs-pipeline">
       <input type="hidden" name="return_tab" value="raw">
@@ -577,7 +585,7 @@
     </form>
 
     {# ── Cleanup — thresholds from config ────────────────────────────────── #}
-    <form method="post" action="{% url 'harvest-run-cleanup' %}">
+    <form method="post" action="{% url 'jobs-pipeline-run-cleanup' %}">
       {% csrf_token %}
       <button type="submit" class="btn-sm rounded-lg px-3 py-2 font-semibold text-white bg-red-700 hover:bg-red-800"
         title="Inactive age: {{ engine_config.cleanup_inactive_age_days }}d | PENDING safe buffer: {{ engine_config.cleanup_pending_safe_minutes }}min (configurable in Engine Config)">
