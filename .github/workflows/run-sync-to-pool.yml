@@ -1,0 +1,41 @@
+name: Run — Sync Harvested to Pool
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type SYNC to confirm running the pool sync on production"
+        required: true
+      max_jobs:
+        description: "Max RawJobs to promote this run"
+        default: "200"
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm input
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "SYNC" ]; then
+            echo "Refusing: type SYNC to confirm."; exit 1
+          fi
+
+      - name: Run sync_harvested_to_pool on production
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /opt/consulting
+            # Same task + kwargs as the daily 06:30 beat schedule. Runs inline
+            # (synchronously) so this workflow's log shows the full result,
+            # including the location_reconcile payload.
+            docker compose -f docker-compose.prod.yml --env-file .env.production exec -T web \
+              python manage.py shell -c "
+            from harvest.tasks import sync_harvested_to_pool_task
+            out = sync_harvested_to_pool_task.apply(kwargs={'max_jobs': int('${{ github.event.inputs.max_jobs }}')}).get()
+            print('RESULT:', out)
+            "
