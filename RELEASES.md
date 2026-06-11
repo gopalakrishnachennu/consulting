@@ -3,6 +3,14 @@
 Production release log for GoCareers. Newest first. Created/updated by the `/release` skill
 (verify CI green → version + changelog → deploy → health-verify → auto-rollback → record).
 
+## v4.3.2 — Ops monitor in-depth detail + zombie guard (2026-06-11)
+- Live Ops Monitor rows expand to show trigger source, exact params, full result payload,
+  error, and stale reason ("details — what this run did").
+- Retry Failed now creates a tracked ops run (was fire-and-forget; failures were invisible).
+- Duplicate guard gains a 6h max-runtime ceiling — a hung-but-heartbeating worker can no
+  longer block an operation forever (root cause of "backfill jd ×60" skips).
+Status: deployed (22e5a07 · health 200 · 2026-06-11)
+
 ## v4.3.1 — Country drift propagation (2026-06-10)
 - Daily sync now propagates post-sync RawJob country corrections to linked pool Jobs
   (capped 500/run, ops-run logged, 'job_location_sync' flag = UI kill-switch).
