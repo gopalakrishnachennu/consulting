@@ -1026,37 +1026,44 @@
     <div class="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">Pipeline funnel</div>
     <div class="text-[11px] text-slate-500">Click any stage to open matching jobs in this table</div>
   </div>
-  <div class="grid grid-cols-2 lg:grid-cols-6 gap-2">
-    <a href="?{{ raw_stage_links.FETCHED }}#raw-jobs-table" class="p-2.5 rounded-lg border {% if not raw_selected_stage %}border-slate-500 bg-slate-50{% else %}border-slate-200 hover:border-slate-300{% endif %}">
-      <div class="text-[10px] uppercase text-slate-500">Fetched</div>
-      <div class="text-xl font-bold text-slate-900">{{ raw_funnel.fetched }}</div>
-      <div class="text-[11px] text-slate-500">100%</div>
+  <div class="flex flex-col lg:flex-row gap-1.5 lg:items-stretch">
+    {% with f=raw_funnel.fetched %}
+    <a href="?{{ raw_stage_links.FETCHED }}#raw-jobs-table" class="flex-1 p-2.5 rounded-lg border transition {% if not raw_selected_stage %}border-slate-500 bg-slate-100 ring-1 ring-slate-300{% else %}border-slate-200 hover:border-slate-400{% endif %}">
+      <div class="flex items-baseline justify-between"><span class="text-[10px] uppercase font-semibold text-slate-500">Fetched</span><span class="text-[11px] font-bold text-slate-400">100%</span></div>
+      <div class="text-xl font-black text-slate-900">{{ raw_funnel.fetched }}</div>
+      <div class="mt-1 h-1 rounded-full bg-slate-200"><div class="h-1 rounded-full bg-slate-600" style="width:100%"></div></div>
     </a>
-    <a href="?{{ raw_stage_links.PARSED }}#raw-jobs-table" class="p-2.5 rounded-lg border {% if raw_selected_stage == 'PARSED' %}border-sky-400 bg-sky-50{% else %}border-slate-200 hover:border-sky-300{% endif %}">
-      <div class="text-[10px] uppercase text-slate-500">Parsed</div>
-      <div class="text-xl font-bold text-sky-600">{{ raw_funnel.parsed }}</div>
-      <div class="text-[11px] text-slate-500">{% widthratio raw_funnel.parsed raw_funnel.fetched 100 %}%</div>
+    <div class="hidden lg:flex items-center text-slate-300">›</div>
+    <a href="?{{ raw_stage_links.PARSED }}#raw-jobs-table" class="flex-1 p-2.5 rounded-lg border transition {% if raw_selected_stage == 'PARSED' %}border-sky-400 bg-sky-50 ring-1 ring-sky-200{% else %}border-slate-200 hover:border-sky-300{% endif %}">
+      <div class="flex items-baseline justify-between"><span class="text-[10px] uppercase font-semibold text-slate-500">Parsed</span><span class="text-[11px] font-bold text-sky-600">{% widthratio raw_funnel.parsed f 100 %}%</span></div>
+      <div class="text-xl font-black text-sky-700">{{ raw_funnel.parsed }}</div>
+      <div class="mt-1 h-1 rounded-full bg-slate-200"><div class="h-1 rounded-full bg-sky-500" style="width:{% widthratio raw_funnel.parsed f 100 %}%"></div></div>
     </a>
-    <a href="?{{ raw_stage_links.ENRICHED }}#raw-jobs-table" class="p-2.5 rounded-lg border {% if raw_selected_stage == 'ENRICHED' %}border-violet-400 bg-violet-50{% else %}border-slate-200 hover:border-violet-300{% endif %}">
-      <div class="text-[10px] uppercase text-slate-500">Enriched</div>
-      <div class="text-xl font-bold text-violet-600">{{ raw_funnel.enriched }}</div>
-      <div class="text-[11px] text-slate-500">{% widthratio raw_funnel.enriched raw_funnel.fetched 100 %}%</div>
+    <div class="hidden lg:flex items-center text-slate-300">›</div>
+    <a href="?{{ raw_stage_links.ENRICHED }}#raw-jobs-table" class="flex-1 p-2.5 rounded-lg border transition {% if raw_selected_stage == 'ENRICHED' %}border-violet-400 bg-violet-50 ring-1 ring-violet-200{% else %}border-slate-200 hover:border-violet-300{% endif %}">
+      <div class="flex items-baseline justify-between"><span class="text-[10px] uppercase font-semibold text-slate-500">Enriched</span><span class="text-[11px] font-bold text-violet-600">{% widthratio raw_funnel.enriched f 100 %}%</span></div>
+      <div class="text-xl font-black text-violet-700">{{ raw_funnel.enriched }}</div>
+      <div class="mt-1 h-1 rounded-full bg-slate-200"><div class="h-1 rounded-full bg-violet-500" style="width:{% widthratio raw_funnel.enriched f 100 %}%"></div></div>
     </a>
-    <a href="?{{ raw_stage_links.CLASSIFIED }}#raw-jobs-table" class="p-2.5 rounded-lg border {% if raw_selected_stage == 'CLASSIFIED' %}border-amber-400 bg-amber-50{% else %}border-slate-200 hover:border-amber-300{% endif %}">
-      <div class="text-[10px] uppercase text-slate-500">Classified</div>
-      <div class="text-xl font-bold text-amber-600">{{ raw_funnel.classified }}</div>
-      <div class="text-[11px] text-slate-500">{% widthratio raw_funnel.classified raw_funnel.fetched 100 %}%</div>
+    <div class="hidden lg:flex items-center text-slate-300">›</div>
+    <a href="?{{ raw_stage_links.CLASSIFIED }}#raw-jobs-table" class="flex-1 p-2.5 rounded-lg border transition {% if raw_selected_stage == 'CLASSIFIED' %}border-amber-400 bg-amber-50 ring-1 ring-amber-200{% else %}border-slate-200 hover:border-amber-300{% endif %}">
+      <div class="flex items-baseline justify-between"><span class="text-[10px] uppercase font-semibold text-slate-500">Classified</span><span class="text-[11px] font-bold text-amber-600">{% widthratio raw_funnel.classified f 100 %}%</span></div>
+      <div class="text-xl font-black text-amber-700">{{ raw_funnel.classified }}</div>
+      <div class="mt-1 h-1 rounded-full bg-slate-200"><div class="h-1 rounded-full bg-amber-500" style="width:{% widthratio raw_funnel.classified f 100 %}%"></div></div>
     </a>
-    <a href="?{{ raw_stage_links.READY }}#raw-jobs-table" class="p-2.5 rounded-lg border {% if raw_selected_stage == 'READY' %}border-emerald-400 bg-emerald-50{% else %}border-slate-200 hover:border-emerald-300{% endif %}">
-      <div class="text-[10px] uppercase text-slate-500">Ready</div>
-      <div class="text-xl font-bold text-emerald-600">{{ raw_funnel.ready }}</div>
-      <div class="text-[11px] text-slate-500">{% widthratio raw_funnel.ready raw_funnel.fetched 100 %}%</div>
+    <div class="hidden lg:flex items-center text-slate-300">›</div>
+    <a href="?{{ raw_stage_links.READY }}#raw-jobs-table" class="flex-1 p-2.5 rounded-lg border transition {% if raw_selected_stage == 'READY' %}border-emerald-400 bg-emerald-50 ring-1 ring-emerald-200{% else %}border-slate-200 hover:border-emerald-300{% endif %}">
+      <div class="flex items-baseline justify-between"><span class="text-[10px] uppercase font-semibold text-slate-500">Ready</span><span class="text-[11px] font-bold text-emerald-600">{% widthratio raw_funnel.ready f 100 %}%</span></div>
+      <div class="text-xl font-black text-emerald-700">{{ raw_funnel.ready }}</div>
+      <div class="mt-1 h-1 rounded-full bg-slate-200"><div class="h-1 rounded-full bg-emerald-500" style="width:{% widthratio raw_funnel.ready f 100 %}%"></div></div>
     </a>
-    <a href="?{{ raw_stage_links.SYNCED }}#raw-jobs-table" class="p-2.5 rounded-lg border {% if raw_selected_stage == 'SYNCED' %}border-teal-400 bg-teal-50{% else %}border-slate-200 hover:border-teal-300{% endif %}">
-      <div class="text-[10px] uppercase text-slate-500">Synced</div>
-      <div class="text-xl font-bold text-teal-600">{{ raw_funnel.synced }}</div>
-      <div class="text-[11px] text-slate-500">{% widthratio raw_funnel.synced raw_funnel.fetched 100 %}%</div>
+    <div class="hidden lg:flex items-center text-slate-300">›</div>
+    <a href="?{{ raw_stage_links.SYNCED }}#raw-jobs-table" class="flex-1 p-2.5 rounded-lg border transition {% if raw_selected_stage == 'SYNCED' %}border-teal-400 bg-teal-50 ring-1 ring-teal-200{% else %}border-slate-200 hover:border-teal-300{% endif %}">
+      <div class="flex items-baseline justify-between"><span class="text-[10px] uppercase font-semibold text-slate-500">Synced</span><span class="text-[11px] font-bold text-teal-600">{% widthratio raw_funnel.synced f 100 %}%</span></div>
+      <div class="text-xl font-black text-teal-700">{{ raw_funnel.synced }}</div>
+      <div class="mt-1 h-1 rounded-full bg-slate-200"><div class="h-1 rounded-full bg-teal-500" style="width:{% widthratio raw_funnel.synced f 100 %}%"></div></div>
     </a>
+    {% endwith %}
   </div>
   {% if raw_selected_stage %}
   <div class="mt-2 text-xs text-slate-600">
