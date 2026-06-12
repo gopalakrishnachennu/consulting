@@ -1,0 +1,42 @@
+name: Run — Harvest Jobs Now
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type HARVEST to confirm running the harvester on production"
+        required: true
+      platform_slug:
+        description: "Optional: single platform slug (blank = all enabled)"
+        default: ""
+      max_companies:
+        description: "Max companies per platform"
+        default: "50"
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm input
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "HARVEST" ]; then
+            echo "Refusing: type HARVEST to confirm."; exit 1
+          fi
+
+      - name: Queue harvest on production
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 10m
+          script: |
+            set -e
+            cd /opt/consulting
+            docker compose -f docker-compose.prod.yml --env-file .env.production exec -T web \
+              python manage.py shell -c "
+            from harvest.tasks import harvest_jobs_task
+            slug = '${{ github.event.inputs.platform_slug }}'.strip() or None
+            r = harvest_jobs_task.delay(platform_slug=slug, max_companies=int('${{ github.event.inputs.max_companies }}'), triggered_by='MANUAL')
+            print('queued harvest task:', r.id, 'platform:', slug or 'ALL')
+            "
