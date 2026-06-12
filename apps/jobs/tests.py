@@ -300,6 +300,61 @@ class MarketingRoleRoutingTests(TestCase):
         self.assertTrue(raw.job_domain_candidates)
         self.assertTrue(job.marketing_roles.exists())
 
+    def test_classify_task_active_only_skips_closed_job_role_refresh(self):
+        company = Company.objects.create(name="ActiveOnlyRouteCo")
+        stale_role = MarketingRole.objects.get(slug="software-developer")
+        active_url = "https://example.com/jobs/active-servicenow"
+        closed_url = "https://example.com/jobs/closed-servicenow"
+        active_raw = RawJob.objects.create(
+            company=company,
+            company_name=company.name,
+            title="ServiceNow Developer",
+            description="Own ServiceNow platform workflows and integrations.",
+            original_url=active_url,
+            url_hash=hashlib.sha256(active_url.encode()).hexdigest(),
+            sync_status=RawJob.SyncStatus.SYNCED,
+            is_active=True,
+        )
+        closed_raw = RawJob.objects.create(
+            company=company,
+            company_name=company.name,
+            title="ServiceNow Developer",
+            description="Own ServiceNow platform workflows and integrations.",
+            original_url=closed_url,
+            url_hash=hashlib.sha256(closed_url.encode()).hexdigest(),
+            sync_status=RawJob.SyncStatus.SYNCED,
+            is_active=True,
+        )
+        active_job = Job.objects.create(
+            title=active_raw.title,
+            company=company.name,
+            posted_by=self.employee,
+            status=Job.Status.POOL,
+            description=active_raw.description,
+            source_raw_job=active_raw,
+            url_hash=active_raw.url_hash,
+        )
+        closed_job = Job.objects.create(
+            title=closed_raw.title,
+            company=company.name,
+            posted_by=self.employee,
+            status=Job.Status.CLOSED,
+            description=closed_raw.description,
+            source_raw_job=closed_raw,
+            url_hash=closed_raw.url_hash,
+            auto_marketing_role_slugs=["software-developer"],
+        )
+        closed_job.marketing_roles.add(stale_role)
+
+        result = classify_jobs_task.apply(kwargs={"force_reclassify": True, "active_only": True}).get()
+        active_job.refresh_from_db()
+        closed_job.refresh_from_db()
+
+        self.assertEqual(result["status"], "done")
+        self.assertTrue(result["active_only"])
+        self.assertIn("servicenow-developer", list(active_job.marketing_roles.values_list("slug", flat=True)))
+        self.assertCountEqual(list(closed_job.marketing_roles.values_list("slug", flat=True)), ["software-developer"])
+
 
 @patch("jobs.tasks.run_job_validation.delay")
 @patch("jobs.views.ensure_parsed_jd")

@@ -318,7 +318,7 @@ def _classify_lock_ttl() -> int:
 
 
 @shared_task(bind=True, name="jobs.classify_all", max_retries=0, soft_time_limit=10800, time_limit=11100)
-def classify_jobs_task(self, force_reclassify: bool = False):
+def classify_jobs_task(self, force_reclassify: bool = False, active_only: bool = False):
     """
     Full taxonomy backfill for harvested jobs.
     Updates RawJob taxonomy fields and then backfills Job.marketing_roles for
@@ -340,7 +340,7 @@ def classify_jobs_task(self, force_reclassify: bool = False):
         dup_op = begin_ops_run(
             HarvestOpsRun.Operation.CLASSIFY,
             task_id,
-            queue={"force_reclassify": force_reclassify, "duplicate_lock": True},
+            queue={"force_reclassify": force_reclassify, "active_only": active_only, "duplicate_lock": True},
         )
         finish_ops_run(dup_op, HarvestOpsRun.Status.SKIPPED, {"reason": "lock_held"})
         return {"status": "skipped", "reason": "lock_held"}
@@ -349,10 +349,10 @@ def classify_jobs_task(self, force_reclassify: bool = False):
     ops_run = begin_ops_run(
         HarvestOpsRun.Operation.CLASSIFY,
         task_id,
-        queue={"force_reclassify": force_reclassify, "mode": "taxonomy"},
+        queue={"force_reclassify": force_reclassify, "active_only": active_only, "mode": "taxonomy"},
     )
     try:
-        result = _run_classify_raw(self, force_reclassify=force_reclassify)
+        result = _run_classify_raw(self, force_reclassify=force_reclassify, active_only=active_only)
         finish_ops_run(ops_run, HarvestOpsRun.Status.SUCCESS, result)
         return result
     except Exception as e:
@@ -364,7 +364,7 @@ def classify_jobs_task(self, force_reclassify: bool = False):
         cache.delete(CLASSIFY_ACTIVE_TASK_KEY)
 
 
-def _run_classify_raw(task_self, *, force_reclassify: bool) -> dict:
+def _run_classify_raw(task_self, *, force_reclassify: bool, active_only: bool = False) -> dict:
     from django.db import transaction
     from harvest.models import HarvestEngineConfig, RawJob
     from harvest.enrichments import (
@@ -383,12 +383,16 @@ def _run_classify_raw(task_self, *, force_reclassify: bool) -> dict:
         chunk_limit = 0
 
     raw_qs = RawJob.objects.exclude(title="").order_by("pk")
+    if active_only:
+        raw_qs = raw_qs.filter(is_test_run=False, is_active=True)
     if not force_reclassify:
         raw_qs = raw_qs.exclude(domain_version=CURRENT_DOMAIN_VERSION)
     if chunk_limit > 0:
         raw_qs = raw_qs[:chunk_limit]
 
     synced_qs = RawJob.objects.filter(sync_status=RawJob.SyncStatus.SYNCED).order_by("pk")
+    if active_only:
+        synced_qs = synced_qs.filter(is_test_run=False, is_active=True)
     if chunk_limit > 0:
         # Proportional split: spend half the limit on synced roles
         synced_qs = synced_qs[:chunk_limit // 2]
@@ -481,7 +485,7 @@ def _run_classify_raw(task_self, *, force_reclassify: bool) -> dict:
                 ["job_category", "job_domain", "job_domain_candidates", "domain_version"],
             )
 
-    _sync_classifications_to_jobs(force=force_reclassify)
+    _sync_classifications_to_jobs(force=force_reclassify, active_only=active_only)
 
     role_assigned = 0
     role_skipped = 0
@@ -503,6 +507,11 @@ def _run_classify_raw(task_self, *, force_reclassify: bool) -> dict:
             )
             if not job:
                 role_missing_job += 1
+                synced_processed += 1
+                continue
+
+            if active_only and (job.is_archived or job.status not in {Job.Status.POOL, Job.Status.OPEN}):
+                role_skipped += 1
                 synced_processed += 1
                 continue
 
@@ -559,10 +568,11 @@ def _run_classify_raw(task_self, *, force_reclassify: bool) -> dict:
         "role_skipped": role_skipped,
         "role_missing_job": role_missing_job,
         "domain_version": CURRENT_DOMAIN_VERSION,
+        "active_only": active_only,
     }
 
 
-def _sync_classifications_to_jobs(*, force: bool = False):
+def _sync_classifications_to_jobs(*, force: bool = False, active_only: bool = False):
     """Copy country + department from RawJob → Job for all linked records.
 
     force=True skips the "only update empty fields" filter so existing values
@@ -576,6 +586,8 @@ def _sync_classifications_to_jobs(*, force: bool = False):
             source_raw_job__isnull=False,
             source_raw_job__is_active=True,
         )
+        if active_only:
+            qs = qs.filter(is_archived=False, status__in=[Job.Status.POOL, Job.Status.OPEN])
         for job in qs.iterator(chunk_size=500):
             raw = job.source_raw_job
             changed: list[str] = []
@@ -608,6 +620,9 @@ def _sync_classifications_to_jobs(*, force: bool = False):
                   OR (r.department_normalized <> '' AND j.department_source <> 'manual'
                       AND (j.department IS NULL OR j.department = ''))
               )"""
+    job_scope_filter = ""
+    if active_only:
+        job_scope_filter = "AND j.is_archived = false AND j.status IN ('POOL', 'OPEN')"
 
     with connection.cursor() as cur:
         cur.execute(f"""
@@ -628,6 +643,7 @@ def _sync_classifications_to_jobs(*, force: bool = False):
             FROM harvest_rawjob r
             WHERE r.id = j.source_raw_job_id
               AND r.is_active = true
+              {job_scope_filter}
               {where_filter}
         """)
 

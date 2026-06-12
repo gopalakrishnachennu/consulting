@@ -428,8 +428,110 @@ class JobDomain(models.Model):
     def __str__(self):
         return f"{self.name} ({self.slug})"
 
+    @staticmethod
+    def _split_regex_alternatives(pattern: str) -> list[str]:
+        """Split a simple regex alternation without splitting nested groups."""
+        parts: list[str] = []
+        depth = 0
+        buf: list[str] = []
+        escaped = False
+        for char in pattern:
+            if escaped:
+                buf.append(char)
+                escaped = False
+                continue
+            if char == "\\":
+                buf.append(char)
+                escaped = True
+                continue
+            if char == "(":
+                depth += 1
+            elif char == ")" and depth > 0:
+                depth -= 1
+            elif char == "|" and depth == 0:
+                item = "".join(buf).strip()
+                if item:
+                    parts.append(item)
+                buf = []
+                continue
+            buf.append(char)
+        item = "".join(buf).strip()
+        if item:
+            parts.append(item)
+        return parts
+
+    @classmethod
+    def keywords_from_pattern(cls, pattern: str, *, name: str = "", slug: str = "") -> list[str]:
+        """
+        Best-effort plain keywords for MarketingRole.match_keywords.
+
+        JobDomain remains the source of truth for regex classification. MarketingRole
+        keywords are a fallback signal, so only obviously literal regex pieces are
+        converted here; complex patterns still get the rule name/slug as keywords.
+        """
+        import re as _re
+
+        keywords: list[str] = []
+        raw = (pattern or "").strip()
+        if raw.startswith(r"\b(") and raw.endswith(r")\b"):
+            raw = raw[3:-3]
+        for part in cls._split_regex_alternatives(raw):
+            item = part.strip()
+            item = _re.sub(r"^\\b", "", item)
+            item = _re.sub(r"\\b$", "", item)
+            item = item.replace(r"\s*", " ").replace(r"\s+", " ")
+            item = item.replace(r"\-", "-").replace(r"\/", "/")
+            item = item.replace(r"\.", ".").replace(r"\&", "&")
+            item = _re.sub(r"\s+", " ", item).strip(" ()")
+            if not item:
+                continue
+            if _re.search(r"[\[\]\(\)\{\}\?\+\*\|\^\$]", item):
+                continue
+            keywords.append(item.lower())
+
+        for fallback in (name, slug.replace("-", " ")):
+            fallback = " ".join((fallback or "").lower().split())
+            if fallback:
+                keywords.append(fallback)
+
+        out: list[str] = []
+        seen: set[str] = set()
+        for keyword in keywords:
+            if keyword and keyword not in seen:
+                seen.add(keyword)
+                out.append(keyword)
+        return out[:25]
+
+    def sync_marketing_role(self):
+        """Ensure the matching MarketingRole exists for downstream matching."""
+        from users.models import MarketingRole
+
+        role = MarketingRole.objects.filter(slug=self.slug).first()
+        if role is None:
+            role = MarketingRole.objects.filter(name=self.name).first()
+            if role is not None:
+                role.slug = self.slug
+
+        if role is None:
+            role = MarketingRole(slug=self.slug, name=self.name, is_active=self.is_active)
+
+        if not MarketingRole.objects.exclude(pk=role.pk).filter(name=self.name).exists():
+            role.name = self.name
+        role.top_category = self.top_category
+        role.display_order = self.priority
+        if self.is_active:
+            role.is_active = True
+        role.match_keywords = self.keywords_from_pattern(
+            self.regex_pattern,
+            name=self.name,
+            slug=self.slug,
+        )
+        role.save()
+        return role
+
     def save(self, *args, **kwargs):
         import re as _re
+        sync_marketing_role = kwargs.pop("sync_marketing_role", True)
         # Validate regex — reject bad patterns before they ever reach the engine
         try:
             _re.compile(self.regex_pattern, _re.IGNORECASE)
@@ -437,6 +539,8 @@ class JobDomain(models.Model):
             raise ValueError(f"Invalid regex pattern: {exc}") from exc
         super().save(*args, **kwargs)
         self._bust_cache()
+        if sync_marketing_role:
+            self.sync_marketing_role()
 
     def delete(self, *args, **kwargs):
         result = super().delete(*args, **kwargs)

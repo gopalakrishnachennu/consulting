@@ -4,10 +4,13 @@
 
 <div class="max-w-2xl mx-auto px-4 py-8">
   <div class="mb-6">
-    <a href="{% url 'harvest-job-domains' %}" class="text-sm text-slate-500 hover:text-slate-700">← Job Domains</a>
+    <a href="{% url 'harvest-job-domains' %}" class="text-sm text-slate-500 hover:text-slate-700">Back to Role Routing Rules</a>
     <h1 class="text-xl font-bold text-slate-900 mt-2">
-      {% if object %}Edit Domain — {{ object.name }}{% else %}Add Job Domain{% endif %}
+      {% if object %}Edit Routing Rule - {{ object.name }}{% else %}Add Routing Rule{% endif %}
     </h1>
+    <p class="text-sm text-slate-500 mt-1">
+      Rules classify harvested jobs into domains that become Marketing Roles for vetting, matching, submissions, and resume automation.
+    </p>
   </div>
 
   <form method="post" class="space-y-5 bg-white rounded-xl border border-slate-200 shadow-sm p-6" id="domain-form">
@@ -38,12 +41,12 @@
     <div>
       <div class="flex items-center justify-between mb-1">
         <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Keywords / Patterns <span class="text-red-500">*</span>
+          Keywords / Pattern <span class="text-red-500">*</span>
         </label>
         <button type="button" id="toggle-advanced-btn"
                 onclick="toggleAdvanced()"
                 class="text-xs text-indigo-600 hover:text-indigo-800 font-medium underline underline-offset-2">
-          Switch to raw regex ↗
+          Switch to raw regex
         </button>
       </div>
 
@@ -88,7 +91,7 @@
         </div>
 
         <p class="text-xs text-slate-400 mt-1">
-          Each keyword is matched case-insensitively against job title then description.
+	          Each keyword is matched case-insensitively against job title first, then description.
           Use <code class="bg-slate-100 px-1 rounded">\s*</code> between words for flexible spacing,
           e.g. <em>soc\s*analyst</em>.
         </p>
@@ -104,7 +107,7 @@
         {# We render the real form field here; JS keeps it in sync #}
         {{ form.regex_pattern }}
         {% if form.regex_pattern.errors %}
-        <p class="text-red-600 text-xs mt-1 font-medium">{{ form.regex_pattern.errors|join:", " }}</p>
+	        <p class="text-red-600 text-xs mt-1 font-medium">{{ form.regex_pattern.errors|join:", " }}</p>
         {% endif %}
       </div>
 
@@ -128,7 +131,7 @@
       <div class="flex items-end pb-1">
         <label class="flex items-center gap-2 cursor-pointer">
           {{ form.is_active }}
-          <span class="text-sm font-medium text-slate-700">Active</span>
+          <span class="text-sm font-medium text-slate-700">Active for new classification</span>
         </label>
       </div>
     </div>
@@ -138,9 +141,19 @@
       {{ form.notes }}
     </div>
 
-    <div class="flex gap-3 pt-2">
+    <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      <strong>Save</strong> updates the rule and keeps its Marketing Role in sync.
+      <strong>Save and Apply Existing</strong> also starts a background refresh for active RawJobs and pool/open Jobs.
+      Manual job roles are preserved.
+    </div>
+
+    <div class="flex gap-3 pt-2 flex-wrap">
       <button type="submit" class="btn-primary">
-        {% if object %}Save Changes{% else %}Create Domain{% endif %}
+        {% if object %}Save Changes{% else %}Create Rule{% endif %}
+      </button>
+      <button type="submit" name="apply_downstream" value="1" class="btn-secondary"
+              onclick="return confirm('Save this rule and apply current routing rules to active existing jobs? This runs in the background.');">
+        Save and Apply Existing
       </button>
       <a href="{% url 'harvest-job-domains' %}" class="btn-secondary">Cancel</a>
     </div>
@@ -286,7 +299,7 @@ function toggleAdvanced() {
     rebuildRegex();
     tagMode.classList.remove('hidden');
     advMode.classList.add('hidden');
-    btn.textContent = 'Switch to raw regex ↗';
+    btn.textContent = 'Switch to raw regex';
   }
 }
 </script>

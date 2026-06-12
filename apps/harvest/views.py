@@ -3800,21 +3800,157 @@ class SelectiveRoleCategoryUpdateView(SuperuserRequiredMixin, UpdateView):
         return super().form_valid(form)
 
 
+def _queue_job_domain_downstream_apply() -> tuple[str, str]:
+    """Start the full taxonomy/role refresh, reusing the Jobs classify lock."""
+    from django.core.cache import cache
+    from jobs.tasks import (
+        CLASSIFY_ACTIVE_TASK_KEY,
+        CLASSIFY_LOCK_KEY,
+        _classify_lock_ttl,
+        classify_jobs_task,
+    )
+
+    active_task_id = cache.get(CLASSIFY_ACTIVE_TASK_KEY) or cache.get(CLASSIFY_LOCK_KEY)
+    if active_task_id:
+        return "already_running", str(active_task_id)
+    result = classify_jobs_task.apply_async(kwargs={"force_reclassify": True, "active_only": True})
+    cache.set(CLASSIFY_ACTIVE_TASK_KEY, result.id, _classify_lock_ttl())
+    return "started", result.id
+
+
+def _job_domain_impact_snapshot(limit: int = 8) -> dict:
+    from jobs.models import Job
+    from users.models import MarketingRole
+    from .enrichments import CURRENT_DOMAIN_VERSION
+
+    active_slugs = list(JobDomain.objects.filter(is_active=True).values_list("slug", flat=True))
+    active_role_slugs = set(MarketingRole.objects.filter(is_active=True).values_list("slug", flat=True))
+    inactive_role_slugs = set(MarketingRole.objects.filter(is_active=False).values_list("slug", flat=True))
+
+    raw_base = RawJob.objects.filter(is_test_run=False, is_active=True)
+    stale_q = Q(job_domain="")
+    if active_slugs:
+        stale_q |= (~Q(job_domain__in=active_slugs) & ~Q(job_domain=""))
+
+    active_jobs = Job.objects.filter(
+        is_archived=False,
+        status__in=[Job.Status.POOL, Job.Status.OPEN],
+    )
+    samples = list(
+        raw_base.filter(stale_q)
+        .order_by("-created_at")
+        .values("id", "title", "company_name", "job_domain", "sync_status")[:limit]
+    )
+    return {
+        "active_rules": len(active_slugs),
+        "rules_missing_marketing_role": JobDomain.objects.filter(is_active=True)
+        .exclude(slug__in=active_role_slugs)
+        .count(),
+        "rules_with_inactive_marketing_role": JobDomain.objects.filter(
+            is_active=True,
+            slug__in=inactive_role_slugs,
+        ).count(),
+        "active_raw_jobs_to_recheck": raw_base.count(),
+        "raw_jobs_without_current_rule": raw_base.filter(stale_q).count(),
+        "raw_jobs_with_old_domain_version": raw_base.exclude(domain_version=CURRENT_DOMAIN_VERSION).count(),
+        "synced_raw_jobs_to_refresh": raw_base.filter(sync_status=RawJob.SyncStatus.SYNCED).count(),
+        "open_or_pool_jobs_to_refresh": active_jobs.filter(source_raw_job__isnull=False).distinct().count(),
+        "open_or_pool_jobs_without_roles": active_jobs.filter(marketing_roles__isnull=True).distinct().count(),
+        "samples": samples,
+    }
+
+
 class JobDomainListView(SuperuserRequiredMixin, ListView):
-    """List all job domain patterns — the GUI-editable version of _DOMAIN_PATTERNS."""
+    """List role routing rules backed by JobDomain regex patterns."""
     model = JobDomain
     template_name = "harvest/job_domain_list.html"
     context_object_name = "domains"
     paginate_by = 50
 
     def get_queryset(self):
-        return JobDomain.objects.all().order_by("priority", "slug")
+        qs = JobDomain.objects.all().order_by("priority", "slug")
+        q = (self.request.GET.get("q") or "").strip()
+        if q:
+            qs = qs.filter(
+                Q(name__icontains=q)
+                | Q(slug__icontains=q)
+                | Q(regex_pattern__icontains=q)
+                | Q(notes__icontains=q)
+            )
+        category = (self.request.GET.get("category") or "").strip()
+        if category:
+            qs = qs.filter(top_category=category)
+        status = (self.request.GET.get("status") or "").strip()
+        if status == "active":
+            qs = qs.filter(is_active=True)
+        elif status == "paused":
+            qs = qs.filter(is_active=False)
+        return qs
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
+        from users.models import MarketingRole
+
+        domains = list(ctx["domains"])
+        slugs = [d.slug for d in domains]
+        raw_counts = {
+            row["job_domain"]: row["count"]
+            for row in RawJob.objects.filter(is_test_run=False, job_domain__in=slugs)
+            .values("job_domain")
+            .annotate(count=Count("id"))
+        }
+        synced_counts = {
+            row["job_domain"]: row["count"]
+            for row in RawJob.objects.filter(
+                is_test_run=False,
+                sync_status=RawJob.SyncStatus.SYNCED,
+                job_domain__in=slugs,
+            )
+            .values("job_domain")
+            .annotate(count=Count("id"))
+        }
+        role_map = {
+            role.slug: role
+            for role in MarketingRole.objects.filter(slug__in=slugs)
+            .annotate(job_count=Count("jobs", distinct=True), consultant_count=Count("consultants", distinct=True))
+        }
+        for domain in domains:
+            role = role_map.get(domain.slug)
+            domain.raw_count = raw_counts.get(domain.slug, 0)
+            domain.synced_count = synced_counts.get(domain.slug, 0)
+            domain.marketing_role = role
+            domain.marketing_role_state = "missing"
+            domain.marketing_role_job_count = 0
+            domain.marketing_role_consultant_count = 0
+            if role:
+                domain.marketing_role_state = "ready" if role.is_active else "inactive"
+                domain.marketing_role_job_count = role.job_count
+                domain.marketing_role_consultant_count = role.consultant_count
+        ctx["domains"] = domains
         ctx["top_category_choices"] = JobDomain.TopCategory.choices
         ctx["active_count"] = JobDomain.objects.filter(is_active=True).count()
+        ctx["paused_count"] = JobDomain.objects.filter(is_active=False).count()
+        ctx["total_count"] = JobDomain.objects.count()
+        ctx["impact"] = _job_domain_impact_snapshot(limit=5)
+        ctx["filters"] = {
+            "q": self.request.GET.get("q", ""),
+            "category": self.request.GET.get("category", ""),
+            "status": self.request.GET.get("status", ""),
+        }
         return ctx
+
+
+class JobDomainApplyDownstreamView(SuperuserRequiredMixin, View):
+    def post(self, request):
+        status, task_id = _queue_job_domain_downstream_apply()
+        if status == "already_running":
+            messages.warning(request, "A taxonomy refresh is already running. Progress will resume on this page.")
+        else:
+            messages.success(
+                request,
+                f"Applying routing rules to existing RawJobs and synced Jobs in the background (task {task_id[:8]}).",
+            )
+        return redirect("harvest-job-domains")
 
 
 class JobDomainCreateView(SuperuserRequiredMixin, CreateView):
@@ -3824,8 +3960,19 @@ class JobDomainCreateView(SuperuserRequiredMixin, CreateView):
     success_url = reverse_lazy("harvest-job-domains")
 
     def form_valid(self, form):
-        messages.success(self.request, f'Domain "{form.cleaned_data["name"]}" created. Cache cleared — takes effect within 5 minutes.')
-        return super().form_valid(form)
+        response = super().form_valid(form)
+        if self.request.POST.get("apply_downstream"):
+            status, task_id = _queue_job_domain_downstream_apply()
+            if status == "already_running":
+                messages.warning(self.request, f'Rule "{self.object.name}" saved. A taxonomy refresh is already running.')
+            else:
+                messages.success(
+                    self.request,
+                    f'Rule "{self.object.name}" created and downstream refresh started (task {task_id[:8]}).',
+                )
+        else:
+            messages.success(self.request, f'Rule "{self.object.name}" created and synced to Marketing Roles.')
+        return response
 
     def form_invalid(self, form):
         messages.error(self.request, "Fix the errors below before saving.")
@@ -3839,8 +3986,19 @@ class JobDomainUpdateView(SuperuserRequiredMixin, UpdateView):
     success_url = reverse_lazy("harvest-job-domains")
 
     def form_valid(self, form):
-        messages.success(self.request, f'Domain "{form.cleaned_data["name"]}" saved. Cache cleared — takes effect within 5 minutes.')
-        return super().form_valid(form)
+        response = super().form_valid(form)
+        if self.request.POST.get("apply_downstream"):
+            status, task_id = _queue_job_domain_downstream_apply()
+            if status == "already_running":
+                messages.warning(self.request, f'Rule "{self.object.name}" saved. A taxonomy refresh is already running.')
+            else:
+                messages.success(
+                    self.request,
+                    f'Rule "{self.object.name}" saved and downstream refresh started (task {task_id[:8]}).',
+                )
+        else:
+            messages.success(self.request, f'Rule "{self.object.name}" saved and synced to Marketing Roles.')
+        return response
 
     def form_invalid(self, form):
         messages.error(self.request, "Fix the errors below — invalid regex will not be saved.")
@@ -3853,15 +4011,20 @@ class JobDomainDeleteView(SuperuserRequiredMixin, DeleteView):
     success_url = reverse_lazy("harvest-job-domains")
 
     def form_valid(self, form):
-        messages.success(self.request, f'Domain "{self.object.name}" deleted.')
+        messages.success(self.request, f'Rule "{self.object.name}" deleted.')
         return super().form_valid(form)
+
+
+class JobDomainImpactApiView(SuperuserRequiredMixin, View):
+    def get(self, request):
+        return JsonResponse(_job_domain_impact_snapshot(limit=10))
 
 
 class JobDomainTestApiView(SuperuserRequiredMixin, View):
     """
     GET /harvest/job-domains/test/?title=...
-    Tests a job title against all active domain patterns and returns matches.
-    Used by the Live Title Tester on the Job Domains page.
+    Tests a job title against all active role routing patterns and returns matches.
+    Used by the Live Title Tester on the Role Routing Rules page.
     """
     def get(self, request):
         from .enrichments import detect_job_domains

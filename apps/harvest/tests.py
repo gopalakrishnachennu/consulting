@@ -1767,6 +1767,150 @@ class ClassifyJobTaxonomyCommandTests(TestCase):
         self.assertTrue(raw.job_domain_candidates)
 
 
+class JobDomainRoutingRuleAdminTests(TestCase):
+    def setUp(self):
+        from companies.models import Company
+        from users.models import User
+
+        self.user = User.objects.create_user(
+            username="routing_rule_admin",
+            email="routing_rule_admin@example.com",
+            password="testpass123",
+            is_superuser=True,
+        )
+        self.company = Company.objects.create(name="Routing Rule Co")
+        self.client.force_login(self.user)
+
+    def test_saving_job_domain_creates_matching_marketing_role(self):
+        from harvest.models import JobDomain
+        from users.models import MarketingRole
+
+        rule = JobDomain.objects.create(
+            name="Routing Test Specialist",
+            slug="routing-test-specialist",
+            regex_pattern=r"\broutingtest\b|\brouting\s*specialist\b",
+            top_category=JobDomain.TopCategory.NON_IT,
+            priority=321,
+        )
+
+        role = MarketingRole.objects.get(slug=rule.slug)
+        self.assertEqual(role.name, "Routing Test Specialist")
+        self.assertEqual(role.top_category, JobDomain.TopCategory.NON_IT)
+        self.assertTrue(role.is_active)
+        self.assertIn("routingtest", role.match_keywords)
+        self.assertIn("routing test specialist", role.match_keywords)
+
+    def test_active_rule_reactivates_inactive_matching_marketing_role(self):
+        from harvest.models import JobDomain
+        from users.models import MarketingRole
+
+        role = MarketingRole.objects.create(
+            name="Dormant Routing Role",
+            slug="dormant-routing-role",
+            is_active=False,
+        )
+        JobDomain.objects.create(
+            name="Dormant Routing Role",
+            slug="dormant-routing-role",
+            regex_pattern=r"\bdormantrouting\b",
+            top_category=JobDomain.TopCategory.IT,
+            priority=333,
+        )
+
+        role.refresh_from_db()
+        self.assertTrue(role.is_active)
+        self.assertEqual(role.top_category, JobDomain.TopCategory.IT)
+
+    def test_impact_endpoint_reports_records_that_need_attention(self):
+        import hashlib
+        from harvest.models import RawJob
+        from jobs.models import Job
+
+        missing_url = "https://example.com/routing/missing"
+        inactive_url = "https://example.com/routing/inactive-domain"
+        synced_url = "https://example.com/routing/synced"
+        raw_missing = RawJob.objects.create(
+            company=self.company,
+            title="Unknown Routing Job",
+            url_hash=hashlib.sha256(missing_url.encode()).hexdigest(),
+            original_url=missing_url,
+            description="",
+            job_domain="",
+            is_active=True,
+        )
+        RawJob.objects.create(
+            company=self.company,
+            title="Old Domain Job",
+            url_hash=hashlib.sha256(inactive_url.encode()).hexdigest(),
+            original_url=inactive_url,
+            description="",
+            job_domain="no-longer-active-domain",
+            is_active=True,
+        )
+        raw_synced = RawJob.objects.create(
+            company=self.company,
+            title="Synced Routing Job",
+            url_hash=hashlib.sha256(synced_url.encode()).hexdigest(),
+            original_url=synced_url,
+            description="",
+            job_domain="",
+            sync_status=RawJob.SyncStatus.SYNCED,
+            is_active=True,
+        )
+        Job.objects.create(
+            title=raw_missing.title,
+            company=self.company.name,
+            company_obj=self.company,
+            description="Needs routing",
+            original_link=missing_url,
+            url_hash=raw_synced.url_hash,
+            source_raw_job=raw_synced,
+            posted_by=self.user,
+            status=Job.Status.POOL,
+        )
+
+        response = self.client.get(reverse("harvest-job-domain-impact"))
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertGreaterEqual(payload["raw_jobs_without_current_rule"], 2)
+        self.assertGreaterEqual(payload["synced_raw_jobs_to_refresh"], 1)
+        self.assertGreaterEqual(payload["open_or_pool_jobs_without_roles"], 1)
+        self.assertTrue(payload["samples"])
+
+    def test_role_routing_rules_page_renders(self):
+        from harvest.models import JobDomain
+
+        JobDomain.objects.create(
+            name="Render Routing Rule",
+            slug="render-routing-rule",
+            regex_pattern=r"\brenderrouting\b",
+            top_category=JobDomain.TopCategory.IT,
+            priority=345,
+        )
+
+        response = self.client.get(reverse("harvest-job-domains"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Role Routing Rules")
+        self.assertContains(response, "Render Routing Rule")
+        self.assertContains(response, "Synced")
+
+    @patch("jobs.tasks.classify_jobs_task.apply_async")
+    def test_apply_existing_jobs_queues_force_reclassify_task(self, mock_apply):
+        from django.core.cache import cache
+        from jobs.tasks import CLASSIFY_ACTIVE_TASK_KEY, CLASSIFY_LOCK_KEY
+
+        cache.delete(CLASSIFY_ACTIVE_TASK_KEY)
+        cache.delete(CLASSIFY_LOCK_KEY)
+        mock_apply.return_value = SimpleNamespace(id="routing-apply-task")
+
+        response = self.client.post(reverse("harvest-job-domain-apply"))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], reverse("harvest-job-domains"))
+        mock_apply.assert_called_once_with(kwargs={"force_reclassify": True, "active_only": True})
+
+
 class JarvisCompanyFallbackTests(SimpleTestCase):
     def test_extract_company_from_dayforce_url_uses_tenant(self):
         from harvest.tasks import _extract_company_from_url

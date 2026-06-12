@@ -2,21 +2,20 @@
 {% block content %}
 {% include "jobs/_pipeline_subnav.html" %}
 <div class="max-w-lg mx-auto px-4 py-12">
-  <div class="bg-white rounded-xl border border-red-200 shadow-sm p-8 text-center">
-    <div class="text-4xl mb-4">⚠️</div>
-    <h1 class="text-xl font-bold text-slate-900 mb-2">Delete Domain?</h1>
+	  <div class="bg-white rounded-xl border border-red-200 shadow-sm p-8 text-center">
+	    <h1 class="text-xl font-bold text-slate-900 mb-2">Delete Routing Rule?</h1>
     <p class="text-slate-600 mb-1">
       <strong>{{ object.name }}</strong>
       <code class="text-xs bg-slate-100 px-1 rounded ml-1">{{ object.slug }}</code>
     </p>
     <p class="text-sm text-slate-500 mb-6">
-      Existing RawJobs that already have <code>job_domain = "{{ object.slug }}"</code> are not affected.
-      Future harvested jobs will no longer match this pattern.
+	      This removes the rule from future classification. Existing RawJobs and Jobs are not changed until you apply
+	      routing rules again. If you only want to stop new matches, editing the rule and unchecking Active is safer.
     </p>
     <form method="post" class="flex gap-3 justify-center">
       {% csrf_token %}
       <button type="submit" class="px-5 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition">
-        Yes, Delete
+	        Delete Rule
       </button>
       <a href="{% url 'harvest-job-domains' %}" class="btn-secondary">Cancel</a>
     </form>

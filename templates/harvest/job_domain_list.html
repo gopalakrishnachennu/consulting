@@ -2,63 +2,161 @@
 {% block content %}
 {% include "jobs/_pipeline_subnav.html" %}
 
-<div class="max-w-6xl mx-auto px-4 py-6">
-
-  <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+<div class="max-w-7xl mx-auto px-4 py-6">
+  <div class="flex items-start justify-between gap-4 flex-wrap mb-5">
     <div>
-      <h1 class="text-xl font-bold text-slate-900">Job Domains
-        <span class="ml-2 text-sm font-normal text-slate-500">{{ active_count }} active</span>
-      </h1>
-      <p class="text-sm text-slate-500 mt-0.5">
-        GUI-editable domain pattern registry. Each row is a regex that stamps
-        <code class="bg-slate-100 px-1 rounded text-xs">job_domain</code> on every harvested job.
-        Changes take effect within 5 minutes — no deploy needed.
+      <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Jobs Pipeline</div>
+      <h1 class="text-2xl font-bold text-slate-950 mt-1">Role Routing Rules</h1>
+      <p class="text-sm text-slate-600 mt-1 max-w-3xl">
+        These rules classify harvested jobs into role domains, then sync those domains to Marketing Roles for vetting,
+        consultant matching, submissions, and resume automation.
       </p>
     </div>
-    <a href="{% url 'harvest-job-domain-create' %}" class="btn-primary">+ Add Domain</a>
-  </div>
-
-  {# ── Live Title Tester ─────────────────────────────────────────────────── #}
-  <div class="mb-5 rounded-xl border border-indigo-200 bg-indigo-50 p-4">
-    <div class="flex items-center gap-2 mb-2">
-      <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-indigo-600 text-white text-xs font-bold">⚡</span>
-      <span class="font-semibold text-indigo-900">Live Title Tester</span>
-      <span class="text-xs text-indigo-600">— test any job title against all active domain patterns</span>
+    <div class="flex items-center gap-2">
+      <form method="post" action="{% url 'harvest-job-domain-apply' %}">
+        {% csrf_token %}
+        <button type="submit" class="btn-secondary"
+                onclick="return confirm('Apply current routing rules to active RawJobs and synced Jobs? This runs in the background and preserves manually-added job roles.');">
+          Apply Existing Jobs
+        </button>
+      </form>
+      <a href="{% url 'harvest-job-domain-create' %}" class="btn-primary">Add Rule</a>
     </div>
-    <div class="flex gap-2">
-      <input id="domain-test-input" type="text" placeholder="e.g. Senior Salesforce Developer"
-             class="flex-1 rounded-lg border border-indigo-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
-      <button onclick="testDomain()" class="btn-primary px-5">Test</button>
+  </div>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
+    <div class="rounded-lg border border-slate-200 bg-white p-4">
+      <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Rules</div>
+      <div class="mt-2 text-2xl font-bold text-slate-950">{{ total_count }}</div>
+      <div class="text-xs text-slate-500">{{ active_count }} active, {{ paused_count }} paused</div>
     </div>
-    <div id="domain-test-result" class="mt-2 text-sm text-indigo-800 hidden"></div>
+    <div class="rounded-lg border border-slate-200 bg-white p-4">
+      <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Raw Jobs To Recheck</div>
+      <div class="mt-2 text-2xl font-bold text-slate-950">{{ impact.active_raw_jobs_to_recheck }}</div>
+      <div class="text-xs text-slate-500">Active harvested rows</div>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white p-4">
+      <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Missing Current Rule</div>
+      <div class="mt-2 text-2xl font-bold text-amber-700">{{ impact.raw_jobs_without_current_rule }}</div>
+      <div class="text-xs text-slate-500">Blank or inactive domain</div>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white p-4">
+      <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Synced Jobs</div>
+      <div class="mt-2 text-2xl font-bold text-slate-950">{{ impact.open_or_pool_jobs_to_refresh }}</div>
+      <div class="text-xs text-slate-500">Pool/open jobs to refresh</div>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white p-4">
+      <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Role Issues</div>
+      <div class="mt-2 text-2xl font-bold text-red-700">{{ impact.rules_missing_marketing_role|add:impact.rules_with_inactive_marketing_role }}</div>
+      <div class="text-xs text-slate-500">Missing or inactive MarketingRole</div>
+    </div>
   </div>
 
-  {# ── Info banner ───────────────────────────────────────────────────────── #}
-  <div class="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-    <strong>⚠ Safety:</strong> The regex is validated before saving — a broken pattern is rejected and never reaches the harvest engine.
-    Priority controls match order (lower = first). Leave gaps (10, 20, 30…) so you can insert between existing rows.
+  <div class="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 mb-5">
+    <strong>How to use this safely:</strong>
+    save a rule to affect new classification immediately. Use <strong>Apply Existing Jobs</strong> only when you want active RawJobs
+    and pool/open Jobs to catch up. Manual job roles are preserved; only auto-assigned roles are refreshed.
   </div>
 
-  {# ── Table ─────────────────────────────────────────────────────────────── #}
+  <form method="get" class="mb-5 rounded-lg border border-slate-200 bg-white p-4">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+      <div class="md:col-span-2">
+        <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Search</label>
+        <input type="search" name="q" value="{{ filters.q }}" placeholder="Rule name, slug, keyword, regex"
+               class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Category</label>
+        <select name="category" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          <option value="">All categories</option>
+          {% for value,label in top_category_choices %}
+          <option value="{{ value }}" {% if filters.category == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Status</label>
+        <select name="status" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          <option value="">All statuses</option>
+          <option value="active" {% if filters.status == "active" %}selected{% endif %}>Active</option>
+          <option value="paused" {% if filters.status == "paused" %}selected{% endif %}>Paused</option>
+        </select>
+      </div>
+    </div>
+    <div class="mt-3 flex items-center gap-2">
+      <button class="btn-primary" type="submit">Filter</button>
+      <a href="{% url 'harvest-job-domains' %}" class="btn-secondary">Reset</a>
+    </div>
+  </form>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
+    <div class="rounded-lg border border-slate-200 bg-white p-4">
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <h2 class="font-semibold text-slate-950">Impact Preview</h2>
+          <p class="text-xs text-slate-500 mt-0.5">Shows what an apply run will inspect before changing existing active records.</p>
+        </div>
+        <button type="button" onclick="loadImpactPreview()" class="btn-secondary">Refresh Preview</button>
+      </div>
+      <div id="impact-preview" class="mt-3 text-sm text-slate-700">
+        <div class="grid grid-cols-2 gap-2">
+          <div class="rounded border border-slate-100 bg-slate-50 p-3">
+            <div class="text-xs text-slate-500">Old domain version</div>
+            <div class="font-semibold">{{ impact.raw_jobs_with_old_domain_version }}</div>
+          </div>
+          <div class="rounded border border-slate-100 bg-slate-50 p-3">
+            <div class="text-xs text-slate-500">Jobs without roles</div>
+            <div class="font-semibold">{{ impact.open_or_pool_jobs_without_roles }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-slate-200 bg-white p-4">
+      <div>
+        <h2 class="font-semibold text-slate-950">Live Title Tester</h2>
+        <p class="text-xs text-slate-500 mt-0.5">Test a job title against active routing rules before saving broad patterns.</p>
+      </div>
+      <div class="mt-3 flex gap-2">
+        <input id="domain-test-input" type="text" placeholder="e.g. Senior Salesforce Developer"
+               class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        <button type="button" onclick="testDomain()" class="btn-primary px-5">Test</button>
+      </div>
+      <div id="domain-test-result" class="mt-2 text-sm text-slate-700 hidden"></div>
+    </div>
+  </div>
+
   <div class="card-table table-scroll">
     <table class="w-full text-sm">
       <thead class="tbl-head">
         <tr>
-          <th class="tbl-th w-8">P</th>
-          <th class="tbl-th">Slug / Name</th>
+          <th class="tbl-th w-12">P</th>
+          <th class="tbl-th">Rule</th>
+          <th class="tbl-th">Marketing Role</th>
           <th class="tbl-th">Category</th>
-          <th class="tbl-th">Regex Pattern</th>
+          <th class="tbl-th">Pattern</th>
+          <th class="tbl-th">Usage</th>
           <th class="tbl-th">Status</th>
           <th class="tbl-th-right">Actions</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100">
         {% for d in domains %}
-        <tr class="tbl-row {% if not d.is_active %}opacity-50{% endif %}">
+        <tr class="tbl-row {% if not d.is_active %}opacity-60{% endif %}">
           <td class="tbl-td text-slate-400 font-mono text-xs">{{ d.priority }}</td>
           <td class="tbl-td">
-            <div class="font-medium text-slate-800">{{ d.name }}</div>
-            <div class="font-mono text-xs text-slate-400">{{ d.slug }}</div>
+            <div class="font-semibold text-slate-900">{{ d.name }}</div>
+            <div class="font-mono text-xs text-slate-500">{{ d.slug }}</div>
+          </td>
+          <td class="tbl-td whitespace-nowrap">
+            {% if d.marketing_role_state == "ready" %}
+            <span class="badge-green text-xs">Synced</span>
+            {% elif d.marketing_role_state == "inactive" %}
+            <span class="rounded-full bg-amber-100 text-amber-800 text-xs px-2 py-0.5 font-semibold">Role inactive</span>
+            {% else %}
+            <span class="rounded-full bg-red-100 text-red-700 text-xs px-2 py-0.5 font-semibold">Missing role</span>
+            {% endif %}
+            <div class="text-xs text-slate-400 mt-1">{{ d.marketing_role_consultant_count }} consultants</div>
           </td>
           <td class="tbl-td whitespace-nowrap">
             <span class="inline-block text-xs px-2 py-0.5 rounded-full font-semibold
@@ -70,14 +168,19 @@
               {{ d.get_top_category_display }}
             </span>
           </td>
-          <td class="tbl-td max-w-sm">
-            <code class="text-xs text-slate-600 bg-slate-50 px-1.5 py-0.5 rounded break-all">{{ d.regex_pattern|truncatechars:80 }}</code>
+          <td class="tbl-td max-w-md">
+            <code class="text-xs text-slate-600 bg-slate-50 px-1.5 py-0.5 rounded break-all">{{ d.regex_pattern|truncatechars:110 }}</code>
+            {% if d.notes %}<div class="text-xs text-slate-400 mt-1 truncate">{{ d.notes }}</div>{% endif %}
+          </td>
+          <td class="tbl-td whitespace-nowrap">
+            <div class="font-medium text-slate-700">{{ d.raw_count }} raw</div>
+            <div class="text-xs text-slate-400">{{ d.synced_count }} synced, {{ d.marketing_role_job_count }} jobs</div>
           </td>
           <td class="tbl-td whitespace-nowrap">
             {% if d.is_active %}
             <span class="badge-green text-xs">Active</span>
             {% else %}
-            <span class="bg-slate-100 text-slate-500 text-xs px-2 py-0.5 rounded-full font-medium">Inactive</span>
+            <span class="bg-slate-100 text-slate-500 text-xs px-2 py-0.5 rounded-full font-medium">Paused</span>
             {% endif %}
           </td>
           <td class="tbl-td-right whitespace-nowrap space-x-2">
@@ -87,32 +190,95 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No domains yet.</td></tr>
+        <tr><td colspan="8" class="px-4 py-8 text-center text-slate-400">No routing rules match the current filters.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+
+  {% if is_paginated %}
+  <div class="mt-4 flex items-center justify-between text-sm">
+    <div class="text-slate-500">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</div>
+    <div class="flex gap-2">
+      {% if page_obj.has_previous %}
+      <a class="btn-secondary" href="?page={{ page_obj.previous_page_number }}&q={{ filters.q }}&category={{ filters.category }}&status={{ filters.status }}">Previous</a>
+      {% endif %}
+      {% if page_obj.has_next %}
+      <a class="btn-secondary" href="?page={{ page_obj.next_page_number }}&q={{ filters.q }}&category={{ filters.category }}&status={{ filters.status }}">Next</a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
 </div>
 
+{% include "jobs/_classify_ui.html" %}
+
 <script>
+function escapeHtml(value) {
+  return String(value || '').replace(/[&<>"']/g, function(c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+
+function loadImpactPreview() {
+  const box = document.getElementById('impact-preview');
+  box.innerHTML = '<span class="text-slate-500">Loading preview...</span>';
+  fetch("{% url 'harvest-job-domain-impact' %}", {credentials:'same-origin'})
+    .then(r => r.json())
+    .then(data => {
+      let samples = '';
+      if (data.samples && data.samples.length) {
+        samples = '<div class="mt-3 border-t border-slate-100 pt-3">' +
+          '<div class="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Sample rows needing attention</div>' +
+          data.samples.map(row => (
+            '<div class="text-xs text-slate-600 py-1">' +
+              '<span class="font-medium">' + escapeHtml(row.title) + '</span>' +
+              ' <span class="text-slate-400">(' + escapeHtml(row.job_domain || 'blank') + ')</span>' +
+            '</div>'
+          )).join('') +
+        '</div>';
+      }
+      box.innerHTML =
+        '<div class="grid grid-cols-2 gap-2">' +
+          metric('Active RawJobs', data.active_raw_jobs_to_recheck) +
+          metric('Missing current rule', data.raw_jobs_without_current_rule) +
+          metric('Old domain version', data.raw_jobs_with_old_domain_version) +
+          metric('Pool/open jobs', data.open_or_pool_jobs_to_refresh) +
+          metric('Synced raw jobs', data.synced_raw_jobs_to_refresh) +
+          metric('Jobs without roles', data.open_or_pool_jobs_without_roles) +
+        '</div>' + samples;
+    })
+    .catch(() => { box.innerHTML = '<span class="text-red-600">Could not load preview.</span>'; });
+}
+
+function metric(label, value) {
+  return '<div class="rounded border border-slate-100 bg-slate-50 p-3">' +
+    '<div class="text-xs text-slate-500">' + label + '</div>' +
+    '<div class="font-semibold text-slate-900">' + Number(value || 0).toLocaleString() + '</div>' +
+  '</div>';
+}
+
 function testDomain() {
   const title = document.getElementById('domain-test-input').value.trim();
   const result = document.getElementById('domain-test-result');
   if (!title) return;
-  result.textContent = 'Testing…';
+  result.textContent = 'Testing...';
   result.classList.remove('hidden');
   fetch(`{% url 'harvest-job-domain-test' %}?title=${encodeURIComponent(title)}`, {credentials:'same-origin'})
     .then(r => r.json())
     .then(data => {
       if (data.details && data.details.length) {
         result.innerHTML = '<strong>Matched:</strong> ' +
-          data.details.map(d => `<span class="inline-block bg-indigo-100 text-indigo-800 text-xs px-2 py-0.5 rounded font-mono mr-1">${d.name} (${d.slug})</span>`).join('');
+          data.details.map(d => `<span class="inline-block bg-indigo-100 text-indigo-800 text-xs px-2 py-0.5 rounded font-mono mr-1">${escapeHtml(d.name)} (${escapeHtml(d.slug)})</span>`).join('');
       } else {
-        result.innerHTML = '<span class="text-amber-700">⚠ No domain matched — job would get fallback classification.</span>';
+        result.innerHTML = '<span class="text-amber-700">No specific rule matched. This title would use fallback routing.</span>';
       }
     })
-    .catch(() => { result.textContent = 'Error — try again.'; });
+    .catch(() => { result.textContent = 'Error. Try again.'; });
 }
-document.getElementById('domain-test-input').addEventListener('keydown', e => { if (e.key === 'Enter') testDomain(); });
+
+document.getElementById('domain-test-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') testDomain();
+});
 </script>
 {% endblock %}

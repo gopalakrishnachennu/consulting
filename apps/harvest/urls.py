@@ -21,6 +21,8 @@ from .views import (
     JobDomainCreateView,
     JobDomainUpdateView,
     JobDomainDeleteView,
+    JobDomainApplyDownstreamView,
+    JobDomainImpactApiView,
     JobDomainTestApiView,
     HarvestOpsRunDetailView,
     OpsRunLiveApiView,
@@ -155,8 +157,10 @@ urlpatterns = [
     # Vet Gate Config — sync gate thresholds and domain blocklist
     path("vet-gate/", VetGateConfigView.as_view(), name="harvest-vet-gate-config"),
     path("vet-gate/preview/", VetGatePreviewView.as_view(), name="harvest-vet-gate-preview"),
-    # Job Domains — GUI-editable domain pattern registry
+    # Role routing rules — GUI-editable JobDomain pattern registry
     path("job-domains/", JobDomainListView.as_view(), name="harvest-job-domains"),
+    path("job-domains/apply/", JobDomainApplyDownstreamView.as_view(), name="harvest-job-domain-apply"),
+    path("job-domains/impact/", JobDomainImpactApiView.as_view(), name="harvest-job-domain-impact"),
     path("job-domains/new/", JobDomainCreateView.as_view(), name="harvest-job-domain-create"),
     path("job-domains/<int:pk>/edit/", JobDomainUpdateView.as_view(), name="harvest-job-domain-edit"),
     path("job-domains/<int:pk>/delete/", JobDomainDeleteView.as_view(), name="harvest-job-domain-delete"),
