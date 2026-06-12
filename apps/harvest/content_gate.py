@@ -152,9 +152,11 @@ def _get_snippet_for_job(
             if snippet:
                 return snippet, "detail"
         except Exception as exc:
+            # Full traceback — a broken harvester here silently degrades gate
+            # decisions (empty snippet → wrong REJECTs), so the cause must be visible.
             logger.warning(
                 "content_gate: fetch_job_snippet failed for RawJob %s: %s",
-                raw_job.pk, exc,
+                raw_job.pk, exc, exc_info=True,
             )
 
     return "", "none"

@@ -92,6 +92,26 @@ def _parse_llm_response(text: str) -> list[dict]:
     return []
 
 
+def _record_llm_failure(context: str, exc: Exception) -> None:
+    """Surface LLM API failures in the in-app incident log (best-effort).
+
+    A swallowed API error here silently leaves a whole batch unclassified —
+    recording it makes the outage visible on /core/incidents/ instead of only
+    in worker logs."""
+    try:
+        from core.models import ErrorLog
+        ErrorLog.objects.create(
+            severity=ErrorLog.Severity.ERROR,
+            path=f"celery://harvest.llm_classifier.{context}",
+            method="TASK",
+            status_code=502,
+            error_type=type(exc).__name__[:200],
+            error_message=str(exc)[:2000],
+        )
+    except Exception:
+        logger.debug("llm_classifier: ErrorLog write skipped", exc_info=True)
+
+
 def _resolve_llm(api_key: str | None, model: str):
     """Resolve (key, base_url, model, do_log) for a harvest LLM call.
 
@@ -188,6 +208,7 @@ def classify_batch(
         )
     except Exception as exc:
         logger.error("llm_classifier: API call failed: %s", exc)
+        _record_llm_failure("classify_batch", exc)
         return {}
 
     if do_log:
@@ -336,6 +357,7 @@ def gate_jobs_batch(
         )
     except Exception as exc:
         logger.error("gate_jobs_batch: API call failed: %s", exc)
+        _record_llm_failure("gate_jobs_batch", exc)
         return {}
 
     if do_log:

@@ -73,6 +73,9 @@ class JarvisFetchGate:
         url: str,
         **kwargs: Any,
     ) -> requests.Response:
+        # Safety net: never let a harvester call hang a worker forever. Callers
+        # may still pass their own timeout; this only fills the gap when omitted.
+        kwargs.setdefault("timeout", 30)
         host = _host_key(url)
         hsem = self._sem_for_host(host)
         self._global.acquire()

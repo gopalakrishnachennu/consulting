@@ -841,7 +841,12 @@ def harvest_jobs_task(
             try:
                 raw_jobs = harvester.fetch_jobs(company, tenant_id, since_hours=since_hours)
                 if not raw_jobs:
-                    consecutive_failures += 1
+                    # An empty board is a NORMAL outcome (small company, nothing new in
+                    # the since_hours window) — it must NOT trip the circuit breaker.
+                    # Counting empties as failures made 3 quiet companies silently kill
+                    # an entire platform's harvest (root cause of the May–June stall).
+                    # Only real exceptions (the except branch below) advance the breaker.
+                    logger.info("[HARVEST] %s / %s: 0 jobs returned", platform.slug, company.name)
                 else:
                     consecutive_failures = 0
 
@@ -901,10 +906,24 @@ def harvest_jobs_task(
                             **_company_snapshot_fields(company),
                             **enriched,
                         }
-                        raw_obj, created = RawJob.objects.update_or_create(
-                            url_hash=url_hash,
+                        # Use the advisory-lock dedupe service (not a raw update_or_create)
+                        # so the same job reached via a DIFFERENT URL is caught by
+                        # content-hash/external-id identity instead of slipping in twice.
+                        from .services.rawjob_upsert import upsert_raw_job_with_dedupe
+                        _res = upsert_raw_job_with_dedupe(
+                            company=company,
                             defaults=rj_defaults,
+                            url_hash=url_hash,
+                            original_url=original_url,
+                            external_id=(normalized.get("external_id") or "")[:512],
+                            platform_label=label,
+                            job_platform=platform,
+                            platform_slug=platform.slug,
                         )
+                        raw_obj, created = _res.raw_job, _res.created
+                        if raw_obj is None:
+                            jobs_dup += 1
+                            continue
                         try:
                             from .models import RawJobPayloadSnapshot
                             from .payload_archive import capture_rawjob_source_payloads

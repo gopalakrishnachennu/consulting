@@ -2218,6 +2218,35 @@ def _build_system_health():
     except Exception:
         pass
 
+    # Harvest freshness — the alarm that catches a silently-dead harvest.
+    # (The engine stalled for ~4 weeks in May–June with zero signal; this makes
+    # that impossible to miss.)
+    try:
+        from django.db.models import Max, Count as _Count
+        from harvest.models import RawJob
+        now = timezone.now()
+        health["harvest_new_24h"] = RawJob.objects.filter(
+            fetched_at__gte=now - timedelta(hours=24)).count()
+        health["harvest_new_7d"] = RawJob.objects.filter(
+            fetched_at__gte=now - timedelta(days=7)).count()
+        newest = RawJob.objects.aggregate(m=Max("fetched_at"))["m"]
+        health["harvest_newest_age_h"] = (
+            round((now - newest).total_seconds() / 3600, 1) if newest else None)
+        # Per-platform freshness scoreboard (single GROUP BY query)
+        health["platform_freshness"] = list(
+            RawJob.objects.values("platform_slug")
+            .annotate(
+                last_fetch=Max("fetched_at"),
+                new_7d=_Count("id", filter=Q(fetched_at__gte=now - timedelta(days=7))),
+            )
+            .order_by("-last_fetch")[:30]
+        )
+        for row in health["platform_freshness"]:
+            lf = row.get("last_fetch")
+            row["age_days"] = round((now - lf).total_seconds() / 86400, 1) if lf else None
+    except Exception:
+        health["harvest_new_24h"] = None
+
     return health
 
 
