@@ -26,7 +26,11 @@ INTER_COMPANY_DELAY_API = 1.5        # seconds — API platforms (GH, Lever, Ash
 INTER_COMPANY_DELAY_SCRAPE = 5.0     # seconds — HTML scrape platforms
 HTML_SCRAPE_PLATFORMS = {"html_scrape", "icims", "taleo", "jobvite", "ultipro",
                          "applicantpro", "applytojob", "theapplicantmanager",
-                         "zoho", "recruitee", "breezy", "teamtailor"}
+                         "zoho", "recruitee", "breezy", "teamtailor",
+                         # scraper-fallback boards (JS-rendered or robots-blocked;
+                         # near-zero yield) — must sort AFTER the API platforms
+                         "adp", "glassdoor", "linkedin", "ziprecruiter",
+                         "jobright", "dayforce"}
 
 # ─── Harvest batch run_kind (stored on FetchBatch.audit_payload + logs) ─────
 
@@ -778,7 +782,8 @@ def detect_company_platforms_task(
         raise
 
 
-@shared_task(bind=True, max_retries=2, name="harvest.harvest_jobs")
+@shared_task(bind=True, max_retries=2, name="harvest.harvest_jobs",
+             soft_time_limit=10800, time_limit=11100)
 def harvest_jobs_task(
     self,
     platform_slug: str | None = None,
@@ -807,7 +812,13 @@ def harvest_jobs_task(
 
     total_new = total_dup = total_fail = 0
 
-    for platform in qs:
+    # Process API platforms FIRST (fast, productive), HTML scrapers LAST (slow,
+    # mostly robots-blocked). The 02:00 run previously spent its entire time
+    # budget crawling alphabetically-first scrape platforms and never reached
+    # Greenhouse/Lever/Workday.
+    platforms = sorted(qs, key=lambda p: (p.slug in HTML_SCRAPE_PLATFORMS, p.slug))
+
+    for platform in platforms:
         labels_qs = CompanyPlatformLabel.objects.filter(
             platform=platform,
             detection_method__in=["URL_PATTERN", "HTTP_HEAD", "HTML_PARSE", "MANUAL"],
