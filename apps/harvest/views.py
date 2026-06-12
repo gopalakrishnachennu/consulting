@@ -3838,7 +3838,7 @@ def _job_domain_impact_snapshot(limit: int = 8) -> dict:
     )
     samples = list(
         raw_base.filter(stale_q)
-        .order_by("-created_at")
+        .order_by("-fetched_at", "-updated_at", "-id")
         .values("id", "title", "company_name", "job_domain", "sync_status")[:limit]
     )
     return {
