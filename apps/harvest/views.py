@@ -3764,6 +3764,17 @@ class SelectiveRoleCategoryListView(SuperuserRequiredMixin, TemplateView):
                 "matched_30d": stats_30d.get(cat.slug, 0),
             })
         ctx["categories"] = categories
+        # Missed-titles review: what the filter skipped recently, grouped —
+        # one-click 'add as phrase' turns misses into phrase-bank improvements.
+        from datetime import timedelta as _td
+        from .models import HarvestSkippedTitle
+        ctx["missed_titles"] = list(
+            HarvestSkippedTitle.objects.filter(
+                skipped_at__gte=timezone.now() - _td(days=14))
+            .values("job_title")
+            .annotate(n=Count("id"))
+            .order_by("-n")[:25]
+        )
         return ctx
 
 
@@ -4499,3 +4510,89 @@ class VetGatePreviewView(SuperuserRequiredMixin, View):
         return JsonResponse(preview)
 
         return redirect(redirect_url)
+
+
+# ─── Role Targeting Studio APIs ───────────────────────────────────────────────
+
+class RolePhraseQuickAddView(SuperuserRequiredMixin, View):
+    """POST JSON: add/remove a single include/exclude phrase on a category.
+    Powers inline chip editing + 'add from missed title' actions."""
+
+    def post(self, request):
+        import json as _json
+        from .models import HarvestRoleCategory
+        from .role_filter import normalize_phrase
+        try:
+            body = _json.loads(request.body)
+        except Exception:
+            return JsonResponse({"ok": False, "error": "invalid json"}, status=400)
+        try:
+            cat = HarvestRoleCategory.objects.get(pk=body.get("category_id"))
+        except HarvestRoleCategory.DoesNotExist:
+            return JsonResponse({"ok": False, "error": "category not found"}, status=404)
+        list_name = "exclude_phrases" if body.get("list") == "exclude" else "include_phrases"
+        phrase = normalize_phrase(str(body.get("phrase") or ""))
+        if not phrase or len(phrase) < 2:
+            return JsonResponse({"ok": False, "error": "phrase too short"}, status=400)
+        phrases = list(getattr(cat, list_name) or [])
+        if body.get("action") == "remove":
+            phrases = [p for p in phrases if p != phrase]
+        else:
+            if phrase not in phrases:
+                phrases.append(phrase)
+        setattr(cat, list_name, phrases)
+        cat.save(update_fields=[list_name, "updated_at"])
+        return JsonResponse({"ok": True, "category": cat.slug, "list": list_name,
+                             "phrases": phrases, "phrase": phrase})
+
+
+class RolePhraseImpactView(SuperuserRequiredMixin, View):
+    """POST JSON {phrase} -> how many recent titles this phrase would match.
+    Word-boundary regex on normalized_title (90d) + recent skipped titles (14d),
+    with samples — a phrase's blast radius is visible BEFORE saving it."""
+
+    def post(self, request):
+        import json as _json
+        import re as _re
+        from datetime import timedelta as _td
+        from .models import RawJob, HarvestSkippedTitle
+        from .role_filter import normalize_phrase
+        try:
+            body = _json.loads(request.body)
+        except Exception:
+            return JsonResponse({"ok": False, "error": "invalid json"}, status=400)
+        phrase = normalize_phrase(str(body.get("phrase") or ""))
+        if not phrase or len(phrase) < 2:
+            return JsonResponse({"ok": False, "error": "phrase too short"}, status=400)
+        now = timezone.now()
+        rx = r"\m" + _re.escape(phrase) + r"\M"   # Postgres word boundaries
+        base = RawJob.objects.filter(fetched_at__gte=now - _td(days=90))
+        try:
+            qs = base.filter(normalized_title__iregex=rx)
+            count = qs.count()
+            samples = list(qs.values_list("title", flat=True)[:5])
+        except Exception:
+            qs = base.filter(normalized_title__icontains=phrase)
+            count = qs.count()
+            samples = list(qs.values_list("title", flat=True)[:5])
+        skipped = HarvestSkippedTitle.objects.filter(
+            skipped_at__gte=now - _td(days=14),
+            job_title__icontains=phrase,
+        ).count()
+        return JsonResponse({"ok": True, "phrase": phrase, "matched_90d": count,
+                             "skipped_14d": skipped, "samples": samples})
+
+
+class RoleReclassifyApplyView(SuperuserRequiredMixin, View):
+    """POST — queue reclassification of existing RawJobs with the current
+    phrase bank ('Apply to existing' button)."""
+
+    def post(self, request):
+        from .tasks import reclassify_stale_rawjobs_task
+        task = reclassify_stale_rawjobs_task.delay()
+        messages.success(
+            request,
+            f"Re-classification queued (Task {task.id[:8]}…) — existing jobs will "
+            "pick up your phrase changes. Watch the Live Ops Monitor.",
+        )
+        return redirect(request.POST.get("next") or "harvest-role-categories")

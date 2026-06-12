@@ -5895,3 +5895,26 @@ def backfill_job_marketing_roles_task(
     finish_ops_run(ops_run, completion=completion)
     logger.info("backfill_job_marketing_roles_task done: %s", completion)
     return completion
+
+
+@shared_task(bind=True, name="harvest.reclassify_stale_rawjobs", max_retries=0)
+def reclassify_stale_rawjobs_task(self, batch_size: int = 1000):
+    """Re-run the title filter over RawJobs whose decisions predate the current
+    phrase bank — queued from the Selective Filter page's 'Apply to existing'
+    button so phrase edits take effect without a shell."""
+    from django.core.management import call_command
+    from .models import HarvestOpsRun
+    from .ops_audit import begin_ops_run, finish_ops_run
+
+    run = begin_ops_run(
+        HarvestOpsRun.Operation.CLASSIFY,
+        getattr(self.request, "id", "") or "",
+        queue={"source": "role_studio_apply", "batch_size": batch_size},
+    )
+    try:
+        call_command("reclassify_stale_rawjobs", batch_size=batch_size)
+        finish_ops_run(run, HarvestOpsRun.Status.SUCCESS, {"batch_size": batch_size})
+        return {"ok": True}
+    except Exception as e:
+        finish_ops_run(run, HarvestOpsRun.Status.FAILED, {"error": str(e)[:300]})
+        raise

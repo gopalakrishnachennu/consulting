@@ -8,7 +8,18 @@
       <h1 class="text-2xl font-bold text-gray-900">Selective Filter</h1>
       <p class="text-sm text-gray-500 mt-0.5">Configure harvest role phrases and test titles before they affect JD fetching.</p>
     </div>
-    <a href="{% url 'harvest-role-category-create' %}" class="btn-primary">+ Add Category</a>
+    <div class="flex gap-2">
+      <form method="post" action="{% url 'harvest-role-apply' %}"
+            onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='Queuing…'">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <button type="submit" class="btn-secondary"
+                title="Re-run the title filter over existing RawJobs so phrase changes take effect on already-fetched jobs">
+          ↻ Apply phrases to existing jobs
+        </button>
+      </form>
+      <a href="{% url 'harvest-role-category-create' %}" class="btn-primary">+ Add Category</a>
+    </div>
   </div>
 
   {% include 'harvest/_selective_filter_nav.html' %}
@@ -133,6 +144,54 @@
 
 </div>
 
+  <!-- ── Phrase Impact Preview ── -->
+  <section class="mb-6 rounded-xl border border-emerald-200 bg-white p-5 shadow-sm">
+    <div class="flex items-center gap-2 mb-3">
+      <span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white text-[10px] font-bold">◎</span>
+      <h2 class="text-sm font-bold text-gray-800">Phrase Impact Preview</h2>
+      <span class="text-xs text-gray-400">— see what a phrase WOULD match before adding it</span>
+    </div>
+    <div class="flex gap-2">
+      <input id="impact-phrase" class="form-input flex-1" placeholder="e.g. machine learning engineer">
+      <button type="button" id="impact-button" class="btn-primary shrink-0 px-5" style="background:#059669">Preview</button>
+    </div>
+    <div id="impact-result" class="hidden mt-3 rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 text-sm"></div>
+  </section>
+
+  <!-- ── Missed Titles Review ── -->
+  {% if missed_titles %}
+  <section class="mb-6 rounded-xl border border-amber-200 bg-white p-5 shadow-sm">
+    <div class="flex items-center gap-2 mb-1">
+      <span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-white text-[10px] font-bold">⚑</span>
+      <h2 class="text-sm font-bold text-gray-800">Missed Titles (skipped last 14 days)</h2>
+    </div>
+    <p class="text-xs text-gray-400 mb-3">Titles the filter rejected. If one should have been harvested, add it as an include phrase — then click "Apply phrases to existing jobs".</p>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="tbl-head"><tr>
+          <th class="tbl-th">Skipped title</th><th class="tbl-th text-center">Seen</th><th class="tbl-th">Add as include phrase to…</th>
+        </tr></thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for m in missed_titles %}
+          <tr data-missed-row>
+            <td class="tbl-td font-medium text-gray-800">{{ m.job_title|truncatechars:80 }}</td>
+            <td class="tbl-td text-center text-gray-500">×{{ m.n }}</td>
+            <td class="tbl-td">
+              <div class="flex items-center gap-2">
+                <select class="form-input !py-1 text-xs w-48" data-missed-cat>
+                  {% for row in categories %}<option value="{{ row.obj.pk }}">{{ row.obj.name }}</option>{% endfor %}
+                </select>
+                <button type="button" class="btn-secondary !py-1 !px-3 text-xs" data-missed-add="{{ m.job_title|escapejs }}">+ Add phrase</button>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
 <script>
 (function () {
   const DECISION_STYLES = {
@@ -202,6 +261,59 @@
   document.getElementById('title-test-button').addEventListener('click', runTest);
   document.getElementById('title-test-title').addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); runTest(); }
+  });
+})();
+
+// ── Phrase Impact Preview + Missed Titles quick-add ──
+(function () {
+  const csrf = document.cookie.match(/csrftoken=([^;]+)/)?.[1] || "{{ csrf_token }}";
+
+  const ibtn = document.getElementById("impact-button");
+  const iin  = document.getElementById("impact-phrase");
+  const ires = document.getElementById("impact-result");
+  async function runImpact() {
+    const phrase = (iin.value || "").trim();
+    if (!phrase) return;
+    ires.classList.remove("hidden");
+    ires.innerHTML = "Checking…";
+    try {
+      const r = await fetch("{% url 'harvest-role-phrase-impact' %}", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-CSRFToken": csrf},
+        body: JSON.stringify({phrase}),
+      });
+      const d = await r.json();
+      if (!d.ok) { ires.innerHTML = "⚠ " + (d.error || "failed"); return; }
+      const samples = (d.samples || []).map(s => `<li class="text-gray-600">· ${s}</li>`).join("");
+      ires.innerHTML = `
+        <div class="flex flex-wrap gap-4 mb-2">
+          <span>Would match <strong class="text-emerald-700">${d.matched_90d}</strong> titles (90d)</span>
+          <span>Among recently skipped: <strong class="${d.skipped_14d ? "text-amber-600" : "text-gray-500"}">${d.skipped_14d}</strong> (14d)</span>
+          <span class="text-gray-400">normalized: <code>${d.phrase}</code></span>
+        </div>
+        ${samples ? `<ul class="text-xs space-y-0.5">${samples}</ul>` : `<span class="text-xs text-gray-400">no sample titles</span>`}`;
+    } catch (e) { ires.innerHTML = "⚠ request failed"; }
+  }
+  if (ibtn) ibtn.addEventListener("click", runImpact);
+  if (iin) iin.addEventListener("keydown", e => { if (e.key === "Enter") runImpact(); });
+
+  document.querySelectorAll("[data-missed-add]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const row = btn.closest("[data-missed-row]");
+      const catId = row.querySelector("[data-missed-cat]").value;
+      btn.disabled = true; btn.textContent = "Adding…";
+      try {
+        const r = await fetch("{% url 'harvest-role-phrase-edit' %}", {
+          method: "POST",
+          headers: {"Content-Type": "application/json", "X-CSRFToken": csrf},
+          body: JSON.stringify({category_id: catId, list: "include", action: "add",
+                                phrase: btn.getAttribute("data-missed-add")}),
+        });
+        const d = await r.json();
+        if (d.ok) { btn.textContent = "✓ Added"; btn.classList.add("!text-emerald-700"); }
+        else { btn.textContent = "⚠ " + (d.error || "failed"); btn.disabled = false; }
+      } catch (e) { btn.textContent = "⚠ failed"; btn.disabled = false; }
+    });
   });
 })();
 </script>
