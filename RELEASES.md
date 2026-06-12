@@ -3,6 +3,18 @@
 Production release log for GoCareers. Newest first. Created/updated by the `/release` skill
 (verify CI green → version + changelog → deploy → health-verify → auto-rollback → record).
 
+## v4.4.0 — Harvest engine revival + freshness alarm (2026-06-12)
+- ROOT CAUSE FIX: daily harvest silently stalled since ~May 15 (empty board counted as
+  failure → circuit breaker killed each platform after 3 quiet companies). Empties no
+  longer trip the breaker; verified live via selective-harvest smoke (batch path fetched
+  a new RawJob).
+- Harvest writes routed through the advisory-lock dedupe service (cross-URL duplicates blocked).
+- 30s default timeout on all harvester HTTP calls; content-gate failures log tracebacks;
+  LLM classifier API errors recorded to the incident log.
+- System Health: Harvest Freshness alarm (new 24h/7d, newest-fetch age, red NOT FETCHING
+  banner) + per-platform scoreboard.
+Status: deployed (d54f8a0 · health 200 · 2026-06-12, ahead of the 02:00 UTC harvest)
+
 ## v4.3.2 — Ops monitor in-depth detail + zombie guard (2026-06-11)
 - Live Ops Monitor rows expand to show trigger source, exact params, full result payload,
   error, and stale reason ("details — what this run did").
