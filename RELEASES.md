@@ -3,6 +3,17 @@
 Production release log for GoCareers. Newest first. Created/updated by the `/release` skill
 (verify CI green → version + changelog → deploy → health-verify → auto-rollback → record).
 
+## v4.4.1 — Harvest fully revived: 274 jobs/3min + Role Targeting Studio (2026-06-12)
+- FINAL root cause: Celery's global 300s soft time limit killed the daily harvest 5 min in,
+  while still on robots-blocked scrape boards — API platforms were never reached. harvest_jobs
+  now has a 3h budget and processes API platforms FIRST, scrapers last.
+- VERIFIED LIVE: manual greenhouse run → 274 new RawJobs, 23 dup, 0 fail in ~3 minutes
+  (vs ~0/day for the prior 4 weeks).
+- Role Targeting Studio: phrase impact preview, missed-titles review with one-click add-phrase,
+  'Apply phrases to existing jobs' (tracked ops run).
+- New sanctioned ops workflow: Run — Harvest Jobs Now (HARVEST confirm gate).
+Status: deployed (071eb7a+ · health 200 · verified with live fetch)
+
 ## v4.4.0 — Harvest engine revival + freshness alarm (2026-06-12)
 - ROOT CAUSE FIX: daily harvest silently stalled since ~May 15 (empty board counted as
   failure → circuit breaker killed each platform after 3 quiet companies). Empties no
