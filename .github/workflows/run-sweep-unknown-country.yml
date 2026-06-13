@@ -1,0 +1,64 @@
+name: Run — Sweep Unknown-Country Backlog
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform_slug:
+        description: "Platform slug, blank = all platforms"
+        required: false
+        default: ""
+      limit:
+        description: "Maximum rows to process (0 = all)"
+        required: true
+        default: "0"
+      batch_size:
+        description: "Bulk update batch size"
+        required: true
+        default: "1000"
+      use_provider:
+        description: "Allow on-demand Mapbox for the residual? (true/false)"
+        required: true
+        default: "false"
+      include_inactive:
+        description: "Also sweep delisted (is_active=False) rows? (true/false)"
+        required: true
+        default: "false"
+      dry_run:
+        description: "Dry-run — resolve and report without saving? (true/false)"
+        required: true
+        default: "true"
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Re-resolve unknown-country backlog on production
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 60m
+          script_stop: true
+          script: |
+            set -e
+            cd /opt/consulting
+
+            ARGS="--limit ${{ github.event.inputs.limit }} --batch-size ${{ github.event.inputs.batch_size }}"
+
+            if [ -n "${{ github.event.inputs.platform_slug }}" ]; then
+              ARGS="${ARGS} --platform ${{ github.event.inputs.platform_slug }}"
+            fi
+            if [ "${{ github.event.inputs.use_provider }}" = "true" ]; then
+              ARGS="${ARGS} --provider"
+            fi
+            if [ "${{ github.event.inputs.include_inactive }}" = "true" ]; then
+              ARGS="${ARGS} --include-inactive"
+            fi
+            if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+              ARGS="${ARGS} --dry-run"
+            fi
+
+            echo "Running: python manage.py sweep_unknown_country_locations ${ARGS}"
+            docker compose -f docker-compose.prod.yml --env-file .env.production exec -T web \
+              python manage.py sweep_unknown_country_locations ${ARGS}
