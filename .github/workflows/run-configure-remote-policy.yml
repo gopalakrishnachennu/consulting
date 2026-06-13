@@ -1,0 +1,36 @@
+name: Run — Configure Remote Policy
+
+on:
+  workflow_dispatch:
+    inputs:
+      policy:
+        description: "remote_unknown_policy: review | us | target | cold"
+        required: true
+        default: "us"
+      llm_scan:
+        description: "remote_llm_jd_scan: on | off | (blank = leave unchanged)"
+        required: false
+        default: ""
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set remote policy on production
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 5m
+          script_stop: true
+          script: |
+            set -e
+            cd /opt/consulting
+            ARGS="--policy ${{ github.event.inputs.policy }}"
+            if [ -n "${{ github.event.inputs.llm_scan }}" ]; then
+              ARGS="${ARGS} --llm-scan ${{ github.event.inputs.llm_scan }}"
+            fi
+            echo "Running: python manage.py configure_remote_policy ${ARGS}"
+            docker compose -f docker-compose.prod.yml --env-file .env.production exec -T web \
+              python manage.py configure_remote_policy ${ARGS}
