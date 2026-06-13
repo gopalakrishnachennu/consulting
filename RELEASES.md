@@ -24,7 +24,9 @@ and Mapbox only ran on the manual button. Built a layered resolution ladder:
 - PHASE E (telemetry): "Why unresolved" breakdown on the review page (multi-placeholder /
   remote / office-label / named-place / blank) so each phase's impact is visible.
 - +7 tests (gazetteer, remote, policy, force-provider, sweep, classifier, page render).
-Status: deploying (health-verify pending)
+Status: deployed (754597e · CI+image green · health overall=ok · 2026-06-13)
+Follow-up: run `sweep_unknown_country_locations --dry-run` to project the backlog drain
+now that the gazetteer covers 36k cities.
 
 ## v4.4.4 — Location Review: hide delisted jobs (2026-06-13)
 Follow-up to v4.4.3, driven by evidence: a Workday dry-run refetch resolved only
