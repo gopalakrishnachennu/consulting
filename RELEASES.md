@@ -14,7 +14,7 @@ v4.4.3 code fix still prevents NEW multi-location jobs from going unknown.
 - The revived daily harvest will mark the remaining stale reqs inactive as it
   re-crawls Workday, so they drop off the queue over the next runs.
 - +1 test (default hides delisted, include_inactive shows all).
-Status: deploying (health-verify pending)
+Status: deployed (531ffdf · CI+image green · health overall=ok · 2026-06-13)
 
 ## v4.4.3 — Location Review overhaul: Workday root-cause + bulk classify (2026-06-13)
 Attacks the Unknown-Country queue (1,004 pending; 776 Workday) on two fronts —
