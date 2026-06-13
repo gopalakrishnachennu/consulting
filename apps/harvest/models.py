@@ -1847,14 +1847,24 @@ class HarvestEngineConfig(models.Model):
         default="review",
         choices=[
             ("review", "Send to review"),
+            ("us", "Default to USA"),
             ("target", "Treat as priority target"),
             ("cold", "Mark cold"),
         ],
         verbose_name="Remote (no country) policy",
         help_text=(
-            "What to do with remote jobs that signal remote but have no resolvable "
-            "country. 'review' keeps current behavior; 'target' accepts them (most "
-            "remote roles are reachable); 'cold' drops them."
+            "What to do with a remote job after location + JD scanning still finds no "
+            "country. 'review' keeps it in the queue; 'us' assumes USA (most remote "
+            "roles); 'target' accepts as priority; 'cold' drops it."
+        ),
+    )
+    remote_llm_jd_scan = models.BooleanField(
+        default=False,
+        verbose_name="LLM scan JD for remote location",
+        help_text=(
+            "For remote jobs with no resolvable country, ask the LLM to read the job "
+            "description and extract a work location before applying the remote policy. "
+            "Costs one LLM call per such job — use with the central LLM config."
         ),
     )
     geocoding_cache_enabled = models.BooleanField(

@@ -3660,3 +3660,66 @@ class LocationLadderPhaseTests(TestCase):
         resp = self.client.get(reverse("harvest-unknown-country-review"))
         self.assertEqual(resp.status_code, 200)
         self.assertIn("Why unresolved", resp.content.decode())
+
+
+class RemoteLocationPolicyTests(TestCase):
+    """Remote jobs: JD-LLM location scan → use it, else default-USA policy."""
+
+    def _cfg(self, **kw):
+        from harvest.models import HarvestEngineConfig
+        cfg = HarvestEngineConfig.get()
+        for k, v in kw.items():
+            setattr(cfg, k, v)
+        cfg.save()
+        return cfg
+
+    def _job(self, location_raw="Remote", title="Engineer", description="Work anywhere."):
+        from harvest.models import RawJob
+        from companies.models import Company
+        company = Company.objects.create(name=f"RC{RawJob.objects.count()}")
+        return RawJob.objects.create(
+            company=company, company_name="RC", platform_slug="greenhouse",
+            title=title, location_raw=location_raw, description=description,
+            original_url=f"https://x/{RawJob.objects.count()}", url_hash=f"rp{RawJob.objects.count()}",
+        )
+
+    def test_us_policy_defaults_bare_remote_to_usa(self):
+        from harvest.location_resolver import resolve_remote_scope
+        cfg = self._cfg(remote_unknown_policy="us", remote_llm_jd_scan=False)
+        upd = resolve_remote_scope(self._job(), cfg, {"US", "IN", "CA", "GB", "AU"})
+        self.assertEqual(upd["country_code"], "US")
+        self.assertEqual(upd["scope_status"], __import__("harvest.models", fromlist=["RawJob"]).RawJob.ScopeStatus.PRIORITY_TARGET)
+        self.assertEqual(upd["scope_reason"], "remote_default_us")
+
+    def test_review_policy_falls_through(self):
+        from harvest.location_resolver import resolve_remote_scope
+        cfg = self._cfg(remote_unknown_policy="review", remote_llm_jd_scan=False)
+        self.assertIsNone(resolve_remote_scope(self._job(), cfg, {"US"}))
+
+    def test_non_remote_returns_none(self):
+        from harvest.location_resolver import resolve_remote_scope
+        cfg = self._cfg(remote_unknown_policy="us")
+        job = self._job(location_raw="Springfield", title="Engineer")
+        self.assertIsNone(resolve_remote_scope(job, cfg, {"US"}))
+
+    def test_llm_jd_scan_resolves_location(self):
+        from unittest.mock import patch
+        from harvest.location_resolver import resolve_remote_scope
+        from harvest.models import RawJob
+        cfg = self._cfg(remote_unknown_policy="us", remote_llm_jd_scan=True)
+        job = self._job(description="You will join our Berlin hub.")
+        with patch("harvest.llm_classifier.extract_remote_location", return_value="Berlin, Germany"):
+            upd = resolve_remote_scope(job, cfg, {"US", "IN", "CA", "GB", "AU"})
+        self.assertEqual(upd["country_code"], "DE")
+        self.assertEqual(upd["scope_status"], RawJob.ScopeStatus.COLD_NON_TARGET_COUNTRY)
+        self.assertEqual(upd["scope_reason"], "remote_jd_llm:DE")
+
+    def test_llm_scan_empty_falls_back_to_policy(self):
+        from unittest.mock import patch
+        from harvest.location_resolver import resolve_remote_scope
+        cfg = self._cfg(remote_unknown_policy="us", remote_llm_jd_scan=True)
+        job = self._job()
+        with patch("harvest.llm_classifier.extract_remote_location", return_value=""):
+            upd = resolve_remote_scope(job, cfg, {"US"})
+        self.assertEqual(upd["country_code"], "US")
+        self.assertEqual(upd["scope_reason"], "remote_default_us")

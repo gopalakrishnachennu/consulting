@@ -409,3 +409,64 @@ def gate_jobs_batch(
         sum(1 for r in results.values() if r["decision"] == "UNCERTAIN"),
     )
     return results
+
+
+_REMOTE_LOCATION_SYSTEM_PROMPT = (
+    "You extract the primary WORK LOCATION of a job from its description. Many "
+    "'remote' jobs are still tied to a country or city via time zone, right-to-work, "
+    "'must reside in', visa, or office-hub language. Reply with STRICT JSON only, no "
+    'prose: {"location": "<City, Country | Country | empty>", "confidence": <0.0-1.0>}. '
+    "Use an empty string only if the job is genuinely location-agnostic. Prefer a "
+    "country name or 'City, Country'. Never invent a location not implied by the text."
+)
+
+
+def extract_remote_location(
+    title: str,
+    description: str,
+    *,
+    api_key: str | None = None,
+    model: str = "gpt-4o-mini",
+) -> str:
+    """Ask the LLM for a remote job's work location from its JD.
+
+    Returns a location string ('Berlin, Germany', 'United States') or '' when the
+    job is location-agnostic / on failure. Best-effort — never raises. Honors the
+    central LLM config when the 'harvest_use_central_llm' flag is on.
+    """
+    desc = (description or "").strip()
+    if not desc:
+        return ""
+    key, base_url, model, do_log = _resolve_llm(api_key, model)
+    if not key:
+        return ""
+    try:
+        import openai
+    except ImportError:
+        return ""
+
+    client = openai.OpenAI(api_key=key, base_url=base_url)
+    user_prompt = f"TITLE: {title or ''}\n\nDESCRIPTION:\n{desc[:4000]}"
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": _REMOTE_LOCATION_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0,
+            max_tokens=60,
+        )
+    except Exception as exc:
+        _record_llm_failure("extract_remote_location", exc)
+        return ""
+
+    if do_log:
+        _log_harvest_usage(model, response, "remote_location")
+    try:
+        text = (response.choices[0].message.content or "").strip()
+        text = re.sub(r"^```(?:json)?|```$", "", text).strip()
+        data = json.loads(text)
+        return (data.get("location") or "").strip()[:128]
+    except Exception:
+        return ""

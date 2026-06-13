@@ -3,6 +3,21 @@
 Production release log for GoCareers. Newest first. Created/updated by the `/release` skill
 (verify CI green → version + changelog → deploy → health-verify → auto-rollback → record).
 
+## v4.4.6 — Remote location intelligence (JD-LLM + USA default) (2026-06-13)
+Implements the remote-jobs contract: identify a remote job's real location by scanning
+the JD, and only assume USA when nothing is found.
+- New `resolve_remote_scope`: for a remote job with no resolved country, (1) optionally
+  ask the LLM to read the JD and extract a work location ('must reside in', time-zone,
+  office-hub language) → resolve to its country; (2) otherwise apply remote_unknown_policy.
+- HarvestEngineConfig.remote_unknown_policy gains "us" (assume USA — Priority Target);
+  remote_llm_jd_scan (default off) toggles the LLM JD scan. extract_remote_location added
+  to llm_classifier (honors central LLM config + usage logging + caps via existing infra).
+- Live backlog sweep (offline gazetteer) banked 62 resolved rows (60 target, 2 cold);
+  queue 993 → 931. Remaining are mostly Workday "N Locations" placeholders — addressed
+  by re-fetching detail with the v4.4.5 additionalLocations fix.
+- +5 tests (USA default, review fall-through, non-remote, LLM scan resolves, LLM-empty fallback).
+Status: deploying (health-verify pending)
+
 ## v4.4.5 — Location Resolution Ladder (E+A+B+C+D) (2026-06-13)
 Attacks the root causes of unknown-country jobs across ALL platforms. Audit found the
 local gazetteer was only 151 cities / 15 countries (Spain & Mexico weren't even in it),

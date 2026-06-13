@@ -727,6 +727,71 @@ def _resolve_remote(
     )
 
 
+def resolve_remote_scope(raw_job, cfg, target_countries) -> dict | None:
+    """Scope updates for a remote job left with no resolved country.
+
+    Order (the user's contract): scan the JD with the LLM for a real location and
+    use it if found; otherwise apply remote_unknown_policy ('us' → assume USA).
+    Returns None when the job isn't remote, or policy='review' (fall through to the
+    normal review/cold handling).
+    """
+    if not _looks_remote(raw_job.location_raw or "", raw_job.title or ""):
+        return None
+
+    # 1. LLM JD location scan (opt-in via config) → resolve to a country.
+    if getattr(cfg, "remote_llm_jd_scan", False):
+        try:
+            from .llm_classifier import extract_remote_location
+            loc = extract_remote_location(
+                raw_job.title or "",
+                raw_job.description or raw_job.description_clean or "",
+            )
+        except Exception:
+            loc = ""
+        if loc:
+            r = resolve_location(location_raw=loc, cfg=cfg)
+            if r.country_code:
+                is_target = r.country_code in target_countries
+                return {
+                    "country_code": r.country_code[:2],
+                    "country": (r.country_name or "")[:128],
+                    "country_source": "remote_jd_llm",
+                    "country_confidence": 0.75,
+                    "scope_status": (
+                        RawJob.ScopeStatus.PRIORITY_TARGET if is_target
+                        else RawJob.ScopeStatus.COLD_NON_TARGET_COUNTRY
+                    ),
+                    "is_priority": is_target,
+                    "scope_reason": f"remote_jd_llm:{r.country_code}"[:128],
+                }
+
+    # 2. Policy fallback for bare remote (no location anywhere).
+    policy = getattr(cfg, "remote_unknown_policy", "review")
+    if policy == "us":
+        return {
+            "country_code": "US",
+            "country": "United States",
+            "country_source": "remote_default_us",
+            "country_confidence": 0.5,
+            "scope_status": RawJob.ScopeStatus.PRIORITY_TARGET,
+            "is_priority": True,
+            "scope_reason": "remote_default_us",
+        }
+    if policy == "target":
+        return {
+            "scope_status": RawJob.ScopeStatus.PRIORITY_TARGET,
+            "scope_reason": "remote_no_country_policy_target",
+            "is_priority": True,
+        }
+    if policy == "cold":
+        return {
+            "scope_status": RawJob.ScopeStatus.COLD_NON_TARGET_COUNTRY,
+            "scope_reason": "remote_no_country_policy_cold",
+            "is_priority": False,
+        }
+    return None  # 'review' → fall through to default handling
+
+
 def _resolve_from_classifier(raw_text: str, normalized: str, title: str = "", description: str = "") -> LocationResolution | None:
     # Country resolution must be based on location fields only. Passing title or
     # JD text here caused bad rows where titles like "Manager - Greenwich, CT"
@@ -1230,22 +1295,9 @@ def evaluate_rawjob_scope(
             "is_priority": True,
         })
     elif not resolution.country_code:
-        remote_policy = getattr(cfg, "remote_unknown_policy", "review")
-        looks_remote = remote_policy in ("target", "cold") and _looks_remote(
-            raw_job.location_raw or "", raw_job.title or ""
-        )
-        if looks_remote and remote_policy == "target":
-            updates.update({
-                "scope_status": RawJob.ScopeStatus.PRIORITY_TARGET,
-                "scope_reason": "remote_no_country_policy_target",
-                "is_priority": True,
-            })
-        elif looks_remote and remote_policy == "cold":
-            updates.update({
-                "scope_status": RawJob.ScopeStatus.COLD_NON_TARGET_COUNTRY,
-                "scope_reason": "remote_no_country_policy_cold",
-                "is_priority": False,
-            })
+        remote_updates = resolve_remote_scope(raw_job, cfg, target_countries)
+        if remote_updates is not None:
+            updates.update(remote_updates)
         elif cfg.process_unknown_country_with_target_domain and has_target_domain_signal(raw_job):
             updates.update({
                 "scope_status": RawJob.ScopeStatus.REVIEW_UNKNOWN_COUNTRY,
