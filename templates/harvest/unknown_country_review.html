@@ -4,25 +4,8 @@
 
 <div class="max-w-[1600px] mx-auto px-4 sm:px-6 pb-12">
 
-  {# ── Hero ── #}
-  <div class="hero-gradient rounded-2xl px-6 py-7 mb-6 text-white flex flex-col sm:flex-row sm:items-center gap-4 justify-between shadow-lg">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight mb-1">Unknown Country Review</h1>
-      <p class="text-sm text-white/80">
-        Jobs where country could not be resolved — review, re-evaluate, or manually classify.
-      </p>
-    </div>
-    <div class="flex items-center gap-3 flex-shrink-0">
-      <div class="bg-white/15 border border-white/25 rounded-xl px-5 py-3 text-center">
-        <div class="text-3xl font-bold">{{ total|default:"0" }}</div>
-        <div class="text-xs text-white/70 mt-0.5">Pending Review</div>
-      </div>
-    </div>
-  </div>
-
-  {# ── Messages ── #}
   {% for msg in messages %}
-  <div class="mb-4 px-4 py-3 rounded-xl text-sm font-medium
+  <div class="mb-4 px-4 py-3 rounded-lg text-sm font-medium
     {% if msg.tags == 'success' %}bg-emerald-50 border border-emerald-200 text-emerald-800
     {% elif msg.tags == 'error' %}bg-red-50 border border-red-200 text-red-800
     {% else %}bg-amber-50 border border-amber-200 text-amber-800{% endif %}">
@@ -30,253 +13,418 @@
   </div>
   {% endfor %}
 
-  {# ── Active-only filter notice ── #}
+  <div class="mb-5">
+    <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Harvest Operations</p>
+        <h1 class="mt-1 text-2xl font-bold tracking-tight text-slate-950">Location Review</h1>
+        <p class="mt-1 text-sm text-slate-500">Resolve live unknown-country jobs. Expired rows stay hidden unless you open them.</p>
+      </div>
+      <form method="get" class="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <input type="search" name="q" value="{{ search_q }}" placeholder="Search company, title, location..."
+               class="h-10 min-w-[260px] rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800 placeholder:text-slate-400">
+        <select name="platform" class="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800">
+          <option value="">All platforms</option>
+          {% for platform in platforms %}
+          <option value="{{ platform }}" {% if selected_platform == platform %}selected{% endif %}>{{ platform }}</option>
+          {% endfor %}
+        </select>
+        <select name="bucket" class="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800">
+          <option value="all" {% if selected_bucket == 'all' %}selected{% endif %}>All buckets</option>
+          <option value="clear" {% if selected_bucket == 'clear' %}selected{% endif %}>Clear location</option>
+          <option value="ambiguous" {% if selected_bucket == 'ambiguous' %}selected{% endif %}>Ambiguous</option>
+          <option value="stale" {% if selected_bucket == 'stale' %}selected{% endif %}>Stale active</option>
+          <option value="no_location" {% if selected_bucket == 'no_location' %}selected{% endif %}>No location</option>
+          <option value="expired" {% if selected_bucket == 'expired' %}selected{% endif %}>Expired</option>
+        </select>
+        {% if include_inactive %}<input type="hidden" name="include_inactive" value="1">{% endif %}
+        <button type="submit" class="h-10 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800">Apply</button>
+        <a href="{{ clear_filters_url }}" class="h-10 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">Reset</a>
+      </form>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-2 gap-3 md:grid-cols-5 mb-4">
+    <div class="rounded-lg border border-slate-200 bg-white p-4">
+      <div class="text-xs font-semibold uppercase tracking-wider text-slate-500">Current View</div>
+      <div class="mt-1 text-2xl font-bold text-slate-950">{{ total|default:"0" }}</div>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white p-4">
+      <div class="text-xs font-semibold uppercase tracking-wider text-slate-500">Live Unknowns</div>
+      <div class="mt-1 text-2xl font-bold text-slate-950">{{ active_unknown_count|default:"0" }}</div>
+    </div>
+    <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+      <div class="text-xs font-semibold uppercase tracking-wider text-amber-700">Stale Active</div>
+      <div class="mt-1 text-2xl font-bold text-amber-900">{{ stale_active_count|default:"0" }}</div>
+    </div>
+    <div class="rounded-lg border border-blue-200 bg-blue-50 p-4">
+      <div class="text-xs font-semibold uppercase tracking-wider text-blue-700">Ambiguous</div>
+      <div class="mt-1 text-2xl font-bold text-blue-900">{{ bucket_counts.ambiguous|default:"0" }}</div>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white p-4">
+      <div class="text-xs font-semibold uppercase tracking-wider text-slate-500">Expired Hidden</div>
+      <div class="mt-1 text-2xl font-bold text-slate-950">{{ hidden_inactive|default:"0" }}</div>
+    </div>
+  </div>
+
   {% if include_inactive %}
-  <div class="mb-4 px-4 py-2.5 rounded-xl text-sm bg-slate-100 border border-slate-200 text-slate-600 flex items-center justify-between gap-3">
-    <span>Showing <strong>delisted / expired</strong> jobs too (most stale "N Locations" rows are closed reqs).</span>
-    <a href="?{% if selected_platform %}platform={{ selected_platform }}{% endif %}" class="text-indigo-600 hover:underline font-medium whitespace-nowrap">Hide delisted →</a>
+  <div class="mb-4 flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+    <span>Showing expired/delisted rows too. Use this only for audit or recovery.</span>
+    <a href="{{ hide_inactive_url }}" class="font-semibold text-indigo-600 hover:underline">Hide expired</a>
   </div>
   {% elif hidden_inactive %}
-  <div class="mb-4 px-4 py-2.5 rounded-xl text-sm bg-blue-50 border border-blue-200 text-blue-800 flex items-center justify-between gap-3">
-    <span><strong>{{ hidden_inactive }}</strong> delisted/expired job(s) are hidden — only live postings are shown for review.</span>
-    <a href="?include_inactive=1{% if selected_platform %}&platform={{ selected_platform }}{% endif %}" class="text-indigo-600 hover:underline font-medium whitespace-nowrap">Show delisted →</a>
+  <div class="mb-4 flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+    <span><strong>{{ hidden_inactive }}</strong> expired/delisted job(s) are hidden so the review queue stays focused on live postings.</span>
+    <a href="{{ show_inactive_url }}" class="font-semibold text-indigo-600 hover:underline">Show expired</a>
   </div>
   {% endif %}
 
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-
-    {# ── Platform Breakdown ── #}
-    <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-      <h2 class="text-sm font-semibold text-slate-600 uppercase tracking-wider mb-3">By Platform</h2>
-      <div class="space-y-1.5">
-        {% for row in by_platform %}
-        <a href="?platform={{ row.platform_slug }}"
-           class="flex items-center justify-between px-3 py-1.5 rounded-lg hover:bg-slate-50 transition
-                  {% if selected_platform == row.platform_slug %}bg-indigo-50 border border-indigo-200{% endif %}">
-          <span class="text-sm text-slate-700 font-mono">{{ row.platform_slug }}</span>
-          <span class="text-sm font-semibold text-slate-500">{{ row.count }}</span>
-        </a>
-        {% empty %}
-        <p class="text-sm text-slate-400 italic">No platforms found.</p>
-        {% endfor %}
-        {% if selected_platform %}
-        <a href="?" class="block text-xs text-indigo-500 hover:underline mt-2 text-center">Clear filter</a>
-        {% endif %}
-      </div>
-    </div>
-
-    {# ── Top Location Strings — click a row to action ALL jobs with that string ── #}
-    <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm lg:col-span-2">
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="text-sm font-semibold text-slate-600 uppercase tracking-wider">Top Location Strings</h2>
-        <span class="text-xs text-slate-400">Click a string → classify every job with it at once</span>
-      </div>
-      <div class="max-h-[420px] overflow-y-auto -mx-1">
-        {% for row in top_locations %}
-        <div class="border-b border-slate-50 last:border-0">
-          <button type="button" onclick="toggleLoc('loc{{ forloop.counter }}')"
-                  class="w-full flex items-center justify-between gap-3 px-2 py-1.5 rounded-lg hover:bg-slate-50 transition text-left">
-            <span class="font-mono text-slate-600 text-xs truncate" title="{{ row.location_raw }}">{{ row.location_raw|default:"(blank)" }}</span>
-            <span class="flex-shrink-0 text-xs text-slate-500 font-semibold">{{ row.count }} <span class="text-slate-300">▾</span></span>
-          </button>
-          <form method="post" id="loc{{ forloop.counter }}" class="hidden px-2 pb-2 pt-1 flex flex-wrap items-center gap-1.5 bg-indigo-50/40 rounded-lg mb-1">
-            {% csrf_token %}
-            <input type="hidden" name="bulk_location" value="{{ row.location_raw }}">
-            {% if selected_platform %}<input type="hidden" name="platform" value="{{ selected_platform }}">{% endif %}
-            <span class="text-[11px] text-slate-500 mr-1">All {{ row.count }} →</span>
-            <select name="country_code" class="px-1.5 py-1 text-[11px] border border-slate-300 rounded bg-white max-w-[150px]">
-              <option value="">country…</option>
-              {% for code, name in curated_countries %}
-              <option value="{{ code }}">{{ name }} ({{ code }})</option>
-              {% endfor %}
-            </select>
-            <button type="submit" name="action" value="assign_country"
-                    onclick="return confirm('Assign the chosen country to all {{ row.count }} jobs with this location string?')"
-                    class="px-2 py-1 text-[11px] font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded transition">Assign</button>
-            <button type="submit" name="action" value="mark_target"
-                    onclick="return confirm('Mark all {{ row.count }} as Priority Target?')"
-                    class="px-2 py-1 text-[11px] font-semibold bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded transition">Target</button>
-            <button type="submit" name="action" value="mark_cold"
-                    onclick="return confirm('Mark all {{ row.count }} as Cold?')"
-                    class="px-2 py-1 text-[11px] font-semibold bg-red-100 hover:bg-red-200 text-red-700 rounded transition">Cold</button>
-            <button type="submit" name="action" value="re_evaluate_provider"
-                    class="px-2 py-1 text-[11px] font-semibold bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition">Mapbox</button>
-          </form>
+  <div class="grid grid-cols-1 gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
+    <aside class="space-y-5">
+      <div class="rounded-lg border border-slate-200 bg-white p-4">
+        <div class="mb-3 flex items-center justify-between">
+          <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600">Buckets</h2>
+          <span class="text-xs text-slate-400">{{ stale_days }}d stale rule</span>
         </div>
-        {% empty %}
-        <p class="py-3 text-slate-400 italic text-center text-sm">No location data.</p>
-        {% endfor %}
-      </div>
-    </div>
-
-  </div>
-
-  {# ── Jobs Table with Bulk Actions ── #}
-  <form method="post" id="review-form">
-    {% csrf_token %}
-    {% if selected_platform %}
-    <input type="hidden" name="platform" value="{{ selected_platform }}">
-    {% endif %}
-
-    <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-
-      {# Table toolbar #}
-      <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-b border-slate-100 bg-slate-50">
-        <div class="flex items-center gap-2">
-          <input type="checkbox" id="select-all" class="rounded border-slate-300"
-                 onchange="document.querySelectorAll('input[name=ids]').forEach(cb => cb.checked = this.checked)">
-          <label for="select-all" class="text-xs font-medium text-slate-500">Select all on page</label>
-          <span class="text-xs text-slate-400 ml-2">({{ page_obj.object_list|length }} shown / {{ total }} total)</span>
+        <div class="space-y-1.5 text-sm">
+          <a href="?{% if selected_platform %}platform={{ selected_platform|urlencode }}&{% endif %}{% if search_q %}q={{ search_q|urlencode }}&{% endif %}{% if include_inactive %}include_inactive=1{% endif %}"
+             class="flex items-center justify-between rounded-lg px-3 py-2 {% if selected_bucket == 'all' %}bg-slate-900 text-white{% else %}text-slate-700 hover:bg-slate-50{% endif %}">
+            <span>All review rows</span><strong>{{ bucket_counts.all }}</strong>
+          </a>
+          <a href="?bucket=clear{% if selected_platform %}&platform={{ selected_platform|urlencode }}{% endif %}{% if search_q %}&q={{ search_q|urlencode }}{% endif %}{% if include_inactive %}&include_inactive=1{% endif %}"
+             class="flex items-center justify-between rounded-lg px-3 py-2 {% if selected_bucket == 'clear' %}bg-slate-900 text-white{% else %}text-slate-700 hover:bg-slate-50{% endif %}">
+            <span>Clear location</span><strong>{{ bucket_counts.clear }}</strong>
+          </a>
+          <a href="?bucket=ambiguous{% if selected_platform %}&platform={{ selected_platform|urlencode }}{% endif %}{% if search_q %}&q={{ search_q|urlencode }}{% endif %}{% if include_inactive %}&include_inactive=1{% endif %}"
+             class="flex items-center justify-between rounded-lg px-3 py-2 {% if selected_bucket == 'ambiguous' %}bg-slate-900 text-white{% else %}text-slate-700 hover:bg-slate-50{% endif %}">
+            <span>Ambiguous / remote</span><strong>{{ bucket_counts.ambiguous }}</strong>
+          </a>
+          <a href="?bucket=stale{% if selected_platform %}&platform={{ selected_platform|urlencode }}{% endif %}{% if search_q %}&q={{ search_q|urlencode }}{% endif %}{% if include_inactive %}&include_inactive=1{% endif %}"
+             class="flex items-center justify-between rounded-lg px-3 py-2 {% if selected_bucket == 'stale' %}bg-slate-900 text-white{% else %}text-slate-700 hover:bg-slate-50{% endif %}">
+            <span>Stale active</span><strong>{{ bucket_counts.stale }}</strong>
+          </a>
+          <a href="?bucket=no_location{% if selected_platform %}&platform={{ selected_platform|urlencode }}{% endif %}{% if search_q %}&q={{ search_q|urlencode }}{% endif %}{% if include_inactive %}&include_inactive=1{% endif %}"
+             class="flex items-center justify-between rounded-lg px-3 py-2 {% if selected_bucket == 'no_location' %}bg-slate-900 text-white{% else %}text-slate-700 hover:bg-slate-50{% endif %}">
+            <span>No location</span><strong>{{ bucket_counts.no_location }}</strong>
+          </a>
+          <a href="?bucket=expired{% if selected_platform %}&platform={{ selected_platform|urlencode }}{% endif %}{% if search_q %}&q={{ search_q|urlencode }}{% endif %}&include_inactive=1"
+             class="flex items-center justify-between rounded-lg px-3 py-2 {% if selected_bucket == 'expired' %}bg-slate-900 text-white{% else %}text-slate-700 hover:bg-slate-50{% endif %}">
+            <span>Expired / delisted</span><strong>{{ bucket_counts.expired }}</strong>
+          </a>
         </div>
-        <div class="flex flex-wrap gap-2">
-          <button type="submit" name="action" value="re_evaluate"
-                  class="px-3 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition">
-            Re-evaluate (no provider)
-          </button>
-          <button type="submit" name="action" value="re_evaluate_provider"
-                  class="px-3 py-1.5 text-xs font-semibold bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition">
-            Re-evaluate with Mapbox
-          </button>
-          <button type="submit" name="action" value="mark_target"
-                  onclick="return confirm('Mark selected as Priority Target?')"
-                  class="px-3 py-1.5 text-xs font-semibold bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded-lg transition">
-            Mark as Target
-          </button>
-          <button type="submit" name="action" value="mark_cold"
-                  onclick="return confirm('Mark selected as Cold (non-target)?')"
-                  class="px-3 py-1.5 text-xs font-semibold bg-red-100 hover:bg-red-200 text-red-700 rounded-lg transition">
-            Mark as Cold
-          </button>
-          <div class="flex items-center gap-1.5 border-l border-slate-200 pl-2 ml-1">
-            <select name="country_code"
-                    class="px-2 py-1.5 text-xs border border-slate-300 rounded-lg bg-white max-w-[160px]">
-              <option value="">Assign country…</option>
-              {% for code, name in curated_countries %}
-              <option value="{{ code }}">{{ name }} ({{ code }})</option>
-              {% endfor %}
-            </select>
-            <button type="submit" name="action" value="assign_country"
-                    onclick="return confirm('Assign the chosen country to the selected jobs? Target countries become Priority Target; others become Cold.')"
-                    class="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition">
-              Assign to selected
-            </button>
+      </div>
+
+      <div class="rounded-lg border border-slate-200 bg-white p-4">
+        <div class="mb-3 flex items-center justify-between">
+          <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600">Platforms</h2>
+          {% if selected_platform %}<a href="{{ clear_platform_url }}" class="text-xs font-semibold text-indigo-600 hover:underline">Clear</a>{% endif %}
+        </div>
+        <div class="max-h-[360px] space-y-1.5 overflow-y-auto">
+          {% for row in by_platform %}
+          <a href="?platform={{ row.platform_slug|urlencode }}{% if search_q %}&q={{ search_q|urlencode }}{% endif %}{% if selected_bucket != 'all' %}&bucket={{ selected_bucket }}{% endif %}{% if include_inactive %}&include_inactive=1{% endif %}"
+             class="flex items-center justify-between rounded-lg px-3 py-2 text-sm {% if selected_platform == row.platform_slug %}bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200{% else %}text-slate-700 hover:bg-slate-50{% endif %}">
+            <span class="font-mono">{{ row.platform_slug|default:"-" }}</span>
+            <strong>{{ row.count }}</strong>
+          </a>
+          {% empty %}
+          <p class="py-3 text-sm italic text-slate-400">No platforms found.</p>
+          {% endfor %}
+        </div>
+      </div>
+    </aside>
+
+    <main class="space-y-5">
+      <section class="rounded-lg border border-slate-200 bg-white">
+        <div class="flex flex-col gap-1 border-b border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600">Location Groups</h2>
+            <p class="text-xs text-slate-500">Final bulk classification is blocked for ambiguous strings. Use provider re-check or row selection there.</p>
           </div>
+          <span class="text-xs font-medium text-slate-400">Large updates require confirmation above {{ confirm_threshold }} rows</span>
         </div>
-      </div>
-
-      {# Table #}
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead class="border-b border-slate-100 bg-slate-50/50">
-            <tr>
-              <th class="w-8 px-3 py-2"></th>
-              <th class="text-left text-xs font-semibold text-slate-500 px-3 py-2">Company</th>
-              <th class="text-left text-xs font-semibold text-slate-500 px-3 py-2">Platform</th>
-              <th class="text-left text-xs font-semibold text-slate-500 px-3 py-2">Title</th>
-              <th class="text-left text-xs font-semibold text-slate-500 px-3 py-2">Location Raw</th>
-              <th class="text-left text-xs font-semibold text-slate-500 px-3 py-2">Candidates</th>
-              <th class="text-left text-xs font-semibold text-slate-500 px-3 py-2">Reason</th>
-              <th class="text-left text-xs font-semibold text-slate-500 px-3 py-2">Fetched</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100">
-            {% for job in page_obj.object_list %}
-            <tr class="hover:bg-slate-50 transition">
-              <td class="px-3 py-2">
-                <input type="checkbox" name="ids" value="{{ job.pk }}" class="rounded border-slate-300">
-              </td>
-              <td class="px-3 py-2 max-w-[120px]">
-                <span class="truncate block text-slate-700 font-medium" title="{{ job.company_name }}">
-                  {{ job.company_name|default:"-"|truncatechars:25 }}
-                </span>
-              </td>
-              <td class="px-3 py-2">
-                <span class="inline-block px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-xs font-mono">
-                  {{ job.platform_slug|default:"-" }}
-                </span>
-              </td>
-              <td class="px-3 py-2 max-w-[200px]">
-                <a href="{% url 'harvest-rawjob-detail' job.pk %}" target="_blank"
-                   class="text-indigo-600 hover:underline truncate block" title="{{ job.title }}">
-                  {{ job.title|default:"-"|truncatechars:45 }}
-                </a>
-              </td>
-              <td class="px-3 py-2 max-w-[200px]">
-                <span class="truncate block text-slate-500 font-mono text-xs" title="{{ job.location_raw }}">
-                  {{ job.location_raw|default:"-"|truncatechars:40 }}
-                </span>
-              </td>
-              <td class="px-3 py-2 max-w-[180px]">
-                {% if job.location_candidates %}
-                <div class="flex flex-wrap gap-1">
-                  {% for loc in job.location_candidates|slice:":3" %}
-                  <span class="inline-block px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-mono truncate max-w-[120px]"
-                        title="{{ loc }}">{{ loc|truncatechars:20 }}</span>
-                  {% endfor %}
-                  {% if job.location_candidates|length > 3 %}
-                  <span class="text-[10px] text-slate-400">+{{ job.location_candidates|length|add:"-3" }}</span>
+        <div class="divide-y divide-slate-100">
+          {% for row in top_locations %}
+          <details class="group">
+            <summary class="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 hover:bg-slate-50">
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="truncate font-mono text-sm text-slate-800" title="{{ row.location_raw }}">{{ row.location_raw|default:"(blank)" }}</span>
+                {% if row.is_safe_bulk %}
+                  <span class="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">safe to bulk</span>
+                  {% elif row.can_bulk_assign_country %}
+                  <span class="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">assign country only</span>
+                  {% else %}
+                  <span class="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">needs review</span>
                   {% endif %}
                 </div>
-                {% else %}
-                <span class="text-xs text-slate-300">—</span>
+                {% if row.risk_reason %}<p class="mt-1 text-xs text-amber-700">{{ row.risk_reason }}</p>{% endif %}
+              </div>
+              <div class="flex shrink-0 items-center gap-2 text-sm font-semibold text-slate-600">
+                <span>{{ row.count }}</span>
+                <span class="text-slate-300 group-open:rotate-180">v</span>
+              </div>
+            </summary>
+            <form method="post" class="border-t border-slate-100 bg-slate-50 px-4 py-3">
+              {% csrf_token %}
+              <input type="hidden" name="bulk_location" value="{{ row.location_raw }}">
+              <input type="hidden" name="large_confirmed" value="">
+              {% if selected_platform %}<input type="hidden" name="platform" value="{{ selected_platform }}">{% endif %}
+              {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
+              {% if selected_bucket != 'all' %}<input type="hidden" name="bucket" value="{{ selected_bucket }}">{% endif %}
+              {% if include_inactive %}<input type="hidden" name="include_inactive" value="1">{% endif %}
+              <div class="mb-3 grid gap-2 text-xs text-slate-500 sm:grid-cols-3">
+                {% for sample in row.samples %}
+                <div class="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                  <div class="truncate font-semibold text-slate-700">{{ sample.company_name|default:"-" }}</div>
+                  <div class="truncate">{{ sample.title|default:"-" }}</div>
+                </div>
+                {% endfor %}
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="text-xs font-semibold text-slate-500">Affects {{ row.count }} row(s)</span>
+                <select name="country_code" class="h-9 rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-800">
+                  <option value="">Assign country...</option>
+                  {% for code, name in curated_countries %}
+                  <option value="{{ code }}">{{ name }} ({{ code }})</option>
+                  {% endfor %}
+                </select>
+                {% if row.can_bulk_assign_country %}
+                <button type="submit" name="action" value="assign_country"
+                        onclick="return confirmBulk(this, {{ row.count }}, 'assign the selected country')"
+                        class="h-9 rounded-lg bg-indigo-600 px-3 text-xs font-semibold text-white hover:bg-indigo-700">Assign Country</button>
                 {% endif %}
-              </td>
-              <td class="px-3 py-2 max-w-[160px]">
-                <span class="text-xs text-amber-600 truncate block" title="{{ job.scope_reason }}">
-                  {{ job.scope_reason|default:"-"|truncatechars:30 }}
-                </span>
-              </td>
-              <td class="px-3 py-2 whitespace-nowrap text-xs text-slate-400">
-                {{ job.fetched_at|date:"M d, H:i" }}
-              </td>
-            </tr>
-            {% empty %}
-            <tr>
-              <td colspan="8" class="px-5 py-10 text-center text-slate-400 italic">
-                No unknown-country jobs found{% if selected_platform %} for platform "{{ selected_platform }}"{% endif %}.
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-
-      {# Pagination #}
-      {% if paginator.num_pages > 1 %}
-      <div class="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-slate-50/50">
-        <span class="text-xs text-slate-500">
-          Page {{ page_obj.number }} of {{ paginator.num_pages }}
-        </span>
-        <div class="flex gap-2">
-          {% if page_obj.has_previous %}
-          <a href="?page={{ page_obj.previous_page_number }}{% if selected_platform %}&platform={{ selected_platform }}{% endif %}"
-             class="px-3 py-1 text-xs bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition">← Prev</a>
-          {% endif %}
-          {% if page_obj.has_next %}
-          <a href="?page={{ page_obj.next_page_number }}{% if selected_platform %}&platform={{ selected_platform }}{% endif %}"
-             class="px-3 py-1 text-xs bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition">Next →</a>
-          {% endif %}
+                {% if row.is_safe_bulk %}
+                <button type="submit" name="action" value="mark_target"
+                        onclick="return confirmBulk(this, {{ row.count }}, 'mark Priority Target')"
+                        class="h-9 rounded-lg bg-emerald-100 px-3 text-xs font-semibold text-emerald-800 hover:bg-emerald-200">Target</button>
+                <button type="submit" name="action" value="mark_cold"
+                        onclick="return confirmBulk(this, {{ row.count }}, 'mark Cold')"
+                        class="h-9 rounded-lg bg-red-100 px-3 text-xs font-semibold text-red-800 hover:bg-red-200">Cold</button>
+                {% else %}
+                <span class="rounded-lg bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-800">Target/Cold disabled</span>
+                {% endif %}
+                <button type="submit" name="action" value="re_evaluate_provider"
+                        class="h-9 rounded-lg bg-blue-100 px-3 text-xs font-semibold text-blue-800 hover:bg-blue-200">Provider Re-check</button>
+              </div>
+            </form>
+          </details>
+          {% empty %}
+          <p class="px-4 py-8 text-center text-sm italic text-slate-400">No location groups in this view.</p>
+          {% endfor %}
         </div>
-      </div>
-      {% endif %}
+      </section>
 
-    </div>
-  </form>
+      <form method="post" id="review-form" class="rounded-lg border border-slate-200 bg-white">
+        {% csrf_token %}
+        <input type="hidden" name="large_confirmed" value="">
+        {% if selected_platform %}<input type="hidden" name="platform" value="{{ selected_platform }}">{% endif %}
+        {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
+        {% if selected_bucket != 'all' %}<input type="hidden" name="bucket" value="{{ selected_bucket }}">{% endif %}
+        {% if include_inactive %}<input type="hidden" name="include_inactive" value="1">{% endif %}
 
-  {# ── Link to full raw jobs list filtered by scope ── #}
-  <div class="mt-4 text-center">
-    <a href="{% url 'jobs-pipeline' %}?tab=raw&scope_status=REVIEW_UNKNOWN_COUNTRY"
-       class="text-xs text-indigo-500 hover:underline">
-      View in full RawJobs table →
-    </a>
+        <div class="sticky top-0 z-10 flex flex-col gap-3 border-b border-slate-100 bg-white/95 px-4 py-3 backdrop-blur md:flex-row md:items-center md:justify-between">
+          <div class="flex items-center gap-3">
+            <input type="checkbox" id="select-all" class="rounded border-slate-300">
+            <label for="select-all" class="text-sm font-semibold text-slate-700">Select page</label>
+            <span id="selected-count" class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">0 selected</span>
+            <span class="text-xs text-slate-400">{{ page_obj.object_list|length }} shown / {{ total }} in view</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="submit" name="action" value="re_evaluate"
+                    onclick="return confirmSelected(this, 're-evaluate without provider')"
+                    class="h-9 rounded-lg bg-slate-100 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-200">Re-evaluate</button>
+            <button type="submit" name="action" value="re_evaluate_provider"
+                    onclick="return confirmSelected(this, 're-check with provider')"
+                    class="h-9 rounded-lg bg-blue-100 px-3 text-xs font-semibold text-blue-800 hover:bg-blue-200">Provider Re-check</button>
+            <button type="submit" name="action" value="mark_target"
+                    onclick="return confirmSelected(this, 'mark Priority Target')"
+                    class="h-9 rounded-lg bg-emerald-100 px-3 text-xs font-semibold text-emerald-800 hover:bg-emerald-200">Target</button>
+            <button type="submit" name="action" value="mark_cold"
+                    onclick="return confirmSelected(this, 'mark Cold')"
+                    class="h-9 rounded-lg bg-red-100 px-3 text-xs font-semibold text-red-800 hover:bg-red-200">Cold</button>
+            <select name="country_code" class="h-9 rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-800">
+              <option value="">Assign country...</option>
+              {% for code, name in curated_countries %}
+              <option value="{{ code }}">{{ name }} ({{ code }})</option>
+              {% endfor %}
+            </select>
+            <button type="submit" name="action" value="assign_country"
+                    onclick="return confirmSelected(this, 'assign selected country')"
+                    class="h-9 rounded-lg bg-indigo-600 px-3 text-xs font-semibold text-white hover:bg-indigo-700">Assign</button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="border-b border-slate-100 bg-slate-50">
+              <tr>
+                <th class="w-9 px-3 py-2"></th>
+                <th class="text-left text-xs font-semibold uppercase tracking-wider text-slate-500 px-3 py-2">Status</th>
+                <th class="text-left text-xs font-semibold uppercase tracking-wider text-slate-500 px-3 py-2">Company</th>
+                <th class="text-left text-xs font-semibold uppercase tracking-wider text-slate-500 px-3 py-2">Platform</th>
+                <th class="text-left text-xs font-semibold uppercase tracking-wider text-slate-500 px-3 py-2">Title</th>
+                <th class="text-left text-xs font-semibold uppercase tracking-wider text-slate-500 px-3 py-2">Location</th>
+                <th class="text-left text-xs font-semibold uppercase tracking-wider text-slate-500 px-3 py-2">Candidates</th>
+                <th class="text-left text-xs font-semibold uppercase tracking-wider text-slate-500 px-3 py-2">Reason</th>
+                <th class="text-left text-xs font-semibold uppercase tracking-wider text-slate-500 px-3 py-2">Fetched</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              {% for job in page_obj.object_list %}
+              <tr class="{% if not job.is_active %}bg-slate-50 text-slate-500{% else %}hover:bg-slate-50{% endif %}">
+                <td class="px-3 py-2 align-top">
+                  <input type="checkbox" name="ids" value="{{ job.pk }}" class="row-check rounded border-slate-300">
+                </td>
+                <td class="px-3 py-2 align-top">
+                  {% if job.review_bucket == 'expired' %}
+                  <span class="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-700">expired</span>
+                  {% elif job.review_bucket == 'stale' %}
+                  <span class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">stale</span>
+                  {% elif job.review_bucket == 'ambiguous' %}
+                  <span class="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-800">ambiguous</span>
+                  {% elif job.review_bucket == 'no_location' %}
+                  <span class="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-800">no location</span>
+                  {% else %}
+                  <span class="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">clear</span>
+                  {% endif %}
+                </td>
+                <td class="max-w-[150px] px-3 py-2 align-top">
+                  <span class="block truncate font-medium text-slate-800" title="{{ job.company_name }}">{{ job.company_name|default:"-" }}</span>
+                </td>
+                <td class="px-3 py-2 align-top">
+                  <span class="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs text-slate-600">{{ job.platform_slug|default:"-" }}</span>
+                </td>
+                <td class="max-w-[260px] px-3 py-2 align-top">
+                  <a href="{% url 'harvest-rawjob-detail' job.pk %}" target="_blank" class="block truncate font-medium text-indigo-600 hover:underline" title="{{ job.title }}">
+                    {{ job.title|default:"-" }}
+                  </a>
+                </td>
+                <td class="max-w-[260px] px-3 py-2 align-top">
+                  <span class="block truncate font-mono text-xs text-slate-600" title="{{ job.location_raw }}">{{ job.location_raw|default:"-" }}</span>
+                  {% if job.review_risk %}<span class="mt-1 block text-[11px] text-amber-700">{{ job.review_risk }}</span>{% endif %}
+                </td>
+                <td class="max-w-[240px] px-3 py-2 align-top">
+                  {% if job.location_candidates %}
+                  <div class="flex flex-wrap gap-1">
+                    {% for loc in job.location_candidates|slice:":3" %}
+                    <span class="max-w-[150px] truncate rounded bg-blue-50 px-1.5 py-0.5 font-mono text-[10px] text-blue-700" title="{{ loc }}">{{ loc }}</span>
+                    {% endfor %}
+                    {% if job.location_candidates|length > 3 %}
+                    <span class="text-[10px] text-slate-400">+{{ job.location_candidates|length|add:"-3" }}</span>
+                    {% endif %}
+                  </div>
+                  {% else %}
+                  <span class="text-xs text-slate-300">-</span>
+                  {% endif %}
+                </td>
+                <td class="max-w-[180px] px-3 py-2 align-top">
+                  <span class="block truncate text-xs text-amber-700" title="{{ job.scope_reason }}">{{ job.scope_reason|default:"-" }}</span>
+                </td>
+                <td class="whitespace-nowrap px-3 py-2 align-top text-xs text-slate-400">
+                  {{ job.fetched_at|date:"M d, H:i" }}
+                </td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="9" class="px-5 py-12 text-center text-sm italic text-slate-400">
+                  No unknown-country jobs match this view.
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        {% if paginator.num_pages > 1 %}
+        <div class="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-4 py-3">
+          <span class="text-xs text-slate-500">Page {{ page_obj.number }} of {{ paginator.num_pages }}</span>
+          <div class="flex gap-2">
+            {% if page_obj.has_previous %}
+            <a href="?{% if pagination_query %}{{ pagination_query }}&{% endif %}page={{ page_obj.previous_page_number }}"
+               class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Prev</a>
+            {% endif %}
+            {% if page_obj.has_next %}
+            <a href="?{% if pagination_query %}{{ pagination_query }}&{% endif %}page={{ page_obj.next_page_number }}"
+               class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Next</a>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+      </form>
+    </main>
   </div>
 
+  <div class="mt-5 text-center">
+    <a href="{% url 'jobs-pipeline' %}?tab=raw&scope_status=REVIEW_UNKNOWN_COUNTRY"
+       class="text-xs font-semibold text-indigo-600 hover:underline">Open full RawJobs table</a>
+  </div>
 </div>
 
 <script>
-function toggleLoc(id) {
-  const el = document.getElementById(id);
-  if (el) el.classList.toggle('hidden');
+const BULK_CONFIRM_THRESHOLD = Number('{{ confirm_threshold|default:100 }}');
+
+function selectedRows() {
+  return Array.from(document.querySelectorAll('.row-check')).filter(cb => cb.checked);
 }
+
+function updateSelectedCount() {
+  const count = selectedRows().length;
+  const el = document.getElementById('selected-count');
+  if (el) el.textContent = `${count} selected`;
+  const selectAll = document.getElementById('select-all');
+  const checks = Array.from(document.querySelectorAll('.row-check'));
+  if (selectAll && checks.length) {
+    selectAll.checked = count === checks.length;
+    selectAll.indeterminate = count > 0 && count < checks.length;
+  }
+}
+
+function markLargeConfirmed(form, count) {
+  const input = form.querySelector('input[name="large_confirmed"]');
+  if (input) input.value = count > BULK_CONFIRM_THRESHOLD ? '1' : '';
+}
+
+function confirmBulk(button, count, label) {
+  const form = button.form;
+  const country = form.querySelector('select[name="country_code"]');
+  if (button.value === 'assign_country' && country && !country.value) {
+    alert('Pick a country before assigning.');
+    return false;
+  }
+  const large = count > BULK_CONFIRM_THRESHOLD ? `\n\nThis is a large update (${count} rows).` : '';
+  const ok = confirm(`Confirm: ${label} for ${count} row(s)?${large}`);
+  if (ok) markLargeConfirmed(form, count);
+  return ok;
+}
+
+function confirmSelected(button, label) {
+  const count = selectedRows().length;
+  if (!count) {
+    alert('Select at least one row first.');
+    return false;
+  }
+  const form = button.form;
+  const country = form.querySelector('select[name="country_code"]');
+  if (button.value === 'assign_country' && country && !country.value) {
+    alert('Pick a country before assigning.');
+    return false;
+  }
+  const large = count > BULK_CONFIRM_THRESHOLD ? `\n\nThis is a large update (${count} rows).` : '';
+  const ok = confirm(`Confirm: ${label} for ${count} selected row(s)?${large}`);
+  if (ok) markLargeConfirmed(form, count);
+  return ok;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.row-check').forEach(cb => cb.addEventListener('change', updateSelectedCount));
+  const selectAll = document.getElementById('select-all');
+  if (selectAll) {
+    selectAll.addEventListener('change', () => {
+      document.querySelectorAll('.row-check').forEach(cb => { cb.checked = selectAll.checked; });
+      updateSelectedCount();
+    });
+  }
+  updateSelectedCount();
+});
 </script>
 {% endblock %}

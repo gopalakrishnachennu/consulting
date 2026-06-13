@@ -3443,10 +3443,10 @@ class UnknownCountryReviewActionTests(TestCase):
         self.company = Company.objects.create(name="Acme Loc Co")
         self.client.force_login(self.user)
 
-    def _make_job(self, location_raw="2 Locations", platform="workday"):
+    def _make_job(self, location_raw="2 Locations", platform="workday", title="Engineer", company_name="Acme"):
         from harvest.models import RawJob
         return RawJob.objects.create(
-            company=self.company, company_name="Acme", platform_slug=platform, title="Engineer",
+            company=self.company, company_name=company_name, platform_slug=platform, title=title,
             location_raw=location_raw, original_url=f"https://x/{location_raw}/{platform}",
             url_hash=f"h{RawJob.objects.count()}", scope_status=RawJob.ScopeStatus.REVIEW_UNKNOWN_COUNTRY,
         )
@@ -3477,12 +3477,12 @@ class UnknownCountryReviewActionTests(TestCase):
 
     def test_bulk_by_location_string_actions_every_matching_row(self):
         from harvest.models import RawJob
-        a = self._make_job(location_raw="Remote")
-        b = self._make_job(location_raw="Remote")
-        c = self._make_job(location_raw="Madrid Office")
+        a = self._make_job(location_raw="Madrid Office")
+        b = self._make_job(location_raw="Madrid Office")
+        c = self._make_job(location_raw="Remote")
         # No ids — selected purely by the location string.
         self.client.post(reverse("harvest-unknown-country-review"), {
-            "action": "mark_target", "bulk_location": "Remote",
+            "action": "mark_target", "bulk_location": "Madrid Office",
         })
         a.refresh_from_db(); b.refresh_from_db(); c.refresh_from_db()
         self.assertEqual(a.scope_status, RawJob.ScopeStatus.PRIORITY_TARGET)
@@ -3507,3 +3507,64 @@ class UnknownCountryReviewActionTests(TestCase):
         # include_inactive=1 shows everything.
         resp2 = self.client.get(reverse("harvest-unknown-country-review"), {"include_inactive": "1"})
         self.assertEqual(resp2.context["total"], 2)
+
+    def test_unsafe_bulk_location_string_is_blocked(self):
+        from harvest.models import RawJob
+        a = self._make_job(location_raw="Remote")
+        b = self._make_job(location_raw="Remote")
+
+        resp = self.client.post(reverse("harvest-unknown-country-review"), {
+            "action": "mark_target", "bulk_location": "Remote",
+        }, follow=True)
+
+        a.refresh_from_db(); b.refresh_from_db()
+        self.assertEqual(a.scope_status, RawJob.ScopeStatus.REVIEW_UNKNOWN_COUNTRY)
+        self.assertEqual(b.scope_status, RawJob.ScopeStatus.REVIEW_UNKNOWN_COUNTRY)
+        self.assertContains(resp, "Bulk action blocked")
+
+    def test_country_only_bulk_can_assign_country_but_not_direct_target(self):
+        from harvest.models import RawJob
+        job = self._make_job(location_raw="United States")
+
+        self.client.post(reverse("harvest-unknown-country-review"), {
+            "action": "mark_target", "bulk_location": "United States",
+        })
+        job.refresh_from_db()
+        self.assertEqual(job.scope_status, RawJob.ScopeStatus.REVIEW_UNKNOWN_COUNTRY)
+
+        self.client.post(reverse("harvest-unknown-country-review"), {
+            "action": "assign_country", "bulk_location": "United States", "country_code": "US",
+        })
+        job.refresh_from_db()
+        self.assertEqual(job.country_code, "US")
+        self.assertEqual(job.scope_status, RawJob.ScopeStatus.PRIORITY_TARGET)
+
+    def test_include_inactive_and_filters_are_preserved_in_links(self):
+        live = self._make_job(location_raw="Madrid Office", platform="workday", title="Python Engineer")
+        dead = self._make_job(location_raw="Remote", platform="greenhouse", title="Python Manager")
+        dead.is_active = False
+        dead.save(update_fields=["is_active"])
+
+        resp = self.client.get(reverse("harvest-unknown-country-review"), {
+            "include_inactive": "1",
+            "platform": "workday",
+            "q": "Python",
+            "bucket": "clear",
+        })
+
+        self.assertEqual(resp.context["total"], 1)
+        self.assertIn(live.pk, [j.pk for j in resp.context["page_obj"].object_list])
+        self.assertContains(resp, "include_inactive=1")
+        self.assertContains(resp, "q=Python")
+        self.assertContains(resp, "bucket=clear")
+
+    def test_search_filters_review_queue(self):
+        match = self._make_job(location_raw="Berlin Office", title="Salesforce Developer")
+        miss = self._make_job(location_raw="Madrid Office", title="SAP Consultant")
+
+        resp = self.client.get(reverse("harvest-unknown-country-review"), {"q": "Salesforce"})
+
+        ids = [j.pk for j in resp.context["page_obj"].object_list]
+        self.assertEqual(resp.context["total"], 1)
+        self.assertIn(match.pk, ids)
+        self.assertNotIn(miss.pk, ids)

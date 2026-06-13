@@ -4475,6 +4475,70 @@ CURATED_COUNTRIES = [
     ("SE", "Sweden"), ("BE", "Belgium"), ("PT", "Portugal"), ("MY", "Malaysia"),
 ]
 CURATED_COUNTRY_NAMES = dict(CURATED_COUNTRIES)
+UNKNOWN_COUNTRY_BULK_CONFIRM_THRESHOLD = 100
+UNKNOWN_COUNTRY_STALE_DAYS = 14
+
+
+def _unknown_country_query(params, **updates):
+    """Build a review-page query string while keeping existing filters."""
+    pairs = {
+        "platform": (params.get("platform") or "").strip(),
+        "q": (params.get("q") or "").strip(),
+        "bucket": (params.get("bucket") or "").strip(),
+    }
+    if params.get("include_inactive") == "1":
+        pairs["include_inactive"] = "1"
+    pairs.update(updates)
+    pairs = {
+        key: value
+        for key, value in pairs.items()
+        if value not in ("", None) and not (key == "bucket" and value == "all")
+    }
+    return urlencode(pairs)
+
+
+def _unknown_country_location_risk(location_raw):
+    """Return a human-readable reason when a location string is unsafe to bulk-close."""
+    text = (location_raw or "").strip().lower()
+    if not text:
+        return "Blank location; classify rows individually."
+    broad_exact = {
+        "remote", "hybrid", "anywhere", "various", "multiple locations",
+        "multi location", "global", "worldwide", "virtual", "flexible",
+    }
+    if text in broad_exact:
+        return "Ambiguous remote/global value; use row selection or provider re-check."
+    if "remote" in text and not any(code in text for code in (" us", " usa", "united states", "canada", "india", "uk", "united kingdom")):
+        return "Remote value has no country signal."
+    if "hybrid" in text and "," not in text:
+        return "Hybrid value has no city/country signal."
+    if text.replace(",", "").replace("-", " ").strip() in {"united states", "usa", "us", "canada", "india", "united kingdom", "uk"}:
+        return "Country-only value is broad; assign a country instead of target/cold."
+    parts = text.split()
+    if len(parts) <= 3 and parts[-1:] in (["location"], ["locations"]):
+        if parts[0].isdigit() or parts[0] in {"multiple", "many", "several"}:
+            return "Count placeholder; refetch or validate first."
+    return ""
+
+
+def _unknown_country_can_bulk_assign_country(location_raw):
+    risk = _unknown_country_location_risk(location_raw)
+    return not risk or risk.startswith("Country-only value")
+
+
+def _unknown_country_bucket(location_raw, location_candidates, is_active, fetched_at, now=None):
+    now = now or timezone.now()
+    raw = (location_raw or "").strip()
+    candidates = location_candidates if isinstance(location_candidates, list) else []
+    if not is_active:
+        return "expired"
+    if fetched_at and fetched_at < now - timedelta(days=UNKNOWN_COUNTRY_STALE_DAYS):
+        return "stale"
+    if not raw and not candidates:
+        return "no_location"
+    if _unknown_country_location_risk(raw):
+        return "ambiguous"
+    return "clear"
 
 
 class UnknownCountryReviewView(SuperuserRequiredMixin, View):
@@ -4494,47 +4558,127 @@ class UnknownCountryReviewView(SuperuserRequiredMixin, View):
             qs = qs.filter(is_active=True)
         return qs.order_by("-fetched_at")
 
-    def get(self, request):
-        include_inactive = request.GET.get("include_inactive") == "1"
-        qs = self._base_qs(include_inactive=include_inactive)
+    def _apply_filters(self, qs, params):
+        platform_f = (params.get("platform") or "").strip()
+        search_q = (params.get("q") or "").strip()
+        bucket = (params.get("bucket") or "all").strip() or "all"
 
-        platform_f = (request.GET.get("platform") or "").strip()
         if platform_f:
             qs = qs.filter(platform_slug=platform_f)
+        if search_q:
+            qs = qs.filter(
+                Q(company_name__icontains=search_q)
+                | Q(title__icontains=search_q)
+                | Q(location_raw__icontains=search_q)
+                | Q(platform_slug__icontains=search_q)
+            )
+
+        stale_cutoff = timezone.now() - timedelta(days=UNKNOWN_COUNTRY_STALE_DAYS)
+        if bucket == "expired":
+            qs = qs.filter(is_active=False)
+        elif bucket == "stale":
+            qs = qs.filter(is_active=True, fetched_at__lt=stale_cutoff)
+        elif bucket == "no_location":
+            qs = qs.filter(location_raw="", location_candidates=[])
+        elif bucket == "ambiguous":
+            qs = qs.filter(
+                Q(location_raw="")
+                | Q(location_raw__icontains="remote")
+                | Q(location_raw__icontains="hybrid")
+                | Q(location_raw__icontains="multiple location")
+                | Q(location_raw__icontains="locations")
+            )
+        elif bucket == "clear":
+            qs = (
+                qs.exclude(location_raw="")
+                .exclude(location_raw__icontains="remote")
+                .exclude(location_raw__icontains="hybrid")
+                .exclude(location_raw__icontains="multiple location")
+                .exclude(location_raw__icontains="locations")
+            )
+        return qs
+
+    def _bucket_counts(self, qs):
+        rows = qs.values_list("location_raw", "location_candidates", "is_active", "fetched_at")
+        counts = {"clear": 0, "ambiguous": 0, "stale": 0, "no_location": 0, "expired": 0}
+        now = timezone.now()
+        for location_raw, location_candidates, is_active, fetched_at in rows:
+            bucket = _unknown_country_bucket(location_raw, location_candidates, is_active, fetched_at, now=now)
+            counts[bucket] = counts.get(bucket, 0) + 1
+        counts["all"] = sum(counts.values())
+        return counts
+
+    def _redirect_url(self, params):
+        query = _unknown_country_query(params)
+        url = reverse("harvest-unknown-country-review")
+        return f"{url}?{query}" if query else url
+
+    def get(self, request):
+        include_inactive = request.GET.get("include_inactive") == "1"
+        platform_f = (request.GET.get("platform") or "").strip()
+        search_q = (request.GET.get("q") or "").strip()
+        bucket = (request.GET.get("bucket") or "all").strip() or "all"
+        if bucket == "expired":
+            include_inactive = True
+        base_qs = self._base_qs(include_inactive=include_inactive)
+        qs = self._apply_filters(base_qs, request.GET)
 
         total = qs.count()
         # How many delisted rows are being hidden (for the transparency banner).
         hidden_inactive = 0
         if not include_inactive:
-            hidden_inactive = RawJob.objects.filter(
-                scope_status=RawJob.ScopeStatus.REVIEW_UNKNOWN_COUNTRY,
-                is_active=False,
+            hidden_inactive = self._apply_filters(
+                self._base_qs(include_inactive=True),
+                {"platform": platform_f, "q": search_q, "bucket": "expired"},
             ).count()
+
+        active_unknown = RawJob.objects.filter(
+            scope_status=RawJob.ScopeStatus.REVIEW_UNKNOWN_COUNTRY,
+            is_active=True,
+        )
+        stale_cutoff = timezone.now() - timedelta(days=UNKNOWN_COUNTRY_STALE_DAYS)
+        stale_active_count = active_unknown.filter(fetched_at__lt=stale_cutoff).count()
+        bucket_counts = self._bucket_counts(self._apply_filters(base_qs, {
+            "platform": platform_f,
+            "q": search_q,
+            "include_inactive": "1" if include_inactive else "",
+        }))
+        if not include_inactive:
+            bucket_counts["expired"] = hidden_inactive
 
         # Platform breakdown
         by_platform = (
-            self._base_qs(include_inactive=include_inactive)
+            self._apply_filters(
+                self._base_qs(include_inactive=include_inactive),
+                {"q": search_q, "bucket": bucket},
+            )
             .values("platform_slug")
             .annotate(count=Count("id"))
             .order_by("-count")[:20]
         )
 
         # Top location_raw patterns (stripped to first 60 chars)
-        from django.db.models.functions import Left
-        top_locations = (
+        top_locations = list(
             qs.exclude(location_raw="")
             .values("location_raw")
             .annotate(count=Count("id"))
             .order_by("-count")[:30]
         )
+        for row in top_locations:
+            risk = _unknown_country_location_risk(row["location_raw"])
+            sample_qs = qs.filter(location_raw=row["location_raw"]).values("company_name", "title")[:3]
+            row["risk_reason"] = risk
+            row["is_safe_bulk"] = not risk
+            row["can_bulk_assign_country"] = _unknown_country_can_bulk_assign_country(row["location_raw"])
+            row["needs_large_confirm"] = row["count"] > UNKNOWN_COUNTRY_BULK_CONFIRM_THRESHOLD
+            row["samples"] = list(sample_qs)
 
         # Pagination
-        from django.core.paginator import Paginator
         paginator = Paginator(
             qs.only(
                 "id", "company_name", "platform_slug", "title",
                 "location_raw", "location_candidates", "country_code",
-                "scope_reason", "fetched_at", "original_url",
+                "scope_reason", "fetched_at", "original_url", "is_active",
             ),
             self.PAGE_SIZE,
         )
@@ -4542,6 +4686,16 @@ class UnknownCountryReviewView(SuperuserRequiredMixin, View):
             page_obj = paginator.page(int(request.GET.get("page", 1)))
         except Exception:
             page_obj = paginator.page(1)
+        now = timezone.now()
+        for job in page_obj.object_list:
+            job.review_bucket = _unknown_country_bucket(
+                job.location_raw,
+                job.location_candidates,
+                job.is_active,
+                job.fetched_at,
+                now=now,
+            )
+            job.review_risk = _unknown_country_location_risk(job.location_raw)
 
         platforms = (
             self._base_qs(include_inactive=include_inactive)
@@ -4550,40 +4704,88 @@ class UnknownCountryReviewView(SuperuserRequiredMixin, View):
             .order_by("platform_slug")
         )
 
+        review_url = reverse("harvest-unknown-country-review")
+
+        def url_for(**updates):
+            query = _unknown_country_query(request.GET, **updates)
+            return f"{review_url}?{query}" if query else review_url
+        hide_inactive_updates = {"include_inactive": ""}
+        if bucket == "expired":
+            hide_inactive_updates["bucket"] = ""
+
         return render(request, self.template_name, {
             "total": total,
+            "active_unknown_count": active_unknown.count(),
+            "stale_active_count": stale_active_count,
             "by_platform": by_platform,
             "top_locations": top_locations,
             "page_obj": page_obj,
             "paginator": paginator,
             "platforms": platforms,
             "selected_platform": platform_f,
+            "search_q": search_q,
+            "selected_bucket": bucket,
             "include_inactive": include_inactive,
             "hidden_inactive": hidden_inactive,
+            "bucket_counts": bucket_counts,
             "curated_countries": CURATED_COUNTRIES,
+            "confirm_threshold": UNKNOWN_COUNTRY_BULK_CONFIRM_THRESHOLD,
+            "stale_days": UNKNOWN_COUNTRY_STALE_DAYS,
+            "filter_query": _unknown_country_query(request.GET),
+            "filter_query_no_page": _unknown_country_query(request.GET),
+            "clear_filters_url": reverse("harvest-unknown-country-review"),
+            "show_inactive_url": url_for(include_inactive="1"),
+            "hide_inactive_url": url_for(**hide_inactive_updates),
+            "clear_platform_url": url_for(platform=""),
+            "pagination_query": _unknown_country_query(request.GET, page=""),
         })
 
     def post(self, request):
         action = request.POST.get("action", "")
-        platform_f = (request.POST.get("platform") or "").strip()
-        redirect_url = reverse("harvest-unknown-country-review")
-        if platform_f:
-            redirect_url += f"?platform={platform_f}"
+        include_inactive = request.POST.get("include_inactive") == "1"
+        redirect_url = self._redirect_url(request.POST)
 
         # Target rows are either the checked ids, OR every row matching an exact
         # location_raw string (the clickable Top Location Strings panel — turns
         # "all 104 Remote" into one decision instead of 104).
-        bulk_location = request.POST.get("bulk_location")
+        bulk_location = (request.POST.get("bulk_location") or "").strip()
+        bulk_risk = _unknown_country_location_risk(bulk_location) if bulk_location else ""
         if bulk_location:
-            bulk_qs = self._base_qs().filter(location_raw=bulk_location)
-            if platform_f:
-                bulk_qs = bulk_qs.filter(platform_slug=platform_f)
+            bulk_qs = self._apply_filters(
+                self._base_qs(include_inactive=include_inactive),
+                request.POST,
+            ).filter(location_raw=bulk_location)
             ids = list(bulk_qs.values_list("id", flat=True))
         else:
             ids = [int(x) for x in request.POST.getlist("ids") if x.isdigit()]
 
+        if (
+            bulk_risk
+            and action in ("assign_country", "mark_target", "mark_cold")
+            and not (action == "assign_country" and _unknown_country_can_bulk_assign_country(bulk_location))
+        ):
+            messages.warning(request, f"Bulk action blocked for '{bulk_location}': {bulk_risk}")
+            return redirect(redirect_url)
+
+        if (
+            len(ids) > UNKNOWN_COUNTRY_BULK_CONFIRM_THRESHOLD
+            and action in ("assign_country", "mark_target", "mark_cold")
+            and request.POST.get("large_confirmed") != "1"
+        ):
+            messages.warning(
+                request,
+                f"{len(ids)} jobs matched. Confirm large bulk updates before changing status.",
+            )
+            return redirect(redirect_url)
+
         if not ids and action not in ("refetch_all_provider",):
             messages.warning(request, "No jobs selected.")
+            return redirect(redirect_url)
+
+        target_qs = self._base_qs(include_inactive=include_inactive).filter(pk__in=ids)
+        ids = list(target_qs.values_list("id", flat=True))
+        if not ids and action not in ("refetch_all_provider",):
+            messages.warning(request, "Those jobs are no longer in the review queue.")
             return redirect(redirect_url)
 
         if action == "assign_country":
@@ -4598,7 +4800,7 @@ class UnknownCountryReviewView(SuperuserRequiredMixin, View):
             cfg = HarvestEngineConfig.get()
             targets = set(cfg.get_target_countries() or DEFAULT_TARGET_COUNTRIES)
             is_target = code in targets
-            updated = RawJob.objects.filter(pk__in=ids).update(
+            updated = target_qs.update(
                 country_code=code,
                 country=name,
                 country_source="manual_review",
@@ -4616,7 +4818,7 @@ class UnknownCountryReviewView(SuperuserRequiredMixin, View):
 
         elif action == "mark_target":
             from django.utils import timezone
-            updated = RawJob.objects.filter(pk__in=ids).update(
+            updated = target_qs.update(
                 scope_status=RawJob.ScopeStatus.PRIORITY_TARGET,
                 is_priority=True,
                 last_scope_evaluated_at=timezone.now(),
@@ -4625,7 +4827,7 @@ class UnknownCountryReviewView(SuperuserRequiredMixin, View):
 
         elif action == "mark_cold":
             from django.utils import timezone
-            updated = RawJob.objects.filter(pk__in=ids).update(
+            updated = target_qs.update(
                 scope_status=RawJob.ScopeStatus.COLD_NON_TARGET_COUNTRY,
                 is_priority=False,
                 last_scope_evaluated_at=timezone.now(),
