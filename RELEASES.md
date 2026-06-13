@@ -26,7 +26,9 @@ auto-resolve the bulk at the source, and make the manual tail a fast bulk sweep.
   fell through to None).
 - +7 tests (Workday additionalLocations, dict-shaped entries, label strip, assign
   target/non-target, bulk-by-string); green.
-Status: deploying (health-verify pending)
+Status: deployed (c6a712d · CI+image green · health overall=ok · 2026-06-13)
+Follow-up: run `refetch_ambiguous_locations` once to clear the ~600 already-stuck
+"N Locations" rows (the code fix only auto-resolves new harvests + re-fetches).
 
 ## v4.4.2 — Role Routing: inline ops + end-to-end propagation (2026-06-13)
 Made the Job Domains / Role Routing Rules registry easy to operate and fixed three
