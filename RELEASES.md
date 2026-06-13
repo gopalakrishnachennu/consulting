@@ -16,7 +16,11 @@ the JD, and only assume USA when nothing is found.
   queue 993 → 931. Remaining are mostly Workday "N Locations" placeholders — addressed
   by re-fetching detail with the v4.4.5 additionalLocations fix.
 - +5 tests (USA default, review fall-through, non-remote, LLM scan resolves, LLM-empty fallback).
-Status: deploying (health-verify pending)
+- KEY FINDING: re-running the Workday refetch dry-run on the v4.4.5 (additionalLocations-aware)
+  code recovered ~81% of "N Locations" rows (566 resolved / 700 processed) vs the old 3%.
+  The earlier "mostly dead" verdict was an artifact of pre-fix code. The run OOM'd (exit 137)
+  at ~700 rows — the live drain must run in smaller --limit batches.
+Status: deployed (ce01d29 · CI+image green · health overall=ok · 2026-06-13)
 
 ## v4.4.5 — Location Resolution Ladder (E+A+B+C+D) (2026-06-13)
 Attacks the root causes of unknown-country jobs across ALL platforms. Audit found the
