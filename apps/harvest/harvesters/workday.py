@@ -21,6 +21,9 @@ from typing import Any
 
 from .base import BaseHarvester, MIN_DELAY_API
 
+# Matches Workday's multi-location count placeholder, e.g. "2 Locations".
+_LOC_COUNT_RE = _re.compile(r"^\d+\s+locations?$", _re.I)
+
 # Generic Workday job-board path fallbacks (used only when no specific path
 # is stored in tenant_id). Real paths are highly company-specific.
 WORKDAY_PATHS_FALLBACK = [
@@ -262,6 +265,34 @@ def _wd_parse_salary(job: dict) -> tuple[float | None, float | None, str, str]:
     return sal_min, sal_max, sal_period, raw_text
 
 
+def _wd_location_strings(value) -> list[str]:
+    """Flatten a Workday location value (str | list | dict) into clean strings.
+
+    Workday CXS exposes the real per-location list under jobPostingInfo.location
+    (primary) and jobPostingInfo.additionalLocations. Entries are usually plain
+    strings ("Madrid, Spain") but some tenants nest a {descriptor|name|...}.
+    """
+    out: list[str] = []
+    if not value:
+        return out
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            out.append(text)
+        return out
+    if isinstance(value, dict):
+        for key in ("descriptor", "name", "label", "text", "value"):
+            text = str(value.get(key) or "").strip()
+            if text:
+                out.append(text)
+                break
+        return out
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            out.extend(_wd_location_strings(item))
+    return out
+
+
 def _workday_location_candidates(data: dict) -> list[str]:
     try:
         from harvest.location_resolver import extract_location_candidates
@@ -269,12 +300,24 @@ def _workday_location_candidates(data: dict) -> list[str]:
         return []
     info = data.get("jobPostingInfo") or data
     loc_raw = str(info.get("locationsText") or data.get("locationsText") or "")
+
+    # locationsText is a count placeholder ("2 Locations") for multi-location reqs.
+    # The real list lives in location (primary) + additionalLocations — read them
+    # explicitly so multi-location jobs resolve instead of falling back to UNKNOWN.
+    explicit: list[str] = []
+    explicit.extend(_wd_location_strings(info.get("location") or data.get("location")))
+    explicit.extend(_wd_location_strings(info.get("additionalLocations") or data.get("additionalLocations")))
+    explicit = [loc for loc in explicit if loc and not _LOC_COUNT_RE.match(loc)]
+
+    # If locationsText is just a count, replace it with the real primary location.
+    if explicit and _LOC_COUNT_RE.match(loc_raw.strip()):
+        loc_raw = explicit[0]
+
     vendor_block = str(
-        info.get("location") or info.get("jobLocation") or
-        data.get("location") or data.get("jobLocation") or ""
+        info.get("jobLocation") or data.get("jobLocation") or ""
     )
     city, state, country = _wd_parse_location(loc_raw)
-    return extract_location_candidates(
+    candidates = extract_location_candidates(
         location_raw=loc_raw,
         city=city,
         state=state,
@@ -282,6 +325,13 @@ def _workday_location_candidates(data: dict) -> list[str]:
         vendor_location_block=vendor_block,
         raw_payload=data,
     )
+    # Guarantee every explicit per-location entry is present as a candidate.
+    seen = {c.lower() for c in candidates}
+    for loc in explicit:
+        if loc.lower() not in seen:
+            candidates.append(loc)
+            seen.add(loc.lower())
+    return candidates
 
 
 def _fetch_workday_detail(session, full_subdomain: str, tenant: str, jobboard: str, ext_path: str) -> dict:
@@ -330,7 +380,9 @@ def _fetch_workday_detail(session, full_subdomain: str, tenant: str, jobboard: s
         if location_candidates:
             result["location_candidates"] = location_candidates
             loc_raw = str(info.get("locationsText") or data.get("locationsText") or "")
-            if not loc_raw:
+            # Don't keep the "2 Locations" count placeholder — replace it with the
+            # real per-location list so display and re-resolution both work.
+            if not loc_raw or _LOC_COUNT_RE.match(loc_raw.strip()):
                 loc_raw = " | ".join(location_candidates)
             result["location_raw"] = loc_raw[:512]
             result["city"], result["state"], result["country"] = _wd_parse_location(loc_raw)

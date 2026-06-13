@@ -3,6 +3,31 @@
 Production release log for GoCareers. Newest first. Created/updated by the `/release` skill
 (verify CI green → version + changelog → deploy → health-verify → auto-rollback → record).
 
+## v4.4.3 — Location Review overhaul: Workday root-cause + bulk classify (2026-06-13)
+Attacks the Unknown-Country queue (1,004 pending; 776 Workday) on two fronts —
+auto-resolve the bulk at the source, and make the manual tail a fast bulk sweep.
+- ROOT CAUSE (#1, ~60% of queue): Workday's list API returns a count placeholder
+  ("2 Locations") instead of the real list. Both the live harvester
+  (workday.py `_workday_location_candidates`) and the re-fetch path (jarvis.py
+  `_workday_location`) now read the detail endpoint's `location` + `additionalLocations`
+  fields. Critically, no longer early-returns on the primary location — a Madrid
+  (non-target) primary no longer hides a London (target) additional location.
+  The existing `refetch_ambiguous_locations` command (filter already matches
+  "N Locations") will now actually clear these rows.
+- MANUAL CLASSIFY (#2): new "Assign country" action on the review page — pick from a
+  curated list; target countries → Priority Target, others → Cold. (Previously the
+  page could only re-run the resolver that had already failed.)
+- BULK BY STRING (#3): the Top Location Strings panel is now clickable — assign a
+  country / mark target / cold / Mapbox for EVERY job sharing that exact string in
+  one click (turns "104 × Remote" into one decision).
+- GAZETTEER (#4): label-stripper now catches HQ / Global HQ / Headquarters / Campus /
+  Research Campus (e.g. "San Francisco-HQ" → San Francisco, "NYC Global HQ" → NYC).
+- Fixed a latent bug: the review POST handler never returned a redirect (actions
+  fell through to None).
+- +7 tests (Workday additionalLocations, dict-shaped entries, label strip, assign
+  target/non-target, bulk-by-string); green.
+Status: deploying (health-verify pending)
+
 ## v4.4.2 — Role Routing: inline ops + end-to-end propagation (2026-06-13)
 Made the Job Domains / Role Routing Rules registry easy to operate and fixed three
 propagation edge cases so a rule truly flows the whole chain (domain → marketing role →

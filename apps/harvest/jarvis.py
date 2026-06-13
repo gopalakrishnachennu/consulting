@@ -169,10 +169,30 @@ def _workday_location(data: dict, info: dict | None = None) -> str:
     if info is None:
         info = data
 
-    # 1. Prefer explicit single location field
-    single = _safe_text(info.get("location") or data.get("location")).strip()
-    if single and not _WORKDAY_COUNT_RE.match(single):
-        return single
+    def _loc_str(entry) -> str:
+        if isinstance(entry, dict):
+            entry = (
+                entry.get("descriptor") or entry.get("name")
+                or entry.get("label") or entry.get("value")
+            )
+        return _safe_text(entry).strip()
+
+    resolved: list[str] = []
+
+    # 1. Combine the primary `location` with `additionalLocations` — the CXS
+    #    *detail* endpoint's multi-location fields. We must NOT early-return on the
+    #    primary alone: a Madrid (non-target) primary can hide a London (target)
+    #    additional location, and dropping it would wrongly mark the job Cold.
+    #    Entries are usually plain strings; some tenants nest a {descriptor|name}.
+    addl = info.get("additionalLocations") or data.get("additionalLocations") or []
+    if not isinstance(addl, (list, tuple)):
+        addl = []
+    for entry in [info.get("location") or data.get("location"), *addl]:
+        raw = _loc_str(entry)
+        if raw and not _WORKDAY_COUNT_RE.match(raw) and raw not in resolved:
+            resolved.append(raw)
+    if resolved:
+        return " | ".join(resolved)
 
     # 2. Accept locationsText only when it has real content
     ltext = _safe_text(
@@ -181,14 +201,15 @@ def _workday_location(data: dict, info: dict | None = None) -> str:
     if ltext and not _WORKDAY_COUNT_RE.match(ltext):
         return ltext
 
-    # 3. Parse postingLocations array → real city/state names
+    single = _safe_text(info.get("location") or data.get("location")).strip()
+
+    # 3. Parse postingLocations array → real city/state names (list API shape)
     posting_locs: list = (
         data.get("postingLocations")
         or data.get("PostingLocations")
         or (info or {}).get("postingLocations")
         or []
     )
-    resolved: list[str] = []
     if isinstance(posting_locs, list):
         for loc in posting_locs:
             if not isinstance(loc, dict):

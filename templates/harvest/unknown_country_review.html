@@ -52,28 +52,47 @@
       </div>
     </div>
 
-    {# ── Top Location Patterns ── #}
+    {# ── Top Location Strings — click a row to action ALL jobs with that string ── #}
     <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm lg:col-span-2">
-      <h2 class="text-sm font-semibold text-slate-600 uppercase tracking-wider mb-3">Top Location Strings</h2>
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="border-b border-slate-100">
-              <th class="text-left text-xs font-semibold text-slate-400 pb-2">location_raw</th>
-              <th class="text-right text-xs font-semibold text-slate-400 pb-2 w-16">Count</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-50">
-            {% for row in top_locations %}
-            <tr class="hover:bg-slate-50">
-              <td class="py-1.5 pr-4 font-mono text-slate-600 max-w-[400px] truncate">{{ row.location_raw }}</td>
-              <td class="py-1.5 text-right text-slate-500 font-medium">{{ row.count }}</td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="2" class="py-3 text-slate-400 italic text-center">No location data.</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-semibold text-slate-600 uppercase tracking-wider">Top Location Strings</h2>
+        <span class="text-xs text-slate-400">Click a string → classify every job with it at once</span>
+      </div>
+      <div class="max-h-[420px] overflow-y-auto -mx-1">
+        {% for row in top_locations %}
+        <div class="border-b border-slate-50 last:border-0">
+          <button type="button" onclick="toggleLoc('loc{{ forloop.counter }}')"
+                  class="w-full flex items-center justify-between gap-3 px-2 py-1.5 rounded-lg hover:bg-slate-50 transition text-left">
+            <span class="font-mono text-slate-600 text-xs truncate" title="{{ row.location_raw }}">{{ row.location_raw|default:"(blank)" }}</span>
+            <span class="flex-shrink-0 text-xs text-slate-500 font-semibold">{{ row.count }} <span class="text-slate-300">▾</span></span>
+          </button>
+          <form method="post" id="loc{{ forloop.counter }}" class="hidden px-2 pb-2 pt-1 flex flex-wrap items-center gap-1.5 bg-indigo-50/40 rounded-lg mb-1">
+            {% csrf_token %}
+            <input type="hidden" name="bulk_location" value="{{ row.location_raw }}">
+            {% if selected_platform %}<input type="hidden" name="platform" value="{{ selected_platform }}">{% endif %}
+            <span class="text-[11px] text-slate-500 mr-1">All {{ row.count }} →</span>
+            <select name="country_code" class="px-1.5 py-1 text-[11px] border border-slate-300 rounded bg-white max-w-[150px]">
+              <option value="">country…</option>
+              {% for code, name in curated_countries %}
+              <option value="{{ code }}">{{ name }} ({{ code }})</option>
+              {% endfor %}
+            </select>
+            <button type="submit" name="action" value="assign_country"
+                    onclick="return confirm('Assign the chosen country to all {{ row.count }} jobs with this location string?')"
+                    class="px-2 py-1 text-[11px] font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded transition">Assign</button>
+            <button type="submit" name="action" value="mark_target"
+                    onclick="return confirm('Mark all {{ row.count }} as Priority Target?')"
+                    class="px-2 py-1 text-[11px] font-semibold bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded transition">Target</button>
+            <button type="submit" name="action" value="mark_cold"
+                    onclick="return confirm('Mark all {{ row.count }} as Cold?')"
+                    class="px-2 py-1 text-[11px] font-semibold bg-red-100 hover:bg-red-200 text-red-700 rounded transition">Cold</button>
+            <button type="submit" name="action" value="re_evaluate_provider"
+                    class="px-2 py-1 text-[11px] font-semibold bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition">Mapbox</button>
+          </form>
+        </div>
+        {% empty %}
+        <p class="py-3 text-slate-400 italic text-center text-sm">No location data.</p>
+        {% endfor %}
       </div>
     </div>
 
@@ -115,6 +134,20 @@
                   class="px-3 py-1.5 text-xs font-semibold bg-red-100 hover:bg-red-200 text-red-700 rounded-lg transition">
             Mark as Cold
           </button>
+          <div class="flex items-center gap-1.5 border-l border-slate-200 pl-2 ml-1">
+            <select name="country_code"
+                    class="px-2 py-1.5 text-xs border border-slate-300 rounded-lg bg-white max-w-[160px]">
+              <option value="">Assign country…</option>
+              {% for code, name in curated_countries %}
+              <option value="{{ code }}">{{ name }} ({{ code }})</option>
+              {% endfor %}
+            </select>
+            <button type="submit" name="action" value="assign_country"
+                    onclick="return confirm('Assign the chosen country to the selected jobs? Target countries become Priority Target; others become Cold.')"
+                    class="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition">
+              Assign to selected
+            </button>
+          </div>
         </div>
       </div>
 
@@ -226,4 +259,11 @@
   </div>
 
 </div>
+
+<script>
+function toggleLoc(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('hidden');
+}
+</script>
 {% endblock %}

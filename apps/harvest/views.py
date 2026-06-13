@@ -4461,6 +4461,22 @@ class DuplicateBulkResolveView(SuperuserRequiredMixin, View):
         return redirect(next_url)
 
 
+# Curated country picker for manual review (code → display name). Target countries
+# first, then common non-target origins seen in the queue. "Other" countries can be
+# added here as the queue surfaces them.
+CURATED_COUNTRIES = [
+    ("US", "United States"), ("IN", "India"), ("CA", "Canada"),
+    ("GB", "United Kingdom"), ("AU", "Australia"),
+    ("DE", "Germany"), ("FR", "France"), ("ES", "Spain"), ("IT", "Italy"),
+    ("NL", "Netherlands"), ("IE", "Ireland"), ("MX", "Mexico"), ("BR", "Brazil"),
+    ("SG", "Singapore"), ("PH", "Philippines"), ("JP", "Japan"), ("CN", "China"),
+    ("PL", "Poland"), ("RO", "Romania"), ("ZA", "South Africa"), ("AE", "United Arab Emirates"),
+    ("CR", "Costa Rica"), ("AR", "Argentina"), ("CO", "Colombia"), ("CH", "Switzerland"),
+    ("SE", "Sweden"), ("BE", "Belgium"), ("PT", "Portugal"), ("MY", "Malaysia"),
+]
+CURATED_COUNTRY_NAMES = dict(CURATED_COUNTRIES)
+
+
 class UnknownCountryReviewView(SuperuserRequiredMixin, View):
     """Review and action RawJobs with scope_status=REVIEW_UNKNOWN_COUNTRY."""
 
@@ -4528,21 +4544,61 @@ class UnknownCountryReviewView(SuperuserRequiredMixin, View):
             "paginator": paginator,
             "platforms": platforms,
             "selected_platform": platform_f,
+            "curated_countries": CURATED_COUNTRIES,
         })
 
     def post(self, request):
         action = request.POST.get("action", "")
-        ids = [int(x) for x in request.POST.getlist("ids") if x.isdigit()]
         platform_f = (request.POST.get("platform") or "").strip()
         redirect_url = reverse("harvest-unknown-country-review")
         if platform_f:
             redirect_url += f"?platform={platform_f}"
 
+        # Target rows are either the checked ids, OR every row matching an exact
+        # location_raw string (the clickable Top Location Strings panel — turns
+        # "all 104 Remote" into one decision instead of 104).
+        bulk_location = request.POST.get("bulk_location")
+        if bulk_location:
+            bulk_qs = self._base_qs().filter(location_raw=bulk_location)
+            if platform_f:
+                bulk_qs = bulk_qs.filter(platform_slug=platform_f)
+            ids = list(bulk_qs.values_list("id", flat=True))
+        else:
+            ids = [int(x) for x in request.POST.getlist("ids") if x.isdigit()]
+
         if not ids and action not in ("refetch_all_provider",):
             messages.warning(request, "No jobs selected.")
             return redirect(redirect_url)
 
-        if action == "mark_target":
+        if action == "assign_country":
+            from django.utils import timezone
+            from .location_resolver import DEFAULT_TARGET_COUNTRIES
+
+            code = (request.POST.get("country_code") or "").strip().upper()
+            if not code:
+                messages.warning(request, "Pick a country before assigning.")
+                return redirect(redirect_url)
+            name = CURATED_COUNTRY_NAMES.get(code, code)
+            cfg = HarvestEngineConfig.get()
+            targets = set(cfg.get_target_countries() or DEFAULT_TARGET_COUNTRIES)
+            is_target = code in targets
+            updated = RawJob.objects.filter(pk__in=ids).update(
+                country_code=code,
+                country=name,
+                country_source="manual_review",
+                country_confidence=1.0,
+                scope_status=(
+                    RawJob.ScopeStatus.PRIORITY_TARGET if is_target
+                    else RawJob.ScopeStatus.COLD_NON_TARGET_COUNTRY
+                ),
+                is_priority=is_target,
+                scope_reason=f"manual_country:{code}"[:128],
+                last_scope_evaluated_at=timezone.now(),
+            )
+            verdict = "Priority Target" if is_target else "Cold (non-target)"
+            messages.success(request, f"Assigned {name} to {updated} job(s) → {verdict}.")
+
+        elif action == "mark_target":
             from django.utils import timezone
             updated = RawJob.objects.filter(pk__in=ids).update(
                 scope_status=RawJob.ScopeStatus.PRIORITY_TARGET,
@@ -4592,6 +4648,8 @@ class UnknownCountryReviewView(SuperuserRequiredMixin, View):
 
         else:
             messages.error(request, f"Unknown action: {action}")
+
+        return redirect(redirect_url)
 
 
 # ── Vet Gate Config ──────────────────────────────────────────────────────────

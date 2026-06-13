@@ -3369,3 +3369,123 @@ class JobLocationReconcileTests(TestCase):
         job.refresh_from_db()
         self.assertEqual(job.country, "")
         self.assertEqual(out, {"enabled": False, "updated": 0})
+
+
+class WorkdayMultiLocationExtractionTests(SimpleTestCase):
+    """The 'N Locations' placeholder must resolve to the real location list."""
+
+    def test_jarvis_reads_additional_locations(self):
+        from harvest.jarvis import _workday_location
+
+        info = {
+            "locationsText": "2 Locations",
+            "location": "Madrid, Spain",
+            "additionalLocations": ["London, United Kingdom", "Paris, France"],
+        }
+        result = _workday_location({"jobPostingInfo": info}, info)
+        self.assertIn("Madrid, Spain", result)
+        self.assertIn("London, United Kingdom", result)
+        self.assertIn("Paris, France", result)
+        self.assertNotIn("Locations", result)
+
+    def test_jarvis_handles_dict_shaped_additional_locations(self):
+        from harvest.jarvis import _workday_location
+
+        info = {
+            "locationsText": "3 Locations",
+            "location": {"descriptor": "Austin, TX, USA"},
+            "additionalLocations": [{"descriptor": "Denver, CO, USA"}],
+        }
+        result = _workday_location(info, info)
+        self.assertIn("Austin, TX, USA", result)
+        self.assertIn("Denver, CO, USA", result)
+
+    def test_harvester_candidates_drop_count_placeholder(self):
+        from harvest.harvesters.workday import _workday_location_candidates
+
+        data = {"jobPostingInfo": {
+            "locationsText": "2 Locations",
+            "location": "Toronto, Canada",
+            "additionalLocations": ["Vancouver, Canada"],
+        }}
+        candidates = _workday_location_candidates(data)
+        joined = " | ".join(candidates).lower()
+        self.assertIn("toronto", joined)
+        self.assertIn("vancouver", joined)
+        self.assertFalse(any("locations" in c.lower() and c.lower().split()[0].isdigit() for c in candidates))
+
+
+class LocationLabelStripTests(SimpleTestCase):
+    """Office/HQ/campus labels must be stripped so the city resolves."""
+
+    def test_strips_hq_office_campus_suffixes(self):
+        from harvest.location_resolver import _strip_location_label_noise
+
+        cases = {
+            "San Francisco-HQ": "San Francisco",
+            "NYC Global HQ": "NYC",
+            "Madrid Office": "Madrid",
+            "Pune Research Campus": "Pune",
+            "Austin Corporate HQ": "Austin",
+        }
+        for raw, expected in cases.items():
+            self.assertEqual(_strip_location_label_noise(raw), expected)
+
+
+class UnknownCountryReviewActionTests(TestCase):
+    def setUp(self):
+        from users.models import User
+        self.user = User.objects.create_user(
+            username="loc_review_admin", email="loc@example.com",
+            password="testpass123", is_superuser=True,
+        )
+        from companies.models import Company
+        self.company = Company.objects.create(name="Acme Loc Co")
+        self.client.force_login(self.user)
+
+    def _make_job(self, location_raw="2 Locations", platform="workday"):
+        from harvest.models import RawJob
+        return RawJob.objects.create(
+            company=self.company, company_name="Acme", platform_slug=platform, title="Engineer",
+            location_raw=location_raw, original_url=f"https://x/{location_raw}/{platform}",
+            url_hash=f"h{RawJob.objects.count()}", scope_status=RawJob.ScopeStatus.REVIEW_UNKNOWN_COUNTRY,
+        )
+
+    def test_assign_target_country_marks_priority_target(self):
+        from harvest.models import RawJob
+        job = self._make_job()
+        resp = self.client.post(reverse("harvest-unknown-country-review"), {
+            "action": "assign_country", "country_code": "US", "ids": [job.pk],
+        })
+        self.assertEqual(resp.status_code, 302)
+        job.refresh_from_db()
+        self.assertEqual(job.country_code, "US")
+        self.assertEqual(job.country, "United States")
+        self.assertEqual(job.scope_status, RawJob.ScopeStatus.PRIORITY_TARGET)
+        self.assertTrue(job.is_priority)
+
+    def test_assign_non_target_country_marks_cold(self):
+        from harvest.models import RawJob
+        job = self._make_job()
+        self.client.post(reverse("harvest-unknown-country-review"), {
+            "action": "assign_country", "country_code": "DE", "ids": [job.pk],
+        })
+        job.refresh_from_db()
+        self.assertEqual(job.country_code, "DE")
+        self.assertEqual(job.scope_status, RawJob.ScopeStatus.COLD_NON_TARGET_COUNTRY)
+        self.assertFalse(job.is_priority)
+
+    def test_bulk_by_location_string_actions_every_matching_row(self):
+        from harvest.models import RawJob
+        a = self._make_job(location_raw="Remote")
+        b = self._make_job(location_raw="Remote")
+        c = self._make_job(location_raw="Madrid Office")
+        # No ids — selected purely by the location string.
+        self.client.post(reverse("harvest-unknown-country-review"), {
+            "action": "mark_target", "bulk_location": "Remote",
+        })
+        a.refresh_from_db(); b.refresh_from_db(); c.refresh_from_db()
+        self.assertEqual(a.scope_status, RawJob.ScopeStatus.PRIORITY_TARGET)
+        self.assertEqual(b.scope_status, RawJob.ScopeStatus.PRIORITY_TARGET)
+        # The non-matching string is untouched.
+        self.assertEqual(c.scope_status, RawJob.ScopeStatus.REVIEW_UNKNOWN_COUNTRY)

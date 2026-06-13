@@ -104,8 +104,11 @@ _LOCATION_LABEL_PREFIX_RE = re.compile(
     r"^\s*(?:job\s+)?(?:work\s+)?(?:primary\s+)?(?:office|location|worksite|site)\s*[-:]\s*",
     re.I,
 )
+# Trailing office/HQ/campus labels that ATS feeds bolt onto a city name, e.g.
+# "San Francisco-HQ", "NYC Global HQ", "Madrid Office", "Pune Research Campus".
 _LOCATION_LABEL_SUFFIX_RE = re.compile(
-    r"\s*[-:]?\s*(?:office|location|worksite|site)\s*$",
+    r"\s*[-:,]?\s*(?:global\s+|corporate\s+|regional\s+|main\s+)?"
+    r"(?:office|location|worksite|site|hq|headquarters|campus|research\s+campus)\s*$",
     re.I,
 )
 
