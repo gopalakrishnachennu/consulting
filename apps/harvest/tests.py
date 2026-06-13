@@ -3489,3 +3489,21 @@ class UnknownCountryReviewActionTests(TestCase):
         self.assertEqual(b.scope_status, RawJob.ScopeStatus.PRIORITY_TARGET)
         # The non-matching string is untouched.
         self.assertEqual(c.scope_status, RawJob.ScopeStatus.REVIEW_UNKNOWN_COUNTRY)
+
+    def test_queue_hides_delisted_jobs_by_default(self):
+        live = self._make_job(location_raw="2 Locations")
+        dead = self._make_job(location_raw="3 Locations")
+        dead.is_active = False
+        dead.save(update_fields=["is_active"])
+
+        # Default view: delisted job hidden, banner reports it.
+        resp = self.client.get(reverse("harvest-unknown-country-review"))
+        self.assertEqual(resp.context["total"], 1)
+        self.assertEqual(resp.context["hidden_inactive"], 1)
+        ids = [j.pk for j in resp.context["page_obj"].object_list]
+        self.assertIn(live.pk, ids)
+        self.assertNotIn(dead.pk, ids)
+
+        # include_inactive=1 shows everything.
+        resp2 = self.client.get(reverse("harvest-unknown-country-review"), {"include_inactive": "1"})
+        self.assertEqual(resp2.context["total"], 2)

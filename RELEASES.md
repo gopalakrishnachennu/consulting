@@ -3,6 +3,19 @@
 Production release log for GoCareers. Newest first. Created/updated by the `/release` skill
 (verify CI green → version + changelog → deploy → health-verify → auto-rollback → record).
 
+## v4.4.4 — Location Review: hide delisted jobs (2026-06-13)
+Follow-up to v4.4.3, driven by evidence: a Workday dry-run refetch resolved only
+28 of 889 rows (861 returned no location — the detail pages are gone). Conclusion:
+the stuck "N Locations" backlog is mostly expired postings, not a fetch bug. The
+v4.4.3 code fix still prevents NEW multi-location jobs from going unknown.
+- Unknown-Country review queue now hides is_active=False (delisted/expired) jobs by
+  default — you only review live postings. ?include_inactive=1 shows everything, and
+  a banner reports how many are hidden (full transparency, no silent data loss).
+- The revived daily harvest will mark the remaining stale reqs inactive as it
+  re-crawls Workday, so they drop off the queue over the next runs.
+- +1 test (default hides delisted, include_inactive shows all).
+Status: deploying (health-verify pending)
+
 ## v4.4.3 — Location Review overhaul: Workday root-cause + bulk classify (2026-06-13)
 Attacks the Unknown-Country queue (1,004 pending; 776 Workday) on two fronts —
 auto-resolve the bulk at the source, and make the manual tail a fast bulk sweep.

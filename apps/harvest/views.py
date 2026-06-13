@@ -4483,23 +4483,37 @@ class UnknownCountryReviewView(SuperuserRequiredMixin, View):
     template_name = "harvest/unknown_country_review.html"
     PAGE_SIZE = 100
 
-    def _base_qs(self):
-        return RawJob.objects.filter(
+    def _base_qs(self, include_inactive=False):
+        qs = RawJob.objects.filter(
             scope_status=RawJob.ScopeStatus.REVIEW_UNKNOWN_COUNTRY
-        ).order_by("-fetched_at")
+        )
+        # Delisted/expired jobs (is_active=False) are not worth reviewing — most of
+        # the stale Workday "N Locations" rows are closed reqs whose detail page is
+        # gone. Hide them by default; ?include_inactive=1 shows everything.
+        if not include_inactive:
+            qs = qs.filter(is_active=True)
+        return qs.order_by("-fetched_at")
 
     def get(self, request):
-        qs = self._base_qs()
+        include_inactive = request.GET.get("include_inactive") == "1"
+        qs = self._base_qs(include_inactive=include_inactive)
 
         platform_f = (request.GET.get("platform") or "").strip()
         if platform_f:
             qs = qs.filter(platform_slug=platform_f)
 
         total = qs.count()
+        # How many delisted rows are being hidden (for the transparency banner).
+        hidden_inactive = 0
+        if not include_inactive:
+            hidden_inactive = RawJob.objects.filter(
+                scope_status=RawJob.ScopeStatus.REVIEW_UNKNOWN_COUNTRY,
+                is_active=False,
+            ).count()
 
         # Platform breakdown
         by_platform = (
-            self._base_qs()
+            self._base_qs(include_inactive=include_inactive)
             .values("platform_slug")
             .annotate(count=Count("id"))
             .order_by("-count")[:20]
@@ -4530,7 +4544,7 @@ class UnknownCountryReviewView(SuperuserRequiredMixin, View):
             page_obj = paginator.page(1)
 
         platforms = (
-            RawJob.objects.filter(scope_status=RawJob.ScopeStatus.REVIEW_UNKNOWN_COUNTRY)
+            self._base_qs(include_inactive=include_inactive)
             .values_list("platform_slug", flat=True)
             .distinct()
             .order_by("platform_slug")
@@ -4544,6 +4558,8 @@ class UnknownCountryReviewView(SuperuserRequiredMixin, View):
             "paginator": paginator,
             "platforms": platforms,
             "selected_platform": platform_f,
+            "include_inactive": include_inactive,
+            "hidden_inactive": hidden_inactive,
             "curated_countries": CURATED_COUNTRIES,
         })
 

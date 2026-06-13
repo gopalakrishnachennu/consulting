@@ -30,6 +30,19 @@
   </div>
   {% endfor %}
 
+  {# ── Active-only filter notice ── #}
+  {% if include_inactive %}
+  <div class="mb-4 px-4 py-2.5 rounded-xl text-sm bg-slate-100 border border-slate-200 text-slate-600 flex items-center justify-between gap-3">
+    <span>Showing <strong>delisted / expired</strong> jobs too (most stale "N Locations" rows are closed reqs).</span>
+    <a href="?{% if selected_platform %}platform={{ selected_platform }}{% endif %}" class="text-indigo-600 hover:underline font-medium whitespace-nowrap">Hide delisted →</a>
+  </div>
+  {% elif hidden_inactive %}
+  <div class="mb-4 px-4 py-2.5 rounded-xl text-sm bg-blue-50 border border-blue-200 text-blue-800 flex items-center justify-between gap-3">
+    <span><strong>{{ hidden_inactive }}</strong> delisted/expired job(s) are hidden — only live postings are shown for review.</span>
+    <a href="?include_inactive=1{% if selected_platform %}&platform={{ selected_platform }}{% endif %}" class="text-indigo-600 hover:underline font-medium whitespace-nowrap">Show delisted →</a>
+  </div>
+  {% endif %}
+
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
 
     {# ── Platform Breakdown ── #}
