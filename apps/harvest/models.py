@@ -1842,6 +1842,21 @@ class HarvestEngineConfig(models.Model):
             "list changes so newly enabled markets do not stay cold forever."
         ),
     )
+    remote_unknown_policy = models.CharField(
+        max_length=8,
+        default="review",
+        choices=[
+            ("review", "Send to review"),
+            ("target", "Treat as priority target"),
+            ("cold", "Mark cold"),
+        ],
+        verbose_name="Remote (no country) policy",
+        help_text=(
+            "What to do with remote jobs that signal remote but have no resolvable "
+            "country. 'review' keeps current behavior; 'target' accepts them (most "
+            "remote roles are reachable); 'cold' drops them."
+        ),
+    )
     geocoding_cache_enabled = models.BooleanField(
         default=True,
         verbose_name="Location cache enabled",

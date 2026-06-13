@@ -3568,3 +3568,95 @@ class UnknownCountryReviewActionTests(TestCase):
         self.assertEqual(resp.context["total"], 1)
         self.assertIn(match.pk, ids)
         self.assertNotIn(miss.pk, ids)
+
+
+class LocationLadderPhaseTests(TestCase):
+    """Phases A–E of the location resolution ladder."""
+
+    def test_phase_a_global_gazetteer_resolves_international_cities(self):
+        from harvest.location_resolver import _city_country_code
+        cases = {
+            "Madrid Office": "ES", "Tijuana": "MX", "Krakow": "PL",
+            "Tel Aviv": "IL", "San Francisco-HQ": "US", "NYC Global HQ": "US",
+        }
+        for raw, code in cases.items():
+            self.assertEqual(_city_country_code(raw), code, raw)
+
+    def test_phase_b_remote_with_country_clue_resolves(self):
+        from harvest.location_resolver import _resolve_remote
+        self.assertEqual(_resolve_remote("Remote - US", "", "", "", normalized="").country_code, "US")
+        self.assertEqual(_resolve_remote("Remote", "", "", "", normalized="", title="Engineer (Remote, UK)").country_code, "GB")
+        # Bare remote → no country
+        self.assertIsNone(_resolve_remote("Remote", "", "", "", normalized=""))
+
+    def test_phase_b_bare_remote_policy_target(self):
+        from harvest.models import HarvestEngineConfig, RawJob
+        from harvest.location_resolver import evaluate_rawjob_scope
+        from companies.models import Company
+        cfg = HarvestEngineConfig.get()
+        cfg.remote_unknown_policy = "target"
+        cfg.save(update_fields=["remote_unknown_policy"])
+        company = Company.objects.create(name="Remote Co")
+        job = RawJob.objects.create(
+            company=company, company_name="Remote Co", platform_slug="greenhouse",
+            title="Engineer", location_raw="Remote", original_url="https://x/remote1",
+            url_hash="rh1",
+        )
+        updates = evaluate_rawjob_scope(job, cfg=cfg, save=False)
+        self.assertEqual(updates["scope_status"], RawJob.ScopeStatus.PRIORITY_TARGET)
+        self.assertEqual(updates["scope_reason"], "remote_no_country_policy_target")
+
+    def test_phase_c_force_provider_enables_quota_without_global_flag(self):
+        from harvest.models import HarvestEngineConfig
+        from harvest.location_resolver import provider_quota_status
+        cfg = HarvestEngineConfig.get()
+        cfg.geocoding_provider_enabled = False
+        cfg.geocoding_provider = "mapbox"
+        cfg.save(update_fields=["geocoding_provider_enabled", "geocoding_provider"])
+        # auto path: not enabled
+        self.assertFalse(provider_quota_status(cfg)["enabled"])
+        # forced (on-demand button/sweep): enabled, caps still computed
+        self.assertTrue(provider_quota_status(cfg, force=True)["enabled"])
+
+    def test_phase_d_sweep_clears_resolvable_backlog(self):
+        from harvest.models import RawJob
+        from companies.models import Company
+        from django.core.management import call_command
+        from io import StringIO
+        company = Company.objects.create(name="Sweep Co")
+        # Madrid resolves via the expanded gazetteer (was unknown before)
+        good = RawJob.objects.create(
+            company=company, company_name="Sweep Co", platform_slug="workday",
+            title="Engineer", location_raw="Madrid", original_url="https://x/madrid",
+            url_hash="sw1", scope_status=RawJob.ScopeStatus.REVIEW_UNKNOWN_COUNTRY, is_active=True,
+        )
+        out = StringIO()
+        call_command("sweep_unknown_country_locations", "--limit", "50", stdout=out)
+        good.refresh_from_db()
+        # Madrid → Spain (non-target by default) → no longer in review
+        self.assertNotEqual(good.scope_status, RawJob.ScopeStatus.REVIEW_UNKNOWN_COUNTRY)
+        self.assertEqual(good.country_code, "ES")
+
+    def test_phase_e_failure_bucket_classifier(self):
+        from harvest.views import _classify_location_bucket
+        self.assertEqual(_classify_location_bucket("2 Locations"), "multi_placeholder")
+        self.assertEqual(_classify_location_bucket("Remote"), "remote")
+        self.assertEqual(_classify_location_bucket("Madrid Office"), "label_office")
+        self.assertEqual(_classify_location_bucket("Madrid"), "city_unresolved")
+        self.assertEqual(_classify_location_bucket(""), "no_location")
+
+    def test_review_page_renders_with_failure_buckets(self):
+        from users.models import User
+        from companies.models import Company
+        from harvest.models import RawJob
+        admin = User.objects.create_user(username="lad_admin", email="lad@x.com", password="p", is_superuser=True)
+        self.client.force_login(admin)
+        company = Company.objects.create(name="Render Co")
+        RawJob.objects.create(
+            company=company, company_name="Render Co", platform_slug="workday",
+            title="Eng", location_raw="2 Locations", original_url="https://x/r1",
+            url_hash="rr1", scope_status=RawJob.ScopeStatus.REVIEW_UNKNOWN_COUNTRY, is_active=True,
+        )
+        resp = self.client.get(reverse("harvest-unknown-country-review"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("Why unresolved", resp.content.decode())

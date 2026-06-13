@@ -149,6 +149,65 @@ _CITY_COUNTRY: dict[str, str] = {
 }
 
 
+# ── Global city → country gazetteer (geonamescache, fully offline) ───────────
+# The curated dict above owns aliases/overrides ("nyc", "bay area", "bangalore").
+# geonamescache fills in thousands more real cities so international locations
+# (Madrid→Spain, Tijuana→Mexico) resolve with no paid API and no network call.
+_MIN_CITY_POP = 15000
+# Common English words that are also city names — excluded to avoid false hits
+# (e.g. a "Mobile" or "Industry" location string is almost never the city).
+_AMBIGUOUS_CITY_NAMES = {
+    "mobile", "industry", "commerce", "sale", "reading", "remote", "global",
+    "international", "national", "central", "north", "south", "east", "west",
+    "data", "sales", "general", "the city", "city", "metro", "county", "of",
+}
+
+
+def _fold_accents(text: str) -> str:
+    """São Paulo → Sao Paulo, Kraków → Krakow (so ASCII input matches)."""
+    import unicodedata
+    return "".join(
+        ch for ch in unicodedata.normalize("NFKD", text or "")
+        if not unicodedata.combining(ch)
+    )
+
+
+def _build_global_city_country() -> dict[str, str]:
+    """city-name(lower, accent-folded + raw) → full country name. Empty if the
+    library is unavailable (degrades gracefully to the curated dict)."""
+    try:
+        import geonamescache
+    except Exception:
+        return {}
+    try:
+        gc = geonamescache.GeonamesCache()
+        countries = gc.get_countries()  # iso2 → {"name": ...}
+        best: dict[str, tuple[str, int]] = {}  # city key → (iso2, population)
+        for c in gc.get_cities().values():
+            pop = c.get("population") or 0
+            if pop < _MIN_CITY_POP:
+                continue
+            cc = c.get("countrycode") or ""
+            if cc not in countries:
+                continue
+            name = (c.get("name") or "").strip()
+            for variant in {name.lower(), _fold_accents(name).lower()}:
+                variant = variant.strip()
+                if not variant or variant in _AMBIGUOUS_CITY_NAMES:
+                    continue
+                cur = best.get(variant)
+                if cur is None or pop > cur[1]:
+                    best[variant] = (cc, pop)
+        return {key: countries[cc]["name"] for key, (cc, _pop) in best.items()}
+    except Exception:
+        return {}
+
+
+# Curated aliases/overrides win on any conflict; global fills the rest.
+_CURATED_CITY_COUNTRY = _CITY_COUNTRY
+_CITY_COUNTRY = {**_build_global_city_country(), **_CURATED_CITY_COUNTRY}
+
+
 # Regions — NOT countries
 _REGIONS = {
     "apac": "APAC",
@@ -224,17 +283,19 @@ def _try_country_converter(text: str) -> str | None:
 
 
 def _city_lookup(text: str) -> str | None:
-    """Check major city lookup table. Handles 'Greater X', 'X Area' prefixes."""
-    key = text.lower().strip()
-    if key in _CITY_COUNTRY:
-        return _CITY_COUNTRY[key]
-    # Strip common prefixes/suffixes: "Greater Seattle" → "seattle"
-    key2 = re.sub(r"^greater\s+", "", key)
-    key2 = re.sub(r"\s+area$", "", key2)
-    key2 = re.sub(r"\s+metro$", "", key2)
-    key2 = re.sub(r"\s+region$", "", key2)
-    if key2 != key and key2 in _CITY_COUNTRY:
-        return _CITY_COUNTRY[key2]
+    """Check the city → country table. Handles 'Greater X'/'X Area' prefixes and
+    accented spellings (São Paulo → sao paulo)."""
+    raw = text.lower().strip()
+    for key in (raw, _fold_accents(raw)):
+        if key in _CITY_COUNTRY:
+            return _CITY_COUNTRY[key]
+        # Strip common prefixes/suffixes: "Greater Seattle" → "seattle"
+        key2 = re.sub(r"^greater\s+", "", key)
+        key2 = re.sub(r"\s+area$", "", key2)
+        key2 = re.sub(r"\s+metro$", "", key2)
+        key2 = re.sub(r"\s+region$", "", key2)
+        if key2 != key and key2 in _CITY_COUNTRY:
+            return _CITY_COUNTRY[key2]
     return None
 
 

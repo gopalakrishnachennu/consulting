@@ -114,6 +114,26 @@
         </div>
       </div>
 
+      {# ── Resolution gap: WHY rows are unresolved (maps to fix phases) ── #}
+      <div class="rounded-lg border border-slate-200 bg-white p-4">
+        <div class="mb-2 flex items-center justify-between">
+          <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600">Why unresolved</h2>
+          <span class="text-xs text-slate-400">remote policy: <strong class="text-slate-600">{{ remote_policy }}</strong></span>
+        </div>
+        <div class="space-y-1.5 text-sm">
+          {% for b in failure_buckets %}
+          <div class="flex items-center justify-between rounded-lg px-3 py-1.5 text-slate-700 bg-slate-50">
+            <span>{{ b.label }}</span><strong>{{ b.count }}</strong>
+          </div>
+          {% empty %}
+          <p class="text-xs text-slate-400 italic px-1">Nothing to resolve.</p>
+          {% endfor %}
+        </div>
+        <p class="mt-2 text-[11px] leading-snug text-slate-400">
+          Named places resolve via the expanded gazetteer; run the backlog sweep to apply it to these rows.
+        </p>
+      </div>
+
       <div class="rounded-lg border border-slate-200 bg-white p-4">
         <div class="mb-3 flex items-center justify-between">
           <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600">Platforms</h2>

@@ -3,6 +3,29 @@
 Production release log for GoCareers. Newest first. Created/updated by the `/release` skill
 (verify CI green → version + changelog → deploy → health-verify → auto-rollback → record).
 
+## v4.4.5 — Location Resolution Ladder (E+A+B+C+D) (2026-06-13)
+Attacks the root causes of unknown-country jobs across ALL platforms. Audit found the
+local gazetteer was only 151 cities / 15 countries (Spain & Mexico weren't even in it),
+and Mapbox only ran on the manual button. Built a layered resolution ladder:
+- PHASE A (gazetteer): added geonamescache (offline) — gazetteer 151 → 36,641 cities /
+  237 countries, accent-folded (São Paulo), curated aliases still win. Madrid→ES,
+  Tijuana→MX, Pune Research Campus→IN now resolve with zero API cost. Disambiguation
+  verified intact (London→GB, "San Francisco, CA"→US, Berlin→DE).
+- PHASE B (remote): resolver now pulls a country clue from the remote string, title,
+  or JD ("Remote - US", "Engineer (Remote, UK)"). New HarvestEngineConfig.remote_unknown_policy
+  (review/target/cold) for bare "Remote" with no country; surfaced on the review page.
+- PHASE C (provider): decoupled on-demand Mapbox from auto-during-harvest. The review
+  "Re-evaluate with Mapbox" button + sweep now work via force_provider even when the
+  global auto-flag is off — caps (80k/mo, 1k/hr) + LocationCache dedup still enforced.
+  (Fixes a latent bug: the Mapbox button did nothing unless auto-Mapbox was globally on.)
+- PHASE D (backlog): new `sweep_unknown_country_locations` command re-resolves the
+  REVIEW_UNKNOWN_COUNTRY backlog with the current offline resolver (no re-fetch — fast),
+  --dry-run/--limit/--provider/--include-inactive, reports cleared count + outcomes.
+- PHASE E (telemetry): "Why unresolved" breakdown on the review page (multi-placeholder /
+  remote / office-label / named-place / blank) so each phase's impact is visible.
+- +7 tests (gazetteer, remote, policy, force-provider, sweep, classifier, page render).
+Status: deploying (health-verify pending)
+
 ## v4.4.4 — Location Review: hide delisted jobs (2026-06-13)
 Follow-up to v4.4.3, driven by evidence: a Workday dry-run refetch resolved only
 28 of 889 rows (861 returned no location — the detail pages are gone). Conclusion:

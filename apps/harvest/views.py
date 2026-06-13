@@ -4475,6 +4475,34 @@ CURATED_COUNTRIES = [
     ("SE", "Sweden"), ("BE", "Belgium"), ("PT", "Portugal"), ("MY", "Malaysia"),
 ]
 CURATED_COUNTRY_NAMES = dict(CURATED_COUNTRIES)
+
+import re as _re_loc
+_LOC_BUCKET_MULTI = _re_loc.compile(r"^\s*\d+\s+locations?\s*$", _re_loc.I)
+_LOC_BUCKET_REMOTE = _re_loc.compile(r"\b(remote|wfh|work\s*from\s*home|anywhere|distributed)\b", _re_loc.I)
+_LOC_BUCKET_OFFICE = _re_loc.compile(r"\b(hq|headquarters|office|campus|worksite)\b", _re_loc.I)
+
+
+def _classify_location_bucket(location_raw: str) -> str:
+    """Categorize why a row is unresolved, for the review-page telemetry."""
+    s = (location_raw or "").strip()
+    if not s:
+        return "no_location"
+    if _LOC_BUCKET_MULTI.match(s):
+        return "multi_placeholder"
+    if _LOC_BUCKET_REMOTE.search(s):
+        return "remote"
+    if _LOC_BUCKET_OFFICE.search(s):
+        return "label_office"
+    return "city_unresolved"
+
+
+_LOC_BUCKET_LABELS = {
+    "multi_placeholder": "Multi-location placeholder (\"N Locations\")",
+    "remote": "Remote (no country)",
+    "label_office": "Office/HQ/campus label",
+    "city_unresolved": "Named place — not yet resolved",
+    "no_location": "Blank / no location",
+}
 UNKNOWN_COUNTRY_BULK_CONFIRM_THRESHOLD = 100
 UNKNOWN_COUNTRY_STALE_DAYS = 14
 
@@ -4673,6 +4701,20 @@ class UnknownCountryReviewView(SuperuserRequiredMixin, View):
             row["needs_large_confirm"] = row["count"] > UNKNOWN_COUNTRY_BULK_CONFIRM_THRESHOLD
             row["samples"] = list(sample_qs)
 
+        # Failure-mode breakdown — WHY rows are unresolved, aggregated over grouped
+        # location strings (cheap). Maps to the resolution-ladder phases so each
+        # improvement's impact is visible. Distinct from the operational buckets.
+        _bucket_totals: dict[str, int] = {}
+        for row in (
+            qs.values("location_raw").annotate(count=Count("id"))
+        ):
+            b = _classify_location_bucket(row["location_raw"])
+            _bucket_totals[b] = _bucket_totals.get(b, 0) + row["count"]
+        failure_buckets = [
+            {"key": k, "label": _LOC_BUCKET_LABELS.get(k, k), "count": _bucket_totals[k]}
+            for k in sorted(_bucket_totals, key=lambda k: -_bucket_totals[k])
+        ]
+
         # Pagination
         paginator = Paginator(
             qs.only(
@@ -4728,6 +4770,8 @@ class UnknownCountryReviewView(SuperuserRequiredMixin, View):
             "include_inactive": include_inactive,
             "hidden_inactive": hidden_inactive,
             "bucket_counts": bucket_counts,
+            "failure_buckets": failure_buckets,
+            "remote_policy": getattr(HarvestEngineConfig.get(), "remote_unknown_policy", "review"),
             "curated_countries": CURATED_COUNTRIES,
             "confirm_threshold": UNKNOWN_COUNTRY_BULK_CONFIRM_THRESHOLD,
             "stale_days": UNKNOWN_COUNTRY_STALE_DAYS,
@@ -4856,7 +4900,9 @@ class UnknownCountryReviewView(SuperuserRequiredMixin, View):
             )
             resolved = 0
             for job in jobs:
-                result = evaluate_rawjob_scope(job, use_provider=True, save=True)
+                # force_provider=True so on-demand Mapbox works even when
+                # auto-during-harvest is off (still respects monthly/hourly caps).
+                result = evaluate_rawjob_scope(job, use_provider=True, force_provider=True, save=True)
                 if result and result.get("scope_status") == RawJob.ScopeStatus.PRIORITY_TARGET:
                     resolved += 1
             messages.success(

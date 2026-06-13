@@ -493,10 +493,19 @@ def _split_location_parts(text: str) -> list[str]:
 
 def _city_country_code(city: str) -> str:
     city_map = getattr(country_classifier, "_CITY_COUNTRY", {})
-    country = city_map.get((city or "").lower().strip(), "")
-    if not country:
-        country = city_map.get(_strip_location_label_noise(city).lower().strip(), "")
-    return _code_for_country(country)
+    fold = getattr(country_classifier, "_fold_accents", lambda s: s)
+    candidates = [
+        (city or "").lower().strip(),
+        _strip_location_label_noise(city).lower().strip(),
+    ]
+    # Also try accent-folded variants (São Paulo → sao paulo) against the
+    # expanded global gazetteer.
+    candidates += [fold(c) for c in list(candidates)]
+    for key in candidates:
+        country = city_map.get(key, "")
+        if country:
+            return _code_for_country(country)
+    return ""
 
 
 def _state_prefix_parts(text: str) -> tuple[str, str, str] | None:
@@ -680,6 +689,44 @@ def _resolve_from_state_city(raw_text: str, normalized: str) -> LocationResoluti
     return None
 
 
+def _looks_remote(*texts: str) -> bool:
+    blob = " ".join(t for t in texts if t)
+    pat = getattr(country_classifier, "_REMOTE_PAT", None)
+    if pat is not None:
+        try:
+            return bool(pat.search(blob))
+        except Exception:
+            pass
+    return bool(re.search(r"\b(remote|wfh|work\s*from\s*home|anywhere|distributed)\b", blob, re.I))
+
+
+def _resolve_remote(
+    location_raw: str, city: str, state: str, country: str,
+    normalized: str, title: str = "", description: str = "",
+) -> LocationResolution | None:
+    """For remote postings, pull a country clue from the location, title, or JD
+    ('Remote - US', 'US-based remote', visa/right-to-work hints). Only fires when
+    the posting actually signals remote, so it can't mis-tag normal jobs.
+    Returns None when no real country can be found (bare 'Remote')."""
+    blob = " ".join(p for p in (location_raw, city, state, country) if (p or "").strip())
+    if not _looks_remote(blob, title):
+        return None
+    country_name, _region = country_classifier.detect_country(blob, title=title, description=description)
+    code = _code_for_country(country_name)
+    if not code:
+        return None
+    return LocationResolution(
+        raw_text=blob or location_raw,
+        normalized_text=(normalized or _location_token(blob)[:512] or "remote"),
+        country_code=code,
+        country_name=COUNTRY_CODE_TO_NAME.get(code, country_name),
+        region_name="Remote",
+        confidence=0.8,
+        source="remote_rules",
+        status=LocationCache.Status.RESOLVED,
+    )
+
+
 def _resolve_from_classifier(raw_text: str, normalized: str, title: str = "", description: str = "") -> LocationResolution | None:
     # Country resolution must be based on location fields only. Passing title or
     # JD text here caused bad rows where titles like "Manager - Greenwich, CT"
@@ -730,9 +777,13 @@ def provider_requests_this_hour(provider: str) -> int:
     return provider_requests_since(provider, _hour_start())
 
 
-def provider_quota_status(cfg: HarvestEngineConfig) -> dict:
+def provider_quota_status(cfg: HarvestEngineConfig, *, force: bool = False) -> dict:
+    """force=True is used for explicit on-demand provider calls (the review
+    'Re-evaluate with Mapbox' button and the backlog sweep): it treats the
+    provider as enabled even when auto-during-harvest is off, so a token + caps
+    are the only gate. Monthly/hourly caps are STILL enforced when forced."""
     provider = (cfg.geocoding_provider or "none").strip().lower()
-    enabled = bool(cfg.geocoding_provider_enabled) and provider != "none"
+    enabled = (bool(cfg.geocoding_provider_enabled) or force) and provider != "none"
     monthly_limit = int(cfg.geocoding_monthly_limit or 0)
     hourly_limit = int(getattr(cfg, "geocoding_hourly_limit", 0) or 0)
     warning_pct = int(getattr(cfg, "geocoding_warning_pct", 80) or 80)
@@ -792,8 +843,8 @@ def _warn_provider_quota_once(status: dict) -> None:
             )
 
 
-def _provider_quota_available(cfg: HarvestEngineConfig) -> bool:
-    status = provider_quota_status(cfg)
+def _provider_quota_available(cfg: HarvestEngineConfig, *, force: bool = False) -> bool:
+    status = provider_quota_status(cfg, force=force)
     _warn_provider_quota_once(status)
     return bool(status["available"])
 
@@ -843,8 +894,8 @@ def _record_provider_attempt(provider: str, raw_text: str, normalized: str) -> N
     ])
 
 
-def _mapbox_geocode(raw_text: str, normalized: str, cfg: HarvestEngineConfig) -> LocationResolution | None:
-    if not _provider_quota_available(cfg):
+def _mapbox_geocode(raw_text: str, normalized: str, cfg: HarvestEngineConfig, *, force: bool = False) -> LocationResolution | None:
+    if not _provider_quota_available(cfg, force=force):
         return None
     token = _resolve_provider_token("mapbox", cfg)
     if not token:
@@ -955,12 +1006,20 @@ def resolve_location(
     description: str = "",
     cfg: HarvestEngineConfig | None = None,
     use_provider: bool = False,
+    force_provider: bool = False,
 ) -> LocationResolution:
     cfg = cfg or HarvestEngineConfig.get()
     raw_text = ", ".join(part for part in [location_raw, city, state, country] if (part or "").strip())
     raw_text = raw_text or location_raw or city or state or country
     normalized = normalize_location_text(raw_text)
     if not normalized:
+        # Location normalized to nothing — usually a bare "Remote". Try to pull a
+        # country clue from the remote string, title, or JD before giving up.
+        remote_resolution = _resolve_remote(
+            location_raw, city, state, country, normalized="", title=title, description=description
+        )
+        if remote_resolution:
+            return remote_resolution
         if _is_ambiguous_location_only(location_raw, city, state, country):
             return LocationResolution(
                 raw_text=raw_text,
@@ -993,8 +1052,8 @@ def resolve_location(
             and _should_prefer_location_resolution(location_resolution, cached, raw_text_for_rules)
         )
         provider_now_available = (
-            use_provider
-            and cfg.geocoding_provider_enabled
+            (use_provider or force_provider)
+            and (cfg.geocoding_provider_enabled or force_provider)
             and cfg.geocoding_provider in {"mapbox", "google"}
             and bool(_resolve_provider_token(cfg.geocoding_provider, cfg))
         )
@@ -1024,8 +1083,8 @@ def resolve_location(
             or _resolve_from_classifier(raw_text_for_rules, normalized, title=title, description=description)
         )
 
-    if not resolution and use_provider and cfg.geocoding_provider == "mapbox" and not placeholder_only:
-        resolution = _mapbox_geocode(raw_text, normalized, cfg)
+    if not resolution and (use_provider or force_provider) and cfg.geocoding_provider == "mapbox" and not placeholder_only:
+        resolution = _mapbox_geocode(raw_text, normalized, cfg, force=force_provider)
 
     if not resolution:
         resolution = LocationResolution(
@@ -1067,11 +1126,14 @@ def evaluate_rawjob_scope(
     *,
     cfg: HarvestEngineConfig | None = None,
     use_provider: bool | None = False,
+    force_provider: bool = False,
     save: bool = False,
 ) -> dict:
     cfg = cfg or HarvestEngineConfig.get()
     if use_provider is None:
         use_provider = bool(getattr(cfg, "geocoding_provider_enabled", False))
+    if force_provider:
+        use_provider = True
     location_candidates = extract_location_candidates(
         location_raw=raw_job.location_raw or "",
         city=raw_job.city or "",
@@ -1093,6 +1155,7 @@ def evaluate_rawjob_scope(
         description=raw_job.description or raw_job.description_clean or "",
         cfg=cfg,
         use_provider=use_provider,
+        force_provider=force_provider,
     )
 
     target_countries = set(cfg.get_target_countries() or DEFAULT_TARGET_COUNTRIES)
@@ -1105,6 +1168,7 @@ def evaluate_rawjob_scope(
             description=raw_job.description or raw_job.description_clean or "",
             cfg=cfg,
             use_provider=use_provider,
+            force_provider=force_provider,
         )
         if candidate_resolution.country_code:
             candidate_resolutions.append(candidate_resolution)
@@ -1166,7 +1230,23 @@ def evaluate_rawjob_scope(
             "is_priority": True,
         })
     elif not resolution.country_code:
-        if cfg.process_unknown_country_with_target_domain and has_target_domain_signal(raw_job):
+        remote_policy = getattr(cfg, "remote_unknown_policy", "review")
+        looks_remote = remote_policy in ("target", "cold") and _looks_remote(
+            raw_job.location_raw or "", raw_job.title or ""
+        )
+        if looks_remote and remote_policy == "target":
+            updates.update({
+                "scope_status": RawJob.ScopeStatus.PRIORITY_TARGET,
+                "scope_reason": "remote_no_country_policy_target",
+                "is_priority": True,
+            })
+        elif looks_remote and remote_policy == "cold":
+            updates.update({
+                "scope_status": RawJob.ScopeStatus.COLD_NON_TARGET_COUNTRY,
+                "scope_reason": "remote_no_country_policy_cold",
+                "is_priority": False,
+            })
+        elif cfg.process_unknown_country_with_target_domain and has_target_domain_signal(raw_job):
             updates.update({
                 "scope_status": RawJob.ScopeStatus.REVIEW_UNKNOWN_COUNTRY,
                 "scope_reason": (
