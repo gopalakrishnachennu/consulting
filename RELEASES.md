@@ -19,7 +19,7 @@ consultant targeting → vetting queue).
   role already assigned to the profile so editing never silently drops a selection.
 - Downstream flow surfaced on the list (banner + per-rule role state + consultants-targeting).
 - +3 regression tests (pause propagation, quick-update endpoint, slug autogen); 8/8 green.
-Status: deploying (health-verify pending)
+Status: deployed (7a6a593 · CI+image green · health overall=ok · 2026-06-13)
 
 ## v4.4.1 — Harvest fully revived: 274 jobs/3min + Role Targeting Studio (2026-06-12)
 - FINAL root cause: Celery's global 300s soft time limit killed the daily harvest 5 min in,
