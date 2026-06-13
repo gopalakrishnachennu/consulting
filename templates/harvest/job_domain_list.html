@@ -3,6 +3,7 @@
 {% include "jobs/_pipeline_subnav.html" %}
 
 <div class="max-w-7xl mx-auto px-4 py-6">
+  {% csrf_token %}
   <div class="flex items-start justify-between gap-4 flex-wrap mb-5">
     <div>
       <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Jobs Pipeline</div>
@@ -20,15 +21,91 @@
           Apply Existing Jobs
         </button>
       </form>
-      <a href="{% url 'harvest-job-domain-create' %}" class="btn-primary">Add Rule</a>
+      <button type="button" class="btn-primary" onclick="toggleQuickAdd()">+ Add Rule</button>
     </div>
+  </div>
+
+  <!-- Downstream flow explainer -->
+  <div class="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 mb-5">
+    <div class="flex items-center gap-2 flex-wrap text-sm text-indigo-900">
+      <span class="font-semibold">Each rule flows downstream automatically:</span>
+      <span class="inline-flex items-center gap-1.5">
+        <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-600 text-white text-xs font-bold">1</span>
+        stamps <code class="bg-white/70 px-1 rounded text-xs">job_domain</code> on harvested jobs
+      </span>
+      <span class="text-indigo-400">→</span>
+      <span class="inline-flex items-center gap-1.5">
+        <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-600 text-white text-xs font-bold">2</span>
+        syncs a <strong>Marketing Role</strong>
+      </span>
+      <span class="text-indigo-400">→</span>
+      <span class="inline-flex items-center gap-1.5">
+        <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-600 text-white text-xs font-bold">3</span>
+        offered in <strong>consultant targeting</strong>
+      </span>
+      <span class="text-indigo-400">→</span>
+      <span class="inline-flex items-center gap-1.5">
+        <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-600 text-white text-xs font-bold">4</span>
+        filters the <strong>vetting queue</strong>
+      </span>
+    </div>
+    <div class="text-xs text-indigo-700 mt-1.5">
+      Pausing a rule stops all four for new activity. Existing consultant assignments are preserved.
+    </div>
+  </div>
+
+  <!-- Quick Add (inline, collapsible) -->
+  <div id="quick-add-panel" class="hidden rounded-lg border border-emerald-300 bg-emerald-50 p-4 mb-5">
+    <form method="post" action="{% url 'harvest-job-domain-create' %}" id="quick-add-form">
+      {% csrf_token %}
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-semibold text-slate-900">Quick Add a Routing Rule</h2>
+        <button type="button" class="text-slate-400 hover:text-slate-700 text-sm" onclick="toggleQuickAdd()">Close ✕</button>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
+        <div class="md:col-span-3">
+          <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Name</label>
+          <input name="name" required placeholder="Salesforce Developer"
+                 class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          <p class="text-xs text-slate-400 mt-1">Slug auto-generates from the name.</p>
+        </div>
+        <div class="md:col-span-5">
+          <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Regex pattern</label>
+          <input name="regex_pattern" id="qa-pattern" required placeholder="\bsalesforce\b|\bsfdc\b"
+                 class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono">
+          <div id="qa-test-result" class="text-xs mt-1 hidden"></div>
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Category</label>
+          <select name="top_category" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            {% for value,label in top_category_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Priority</label>
+          <input name="priority" type="number" value="500" min="1" max="9999" step="10"
+                 class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        </div>
+      </div>
+      <input type="hidden" name="is_active" value="on">
+      <div class="mt-3 flex items-center gap-2 flex-wrap">
+        <button type="submit" class="btn-primary">Save Rule</button>
+        <button type="button" class="btn-secondary" onclick="testQuickAddPattern()">Test pattern</button>
+        <label class="inline-flex items-center gap-2 text-sm text-slate-600 ml-2">
+          <input type="checkbox" name="apply_downstream" class="rounded border-slate-300">
+          Re-classify existing jobs now
+        </label>
+      </div>
+    </form>
   </div>
 
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
     <div class="rounded-lg border border-slate-200 bg-white p-4">
       <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Rules</div>
       <div class="mt-2 text-2xl font-bold text-slate-950">{{ total_count }}</div>
-      <div class="text-xs text-slate-500">{{ active_count }} active, {{ paused_count }} paused</div>
+      <div class="text-xs text-slate-500"><span id="stat-active">{{ active_count }}</span> active, <span id="stat-paused">{{ paused_count }}</span> paused</div>
     </div>
     <div class="rounded-lg border border-slate-200 bg-white p-4">
       <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Raw Jobs To Recheck</div>
@@ -50,12 +127,6 @@
       <div class="mt-2 text-2xl font-bold text-red-700">{{ impact.rules_missing_marketing_role|add:impact.rules_with_inactive_marketing_role }}</div>
       <div class="text-xs text-slate-500">Missing or inactive MarketingRole</div>
     </div>
-  </div>
-
-  <div class="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 mb-5">
-    <strong>How to use this safely:</strong>
-    save a rule to affect new classification immediately. Use <strong>Apply Existing Jobs</strong> only when you want active RawJobs
-    and pool/open Jobs to catch up. Manual job roles are preserved; only auto-assigned roles are refreshed.
   </div>
 
   <form method="get" class="mb-5 rounded-lg border border-slate-200 bg-white p-4">
@@ -130,9 +201,9 @@
     <table class="w-full text-sm">
       <thead class="tbl-head">
         <tr>
-          <th class="tbl-th w-12">P</th>
+          <th class="tbl-th w-16" title="Lower = matched first. Edit inline.">Priority</th>
           <th class="tbl-th">Rule</th>
-          <th class="tbl-th">Marketing Role</th>
+          <th class="tbl-th">Downstream</th>
           <th class="tbl-th">Category</th>
           <th class="tbl-th">Pattern</th>
           <th class="tbl-th">Usage</th>
@@ -142,21 +213,29 @@
       </thead>
       <tbody class="divide-y divide-gray-100">
         {% for d in domains %}
-        <tr class="tbl-row {% if not d.is_active %}opacity-60{% endif %}">
-          <td class="tbl-td text-slate-400 font-mono text-xs">{{ d.priority }}</td>
+        <tr class="tbl-row" id="domain-row-{{ d.pk }}" data-active="{{ d.is_active|yesno:'1,0' }}">
+          <td class="tbl-td">
+            <input type="number" value="{{ d.priority }}" min="1" max="9999" step="10"
+                   onchange="quickPriority({{ d.pk }}, this)"
+                   class="w-16 rounded border border-slate-200 px-2 py-1 text-xs font-mono text-slate-600 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200">
+          </td>
           <td class="tbl-td">
             <div class="font-semibold text-slate-900">{{ d.name }}</div>
             <div class="font-mono text-xs text-slate-500">{{ d.slug }}</div>
           </td>
           <td class="tbl-td whitespace-nowrap">
-            {% if d.marketing_role_state == "ready" %}
-            <span class="badge-green text-xs">Synced</span>
-            {% elif d.marketing_role_state == "inactive" %}
-            <span class="rounded-full bg-amber-100 text-amber-800 text-xs px-2 py-0.5 font-semibold">Role inactive</span>
-            {% else %}
-            <span class="rounded-full bg-red-100 text-red-700 text-xs px-2 py-0.5 font-semibold">Missing role</span>
-            {% endif %}
-            <div class="text-xs text-slate-400 mt-1">{{ d.marketing_role_consultant_count }} consultants</div>
+            <div class="flex items-center gap-1.5 text-xs" data-downstream>
+              {% if d.marketing_role_state == "ready" %}
+              <span class="badge-green text-xs js-role-badge">Role synced</span>
+              {% elif d.marketing_role_state == "inactive" %}
+              <span class="rounded-full bg-amber-100 text-amber-800 text-xs px-2 py-0.5 font-semibold js-role-badge">Role paused</span>
+              {% else %}
+              <span class="rounded-full bg-red-100 text-red-700 text-xs px-2 py-0.5 font-semibold js-role-badge">No role</span>
+              {% endif %}
+            </div>
+            <div class="text-xs text-slate-400 mt-1">
+              <span class="js-consultant-count">{{ d.marketing_role_consultant_count }}</span> consultants targeting
+            </div>
           </td>
           <td class="tbl-td whitespace-nowrap">
             <span class="inline-block text-xs px-2 py-0.5 rounded-full font-semibold
@@ -177,11 +256,13 @@
             <div class="text-xs text-slate-400">{{ d.synced_count }} synced, {{ d.marketing_role_job_count }} jobs</div>
           </td>
           <td class="tbl-td whitespace-nowrap">
-            {% if d.is_active %}
-            <span class="badge-green text-xs">Active</span>
-            {% else %}
-            <span class="bg-slate-100 text-slate-500 text-xs px-2 py-0.5 rounded-full font-medium">Paused</span>
-            {% endif %}
+            <button type="button" onclick="quickToggle({{ d.pk }})" data-toggle-btn
+                    class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold transition
+                    {% if d.is_active %}bg-green-100 text-green-700 hover:bg-amber-100 hover:text-amber-800
+                    {% else %}bg-slate-100 text-slate-500 hover:bg-green-100 hover:text-green-700{% endif %}">
+              <span class="js-status-label">{% if d.is_active %}● Active{% else %}○ Paused{% endif %}</span>
+              <span class="js-status-hint text-[10px] opacity-60">{% if d.is_active %}pause{% else %}activate{% endif %}</span>
+            </button>
           </td>
           <td class="tbl-td-right whitespace-nowrap space-x-2">
             <a href="{% url 'harvest-job-domain-edit' pk=d.pk %}" class="link-action">Edit</a>
@@ -218,6 +299,110 @@ function escapeHtml(value) {
   return String(value || '').replace(/[&<>"']/g, function(c) {
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
   });
+}
+function csrfToken() {
+  const el = document.querySelector('input[name="csrfmiddlewaretoken"]');
+  return el ? el.value : '';
+}
+
+function toggleQuickAdd() {
+  const panel = document.getElementById('quick-add-panel');
+  panel.classList.toggle('hidden');
+  if (!panel.classList.contains('hidden')) {
+    const nameInput = panel.querySelector('input[name="name"]');
+    if (nameInput) nameInput.focus();
+  }
+}
+
+function testQuickAddPattern() {
+  // Validate the regex client-side and surface a quick title test.
+  const pattern = document.getElementById('qa-pattern').value.trim();
+  const box = document.getElementById('qa-test-result');
+  box.classList.remove('hidden');
+  if (!pattern) { box.className = 'text-xs mt-1 text-amber-700'; box.textContent = 'Enter a pattern first.'; return; }
+  try {
+    new RegExp(pattern, 'i');
+    box.className = 'text-xs mt-1 text-green-700';
+    box.textContent = '✓ Valid regex. Use the Live Title Tester below to check matches against real titles.';
+  } catch (e) {
+    box.className = 'text-xs mt-1 text-red-600';
+    box.textContent = '✗ Invalid regex: ' + e.message;
+  }
+}
+
+function quickPost(pk, body) {
+  return fetch(`/harvest/job-domains/${pk}/quick/`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: {
+      'X-CSRFToken': csrfToken(),
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: body,
+  }).then(r => r.json());
+}
+
+function quickToggle(pk) {
+  const row = document.getElementById('domain-row-' + pk);
+  const btn = row.querySelector('[data-toggle-btn]');
+  btn.disabled = true;
+  btn.style.opacity = '0.5';
+  quickPost(pk, 'action=toggle').then(data => {
+    btn.disabled = false;
+    btn.style.opacity = '';
+    if (!data.ok) { alert(data.error || 'Could not update.'); return; }
+    applyRowState(row, data);
+    bumpStats(data.is_active);
+  }).catch(() => { btn.disabled = false; btn.style.opacity = ''; alert('Network error.'); });
+}
+
+function quickPriority(pk, input) {
+  const val = parseInt(input.value, 10);
+  if (isNaN(val)) return;
+  input.disabled = true;
+  quickPost(pk, 'priority=' + encodeURIComponent(val)).then(data => {
+    input.disabled = false;
+    if (!data.ok) { alert(data.error || 'Could not update priority.'); return; }
+    input.value = data.priority;
+    input.classList.add('ring-2', 'ring-green-300');
+    setTimeout(() => input.classList.remove('ring-2', 'ring-green-300'), 900);
+  }).catch(() => { input.disabled = false; });
+}
+
+function applyRowState(row, data) {
+  const active = data.is_active;
+  row.dataset.active = active ? '1' : '0';
+  // Status toggle button
+  const btn = row.querySelector('[data-toggle-btn]');
+  btn.querySelector('.js-status-label').textContent = active ? '● Active' : '○ Paused';
+  btn.querySelector('.js-status-hint').textContent = active ? 'pause' : 'activate';
+  btn.className = 'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold transition ' +
+    (active
+      ? 'bg-green-100 text-green-700 hover:bg-amber-100 hover:text-amber-800'
+      : 'bg-slate-100 text-slate-500 hover:bg-green-100 hover:text-green-700');
+  // Downstream role badge — follows the domain's active state
+  const badge = row.querySelector('.js-role-badge');
+  if (badge) {
+    if (data.role_active) {
+      badge.className = 'badge-green text-xs js-role-badge';
+      badge.textContent = 'Role synced';
+    } else {
+      badge.className = 'rounded-full bg-amber-100 text-amber-800 text-xs px-2 py-0.5 font-semibold js-role-badge';
+      badge.textContent = 'Role paused';
+    }
+  }
+  const cc = row.querySelector('.js-consultant-count');
+  if (cc) cc.textContent = data.consultant_count;
+}
+
+function bumpStats(nowActive) {
+  const a = document.getElementById('stat-active');
+  const p = document.getElementById('stat-paused');
+  if (!a || !p) return;
+  let av = parseInt(a.textContent, 10) || 0;
+  let pv = parseInt(p.textContent, 10) || 0;
+  if (nowActive) { av++; pv = Math.max(0, pv - 1); } else { av = Math.max(0, av - 1); pv++; }
+  a.textContent = av; p.textContent = pv;
 }
 
 function loadImpactPreview() {

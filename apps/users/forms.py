@@ -375,7 +375,16 @@ class ConsultantProfileEditForm(forms.ModelForm):
         is_admin = self.user and (self.user.is_superuser or self.user.role == User.Role.ADMIN)
         if is_admin:
             self.fields['marketing_roles'].widget = forms.CheckboxSelectMultiple()
-            self.fields['marketing_roles'].queryset = MarketingRole.objects.all()
+            # Only offer active roles (a paused Job Domain deactivates its role), but
+            # keep any role already assigned to this consultant visible so editing an
+            # existing profile never silently drops a selection.
+            from django.db.models import Q
+            role_qs = MarketingRole.objects.filter(is_active=True)
+            if self.instance and self.instance.pk:
+                assigned_ids = list(self.instance.marketing_roles.values_list('id', flat=True))
+                if assigned_ids:
+                    role_qs = MarketingRole.objects.filter(Q(is_active=True) | Q(id__in=assigned_ids))
+            self.fields['marketing_roles'].queryset = role_qs.order_by('display_order', 'name')
             # Status field is already in Meta.fields, so we just ensure it's available for admins
         else:
             if 'marketing_roles' in self.fields:

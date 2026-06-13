@@ -125,6 +125,19 @@ class JobDomainForm(forms.ModelForm):
             "priority": forms.NumberInput(attrs={"min": 1, "max": 9999, "step": 10}),
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Slug may be left blank — it's auto-generated from the name on save.
+        self.fields["slug"].required = False
+
+    def clean(self):
+        cleaned = super().clean()
+        slug = (cleaned.get("slug") or "").strip()
+        if not slug and cleaned.get("name"):
+            from django.utils.text import slugify
+            cleaned["slug"] = slugify(cleaned["name"])[:80]
+        return cleaned
+
     def clean_regex_pattern(self):
         pattern = self.cleaned_data.get("regex_pattern", "").strip()
         if not pattern:

@@ -1910,6 +1910,84 @@ class JobDomainRoutingRuleAdminTests(TestCase):
         self.assertEqual(response["Location"], reverse("harvest-job-domains"))
         mock_apply.assert_called_once_with(kwargs={"force_reclassify": True, "active_only": True})
 
+    def test_pausing_domain_propagates_to_marketing_role(self):
+        """Edge case B: pausing a domain must deactivate its MarketingRole so it
+        stops being offered/auto-assigned — but keep the row (assignments survive)."""
+        from harvest.models import JobDomain
+        from users.models import MarketingRole
+
+        rule = JobDomain.objects.create(
+            name="Propagation Specialist",
+            slug="propagation-specialist",
+            regex_pattern=r"\bpropagation\b",
+            top_category=JobDomain.TopCategory.NON_IT,
+            priority=410,
+        )
+        self.assertTrue(MarketingRole.objects.get(slug=rule.slug).is_active)
+
+        rule.is_active = False
+        rule.save()
+        self.assertFalse(MarketingRole.objects.get(slug=rule.slug).is_active)
+
+        # Re-activating the domain re-activates the role.
+        rule.is_active = True
+        rule.save()
+        self.assertTrue(MarketingRole.objects.get(slug=rule.slug).is_active)
+
+    def test_quick_update_endpoint_toggles_and_reprioritizes(self):
+        """Inline list controls flip active state and set priority via JSON."""
+        from harvest.models import JobDomain
+        from users.models import MarketingRole
+
+        rule = JobDomain.objects.create(
+            name="Quick Update Specialist",
+            slug="quick-update-specialist",
+            regex_pattern=r"\bquickupdate\b",
+            top_category=JobDomain.TopCategory.IT,
+            priority=500,
+        )
+        url = reverse("harvest-job-domain-quick", kwargs={"pk": rule.pk})
+
+        # Toggle → paused, role follows
+        resp = self.client.post(url, {"action": "toggle"})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data["ok"])
+        self.assertFalse(data["is_active"])
+        self.assertFalse(data["role_active"])
+        rule.refresh_from_db()
+        self.assertFalse(rule.is_active)
+        self.assertFalse(MarketingRole.objects.get(slug=rule.slug).is_active)
+
+        # Priority update
+        resp = self.client.post(url, {"priority": "120"})
+        self.assertEqual(resp.json()["priority"], 120)
+        rule.refresh_from_db()
+        self.assertEqual(rule.priority, 120)
+
+        # Bad priority is rejected
+        resp = self.client.post(url, {"priority": "abc"})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_quick_add_autogenerates_slug_from_name(self):
+        """Edge case: slug can be left blank — generated from the name."""
+        from harvest.models import JobDomain
+
+        response = self.client.post(
+            reverse("harvest-job-domain-create"),
+            {
+                "name": "Cloud Security Architect",
+                "slug": "",
+                "regex_pattern": r"\bcloud\s*security\b",
+                "top_category": JobDomain.TopCategory.IT,
+                "priority": "500",
+                "is_active": "on",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        rule = JobDomain.objects.get(name="Cloud Security Architect")
+        self.assertEqual(rule.slug, "cloud-security-architect")
+
 
 class JarvisCompanyFallbackTests(SimpleTestCase):
     def test_extract_company_from_dayforce_url_uses_tenant(self):

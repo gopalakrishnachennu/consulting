@@ -1,171 +1,281 @@
 {% extends "base.html" %}
+
+{% block extra_head %}
+<style>
+  .routing-form input:not([type="checkbox"]):not([type="hidden"]),
+  .routing-form select,
+  .routing-form textarea {
+    width: 100%;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.5rem;
+    background: #fff;
+    color: #0f172a;
+    font-size: 0.875rem;
+    line-height: 1.35;
+    padding: 0.625rem 0.75rem;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .routing-form input:not([type="checkbox"]):not([type="hidden"]):focus,
+  .routing-form select:focus,
+  .routing-form textarea:focus {
+    outline: none;
+    border-color: var(--brand-400, #818cf8);
+    box-shadow: 0 0 0 3px var(--brand-ring, rgba(99,102,241,.18));
+  }
+  .routing-form textarea {
+    min-height: 5.5rem;
+    resize: vertical;
+  }
+  .routing-form #id_regex_pattern {
+    min-height: 8rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 0.8125rem;
+  }
+  .routing-form input[type="checkbox"] {
+    width: 1rem;
+    height: 1rem;
+    border-radius: 0.25rem;
+  }
+  .routing-form #id_priority {
+    font-variant-numeric: tabular-nums;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
 {% include "jobs/_pipeline_subnav.html" %}
 
-<div class="max-w-2xl mx-auto px-4 py-8">
-  <div class="mb-6">
-    <a href="{% url 'harvest-job-domains' %}" class="text-sm text-slate-500 hover:text-slate-700">Back to Role Routing Rules</a>
-    <h1 class="text-xl font-bold text-slate-900 mt-2">
-      {% if object %}Edit Routing Rule - {{ object.name }}{% else %}Add Routing Rule{% endif %}
-    </h1>
-    <p class="text-sm text-slate-500 mt-1">
-      Rules classify harvested jobs into domains that become Marketing Roles for vetting, matching, submissions, and resume automation.
-    </p>
+<div class="max-w-7xl mx-auto px-4 py-6">
+  <div class="mb-5 flex flex-wrap items-start justify-between gap-4">
+    <div class="min-w-0">
+      <a href="{% url 'harvest-job-domains' %}" class="link-action text-sm">&larr; Role Routing Rules</a>
+      <div class="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Jobs Pipeline</div>
+      <h1 class="mt-1 text-2xl font-bold text-slate-950">
+        {% if object %}Edit Rule: {{ object.name }}{% else %}Add Routing Rule{% endif %}
+      </h1>
+      <p class="mt-1 max-w-3xl text-sm text-slate-600">
+        Maintain the rule that classifies harvested jobs and keeps the matching Marketing Role in sync.
+      </p>
+    </div>
+
+    {% if object %}
+    <div class="flex flex-wrap items-center gap-2 text-xs">
+      <span class="rounded-full border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700">
+        Priority {{ object.priority }}
+      </span>
+      <span class="rounded-full border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700">
+        {{ object.get_top_category_display }}
+      </span>
+      {% if object.is_active %}
+      <span class="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 font-semibold text-emerald-700">Active</span>
+      {% else %}
+      <span class="rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5 font-semibold text-slate-600">Paused</span>
+      {% endif %}
+    </div>
+    {% endif %}
   </div>
 
-  <form method="post" class="space-y-5 bg-white rounded-xl border border-slate-200 shadow-sm p-6" id="domain-form">
+  <form method="post" class="routing-form" id="domain-form">
     {% csrf_token %}
 
     {% if form.non_field_errors %}
-    <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+    <div class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
       {{ form.non_field_errors }}
     </div>
     {% endif %}
 
-    {# ── Name + Slug ────────────────────────────────────────────────────────── #}
-    <div class="grid grid-cols-2 gap-4">
-      <div>
-        <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Name</label>
-        {{ form.name }}
-        {% if form.name.errors %}<p class="text-red-600 text-xs mt-1">{{ form.name.errors|join:", " }}</p>{% endif %}
-      </div>
-      <div>
-        <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Slug</label>
-        {{ form.slug }}
-        <p class="text-xs text-slate-400 mt-1">Auto-generated from name if left blank.</p>
-        {% if form.slug.errors %}<p class="text-red-600 text-xs mt-1">{{ form.slug.errors|join:", " }}</p>{% endif %}
-      </div>
-    </div>
-
-    {# ── Keyword Tag Editor ─────────────────────────────────────────────────── #}
-    <div>
-      <div class="flex items-center justify-between mb-1">
-        <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Keywords / Pattern <span class="text-red-500">*</span>
-        </label>
-        <button type="button" id="toggle-advanced-btn"
-                onclick="toggleAdvanced()"
-                class="text-xs text-indigo-600 hover:text-indigo-800 font-medium underline underline-offset-2">
-          Switch to raw regex
-        </button>
-      </div>
-
-      {# Tag mode (default) #}
-      <div id="tag-mode">
-        {# Chip container #}
-        <div id="keyword-chips"
-             class="min-h-[56px] flex flex-wrap gap-2 p-3 rounded-lg border border-slate-300 bg-slate-50 cursor-text"
-             onclick="document.getElementById('kw-input').focus()">
-          {# chips injected by JS #}
+    <div class="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
+      <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div class="border-b border-slate-200 bg-slate-50 px-5 py-4">
+          <h2 class="text-base font-semibold text-slate-950">Rule Editor</h2>
+          <p class="mt-1 text-xs text-slate-500">Use keywords for normal edits; switch to raw regex only for advanced matching.</p>
         </div>
 
-        {# Add input row #}
-        <div class="flex gap-2 mt-2">
-          <input id="kw-input" type="text"
-                 placeholder="Type keyword or phrase, press Enter to add…"
-                 class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                 autocomplete="off">
-          <button type="button" onclick="addKeywordFromInput()"
-                  class="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition">
-            Add
-          </button>
-        </div>
-
-        {# Options row #}
-        <div class="flex items-center gap-4 mt-2">
-          <label class="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
-            <input type="checkbox" id="use-word-boundary" checked
-                   onchange="rebuildRegex()"
-                   class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-400">
-            Wrap with <code class="bg-slate-100 px-1 rounded">\b</code> word boundaries <span class="text-slate-400">(recommended)</span>
-          </label>
-        </div>
-
-        {# Generated regex preview #}
-        <div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-          <div class="flex items-center justify-between mb-1">
-            <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Generated Regex</span>
-            <span id="kw-count" class="text-[10px] text-slate-400">0 keywords</span>
+        <div class="space-y-6 p-5">
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
+              <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Name</label>
+              {{ form.name }}
+              {% if form.name.errors %}<p class="mt-1 text-xs text-red-600">{{ form.name.errors|join:", " }}</p>{% endif %}
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Slug</label>
+              {{ form.slug }}
+              <p class="mt-1 text-xs text-slate-400">Leave blank to generate from name.</p>
+              {% if form.slug.errors %}<p class="mt-1 text-xs text-red-600">{{ form.slug.errors|join:", " }}</p>{% endif %}
+            </div>
           </div>
-          <code id="regex-preview-text" class="text-xs text-slate-600 break-all whitespace-pre-wrap">—</code>
+
+          <div>
+            <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Keywords / Pattern <span class="text-red-500">*</span>
+                </label>
+                <p class="mt-1 text-xs text-slate-400">One chip can be a word, phrase, or regex fragment.</p>
+              </div>
+              <button type="button" id="toggle-advanced-btn"
+                      onclick="toggleAdvanced()"
+                      class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                Raw regex
+              </button>
+            </div>
+
+            <div id="tag-mode" class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div id="keyword-chips"
+                   class="flex min-h-[72px] cursor-text flex-wrap content-start gap-2 rounded-lg border border-dashed border-slate-300 bg-white p-3"
+                   onclick="document.getElementById('kw-input').focus()">
+              </div>
+
+              <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                <input id="kw-input" type="text"
+                       placeholder="Type keyword or phrase"
+                       autocomplete="off">
+                <button type="button" onclick="addKeywordFromInput()"
+                        class="btn-primary inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white">
+                  Add Keyword
+                </button>
+              </div>
+
+              <div class="mt-3 flex flex-wrap items-center gap-3">
+                <label class="inline-flex cursor-pointer select-none items-center gap-2 text-xs font-medium text-slate-700">
+                  <input type="checkbox" id="use-word-boundary" checked
+                         onchange="rebuildRegex()"
+                         class="border-slate-300 text-indigo-600 focus:ring-indigo-400">
+                  Match whole words
+                </label>
+                <span class="rounded-full bg-slate-100 px-2 py-1 font-mono text-[11px] text-slate-500">\b</span>
+              </div>
+
+              <div id="keyword-error" class="mt-3 hidden rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700"></div>
+
+              <div class="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                <div class="mb-1 flex items-center justify-between gap-2">
+                  <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Generated Regex</span>
+                  <span id="kw-count" class="text-[10px] text-slate-400">0 keywords</span>
+                </div>
+                <code id="regex-preview-text" class="block break-all whitespace-pre-wrap text-xs text-slate-700">No keywords</code>
+              </div>
+            </div>
+
+            <div id="advanced-mode" class="hidden">
+              <div class="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Raw regex is saved as typed. Invalid patterns are rejected before they reach classification.
+              </div>
+              {{ form.regex_pattern }}
+            </div>
+
+            {% if form.regex_pattern.errors %}
+            <p class="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+              {{ form.regex_pattern.errors|join:", " }}
+            </p>
+            {% endif %}
+          </div>
+
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1.2fr)_160px_minmax(0,1fr)]">
+            <div>
+              <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Category</label>
+              {{ form.top_category }}
+              {% if form.top_category.errors %}<p class="mt-1 text-xs text-red-600">{{ form.top_category.errors|join:", " }}</p>{% endif %}
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Priority</label>
+              {{ form.priority }}
+              <p class="mt-1 text-xs text-slate-400">Lower runs first.</p>
+              {% if form.priority.errors %}<p class="mt-1 text-xs text-red-600">{{ form.priority.errors|join:", " }}</p>{% endif %}
+            </div>
+            <div class="flex items-end">
+              <label class="flex w-full cursor-pointer items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+                {{ form.is_active }}
+                <span>
+                  <span class="block text-sm font-semibold text-slate-800">Active for new classification</span>
+                  <span class="block text-xs text-slate-500">Turn off to pause matching.</span>
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Notes</label>
+            {{ form.notes }}
+            {% if form.notes.errors %}<p class="mt-1 text-xs text-red-600">{{ form.notes.errors|join:", " }}</p>{% endif %}
+          </div>
         </div>
+      </section>
 
-        <p class="text-xs text-slate-400 mt-1">
-	          Each keyword is matched case-insensitively against job title first, then description.
-          Use <code class="bg-slate-100 px-1 rounded">\s*</code> between words for flexible spacing,
-          e.g. <em>soc\s*analyst</em>.
-        </p>
-      </div>
+      <aside class="space-y-4 lg:sticky lg:top-24">
+        <section class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 class="text-sm font-semibold text-slate-950">Save Behavior</h2>
+          <div class="mt-3 space-y-3 text-sm text-slate-700">
+            <div class="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+              <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Save Changes</div>
+              <div class="mt-1">Updates the rule and syncs the Marketing Role.</div>
+            </div>
+            <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+              <div class="text-xs font-semibold uppercase tracking-wide">Save and Apply Existing</div>
+              <div class="mt-1">Queues a background refresh for active RawJobs and pool/open Jobs.</div>
+            </div>
+          </div>
+        </section>
 
-      {# Advanced / raw regex mode (hidden by default) #}
-      <div id="advanced-mode" class="hidden">
-        <div class="mb-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          <strong>⚠ Advanced mode.</strong> Edit raw regex directly.
-          Bad patterns are rejected before saving.
-          Test at <a href="https://regex101.com" target="_blank" class="underline">regex101.com</a>.
+        <section class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 class="text-sm font-semibold text-slate-950">Pattern Test</h2>
+          <div class="mt-3 flex gap-2">
+            <input id="local-test-title" type="text" placeholder="Job title to test"
+                   class="min-w-0 flex-1">
+            <button type="button" onclick="testLocalPattern()"
+                    class="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              Test
+            </button>
+          </div>
+          <div id="local-test-result" class="mt-3 hidden rounded-lg border px-3 py-2 text-sm"></div>
+        </section>
+
+        <section class="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+          <h2 class="font-semibold">Safe Editing</h2>
+          <ul class="mt-2 space-y-2 text-xs leading-5">
+            <li>Priority decides match order; leave gaps like 10, 20, 30.</li>
+            <li>Pausing a rule stops new matches but does not delete historical labels.</li>
+            <li>Manual job roles are preserved during apply runs.</li>
+          </ul>
+        </section>
+      </aside>
+    </div>
+
+    <div class="sticky bottom-0 z-10 mt-5 rounded-lg border border-slate-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="min-w-0 text-sm text-slate-600">
+          {% if object %}
+          <span class="font-semibold text-slate-900">{{ object.slug }}</span>
+          <span class="text-slate-400">will update after save.</span>
+          {% else %}
+          New rule will be created after validation.
+          {% endif %}
         </div>
-        {# We render the real form field here; JS keeps it in sync #}
-        {{ form.regex_pattern }}
-        {% if form.regex_pattern.errors %}
-	        <p class="text-red-600 text-xs mt-1 font-medium">{{ form.regex_pattern.errors|join:", " }}</p>
-        {% endif %}
+        <div class="flex flex-wrap gap-2">
+          <button type="submit"
+                  class="btn-primary inline-flex items-center justify-center rounded-lg px-4 py-2.5 text-sm font-semibold text-white">
+            {% if object %}Save Changes{% else %}Create Rule{% endif %}
+          </button>
+          <button type="submit" name="apply_downstream" value="1"
+                  class="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  onclick="return confirm('Save this rule and apply current routing rules to active existing jobs? This runs in the background.');">
+            Save and Apply Existing
+          </button>
+          <a href="{% url 'harvest-job-domains' %}"
+             class="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            Cancel
+          </a>
+        </div>
       </div>
-
-      {# Hidden field used when in tag mode to submit the generated regex #}
-      <input type="hidden" id="regex-hidden" name="_regex_tag_mode">
-    </div>
-
-    {# ── Category / Priority / Active ──────────────────────────────────────── #}
-    <div class="grid grid-cols-3 gap-4">
-      <div>
-        <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Category</label>
-        {{ form.top_category }}
-        {% if form.top_category.errors %}<p class="text-red-600 text-xs mt-1">{{ form.top_category.errors|join:", " }}</p>{% endif %}
-      </div>
-      <div>
-        <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Priority</label>
-        {{ form.priority }}
-        <p class="text-xs text-slate-400 mt-1">Lower = matched first.</p>
-        {% if form.priority.errors %}<p class="text-red-600 text-xs mt-1">{{ form.priority.errors|join:", " }}</p>{% endif %}
-      </div>
-      <div class="flex items-end pb-1">
-        <label class="flex items-center gap-2 cursor-pointer">
-          {{ form.is_active }}
-          <span class="text-sm font-medium text-slate-700">Active for new classification</span>
-        </label>
-      </div>
-    </div>
-
-    <div>
-      <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Notes (optional)</label>
-      {{ form.notes }}
-    </div>
-
-    <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-      <strong>Save</strong> updates the rule and keeps its Marketing Role in sync.
-      <strong>Save and Apply Existing</strong> also starts a background refresh for active RawJobs and pool/open Jobs.
-      Manual job roles are preserved.
-    </div>
-
-    <div class="flex gap-3 pt-2 flex-wrap">
-      <button type="submit" class="btn-primary">
-        {% if object %}Save Changes{% else %}Create Rule{% endif %}
-      </button>
-      <button type="submit" name="apply_downstream" value="1" class="btn-secondary"
-              onclick="return confirm('Save this rule and apply current routing rules to active existing jobs? This runs in the background.');">
-        Save and Apply Existing
-      </button>
-      <a href="{% url 'harvest-job-domains' %}" class="btn-secondary">Cancel</a>
     </div>
   </form>
 </div>
 
 <script>
-// ── State ──────────────────────────────────────────────────────────────────────
 let keywords = [];
 let advancedMode = false;
 
-// ── Bootstrap: parse existing regex into tags ──────────────────────────────────
 (function init() {
   const rawTextarea = document.getElementById('id_regex_pattern');
   const raw = (rawTextarea ? rawTextarea.value : '').trim();
@@ -175,9 +285,12 @@ let advancedMode = false;
   renderChips();
   rebuildRegex();
 
-  // Enter key in input → add keyword
-  document.getElementById('kw-input').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') { e.preventDefault(); addKeywordFromInput(); }
+  const keywordInput = document.getElementById('kw-input');
+  keywordInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addKeywordFromInput();
+    }
     if (e.key === 'Backspace' && this.value === '' && keywords.length) {
       keywords.pop();
       renderChips();
@@ -185,37 +298,53 @@ let advancedMode = false;
     }
   });
 
-  // Keep hidden field in sync before submit
-  document.getElementById('domain-form').addEventListener('submit', function() {
+  document.getElementById('local-test-title').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      testLocalPattern();
+    }
+  });
+
+  document.getElementById('domain-form').addEventListener('submit', function(e) {
+    const keywordError = document.getElementById('keyword-error');
+    keywordError.classList.add('hidden');
+    keywordError.textContent = '';
     if (!advancedMode) {
+      if (!keywords.length) {
+        e.preventDefault();
+        keywordError.textContent = 'Add at least one keyword or switch to raw regex.';
+        keywordError.classList.remove('hidden');
+        keywordInput.focus();
+        return;
+      }
       const generated = buildRegex(keywords, document.getElementById('use-word-boundary').checked);
-      // Write into the REAL regex_pattern field so the view sees it
       if (rawTextarea) rawTextarea.value = generated;
     }
   });
 })();
 
-// ── Parse regex → keyword list ─────────────────────────────────────────────────
 function parseRegexToKeywords(pattern) {
   let s = pattern.trim();
-  // Strip outer \b(...)\b  or  \b...\b
   s = s.replace(/^\\b\(/, '').replace(/\)\\b$/, '');
   s = s.replace(/^\\b/, '').replace(/\\b$/, '');
-  // Split on top-level | (not inside nested groups)
   const parts = [];
-  let depth = 0, buf = '';
+  let depth = 0;
+  let buf = '';
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
-    if (c === '(' ) depth++;
+    if (c === '(') depth++;
     else if (c === ')') depth--;
-    else if (c === '|' && depth === 0) { parts.push(buf.trim()); buf = ''; continue; }
+    else if (c === '|' && depth === 0) {
+      parts.push(buf.trim());
+      buf = '';
+      continue;
+    }
     buf += c;
   }
   if (buf.trim()) parts.push(buf.trim());
   return parts.filter(Boolean);
 }
 
-// ── Build regex from keyword list ──────────────────────────────────────────────
 function buildRegex(kws, wordBoundary) {
   if (!kws.length) return '';
   const joined = kws.join('|');
@@ -225,25 +354,31 @@ function buildRegex(kws, wordBoundary) {
   return kws.length === 1 ? joined : `(${joined})`;
 }
 
-// ── Render chips ───────────────────────────────────────────────────────────────
 function renderChips() {
   const container = document.getElementById('keyword-chips');
   container.innerHTML = '';
+  if (!keywords.length) {
+    const empty = document.createElement('span');
+    empty.className = 'text-sm text-slate-400';
+    empty.textContent = 'No keywords added yet';
+    container.appendChild(empty);
+    return;
+  }
   keywords.forEach((kw, i) => {
     const chip = document.createElement('span');
-    chip.className = 'inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-800 text-xs font-medium';
-    chip.innerHTML = `<span class="font-mono">${escapeHtml(kw)}</span>
+    chip.className = 'inline-flex max-w-full items-center gap-1 rounded-full bg-indigo-100 px-3 py-1.5 text-xs font-semibold text-indigo-800';
+    chip.innerHTML = `<span class="min-w-0 truncate font-mono">${escapeHtml(kw)}</span>
       <button type="button" onclick="removeKeyword(${i})"
-              class="ml-0.5 text-indigo-400 hover:text-red-500 font-bold leading-none transition">×</button>`;
+              class="ml-0.5 text-indigo-500 hover:text-red-600 font-bold leading-none transition"
+              aria-label="Remove keyword">&times;</button>`;
     container.appendChild(chip);
   });
 }
 
 function escapeHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// ── Add / remove ───────────────────────────────────────────────────────────────
 function addKeywordFromInput() {
   const inp = document.getElementById('kw-input');
   const val = inp.value.trim();
@@ -263,15 +398,17 @@ function removeKeyword(idx) {
   rebuildRegex();
 }
 
-// ── Rebuild regex preview ──────────────────────────────────────────────────────
 function rebuildRegex() {
   const wb = document.getElementById('use-word-boundary').checked;
   const regex = buildRegex(keywords, wb);
-  document.getElementById('regex-preview-text').textContent = regex || '—';
+  document.getElementById('regex-preview-text').textContent = regex || 'No keywords';
   document.getElementById('kw-count').textContent = `${keywords.length} keyword${keywords.length !== 1 ? 's' : ''}`;
+  const result = document.getElementById('local-test-result');
+  if (result && !result.classList.contains('hidden')) {
+    testLocalPattern();
+  }
 }
 
-// ── Toggle advanced/raw mode ───────────────────────────────────────────────────
 function toggleAdvanced() {
   advancedMode = !advancedMode;
   const tagMode = document.getElementById('tag-mode');
@@ -280,18 +417,15 @@ function toggleAdvanced() {
   const rawTextarea = document.getElementById('id_regex_pattern');
 
   if (advancedMode) {
-    // Switching TO raw mode: push generated regex into textarea
     if (rawTextarea && keywords.length) {
       const wb = document.getElementById('use-word-boundary').checked;
       rawTextarea.value = buildRegex(keywords, wb);
     }
     tagMode.classList.add('hidden');
     advMode.classList.remove('hidden');
-    // Make textarea submit under its real name
-    if (rawTextarea) rawTextarea.removeAttribute('disabled');
-    btn.textContent = '← Back to keyword editor';
+    btn.textContent = 'Keyword editor';
+    if (rawTextarea) rawTextarea.focus();
   } else {
-    // Switching BACK to tag mode: parse whatever is in textarea
     if (rawTextarea) {
       keywords = parseRegexToKeywords(rawTextarea.value.trim());
     }
@@ -299,8 +433,45 @@ function toggleAdvanced() {
     rebuildRegex();
     tagMode.classList.remove('hidden');
     advMode.classList.add('hidden');
-    btn.textContent = 'Switch to raw regex';
+    btn.textContent = 'Raw regex';
   }
+}
+
+function currentPattern() {
+  const rawTextarea = document.getElementById('id_regex_pattern');
+  if (advancedMode && rawTextarea) {
+    return rawTextarea.value.trim();
+  }
+  return buildRegex(keywords, document.getElementById('use-word-boundary').checked);
+}
+
+function testLocalPattern() {
+  const box = document.getElementById('local-test-result');
+  const title = document.getElementById('local-test-title').value.trim();
+  const pattern = currentPattern();
+  box.className = 'mt-3 rounded-lg border px-3 py-2 text-sm';
+
+  if (!title || !pattern) {
+    box.textContent = 'Add a title and pattern first.';
+    box.classList.add('border-slate-200', 'bg-slate-50', 'text-slate-600');
+    box.classList.remove('hidden');
+    return;
+  }
+
+  try {
+    const matched = new RegExp(pattern, 'i').test(title);
+    if (matched) {
+      box.textContent = 'Match found for this title.';
+      box.classList.add('border-emerald-200', 'bg-emerald-50', 'text-emerald-800');
+    } else {
+      box.textContent = 'No match for this title.';
+      box.classList.add('border-amber-200', 'bg-amber-50', 'text-amber-800');
+    }
+  } catch (err) {
+    box.textContent = 'This pattern cannot be tested in the browser.';
+    box.classList.add('border-red-200', 'bg-red-50', 'text-red-700');
+  }
+  box.classList.remove('hidden');
 }
 </script>
 {% endblock %}

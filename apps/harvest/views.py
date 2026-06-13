@@ -4015,6 +4015,53 @@ class JobDomainDeleteView(SuperuserRequiredMixin, DeleteView):
         return super().form_valid(form)
 
 
+class JobDomainQuickUpdateView(SuperuserRequiredMixin, View):
+    """
+    Inline edits from the Role Routing Rules list — no full-page round trip.
+      POST action=toggle   → flip is_active (propagates to the MarketingRole)
+      POST priority=<int>  → set match priority
+    Returns JSON so the row updates in place, including the live downstream state
+    (whether the linked role is active and how many consultants target it).
+    """
+    def post(self, request, pk):
+        from users.models import MarketingRole
+
+        domain = get_object_or_404(JobDomain, pk=pk)
+        changed = []
+
+        if (request.POST.get("action") or "").strip() == "toggle":
+            domain.is_active = not domain.is_active
+            changed.append("is_active")
+
+        new_priority = request.POST.get("priority")
+        if new_priority not in (None, ""):
+            try:
+                domain.priority = max(1, min(9999, int(new_priority)))
+                changed.append("priority")
+            except (TypeError, ValueError):
+                return JsonResponse({"ok": False, "error": "Priority must be a whole number."}, status=400)
+
+        if not changed:
+            return JsonResponse({"ok": False, "error": "Nothing to update."}, status=400)
+
+        # save() re-validates the regex, busts caches, and re-syncs the MarketingRole
+        # (including propagating the active/paused state down the chain).
+        domain.save()
+
+        role = (
+            MarketingRole.objects.filter(slug=domain.slug)
+            .annotate(consultant_count=Count("consultants", distinct=True))
+            .first()
+        )
+        return JsonResponse({
+            "ok": True,
+            "is_active": domain.is_active,
+            "priority": domain.priority,
+            "role_active": bool(role and role.is_active),
+            "consultant_count": role.consultant_count if role else 0,
+        })
+
+
 class JobDomainImpactApiView(SuperuserRequiredMixin, View):
     def get(self, request):
         return JsonResponse(_job_domain_impact_snapshot(limit=10))

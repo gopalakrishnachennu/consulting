@@ -519,14 +519,24 @@ class JobDomain(models.Model):
             role.name = self.name
         role.top_category = self.top_category
         role.display_order = self.priority
-        if self.is_active:
-            role.is_active = True
+        # The domain is the single on/off switch for the whole chain: pausing it
+        # also deactivates the role so it stops being offered to consultants and
+        # auto-assigned to new jobs. Existing consultant assignments (M2M rows)
+        # are preserved — deactivation only hides it from *new* selection/routing.
+        role.is_active = self.is_active
         role.match_keywords = self.keywords_from_pattern(
             self.regex_pattern,
             name=self.name,
             slug=self.slug,
         )
         role.save()
+        # Bust the routing role-map cache so this change is live for job→role
+        # auto-assignment immediately, not after the 5-minute TTL.
+        try:
+            from jobs.marketing_role_routing import clear_marketing_role_cache
+            clear_marketing_role_cache()
+        except Exception:
+            pass
         return role
 
     def save(self, *args, **kwargs):

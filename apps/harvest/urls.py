@@ -22,6 +22,7 @@ from .views import (
     JobDomainUpdateView,
     JobDomainDeleteView,
     JobDomainApplyDownstreamView,
+    JobDomainQuickUpdateView,
     JobDomainImpactApiView,
     JobDomainTestApiView,
     HarvestOpsRunDetailView,
@@ -160,6 +161,7 @@ urlpatterns = [
     # Role routing rules — GUI-editable JobDomain pattern registry
     path("job-domains/", JobDomainListView.as_view(), name="harvest-job-domains"),
     path("job-domains/apply/", JobDomainApplyDownstreamView.as_view(), name="harvest-job-domain-apply"),
+    path("job-domains/<int:pk>/quick/", JobDomainQuickUpdateView.as_view(), name="harvest-job-domain-quick"),
     path("job-domains/impact/", JobDomainImpactApiView.as_view(), name="harvest-job-domain-impact"),
     path("job-domains/new/", JobDomainCreateView.as_view(), name="harvest-job-domain-create"),
     path("job-domains/<int:pk>/edit/", JobDomainUpdateView.as_view(), name="harvest-job-domain-edit"),

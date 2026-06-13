@@ -3,6 +3,24 @@
 Production release log for GoCareers. Newest first. Created/updated by the `/release` skill
 (verify CI green → version + changelog → deploy → health-verify → auto-rollback → record).
 
+## v4.4.2 — Role Routing: inline ops + end-to-end propagation (2026-06-13)
+Made the Job Domains / Role Routing Rules registry easy to operate and fixed three
+propagation edge cases so a rule truly flows the whole chain (domain → marketing role →
+consultant targeting → vetting queue).
+- Inline list controls: one-click Pause/Activate toggle and inline priority edit (AJAX,
+  no edit-page round trip); collapsible Quick-Add panel with regex "Test pattern";
+  slug now auto-generates from the name.
+- EDGE A (bug): routing role-map cache was never busted on domain save — a new/edited
+  domain wasn't used for job→role auto-assignment for up to 5 min. Now live immediately.
+- EDGE B (bug): pausing a domain left its MarketingRole active (still offered/auto-assigned).
+  The domain is now the single on/off switch; pause deactivates the role everywhere for
+  NEW activity while preserving existing consultant assignments.
+- EDGE C: consultant submission form offered paused roles. Now active-only, but keeps any
+  role already assigned to the profile so editing never silently drops a selection.
+- Downstream flow surfaced on the list (banner + per-rule role state + consultants-targeting).
+- +3 regression tests (pause propagation, quick-update endpoint, slug autogen); 8/8 green.
+Status: deploying (health-verify pending)
+
 ## v4.4.1 — Harvest fully revived: 274 jobs/3min + Role Targeting Studio (2026-06-12)
 - FINAL root cause: Celery's global 300s soft time limit killed the daily harvest 5 min in,
   while still on robots-blocked scrape boards — API platforms were never reached. harvest_jobs
