@@ -57,6 +57,7 @@ from .services.rawjob_query import (
     ready_stage_q as _svc_ready_stage_q,
     rawjob_filter_state as _svc_rawjob_filter_state,
 )
+from .services.job_descriptions import job_description_for_sync
 
 logger = logging.getLogger(__name__)
 
@@ -269,7 +270,7 @@ def _sync_rawjob_to_pool(raw_job, *, posted_by):
             company=raw_job.company_name or (raw_job.company.name if raw_job.company else ""),
             company_obj=raw_job.company,
             location=job_location,
-            description=raw_job.description or raw_job.title,
+            description=job_description_for_sync(raw_job),
             original_link=raw_job.original_url,
             salary_range=raw_job.salary_raw or "",
             job_type=raw_job.employment_type if raw_job.employment_type != "UNKNOWN" else "FULL_TIME",

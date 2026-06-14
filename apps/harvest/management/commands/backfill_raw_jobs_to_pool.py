@@ -11,6 +11,7 @@ Usage:
 """
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.db.models.functions import Greatest, Length
 from django.utils import timezone
 
 
@@ -29,6 +30,7 @@ class Command(BaseCommand):
         from jobs.marketing_role_routing import assign_marketing_roles_to_job
         from jobs.dedup import find_existing_job_by_url
         from jobs.quality import compute_quality_score
+        from harvest.services.job_descriptions import job_description_for_sync
         from django.contrib.auth import get_user_model
 
         User = get_user_model()
@@ -46,7 +48,8 @@ class Command(BaseCommand):
             RawJob.objects
             .filter(sync_status="PENDING", is_active=True, company__isnull=False)
             .exclude(original_url="")
-            .filter(description__length__gt=min_len)
+            .annotate(_desc_len=Greatest(Length("description_clean"), Length("description")))
+            .filter(_desc_len__gt=min_len)
             .order_by("-fetched_at")
             .select_related("company", "job_platform")
         )
@@ -83,7 +86,7 @@ class Command(BaseCommand):
                             company=rj.company_name or (rj.company.name if rj.company else ""),
                             company_obj=rj.company,
                             location=rj.location_raw or "",
-                            description=rj.description or rj.title,
+                            description=job_description_for_sync(rj),
                             original_link=rj.original_url,
                             salary_range=rj.salary_raw or "",
                             job_type=rj.employment_type if rj.employment_type != "UNKNOWN" else "FULL_TIME",

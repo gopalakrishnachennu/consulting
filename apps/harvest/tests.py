@@ -1523,6 +1523,56 @@ class SyncRawJobsToPoolTests(TestCase):
         self.assertEqual(raw.sync_status, "SYNCED")
         self.assertTrue(Job.objects.filter(url_hash=h).exists())
 
+    @patch("jobs.gating.apply_gate_result_to_job")
+    @patch("jobs.gating.evaluate_raw_job_gate")
+    def test_pool_sync_uses_clean_rawjob_description(self, mock_gate, _mock_apply):
+        import hashlib
+        from harvest.models import RawJob
+        from harvest.tasks import sync_harvested_to_pool_task
+        from jobs.models import Job
+
+        mock_gate.return_value = SimpleNamespace(
+            passed=True,
+            lane="READY",
+            status="eligible",
+            reason_code="",
+            reasons=[],
+            checks={},
+            data_quality_score=0.9,
+            trust_score=0.9,
+            candidate_fit_score=0.9,
+            vet_priority_score=0.9,
+        )
+
+        url = "https://example.com/careers/sync-clean-description"
+        h = hashlib.sha256(url.strip().encode()).hexdigest()
+        clean_text = (
+            "This posting will be open until June 30, 2026.\n\n"
+            "About the Role\nLead clean cloud networking work."
+        )
+        raw = RawJob.objects.create(
+            company=self.company,
+            title="Cloud Network Engineer",
+            url_hash=h,
+            original_url=url,
+            description="<p><b>Dirty &amp; noisy</b></p><p>Should not reach Job.</p>",
+            description_clean=clean_text,
+            sync_status="PENDING",
+            is_priority=True,
+            scope_status=RawJob.ScopeStatus.PRIORITY_TARGET,
+            country_code="US",
+            country_codes=["US"],
+        )
+
+        sync_harvested_to_pool_task.apply(kwargs={"max_jobs": 10}).get()
+        raw.refresh_from_db()
+        job = Job.objects.get(url_hash=h)
+
+        self.assertEqual(raw.sync_status, "SYNCED")
+        self.assertEqual(job.description, clean_text)
+        self.assertNotIn("<p>", job.description)
+        self.assertNotIn("&amp;", job.description)
+
     def test_pool_sync_skipped_duplicate(self):
         import hashlib
         from harvest.models import RawJob
@@ -1689,6 +1739,126 @@ class ManualRawJobSyncRoleTests(TestCase):
             "servicenow-developer",
             list(job.marketing_roles.values_list("slug", flat=True)),
         )
+
+    @patch("jobs.gating.apply_gate_result_to_job")
+    @patch("jobs.gating.evaluate_raw_job_gate")
+    @patch("harvest.url_health.is_definitive_inactive", return_value=False)
+    @patch("harvest.url_health.check_job_posting_live")
+    def test_manual_sync_uses_clean_rawjob_description(
+        self,
+        mock_live,
+        _mock_definitive,
+        mock_gate,
+        _mock_apply,
+    ):
+        import hashlib
+        from harvest.models import RawJob
+        from harvest.views import _sync_rawjob_to_pool
+
+        mock_gate.return_value = SimpleNamespace(
+            passed=True,
+            lane="READY",
+            status="eligible",
+            reason_code="",
+            reasons=[],
+            checks={},
+            data_quality_score=0.9,
+            trust_score=0.9,
+            candidate_fit_score=0.9,
+            vet_priority_score=0.9,
+        )
+        mock_live.return_value = SimpleNamespace(
+            is_live=True,
+            reason="",
+            status_code=200,
+            final_url="https://example.com/jobs/manual-clean-description",
+        )
+
+        url = "https://example.com/jobs/manual-clean-description"
+        clean_text = "Clean manual sync description.\n\nSecond paragraph."
+        raw = RawJob.objects.create(
+            company=self.company,
+            title="ServiceNow Developer",
+            url_hash=hashlib.sha256(url.encode()).hexdigest(),
+            original_url=url,
+            description="<p>Dirty &amp; raw HTML</p>",
+            description_clean=clean_text,
+            sync_status="PENDING",
+        )
+
+        job, created = _sync_rawjob_to_pool(raw, posted_by=self.user)
+
+        self.assertTrue(created)
+        self.assertEqual(job.description, clean_text)
+        self.assertNotIn("<p>", job.description)
+
+
+class RepairSyncedJobDescriptionsCommandTests(TestCase):
+    def setUp(self):
+        from companies.models import Company
+        from users.models import User
+
+        self.user = User.objects.create_user(
+            username="repair_desc_admin",
+            email="repair_desc@example.com",
+            password="testpass123",
+            is_superuser=True,
+        )
+        self.company = Company.objects.create(name="RepairDescCo")
+
+    def _raw_job(self, suffix: str, *, clean_text: str):
+        import hashlib
+        from harvest.models import RawJob
+
+        url = f"https://example.com/jobs/repair-description-{suffix}"
+        return RawJob.objects.create(
+            company=self.company,
+            company_name=self.company.name,
+            title=f"Repair role {suffix}",
+            url_hash=hashlib.sha256(url.encode()).hexdigest(),
+            original_url=url,
+            description="<p><b>Dirty &amp; raw</b></p>",
+            description_clean=clean_text,
+            sync_status=RawJob.SyncStatus.SYNCED,
+        )
+
+    def test_repair_command_updates_htmlish_synced_jobs_but_skips_manual_edits(self):
+        from django.core.management import call_command
+        from jobs.models import Job
+
+        raw_dirty = self._raw_job("dirty", clean_text="Clean linked description.")
+        dirty_job = Job.objects.create(
+            title=raw_dirty.title,
+            company=raw_dirty.company_name,
+            company_obj=self.company,
+            description="<p>Dirty &amp; stored HTML</p>",
+            original_link=raw_dirty.original_url,
+            posted_by=self.user,
+            source_raw_job=raw_dirty,
+            url_hash=raw_dirty.url_hash,
+        )
+
+        raw_manual = self._raw_job("manual", clean_text="Should not overwrite manual edit.")
+        manual_job = Job.objects.create(
+            title=raw_manual.title,
+            company=raw_manual.company_name,
+            company_obj=self.company,
+            description="<p>Manual dirty edit</p>",
+            original_link=raw_manual.original_url,
+            posted_by=self.user,
+            last_edited_by=self.user,
+            source_raw_job=raw_manual,
+            url_hash=raw_manual.url_hash,
+        )
+
+        out = StringIO()
+        call_command("repair_synced_job_descriptions", stdout=out)
+
+        dirty_job.refresh_from_db()
+        manual_job.refresh_from_db()
+        self.assertEqual(dirty_job.description, "Clean linked description.")
+        self.assertEqual(manual_job.description, "<p>Manual dirty edit</p>")
+        self.assertIn("Repaired 1 synced Job description", out.getvalue())
 
 
 class BackfillJobMarketingRolesCommandTests(TestCase):

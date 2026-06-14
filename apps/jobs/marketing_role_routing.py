@@ -226,9 +226,11 @@ def infer_marketing_role_slugs(
 
 
 def infer_marketing_role_slugs_from_raw_job(raw_job, *, max_roles: int = _MAX_AUTO_ROLE_SLUGS) -> list[str]:
+    from harvest.services.job_descriptions import job_description_for_sync
+
     return infer_marketing_role_slugs(
         title=raw_job.title or "",
-        description=raw_job.description or "",
+        description=job_description_for_sync(raw_job),
         job_category=raw_job.job_category or "",
         department_normalized=raw_job.department_normalized or "",
         primary_domain=raw_job.job_domain or "",

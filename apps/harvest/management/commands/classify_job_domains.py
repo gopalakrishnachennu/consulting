@@ -55,6 +55,7 @@ class Command(OpsTrackedCommand):
             detect_job_category,
             detect_job_domains,
         )
+        from harvest.services.job_descriptions import job_description_for_sync
         from jobs.marketing_role_routing import infer_marketing_role_slugs
 
         batch_size  = max(100, options["batch_size"])
@@ -88,7 +89,7 @@ class Command(OpsTrackedCommand):
 
         while offset < total:
             batch = list(
-                qs.only("pk", "title", "description", "job_category", "department_normalized")
+                qs.only("pk", "title", "description", "description_clean", "job_category", "department_normalized")
                 .order_by("pk")[offset:offset + batch_size]
             )
             if not batch:
@@ -96,9 +97,10 @@ class Command(OpsTrackedCommand):
 
             updates: list[RawJob] = []
             for rj in batch:
+                description = job_description_for_sync(rj)
                 domains = detect_job_domains(
                     rj.title or "",
-                    rj.description or "",
+                    description,
                     rj.job_category or "",
                     rj.department_normalized or "",
                     max_matches=3,
@@ -106,14 +108,14 @@ class Command(OpsTrackedCommand):
                 domain = domains[0] if domains else ""
                 category, _title_match, _desc_match = detect_job_category(
                     rj.title or "",
-                    rj.description or "",
+                    description,
                     department_normalized=rj.department_normalized or "",
                     domain_slug=domain,
                 )
                 if not domains:
                     domains = infer_marketing_role_slugs(
                         title=rj.title or "",
-                        description=rj.description or "",
+                        description=description,
                         job_category=category or rj.job_category or "",
                         department_normalized=rj.department_normalized or "",
                         primary_domain="",

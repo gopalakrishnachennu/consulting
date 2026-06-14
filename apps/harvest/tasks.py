@@ -2925,6 +2925,7 @@ def sync_harvested_to_pool_task(
     from jobs.gating import apply_gate_result_to_job, evaluate_raw_job_gate
     from django.contrib.auth import get_user_model
     from django.utils import timezone as _tz
+    from .services.job_descriptions import job_description_for_sync
 
     User = get_user_model()
     system_user = User.objects.filter(is_superuser=True).first()
@@ -3175,7 +3176,7 @@ def sync_harvested_to_pool_task(
                             company=(rj.company_name or (rj.company.name if rj.company else ""))[:200],
                             company_obj=rj.company,
                             location=job_location[:200],   # Job.location max_length=200
-                            description=rj.description or rj.title or "",  # Job.description is NOT NULL
+                            description=job_description_for_sync(rj),  # Job.description is plain text
                             original_link=(rj.original_url or "")[:500],  # Job.original_link max_length=500; RawJob up to 1024
                             salary_range=(rj.salary_raw or "")[:100],     # Job.salary_range max_length=100
                             job_type=(rj.employment_type if rj.employment_type and rj.employment_type != "UNKNOWN" else "FULL_TIME")[:20],  # max_length=20; guard None
