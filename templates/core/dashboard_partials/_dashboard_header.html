@@ -16,10 +16,10 @@
 <div class="flex items-center gap-3 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-red-800 text-xs font-medium" x-data="{ dismissed: false }" x-show="!dismissed" x-cloak>
   <svg class="h-5 w-5 text-red-500 shrink-0 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.27 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
   <div class="flex-1">
-    {% if harvest_health.last_batch_at %}
-    <span class="font-bold">Source Sync Stale</span> — last batch ran <strong>{{ harvest_health.last_batch_at|timesince }} ago</strong> ({{ harvest_health.harvest_stale_hours }}h). Pipeline may be down or stuck.
+    {% if harvest_health.source_sync_at %}
+    <span class="font-bold">Source Sync Stale</span> — newest harvested job was <strong>{{ harvest_health.source_sync_at|timesince }} ago</strong> ({{ harvest_health.harvest_stale_hours }}h). Pipeline may be down or stuck.
     {% else %}
-    <span class="font-bold">No Source Sync Data</span> — no source sync batches have ever run. The pipeline needs setup.
+    <span class="font-bold">No Source Sync Data</span> — no harvested jobs or source sync batches were found. The pipeline needs setup.
     {% endif %}
     <a href="{% url 'ops-center' %}" class="ml-2 underline hover:text-red-900 font-bold">Check Ops Center →</a>
   </div>

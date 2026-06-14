@@ -134,10 +134,17 @@
               <p class="font-bold text-gray-500">{{ h.rawjobs_cold|intcomma }}</p>
             </div>
           </div>
-          {% if h.last_batch_at %}
-          <p class="text-[10px] text-gray-400">Last batch: {{ h.last_batch_at|timesince }} ago</p>
+          {% if h.latest_rawjob_at %}
+          <p class="text-[10px] text-gray-400">
+            Newest fetch: {{ h.latest_rawjob_at|timesince }} ago
+            {% if h.last_batch_at %}
+            · batch audit: {{ h.last_batch_at|timesince }} ago
+            {% endif %}
+          </p>
+          {% elif h.last_batch_at %}
+          <p class="text-[10px] text-gray-400">Last tracked batch: {{ h.last_batch_at|timesince }} ago</p>
           {% else %}
-          <p class="text-[10px] text-red-500 font-medium">No source sync batches found</p>
+          <p class="text-[10px] text-red-500 font-medium">No source sync data found</p>
           {% endif %}
         </div>
         {% endif %}

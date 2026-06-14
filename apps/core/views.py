@@ -3,7 +3,7 @@ from django.views.generic import TemplateView, UpdateView, View, ListView, Detai
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.conf import settings
 from django.core.cache import cache
-from django.db.models import Avg, Count, Q, Sum
+from django.db.models import Avg, Count, Max, Q, Sum
 from django.db.models.functions import TruncHour
 from django.db.utils import OperationalError, ProgrammingError
 from django.urls import reverse_lazy, reverse
@@ -1204,20 +1204,28 @@ class AdminDashboardView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
             new_rawjobs_24h = RawJob.objects.filter(fetched_at__gte=last_24h).count()
             new_rawjobs_7d = RawJob.objects.filter(fetched_at__gte=last_7d).count()
             last_batch = FetchBatch.objects.order_by('-created_at').first()
+            latest_rawjob_at = RawJob.objects.aggregate(latest=Max('fetched_at'))['latest']
 
             # Data quality
             rawjobs_no_jd = RawJob.objects.filter(has_description=False, is_active=True).count()
             rawjobs_cold = RawJob.objects.filter(is_cold=True).count()
 
             last_batch_at = last_batch.created_at if last_batch else None
-            harvest_stale = False
+            source_sync_at = latest_rawjob_at or last_batch_at
+
+            harvest_stale = True
             harvest_stale_hours = 0
-            if last_batch_at:
-                age = now - last_batch_at
+            if source_sync_at:
+                age = now - source_sync_at
                 harvest_stale_hours = int(age.total_seconds() / 3600)
-                harvest_stale = harvest_stale_hours >= 24
-            elif not last_batch:
-                harvest_stale = True
+                harvest_stale = harvest_stale_hours >= 24 and new_rawjobs_24h == 0
+
+            batch_stale = False
+            batch_stale_hours = None
+            if last_batch_at:
+                batch_age = now - last_batch_at
+                batch_stale_hours = int(batch_age.total_seconds() / 3600)
+                batch_stale = batch_stale_hours >= 24
 
             health['harvest_health'] = {
                 'total_companies': total_companies,
@@ -1230,6 +1238,11 @@ class AdminDashboardView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
                 'new_rawjobs_7d': new_rawjobs_7d,
                 'last_batch_at': last_batch_at,
                 'last_batch_count': last_batch.raw_jobs_created if last_batch and hasattr(last_batch, 'raw_jobs_created') else 0,
+                'latest_rawjob_at': latest_rawjob_at,
+                'source_sync_at': source_sync_at,
+                'source_sync_basis': 'raw_jobs' if latest_rawjob_at else 'fetch_batch',
+                'batch_stale': batch_stale,
+                'batch_stale_hours': batch_stale_hours,
                 'rawjobs_no_jd': rawjobs_no_jd,
                 'rawjobs_cold': rawjobs_cold,
                 'harvest_stale': harvest_stale,

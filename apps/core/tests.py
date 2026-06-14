@@ -1,5 +1,8 @@
+from datetime import timedelta
+
 from django.test import TestCase, Client, RequestFactory
 from django.urls import reverse
+from django.utils import timezone
 from unittest.mock import patch
 from users.models import User, UserEmailNotificationPreferences
 from .models import PlatformConfig, LLMConfig, AuditLog, Notification, BroadcastMessage
@@ -186,6 +189,69 @@ class AdminDashboardCompanyKpiTests(TestCase):
         self.assertEqual(resp.context["company_total"], 2)
         self.assertEqual(resp.context["company_with_platform"], 1)
         self.assertContains(resp, "1 with platforms")
+
+
+class AdminDashboardHarvestFreshnessTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_superuser("harvest_admin", "harvest@example.com", "pass")
+        self.client.force_login(self.user)
+
+    def _create_raw_job(self, *, fetched_at, url_hash="dashboard-freshness"):
+        from companies.models import Company
+        from harvest.models import RawJob
+
+        company = Company.objects.create(name=f"Freshness Co {url_hash}")
+        raw = RawJob.objects.create(
+            company=company,
+            company_name=company.name,
+            platform_slug="greenhouse",
+            title="Software Engineer",
+            original_url=f"https://example.test/jobs/{url_hash}",
+            url_hash=url_hash,
+            has_description=True,
+        )
+        RawJob.objects.filter(pk=raw.pk).update(fetched_at=fetched_at)
+        raw.refresh_from_db()
+        return raw
+
+    def _create_old_batch(self):
+        from harvest.models import FetchBatch
+
+        old_batch = FetchBatch.objects.create(
+            name="Old tracked batch",
+            status=FetchBatch.Status.COMPLETED,
+        )
+        FetchBatch.objects.filter(pk=old_batch.pk).update(
+            created_at=timezone.now() - timedelta(hours=50)
+        )
+        old_batch.refresh_from_db()
+        return old_batch
+
+    def test_fresh_raw_jobs_do_not_show_stale_banner_when_batch_audit_is_old(self):
+        self._create_old_batch()
+        self._create_raw_job(fetched_at=timezone.now() - timedelta(minutes=20))
+
+        resp = self.client.get(reverse("admin-dashboard"))
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.context["harvest_health"]["harvest_stale"])
+        self.assertEqual(resp.context["harvest_health"]["source_sync_basis"], "raw_jobs")
+        self.assertContains(resp, "Newest fetch:")
+        self.assertContains(resp, "batch audit:")
+        self.assertNotContains(resp, "Source Sync Stale")
+
+    def test_old_raw_jobs_still_show_stale_banner(self):
+        self._create_raw_job(
+            fetched_at=timezone.now() - timedelta(hours=30),
+            url_hash="dashboard-stale",
+        )
+
+        resp = self.client.get(reverse("admin-dashboard"))
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.context["harvest_health"]["harvest_stale"])
+        self.assertContains(resp, "Source Sync Stale")
+        self.assertContains(resp, "newest harvested job")
 
 
 class SeedDataCommandTests(TestCase):
