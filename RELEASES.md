@@ -11,7 +11,7 @@ JD gate to DeepSeek/OpenRouter via LLM Config.
   LLMConfig.validation_model/active_model when the central flag is on), with provider,
   and a note that the per-page field is only a fallback (links to LLM Config).
 - No model/migration change; view + template only, matching existing components.
-Status: deploying (health-verify pending)
+Status: deployed (12fd4c0 · CI+image green · health overall=ok · 2026-06-13)
 
 ## v4.4.8 — Location Review redesign + re-evaluate fix (2026-06-13)
 UI redesign + a real bug fix on the review actions.
