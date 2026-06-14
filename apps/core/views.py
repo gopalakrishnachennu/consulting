@@ -816,8 +816,8 @@ class AdminDashboardView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
             from companies.models import Company
             ctx['company_total'] = Company.objects.count()
             ctx['company_with_platform'] = Company.objects.filter(
-                platform_labels__isnull=False
-            ).distinct().count()
+                platform_label__platform__isnull=False
+            ).count()
         except Exception:
             ctx['company_total'] = 0
             ctx['company_with_platform'] = 0
@@ -948,8 +948,8 @@ class AdminDashboardView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
             return {
                 'company_total': Company.objects.count(),
                 'company_with_platform': Company.objects.filter(
-                    platform_labels__isnull=False
-                ).distinct().count(),
+                    platform_label__platform__isnull=False
+                ).count(),
             }
         except Exception:
             return {'company_total': 0, 'company_with_platform': 0}
@@ -1192,7 +1192,7 @@ class AdminDashboardView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
 
             # Harvest pipeline health
             total_companies = Company.objects.count()
-            companies_with_labels = Company.objects.filter(platform_labels__isnull=False).distinct().count()
+            companies_with_labels = Company.objects.filter(platform_label__platform__isnull=False).count()
             labels_live = CompanyPlatformLabel.objects.filter(portal_alive=True).count()
             labels_down = CompanyPlatformLabel.objects.filter(portal_alive=False).count()
             labels_no_tenant = CompanyPlatformLabel.objects.filter(tenant_id='').count() + \

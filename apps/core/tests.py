@@ -157,6 +157,37 @@ class HomeViewTests(TestCase):
         self.assertEqual(resp.status_code, 302)
 
 
+class AdminDashboardCompanyKpiTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_superuser("dash_admin", "dash@example.com", "pass")
+        self.client.force_login(self.user)
+
+    def test_company_kpis_use_platform_label_relation(self):
+        from companies.models import Company
+        from harvest.models import CompanyPlatformLabel, JobBoardPlatform
+
+        platform = JobBoardPlatform.objects.create(slug="testboard", name="Test Board")
+        with_platform = Company.objects.create(name="Company With Platform")
+        undetected = Company.objects.create(name="Company Without Platform")
+        CompanyPlatformLabel.objects.create(
+            company=with_platform,
+            platform=platform,
+            tenant_id="company-with-platform",
+        )
+        CompanyPlatformLabel.objects.create(company=undetected, platform=None)
+
+        resp = self.client.get(
+            reverse("admin-dashboard"),
+            {"section": "kpis"},
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context["company_total"], 2)
+        self.assertEqual(resp.context["company_with_platform"], 1)
+        self.assertContains(resp, "1 with platforms")
+
+
 class SeedDataCommandTests(TestCase):
     def test_seed_data_creates_users(self):
         from django.core.management import call_command
