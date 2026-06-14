@@ -55,6 +55,11 @@
       {% if engine_cfg.jd_gate_enabled %}LLM enabled{% else %}LLM disabled{% endif %}
     </div>
     <div class="mt-1 text-xs text-slate-500">Scope: <span class="font-mono">{{ engine_cfg.jd_gate_scope }}</span> · threshold {{ engine_cfg.jd_gate_confidence_threshold|floatformat:2 }}</div>
+    {% if llm_central_enabled %}
+    <div class="mt-1 text-xs text-emerald-600">Model: <span class="font-mono">{{ llm_effective_model }}</span> <span class="text-slate-400">· {{ llm_effective_provider }} (central)</span></div>
+    {% else %}
+    <div class="mt-1 text-xs text-slate-500">Model: <span class="font-mono">{{ engine_cfg.jd_gate_model }}</span></div>
+    {% endif %}
   </div>
   <div class="rounded-xl border border-slate-200 bg-white p-4">
     <div class="text-[11px] font-bold uppercase tracking-wide text-slate-400">4. Vet Queue</div>
@@ -602,9 +607,18 @@
 
         <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
           <div>
-            <label class="form-label">Model</label>
+            <label class="form-label">Model {% if llm_central_enabled %}<span class="text-amber-600">(fallback)</span>{% endif %}</label>
             <input type="text" name="jd_gate_model" value="{{ engine_cfg.jd_gate_model }}"
                    maxlength="64" class="form-input w-full font-mono text-xs">
+            {% if llm_central_enabled %}
+            <p class="mt-1 text-[11px] text-amber-600">
+              Overridden by <a href="{% url 'llm-config' %}" class="font-semibold underline">LLM Config</a> →
+              <span class="font-mono">{{ llm_effective_model }}</span> ({{ llm_effective_provider }}).
+              This field is only used when central LLM is off.
+            </p>
+            {% else %}
+            <p class="mt-1 text-[11px] text-slate-400">Used directly. Enable the central LLM flag to route via LLM Config (DeepSeek/OpenRouter).</p>
+            {% endif %}
           </div>
           <div>
             <label class="form-label">Scope</label>

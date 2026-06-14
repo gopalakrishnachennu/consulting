@@ -5005,6 +5005,31 @@ def _parse_target_country_codes(raw_value: str) -> list[str]:
     return cleaned
 
 
+def _vet_gate_effective_llm() -> dict:
+    """The model the harvest JD gate / classifier ACTUALLY uses. When the
+    'harvest_use_central_llm' flag is on, central LLMConfig overrides the per-page
+    jd_gate_model field — so the page should show what's really in effect."""
+    info = {
+        "llm_central_enabled": False,
+        "llm_effective_model": "",
+        "llm_effective_provider": "",
+    }
+    try:
+        from core.models import FeatureFlag, LLMConfig
+        ff = FeatureFlag.objects.filter(key="harvest_use_central_llm").first()
+        if ff and ff.is_enabled:
+            cfg = LLMConfig.load()
+            model = (cfg.validation_model or "").strip() or (cfg.active_model or "").strip()
+            info.update({
+                "llm_central_enabled": True,
+                "llm_effective_model": model,
+                "llm_effective_provider": cfg.get_provider_display(),
+            })
+    except Exception:
+        pass
+    return info
+
+
 def _vet_gate_engine_context(engine_cfg) -> dict:
     from .location_resolver import COUNTRY_CODE_TO_NAME, DEFAULT_TARGET_COUNTRIES
 
@@ -5015,7 +5040,7 @@ def _vet_gate_engine_context(engine_cfg) -> dict:
         for code in (engine_cfg.target_countries or [])
         if str(code).strip()
     ]
-    return {
+    ctx = {
         "engine_cfg": engine_cfg,
         "target_country_codes_text": ", ".join(configured_target_countries or effective_target_countries),
         "target_country_count": len(effective_target_countries),
@@ -5023,6 +5048,8 @@ def _vet_gate_engine_context(engine_cfg) -> dict:
         "all_country_codes_csv": ",".join(all_country_codes),
         "common_country_codes_csv": ",".join(DEFAULT_TARGET_COUNTRIES),
     }
+    ctx.update(_vet_gate_effective_llm())
+    return ctx
 
 
 class VetGateConfigView(SuperuserRequiredMixin, View):

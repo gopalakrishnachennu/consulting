@@ -3,6 +3,16 @@
 Production release log for GoCareers. Newest first. Created/updated by the `/release` skill
 (verify CI green → version + changelog → deploy → health-verify → auto-rollback → record).
 
+## v4.4.9 — Vet Gate: show the effective LLM model (2026-06-13)
+The Vet Gate page showed a hardcoded "Model: gpt-4o-mini" even when the central LLM
+config (harvest_use_central_llm flag) overrides it — misleading once you switch the
+JD gate to DeepSeek/OpenRouter via LLM Config.
+- JD-gate summary card + the Model field now show the EFFECTIVE model (read from
+  LLMConfig.validation_model/active_model when the central flag is on), with provider,
+  and a note that the per-page field is only a fallback (links to LLM Config).
+- No model/migration change; view + template only, matching existing components.
+Status: deploying (health-verify pending)
+
 ## v4.4.8 — Location Review redesign + re-evaluate fix (2026-06-13)
 UI redesign + a real bug fix on the review actions.
 - BUG FIX: Re-evaluate / Provider Re-check loaded only 7 fields via .only(), leaving
