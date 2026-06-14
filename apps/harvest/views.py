@@ -4878,37 +4878,46 @@ class UnknownCountryReviewView(SuperuserRequiredMixin, View):
             )
             messages.success(request, f"Marked {updated} job(s) as Cold.")
 
-        elif action == "re_evaluate":
+        elif action in ("re_evaluate", "re_evaluate_provider"):
             from .location_resolver import evaluate_rawjob_scope
-            from django.utils import timezone
+            force = action == "re_evaluate_provider"
+            # Load every field the resolver reads — the old narrow .only() left
+            # title/description/city/state/country/raw_payload blank, so re-eval
+            # ran half-blind (and the remote JD scan had no description). That was
+            # the root cause of "re-evaluate does nothing".
             jobs = RawJob.objects.filter(pk__in=ids).only(
-                "id", "location_raw", "location_candidates", "country_codes",
-                "country_code", "scope_status", "platform_slug",
+                "id", "location_raw", "city", "state", "country", "vendor_location_block",
+                "raw_payload", "location_candidates", "country_codes", "country_code",
+                "scope_status", "is_priority", "platform_slug", "title", "description",
+                "description_clean", "job_domain", "job_domain_candidates",
+                "job_category", "department_normalized",
             )
-            updated = 0
+            target = cold = still = 0
             for job in jobs:
-                result = evaluate_rawjob_scope(job, use_provider=False, save=True)
-                if result:
-                    updated += 1
-            messages.success(request, f"Re-evaluated {updated} job(s) (no provider).")
-
-        elif action == "re_evaluate_provider":
-            from .location_resolver import evaluate_rawjob_scope
-            jobs = RawJob.objects.filter(pk__in=ids).only(
-                "id", "location_raw", "location_candidates", "country_codes",
-                "country_code", "scope_status", "platform_slug",
-            )
-            resolved = 0
-            for job in jobs:
-                # force_provider=True so on-demand Mapbox works even when
-                # auto-during-harvest is off (still respects monthly/hourly caps).
-                result = evaluate_rawjob_scope(job, use_provider=True, force_provider=True, save=True)
-                if result and result.get("scope_status") == RawJob.ScopeStatus.PRIORITY_TARGET:
-                    resolved += 1
-            messages.success(
-                request,
-                f"Provider re-evaluated {len(ids)} job(s). {resolved} resolved to Priority Target.",
-            )
+                result = evaluate_rawjob_scope(
+                    job, use_provider=(True if force else None), force_provider=force, save=True
+                )
+                st = result.get("scope_status")
+                if st == RawJob.ScopeStatus.PRIORITY_TARGET:
+                    target += 1
+                elif st in (RawJob.ScopeStatus.COLD_NON_TARGET_COUNTRY, RawJob.ScopeStatus.COLD_NO_LOCATION):
+                    cold += 1
+                else:
+                    still += 1
+            label = "Provider re-check" if force else "Re-evaluate"
+            cleared = target + cold
+            if cleared:
+                messages.success(
+                    request,
+                    f"{label}: {cleared} of {len(ids)} resolved "
+                    f"({target} → Priority Target, {cold} → Cold). {still} still unknown.",
+                )
+            else:
+                messages.warning(
+                    request,
+                    f"{label}: none of {len(ids)} resolved — {still} still unknown "
+                    f"(likely delisted postings or non-geocodable strings).",
+                )
 
         else:
             messages.error(request, f"Unknown action: {action}")

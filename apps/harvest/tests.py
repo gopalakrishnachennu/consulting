@@ -3723,3 +3723,32 @@ class RemoteLocationPolicyTests(TestCase):
             upd = resolve_remote_scope(job, cfg, {"US"})
         self.assertEqual(upd["country_code"], "US")
         self.assertEqual(upd["scope_reason"], "remote_default_us")
+
+
+class ReEvaluateActionFixTests(TestCase):
+    """Re-evaluate must load full location fields (was half-blind) and report real outcomes."""
+
+    def setUp(self):
+        from users.models import User
+        from companies.models import Company
+        self.user = User.objects.create_user(
+            username="reeval_admin", email="re@x.com", password="p", is_superuser=True)
+        self.company = Company.objects.create(name="ReEval Co")
+        self.client.force_login(self.user)
+
+    def test_re_evaluate_resolves_named_city(self):
+        from harvest.models import RawJob
+        job = RawJob.objects.create(
+            company=self.company, company_name="ReEval Co", platform_slug="workday",
+            title="Engineer", location_raw="Madrid", description="JD body here.",
+            original_url="https://x/madrid-re", url_hash="re1",
+            scope_status=RawJob.ScopeStatus.REVIEW_UNKNOWN_COUNTRY, is_active=True,
+        )
+        resp = self.client.post(reverse("harvest-unknown-country-review"), {
+            "action": "re_evaluate", "ids": [job.pk],
+        })
+        self.assertEqual(resp.status_code, 302)
+        job.refresh_from_db()
+        # Madrid → Spain (non-target) → Cold, left the review queue (was stuck before the fix).
+        self.assertNotEqual(job.scope_status, RawJob.ScopeStatus.REVIEW_UNKNOWN_COUNTRY)
+        self.assertEqual(job.country_code, "ES")

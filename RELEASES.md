@@ -3,6 +3,23 @@
 Production release log for GoCareers. Newest first. Created/updated by the `/release` skill
 (verify CI green → version + changelog → deploy → health-verify → auto-rollback → record).
 
+## v4.4.8 — Location Review redesign + re-evaluate fix (2026-06-13)
+UI redesign + a real bug fix on the review actions.
+- BUG FIX: Re-evaluate / Provider Re-check loaded only 7 fields via .only(), leaving
+  title/description/city/state/country/raw_payload blank — so re-eval ran half-blind and
+  the remote JD scan had no description. Now loads every field the resolver reads; verified
+  it resolves rows it previously couldn't (Madrid → ES).
+- Both actions now report real outcomes: "N of M resolved (X → Target, Y → Cold), Z still
+  unknown" instead of the meaningless "Re-evaluated N jobs".
+- Redesign: dropped the cramped 3-panel sidebar for a full-width layout; added a collapsible
+  Insights card with horizontal bar charts (why-unresolved + by-platform, click to filter);
+  bucket filters as a chip row; stat cards are click-to-filter; bulk-by-location collapsed by
+  default.
+- Hyperlinks everywhere: job title → RawJob detail, ↗ icon → the live posting (original_url),
+  company → filter-by-company.
+- +1 test (re-evaluate resolves a named city end-to-end).
+Status: deploying (health-verify pending)
+
 ## v4.4.6 — Remote location intelligence (JD-LLM + USA default) (2026-06-13)
 Implements the remote-jobs contract: identify a remote job's real location by scanning
 the JD, and only assume USA when nothing is found.
