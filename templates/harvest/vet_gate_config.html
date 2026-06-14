@@ -34,6 +34,35 @@
   </div>
 </div>
 
+<!-- Rule map -->
+<div class="mb-5 grid grid-cols-1 lg:grid-cols-4 gap-3">
+  <div class="rounded-xl border border-slate-200 bg-white p-4">
+    <div class="text-[11px] font-bold uppercase tracking-wide text-slate-400">1. Intake</div>
+    <div class="mt-1 text-sm font-bold text-slate-900">Title/domain filter</div>
+    <div class="mt-1 text-xs text-slate-500">
+      {% if engine_cfg.selective_filter_enabled %}Selective filter on{% else %}Selective filter off{% endif %} ·
+      {% if engine_cfg.pre_storage_filter_enabled %}pre-storage drops on{% else %}stores before filtering{% endif %}
+    </div>
+  </div>
+  <div class="rounded-xl border border-slate-200 bg-white p-4">
+    <div class="text-[11px] font-bold uppercase tracking-wide text-slate-400">2. Location</div>
+    <div class="mt-1 text-sm font-bold text-slate-900">{{ target_country_count }} target countries</div>
+    <div class="mt-1 text-xs text-slate-500">Remote unknown policy: <span class="font-mono">{{ engine_cfg.remote_unknown_policy }}</span></div>
+  </div>
+  <div class="rounded-xl border border-slate-200 bg-white p-4">
+    <div class="text-[11px] font-bold uppercase tracking-wide text-slate-400">3. JD Gate</div>
+    <div class="mt-1 text-sm font-bold text-slate-900">
+      {% if engine_cfg.jd_gate_enabled %}LLM enabled{% else %}LLM disabled{% endif %}
+    </div>
+    <div class="mt-1 text-xs text-slate-500">Scope: <span class="font-mono">{{ engine_cfg.jd_gate_scope }}</span> · threshold {{ engine_cfg.jd_gate_confidence_threshold|floatformat:2 }}</div>
+  </div>
+  <div class="rounded-xl border border-slate-200 bg-white p-4">
+    <div class="text-[11px] font-bold uppercase tracking-wide text-slate-400">4. Vet Queue</div>
+    <div class="mt-1 text-sm font-bold text-slate-900">AUTO / HUMAN / BLOCKED</div>
+    <div class="mt-1 text-xs text-slate-500">Priority {{ cfg.auto_lane_min_vet_priority|floatformat:2 }} · DQ {{ cfg.auto_lane_min_data_quality|floatformat:2 }} · Trust {{ cfg.auto_lane_min_trust|floatformat:2 }}</div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div id="save-toast" class="hidden fixed top-5 right-5 z-50 bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-xl text-sm font-semibold transition-all">
   Vet Gate Config saved.
@@ -297,6 +326,382 @@
           </label>
         </div>
 
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3">
+            <input type="checkbox" name="auto_enrich" value="1"
+                   {% if engine_cfg.auto_enrich %}checked{% endif %}
+                   class="mt-1 rounded border-gray-300 text-violet-600">
+            <span>
+              <span class="block text-sm font-semibold text-gray-800">Auto enrich</span>
+              <span class="block text-xs text-gray-500">Extract skills, category, experience, salary, and quality fields after fetch.</span>
+            </span>
+          </label>
+          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3">
+            <input type="checkbox" name="auto_backfill_jd" value="1"
+                   {% if engine_cfg.auto_backfill_jd %}checked{% endif %}
+                   class="mt-1 rounded border-gray-300 text-blue-600">
+            <span>
+              <span class="block text-sm font-semibold text-gray-800">Auto JD backfill</span>
+              <span class="block text-xs text-gray-500">Fetch missing descriptions for qualified raw jobs.</span>
+            </span>
+          </label>
+          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3">
+            <input type="checkbox" name="auto_sync_to_pool" value="1"
+                   {% if engine_cfg.auto_sync_to_pool %}checked{% endif %}
+                   class="mt-1 rounded border-gray-300 text-emerald-600">
+            <span>
+              <span class="block text-sm font-semibold text-gray-800">Auto sync to Vet Queue</span>
+              <span class="block text-xs text-gray-500">Promote enriched qualified jobs to the pool after harvest.</span>
+            </span>
+          </label>
+        </div>
+
+      </div>
+    </details>
+
+    <!-- ── 6. Intake Filtering ─────────────────────────────────────────────── -->
+    <details class="card-padded group" open>
+      <summary class="flex items-center justify-between cursor-pointer list-none">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+            <svg class="w-4 h-4 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h18M6 8h12M9 12h6m-3 4v4"/>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-gray-800">Intake Filtering</h3>
+            <p class="text-xs text-gray-500 mt-0.5">Controls what gets stored, what gets dropped, and which ambiguous titles move to the JD gate.</p>
+          </div>
+        </div>
+        <svg class="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+        </svg>
+      </summary>
+      <div class="mt-4 space-y-4 border-t border-gray-100 pt-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3">
+            <input type="checkbox" name="selective_filter_enabled" value="1"
+                   {% if engine_cfg.selective_filter_enabled %}checked{% endif %}
+                   class="mt-1 rounded border-gray-300 text-emerald-600">
+            <span>
+              <span class="block text-sm font-semibold text-gray-800">Selective role filter enabled</span>
+              <span class="block text-xs text-gray-500">Classify titles into STRONG, POSSIBLE, COLD, NO_MATCH, or UNKNOWN.</span>
+            </span>
+          </label>
+          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3">
+            <input type="checkbox" name="filter_audit_mode" value="1"
+                   {% if engine_cfg.filter_audit_mode %}checked{% endif %}
+                   class="mt-1 rounded border-gray-300 text-amber-600">
+            <span>
+              <span class="block text-sm font-semibold text-gray-800">Audit mode</span>
+              <span class="block text-xs text-gray-500">Record filter decisions without suppressing jobs.</span>
+            </span>
+          </label>
+          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3">
+            <input type="checkbox" name="pre_storage_filter_enabled" value="1"
+                   {% if engine_cfg.pre_storage_filter_enabled %}checked{% endif %}
+                   class="mt-1 rounded border-gray-300 text-red-600">
+            <span>
+              <span class="block text-sm font-semibold text-gray-800">Pre-storage filter</span>
+              <span class="block text-xs text-gray-500">Drop HARD_NO rows before writing them to RawJob.</span>
+            </span>
+          </label>
+          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3">
+            <input type="checkbox" name="filter_full_crawl" value="1"
+                   {% if engine_cfg.filter_full_crawl %}checked{% endif %}
+                   class="mt-1 rounded border-gray-300 text-red-600">
+            <span>
+              <span class="block text-sm font-semibold text-gray-800">Enforce during full crawls</span>
+              <span class="block text-xs text-gray-500">Apply the same drop rules even for full-crawl harvests.</span>
+            </span>
+          </label>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div>
+            <label class="form-label">HARD_YES confidence</label>
+            <input type="number" name="title_hard_yes_confidence" value="{{ engine_cfg.title_hard_yes_confidence|floatformat:2 }}"
+                   min="0" max="1" step="0.01" class="form-input w-full">
+          </div>
+          <div>
+            <label class="form-label">Zero-tech threshold</label>
+            <input type="number" name="zero_tech_threshold" value="{{ engine_cfg.zero_tech_threshold }}"
+                   min="1" max="100" step="1" class="form-input w-full">
+          </div>
+          <div>
+            <label class="form-label">Zero-tech skip TTL days</label>
+            <input type="number" name="zero_tech_skip_ttl_days" value="{{ engine_cfg.zero_tech_skip_ttl_days }}"
+                   min="1" max="365" step="1" class="form-input w-full">
+          </div>
+          <div>
+            <label class="form-label">COLD/NO_MATCH sample %</label>
+            <input type="number" name="cold_no_match_sample_rate_pct" value="{{ engine_cfg.cold_no_match_sample_rate_pct }}"
+                   min="0" max="100" step="1" class="form-input w-full">
+          </div>
+        </div>
+
+        <div>
+          <label class="form-label">Hard negative phrases</label>
+          <textarea name="hard_negative_phrases" rows="5" class="form-input w-full font-mono text-xs"
+                    placeholder="registered nurse&#10;retail associate&#10;warehouse worker">{% for phrase in engine_cfg.hard_negative_phrases %}{{ phrase }}
+{% endfor %}</textarea>
+          <p class="mt-1 text-[11px] text-gray-400">One phrase per line. These force obvious non-target titles toward HARD_NO.</p>
+        </div>
+      </div>
+    </details>
+
+    <!-- ── 7. Location Scope ───────────────────────────────────────────────── -->
+    <details class="card-padded group" open>
+      <summary class="flex items-center justify-between cursor-pointer list-none">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-cyan-50 flex items-center justify-center shrink-0">
+            <svg class="w-4 h-4 text-cyan-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 21s7-4.5 7-11a7 7 0 10-14 0c0 6.5 7 11 7 11z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10.5h.01"/>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-gray-800">Location Scope</h3>
+            <p class="text-xs text-gray-500 mt-0.5">Target countries, unknown-country routing, remote fallback, and geocoding limits.</p>
+          </div>
+        </div>
+        <svg class="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+        </svg>
+      </summary>
+      <div class="mt-4 space-y-4 border-t border-gray-100 pt-4">
+        <div>
+          <div class="flex items-center justify-between gap-3 mb-2">
+            <label for="id_target_countries_csv" class="form-label mb-0">Target country ISO codes</label>
+            <span id="target-country-count" class="rounded-full bg-cyan-50 border border-cyan-200 px-2.5 py-1 text-xs font-semibold text-cyan-800">{{ target_country_count }} selected</span>
+          </div>
+          <textarea id="id_target_countries_csv" name="target_countries_csv" rows="4"
+                    class="form-input w-full font-mono text-xs"
+                    placeholder="{{ target_country_default_codes }}">{{ target_country_codes_text }}</textarea>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <button type="button" class="btn-secondary btn-sm" onclick="setTargetCountries('{{ common_country_codes_csv }}')">Common markets</button>
+            <button type="button" class="btn-secondary btn-sm" onclick="setTargetCountries('{{ all_country_codes_csv }}')">All countries</button>
+            <button type="button" class="btn-secondary btn-sm" onclick="setTargetCountries('')">Default fallback</button>
+          </div>
+          <p class="mt-1 text-[11px] text-gray-400">Comma or line separated ISO codes. Blank uses default {{ target_country_default_codes }}.</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3">
+            <input type="checkbox" name="process_unknown_country_with_target_domain" value="1"
+                   {% if engine_cfg.process_unknown_country_with_target_domain %}checked{% endif %}
+                   class="mt-1 rounded border-gray-300 text-cyan-600">
+            <span>
+              <span class="block text-sm font-semibold text-gray-800">Process unknown if target domain</span>
+              <span class="block text-xs text-gray-500">Keep unknown-location jobs in review if title/domain strongly matches target roles.</span>
+            </span>
+          </label>
+          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3">
+            <input type="checkbox" name="rescope_on_target_country_change" value="1"
+                   {% if engine_cfg.rescope_on_target_country_change %}checked{% endif %}
+                   class="mt-1 rounded border-gray-300 text-cyan-600">
+            <span>
+              <span class="block text-sm font-semibold text-gray-800">Re-scope after country changes</span>
+              <span class="block text-xs text-gray-500">Queue a background pass so old cold/review rows can move when targets change.</span>
+            </span>
+          </label>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div>
+            <label class="form-label">Remote/no-country policy</label>
+            <select name="remote_unknown_policy" class="form-select w-full">
+              <option value="review" {% if engine_cfg.remote_unknown_policy == 'review' %}selected{% endif %}>Send to review</option>
+              <option value="us" {% if engine_cfg.remote_unknown_policy == 'us' %}selected{% endif %}>Default to USA</option>
+              <option value="target" {% if engine_cfg.remote_unknown_policy == 'target' %}selected{% endif %}>Treat as target</option>
+              <option value="cold" {% if engine_cfg.remote_unknown_policy == 'cold' %}selected{% endif %}>Mark cold</option>
+            </select>
+          </div>
+          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3 md:col-span-1">
+            <input type="checkbox" name="remote_llm_jd_scan" value="1"
+                   {% if engine_cfg.remote_llm_jd_scan %}checked{% endif %}
+                   class="mt-1 rounded border-gray-300 text-cyan-600">
+            <span class="text-sm font-semibold text-gray-800">LLM scan remote JD</span>
+          </label>
+          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3 md:col-span-1">
+            <input type="checkbox" name="geocoding_cache_enabled" value="1"
+                   {% if engine_cfg.geocoding_cache_enabled %}checked{% endif %}
+                   class="mt-1 rounded border-gray-300 text-cyan-600">
+            <span class="text-sm font-semibold text-gray-800">Location cache</span>
+          </label>
+          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3 md:col-span-1">
+            <input type="checkbox" name="geocoding_provider_enabled" value="1"
+                   {% if engine_cfg.geocoding_provider_enabled %}checked{% endif %}
+                   class="mt-1 rounded border-gray-300 text-cyan-600">
+            <span class="text-sm font-semibold text-gray-800">Provider fallback</span>
+          </label>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label class="form-label">Geocoding provider</label>
+            <select name="geocoding_provider" class="form-select w-full">
+              <option value="none" {% if engine_cfg.geocoding_provider == 'none' %}selected{% endif %}>None</option>
+              <option value="mapbox" {% if engine_cfg.geocoding_provider == 'mapbox' %}selected{% endif %}>Mapbox</option>
+              <option value="google" {% if engine_cfg.geocoding_provider == 'google' %}selected{% endif %}>Google</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Monthly provider limit</label>
+            <input type="number" name="geocoding_monthly_limit" value="{{ engine_cfg.geocoding_monthly_limit }}"
+                   min="0" max="1000000" step="100" class="form-input w-full">
+          </div>
+          <div>
+            <label class="form-label">Hourly provider limit</label>
+            <input type="number" name="geocoding_hourly_limit" value="{{ engine_cfg.geocoding_hourly_limit }}"
+                   min="0" max="100000" step="50" class="form-input w-full">
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- ── 8. LLM JD Content Gate ──────────────────────────────────────────── -->
+    <details class="card-padded group" open>
+      <summary class="flex items-center justify-between cursor-pointer list-none">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
+            <svg class="w-4 h-4 text-indigo-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v2m0 14v2m9-9h-2M5 12H3m14.95-6.95-1.41 1.41M7.46 16.54l-1.41 1.41m0-12.9 1.41 1.41m9.08 9.08 1.41 1.41"/>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-gray-800">LLM JD Content Gate</h3>
+            <p class="text-xs text-gray-500 mt-0.5">Second-stage relevance gate for ambiguous titles before expensive JD processing.</p>
+          </div>
+        </div>
+        <svg class="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+        </svg>
+      </summary>
+      <div class="mt-4 space-y-4 border-t border-gray-100 pt-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3">
+            <input type="checkbox" name="jd_gate_enabled" value="1"
+                   {% if engine_cfg.jd_gate_enabled %}checked{% endif %}
+                   class="mt-1 rounded border-gray-300 text-indigo-600">
+            <span>
+              <span class="block text-sm font-semibold text-gray-800">Enable JD content gate</span>
+              <span class="block text-xs text-gray-500">Runs LLM YES/NO classification for ambiguous jobs.</span>
+            </span>
+          </label>
+          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3">
+            <input type="checkbox" name="jd_gate_audit_mode" value="1"
+                   {% if engine_cfg.jd_gate_audit_mode %}checked{% endif %}
+                   class="mt-1 rounded border-gray-300 text-amber-600">
+            <span>
+              <span class="block text-sm font-semibold text-gray-800">Audit mode</span>
+              <span class="block text-xs text-gray-500">Record LLM decisions without suppressing rejected jobs.</span>
+            </span>
+          </label>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div>
+            <label class="form-label">Model</label>
+            <input type="text" name="jd_gate_model" value="{{ engine_cfg.jd_gate_model }}"
+                   maxlength="64" class="form-input w-full font-mono text-xs">
+          </div>
+          <div>
+            <label class="form-label">Scope</label>
+            <select name="jd_gate_scope" class="form-select w-full">
+              <option value="ambiguous_only" {% if engine_cfg.jd_gate_scope == 'ambiguous_only' %}selected{% endif %}>Ambiguous only</option>
+              <option value="all_possible" {% if engine_cfg.jd_gate_scope == 'all_possible' %}selected{% endif %}>Ambiguous + possible</option>
+              <option value="all_non_hard_no" {% if engine_cfg.jd_gate_scope == 'all_non_hard_no' %}selected{% endif %}>All except hard-no</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Confidence threshold</label>
+            <input type="number" name="jd_gate_confidence_threshold" value="{{ engine_cfg.jd_gate_confidence_threshold|floatformat:2 }}"
+                   min="0" max="1" step="0.01" class="form-input w-full">
+          </div>
+          <div>
+            <label class="form-label">Batch size</label>
+            <input type="number" name="jd_gate_batch_size" value="{{ engine_cfg.jd_gate_batch_size }}"
+                   min="1" max="100" step="1" class="form-input w-full">
+          </div>
+        </div>
+
+        <div>
+          <label class="form-label">Snippet chars sent to LLM</label>
+          <input type="number" name="jd_gate_snippet_chars" value="{{ engine_cfg.jd_gate_snippet_chars }}"
+                 min="100" max="4000" step="100" class="form-input w-48">
+        </div>
+      </div>
+    </details>
+
+    <!-- ── 9. Resume / Ready / Recheck Rules ───────────────────────────────── -->
+    <details class="card-padded group" open>
+      <summary class="flex items-center justify-between cursor-pointer list-none">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+            <svg class="w-4 h-4 text-emerald-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M5 5h14v14H5z"/>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-gray-800">Resume / Ready / Recheck Rules</h3>
+            <p class="text-xs text-gray-500 mt-0.5">Thresholds that decide READY counts, resume usability, JD backfill coverage, and link validation scope.</p>
+          </div>
+        </div>
+        <svg class="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+        </svg>
+      </summary>
+      <div class="mt-4 space-y-4 border-t border-gray-100 pt-4">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div>
+            <label class="form-label">Resume JD min words</label>
+            <input type="number" name="resume_jd_min_words" value="{{ engine_cfg.resume_jd_min_words }}"
+                   min="1" max="5000" step="1" class="form-input w-full">
+          </div>
+          <div>
+            <label class="form-label">Resume JD min chars</label>
+            <input type="number" name="resume_jd_min_chars" value="{{ engine_cfg.resume_jd_min_chars }}"
+                   min="1" max="20000" step="1" class="form-input w-full">
+          </div>
+          <div>
+            <label class="form-label">Resume min confidence</label>
+            <input type="number" name="resume_jd_min_classification_confidence" value="{{ engine_cfg.resume_jd_min_classification_confidence|floatformat:2 }}"
+                   min="0" max="1" step="0.01" class="form-input w-full">
+          </div>
+          <div>
+            <label class="form-label">READY min confidence</label>
+            <input type="number" name="ready_stage_min_confidence" value="{{ engine_cfg.ready_stage_min_confidence|floatformat:2 }}"
+                   min="0" max="1" step="0.01" class="form-input w-full">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3">
+            <input type="checkbox" name="backfill_jd_include_cold" value="1"
+                   {% if engine_cfg.backfill_jd_include_cold %}checked{% endif %}
+                   class="mt-1 rounded border-gray-300 text-emerald-600">
+            <span>
+              <span class="block text-sm font-semibold text-gray-800">Backfill COLD / REVIEW JDs</span>
+              <span class="block text-xs text-gray-500">Include non-priority/review jobs when fetching descriptions.</span>
+            </span>
+          </label>
+          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3">
+            <input type="checkbox" name="validate_links_include_synced" value="1"
+                   {% if engine_cfg.validate_links_include_synced %}checked{% endif %}
+                   class="mt-1 rounded border-gray-300 text-emerald-600">
+            <span>
+              <span class="block text-sm font-semibold text-gray-800">Validate synced links too</span>
+              <span class="block text-xs text-gray-500">Recheck URLs already promoted to the pool/live jobs.</span>
+            </span>
+          </label>
+          <div>
+            <label class="form-label">Validate recent hours</label>
+            <input type="number" name="validate_links_recent_hours" value="{{ engine_cfg.validate_links_recent_hours }}"
+                   min="0" max="8760" step="1" class="form-input w-full">
+            <p class="mt-1 text-[11px] text-gray-400">0 means validate all active jobs.</p>
+          </div>
+        </div>
       </div>
     </details>
 
@@ -367,6 +772,41 @@ document.getElementById('domain-input').addEventListener('keydown', function(e) 
 });
 
 renderChips();
+
+// ── Target country editor ───────────────────────────────────────────────────
+var allCountryCodes = "{{ all_country_codes_csv|escapejs }}";
+var defaultCountryCodes = "{{ target_country_default_codes|escapejs }}";
+var targetCountryInput = document.getElementById('id_target_countries_csv');
+var targetCountryCount = document.getElementById('target-country-count');
+
+function normaliseCountryCodes(value) {
+  var seen = {};
+  return (value || '')
+    .split(/[\s,;]+/)
+    .map(function(code) { return code.trim().toUpperCase(); })
+    .filter(function(code) {
+      if (!code || seen[code]) return false;
+      seen[code] = true;
+      return /^[A-Z]{2}$/.test(code);
+    });
+}
+
+function updateTargetCountryCount() {
+  if (!targetCountryInput || !targetCountryCount) return;
+  var count = normaliseCountryCodes(targetCountryInput.value).length;
+  targetCountryCount.textContent = count ? (count + ' selected') : ('Default ' + defaultCountryCodes);
+}
+
+function setTargetCountries(value) {
+  if (!targetCountryInput) return;
+  targetCountryInput.value = value || '';
+  updateTargetCountryCount();
+}
+
+if (targetCountryInput) {
+  targetCountryInput.addEventListener('input', updateTargetCountryCount);
+  updateTargetCountryCount();
+}
 
 // ── Live preview — debounced AJAX ─────────────────────────────────────────────
 var previewTimer = null;

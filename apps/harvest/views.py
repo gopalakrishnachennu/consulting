@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from urllib.parse import urlencode
 
 from django.conf import settings
@@ -4968,6 +4969,62 @@ def _vet_gate_preview_count(cfg) -> dict:
     return {"total": total}
 
 
+def _post_bool(request, name: str) -> bool:
+    return (request.POST.get(name) or "").strip().lower() in {"1", "on", "true", "yes"}
+
+
+def _post_int(request, name: str, default: int, min_value: int, max_value: int) -> int:
+    try:
+        value = int(request.POST.get(name) or default)
+    except (TypeError, ValueError):
+        value = default
+    return max(min_value, min(value, max_value))
+
+
+def _post_float(request, name: str, default: float, min_value: float, max_value: float) -> float:
+    try:
+        value = float(request.POST.get(name) or default)
+    except (TypeError, ValueError):
+        value = default
+    return max(min_value, min(value, max_value))
+
+
+def _parse_target_country_codes(raw_value: str) -> list[str]:
+    from .location_resolver import COUNTRY_CODE_TO_NAME
+
+    valid_codes = set(COUNTRY_CODE_TO_NAME)
+    tokens = [
+        token.strip().upper()
+        for token in re.split(r"[\s,;]+", raw_value or "")
+        if token.strip()
+    ]
+    cleaned: list[str] = []
+    for token in tokens:
+        if token in valid_codes and token not in cleaned:
+            cleaned.append(token)
+    return cleaned
+
+
+def _vet_gate_engine_context(engine_cfg) -> dict:
+    from .location_resolver import COUNTRY_CODE_TO_NAME, DEFAULT_TARGET_COUNTRIES
+
+    all_country_codes = sorted(COUNTRY_CODE_TO_NAME)
+    effective_target_countries = engine_cfg.get_target_countries()
+    configured_target_countries = [
+        str(code).strip().upper()
+        for code in (engine_cfg.target_countries or [])
+        if str(code).strip()
+    ]
+    return {
+        "engine_cfg": engine_cfg,
+        "target_country_codes_text": ", ".join(configured_target_countries or effective_target_countries),
+        "target_country_count": len(effective_target_countries),
+        "target_country_default_codes": ", ".join(DEFAULT_TARGET_COUNTRIES),
+        "all_country_codes_csv": ",".join(all_country_codes),
+        "common_country_codes_csv": ",".join(DEFAULT_TARGET_COUNTRIES),
+    }
+
+
 class VetGateConfigView(SuperuserRequiredMixin, View):
     """GET = show vet gate config GUI. POST = save."""
     template_name = "harvest/vet_gate_config.html"
@@ -4975,51 +5032,100 @@ class VetGateConfigView(SuperuserRequiredMixin, View):
     def get(self, request, *args, **kwargs):
         from .models import VetGateConfig
         cfg = VetGateConfig.get()
+        engine_cfg = HarvestEngineConfig.get()
         preview = _vet_gate_preview_count(cfg)
-        return render(request, self.template_name, {
+        ctx = {
             "cfg": cfg,
             "preview": preview,
             "active_tab": "engine",
-        })
+        }
+        ctx.update(_vet_gate_engine_context(engine_cfg))
+        return render(request, self.template_name, ctx)
 
     def post(self, request, *args, **kwargs):
         from .models import VetGateConfig
         cfg = VetGateConfig.get()
-        cfg.allow_unknown_country = request.POST.get("allow_unknown_country") == "on"
-        cfg.allow_possible_filter = request.POST.get("allow_possible_filter") == "on"
-        cfg.require_description = request.POST.get("require_description") == "on"
-        try:
-            cfg.min_word_count = int(request.POST.get("min_word_count") or 80)
-        except (ValueError, TypeError):
-            cfg.min_word_count = 80
-        try:
-            cfg.min_char_count = int(request.POST.get("min_char_count") or 400)
-        except (ValueError, TypeError):
-            cfg.min_char_count = 400
-        try:
-            cfg.auto_lane_min_vet_priority = float(request.POST.get("auto_lane_min_vet_priority") or 0.75)
-        except (ValueError, TypeError):
-            cfg.auto_lane_min_vet_priority = 0.75
-        try:
-            cfg.auto_lane_min_data_quality = float(request.POST.get("auto_lane_min_data_quality") or 0.72)
-        except (ValueError, TypeError):
-            cfg.auto_lane_min_data_quality = 0.72
-        try:
-            cfg.auto_lane_min_trust = float(request.POST.get("auto_lane_min_trust") or 0.70)
-        except (ValueError, TypeError):
-            cfg.auto_lane_min_trust = 0.70
+
+        cfg.allow_unknown_country = _post_bool(request, "allow_unknown_country")
+        cfg.allow_possible_filter = _post_bool(request, "allow_possible_filter")
+        cfg.require_description = _post_bool(request, "require_description")
+        cfg.min_word_count = _post_int(request, "min_word_count", 80, 1, 2000)
+        cfg.min_char_count = _post_int(request, "min_char_count", 400, 1, 10000)
+        cfg.auto_lane_min_vet_priority = _post_float(request, "auto_lane_min_vet_priority", 0.75, 0.0, 1.0)
+        cfg.auto_lane_min_data_quality = _post_float(request, "auto_lane_min_data_quality", 0.72, 0.0, 1.0)
+        cfg.auto_lane_min_trust = _post_float(request, "auto_lane_min_trust", 0.70, 0.0, 1.0)
         raw_domains = request.POST.get("blocked_domains_json") or "[]"
         try:
             parsed = json.loads(raw_domains)
-            cfg.blocked_domains = parsed if isinstance(parsed, list) else []
+            cfg.blocked_domains = [
+                str(slug).strip().lower()
+                for slug in parsed
+                if str(slug).strip()
+            ] if isinstance(parsed, list) else []
         except Exception:
             cfg.blocked_domains = []
-        try:
-            cfg.default_chunk_size = int(request.POST.get("default_chunk_size") or 500)
-        except (ValueError, TypeError):
-            cfg.default_chunk_size = 500
-        cfg.auto_sync_after_harvest = request.POST.get("auto_sync_after_harvest") == "on"
+        cfg.default_chunk_size = _post_int(request, "default_chunk_size", 500, 50, 2000)
+        cfg.auto_sync_after_harvest = _post_bool(request, "auto_sync_after_harvest")
         cfg.save()
+
+        engine_cfg = HarvestEngineConfig.get()
+        for field in [
+            "auto_backfill_jd", "auto_enrich", "auto_sync_to_pool",
+            "process_unknown_country_with_target_domain", "rescope_on_target_country_change",
+            "remote_llm_jd_scan", "geocoding_cache_enabled", "geocoding_provider_enabled",
+            "selective_filter_enabled", "filter_audit_mode", "pre_storage_filter_enabled",
+            "filter_full_crawl", "jd_gate_enabled", "jd_gate_audit_mode",
+            "backfill_jd_include_cold", "validate_links_include_synced",
+        ]:
+            setattr(engine_cfg, field, _post_bool(request, field))
+
+        for field, default, min_value, max_value in [
+            ("resume_jd_min_words", 80, 1, 5000),
+            ("resume_jd_min_chars", 400, 1, 20000),
+            ("zero_tech_threshold", 5, 1, 100),
+            ("zero_tech_skip_ttl_days", 30, 1, 365),
+            ("cold_no_match_sample_rate_pct", 5, 0, 100),
+            ("jd_gate_batch_size", 20, 1, 100),
+            ("jd_gate_snippet_chars", 800, 100, 4000),
+            ("geocoding_monthly_limit", 80000, 0, 1000000),
+            ("geocoding_hourly_limit", 1000, 0, 100000),
+            ("validate_links_recent_hours", 168, 0, 8760),
+        ]:
+            setattr(engine_cfg, field, _post_int(request, field, default, min_value, max_value))
+
+        for field, default in [
+            ("resume_jd_min_classification_confidence", 0.35),
+            ("ready_stage_min_confidence", 0.55),
+            ("title_hard_yes_confidence", 0.80),
+            ("jd_gate_confidence_threshold", 0.65),
+        ]:
+            setattr(engine_cfg, field, _post_float(request, field, default, 0.0, 1.0))
+
+        target_country_codes = _parse_target_country_codes(request.POST.get("target_countries_csv", ""))
+        engine_cfg.target_countries = target_country_codes
+
+        remote_policy = (request.POST.get("remote_unknown_policy") or "review").strip().lower()
+        if remote_policy in {"review", "us", "target", "cold"}:
+            engine_cfg.remote_unknown_policy = remote_policy
+
+        geocoding_provider = (request.POST.get("geocoding_provider") or "none").strip().lower()
+        if geocoding_provider in {"none", "mapbox", "google"}:
+            engine_cfg.geocoding_provider = geocoding_provider
+
+        jd_gate_scope = (request.POST.get("jd_gate_scope") or "ambiguous_only").strip()
+        if jd_gate_scope in {"ambiguous_only", "all_possible", "all_non_hard_no"}:
+            engine_cfg.jd_gate_scope = jd_gate_scope
+
+        model = (request.POST.get("jd_gate_model") or "gpt-4o-mini").strip()
+        engine_cfg.jd_gate_model = model[:64] or "gpt-4o-mini"
+        hard_negatives_raw = request.POST.get("hard_negative_phrases", "")
+        engine_cfg.hard_negative_phrases = [
+            line.strip().lower()
+            for line in hard_negatives_raw.splitlines()
+            if line.strip()
+        ]
+        engine_cfg.save()
+
         messages.success(request, "Vet Gate Config saved.")
         return redirect("harvest-vet-gate-config")
 

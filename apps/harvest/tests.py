@@ -3932,3 +3932,114 @@ class ReEvaluateActionFixTests(TestCase):
         # Madrid → Spain (non-target) → Cold, left the review queue (was stuck before the fix).
         self.assertNotEqual(job.scope_status, RawJob.ScopeStatus.REVIEW_UNKNOWN_COUNTRY)
         self.assertEqual(job.country_code, "ES")
+
+
+class VetGateConfigViewTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+
+        self.user = get_user_model().objects.create_superuser(
+            "vet-admin@example.com",
+            "vet-admin@example.com",
+            "pw",
+        )
+        self.client.force_login(self.user)
+
+    def test_vet_gate_page_shows_harvest_to_vet_controls(self):
+        response = self.client.get(reverse("harvest-vet-gate-config"))
+
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        self.assertIn("Intake Filtering", content)
+        self.assertIn("Location Scope", content)
+        self.assertIn("LLM JD Content Gate", content)
+        self.assertIn("Resume / Ready / Recheck Rules", content)
+        self.assertIn("Pre-storage filter", content)
+        self.assertIn("Remote/no-country policy", content)
+
+    def test_vet_gate_post_updates_vet_and_engine_config(self):
+        from harvest.models import HarvestEngineConfig, VetGateConfig
+
+        response = self.client.post(
+            reverse("harvest-vet-gate-config"),
+            {
+                "allow_unknown_country": "on",
+                "allow_possible_filter": "on",
+                "require_description": "on",
+                "min_word_count": "120",
+                "min_char_count": "700",
+                "auto_lane_min_vet_priority": "0.81",
+                "auto_lane_min_data_quality": "0.76",
+                "auto_lane_min_trust": "0.74",
+                "blocked_domains_json": '["sales", "finance-accounting"]',
+                "default_chunk_size": "750",
+                "auto_sync_after_harvest": "on",
+                "auto_enrich": "on",
+                "auto_backfill_jd": "on",
+                "auto_sync_to_pool": "on",
+                "selective_filter_enabled": "on",
+                "pre_storage_filter_enabled": "on",
+                "filter_full_crawl": "on",
+                "title_hard_yes_confidence": "0.86",
+                "zero_tech_threshold": "9",
+                "zero_tech_skip_ttl_days": "45",
+                "cold_no_match_sample_rate_pct": "7",
+                "hard_negative_phrases": "registered nurse\nwarehouse worker\n",
+                "target_countries_csv": "us, in, ca, us",
+                "process_unknown_country_with_target_domain": "on",
+                "rescope_on_target_country_change": "on",
+                "remote_unknown_policy": "target",
+                "remote_llm_jd_scan": "on",
+                "geocoding_cache_enabled": "on",
+                "geocoding_provider_enabled": "on",
+                "geocoding_provider": "mapbox",
+                "geocoding_monthly_limit": "90000",
+                "geocoding_hourly_limit": "1500",
+                "jd_gate_enabled": "on",
+                "jd_gate_model": "gpt-4o-mini",
+                "jd_gate_scope": "all_possible",
+                "jd_gate_confidence_threshold": "0.72",
+                "jd_gate_batch_size": "30",
+                "jd_gate_snippet_chars": "1000",
+                "resume_jd_min_words": "100",
+                "resume_jd_min_chars": "650",
+                "resume_jd_min_classification_confidence": "0.44",
+                "ready_stage_min_confidence": "0.61",
+                "backfill_jd_include_cold": "on",
+                "validate_links_include_synced": "on",
+                "validate_links_recent_hours": "240",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        vet_cfg = VetGateConfig.get()
+        engine_cfg = HarvestEngineConfig.get()
+
+        self.assertTrue(vet_cfg.allow_unknown_country)
+        self.assertEqual(vet_cfg.min_word_count, 120)
+        self.assertEqual(vet_cfg.min_char_count, 700)
+        self.assertEqual(vet_cfg.default_chunk_size, 750)
+        self.assertEqual(vet_cfg.blocked_domains, ["sales", "finance-accounting"])
+        self.assertAlmostEqual(vet_cfg.auto_lane_min_vet_priority, 0.81)
+
+        self.assertTrue(engine_cfg.selective_filter_enabled)
+        self.assertFalse(engine_cfg.filter_audit_mode)
+        self.assertTrue(engine_cfg.pre_storage_filter_enabled)
+        self.assertTrue(engine_cfg.filter_full_crawl)
+        self.assertEqual(engine_cfg.target_countries, ["US", "IN", "CA"])
+        self.assertEqual(engine_cfg.remote_unknown_policy, "target")
+        self.assertTrue(engine_cfg.remote_llm_jd_scan)
+        self.assertEqual(engine_cfg.geocoding_provider, "mapbox")
+        self.assertTrue(engine_cfg.jd_gate_enabled)
+        self.assertFalse(engine_cfg.jd_gate_audit_mode)
+        self.assertEqual(engine_cfg.jd_gate_scope, "all_possible")
+        self.assertEqual(engine_cfg.jd_gate_batch_size, 30)
+        self.assertEqual(engine_cfg.jd_gate_snippet_chars, 1000)
+        self.assertEqual(engine_cfg.hard_negative_phrases, ["registered nurse", "warehouse worker"])
+        self.assertEqual(engine_cfg.resume_jd_min_words, 100)
+        self.assertEqual(engine_cfg.resume_jd_min_chars, 650)
+        self.assertAlmostEqual(engine_cfg.resume_jd_min_classification_confidence, 0.44)
+        self.assertAlmostEqual(engine_cfg.ready_stage_min_confidence, 0.61)
+        self.assertTrue(engine_cfg.backfill_jd_include_cold)
+        self.assertTrue(engine_cfg.validate_links_include_synced)
+        self.assertEqual(engine_cfg.validate_links_recent_hours, 240)
