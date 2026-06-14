@@ -22,7 +22,7 @@ from .marketing_role_routing import (
     infer_marketing_role_slugs,
 )
 from .services import match_jobs_for_consultant
-from .tasks import classify_jobs_task
+from .tasks import _department_sync_value, classify_jobs_task
 from .tasks import validate_job_urls_task, auto_close_jobs_task
 
 
@@ -196,6 +196,12 @@ class MarketingRoleRoutingTests(TestCase):
         )
         self.assertEqual(category, "Finance")
 
+    def test_department_sync_value_maps_raw_labels_to_job_department_codes(self):
+        self.assertEqual(_department_sync_value("Information Technology"), Job.Department.IT_MANAGEMENT)
+        self.assertEqual(_department_sync_value("DevOps / SRE"), Job.Department.DEVOPS_CLOUD)
+        self.assertEqual(_department_sync_value("Finance & Accounting"), Job.Department.FINANCE)
+        self.assertEqual(_department_sync_value("this value is not a job department"), "")
+
     def test_assign_preserves_manual_roles_while_refreshing_auto_roles(self):
         manual_role = MarketingRole.objects.get(slug="salesforce-developer")
         stale_auto = MarketingRole.objects.get(slug="software-developer")
@@ -299,6 +305,36 @@ class MarketingRoleRoutingTests(TestCase):
         self.assertEqual(raw.domain_version, "d2")
         self.assertTrue(raw.job_domain_candidates)
         self.assertTrue(job.marketing_roles.exists())
+
+    def test_classify_task_maps_long_raw_department_before_syncing_to_job(self):
+        company = Company.objects.create(name="LongDeptCo")
+        raw = RawJob.objects.create(
+            company=company,
+            company_name=company.name,
+            title="IT Program Manager",
+            description="Lead enterprise technology delivery, governance, and platform operations.",
+            original_url="https://example.com/jobs/long-dept",
+            url_hash=hashlib.sha256(b"https://example.com/jobs/long-dept").hexdigest(),
+            sync_status=RawJob.SyncStatus.SYNCED,
+            is_active=True,
+            department_normalized="Information Technology",
+        )
+        job = Job.objects.create(
+            title=raw.title,
+            company=company.name,
+            posted_by=self.employee,
+            status=Job.Status.POOL,
+            description=raw.description,
+            source_raw_job=raw,
+            url_hash=raw.url_hash,
+        )
+
+        result = classify_jobs_task.apply(kwargs={"force_reclassify": True}).get()
+        job.refresh_from_db()
+
+        self.assertEqual(result["status"], "done")
+        self.assertEqual(job.department, Job.Department.IT_MANAGEMENT)
+        self.assertEqual(job.department_source, "raw_job")
 
     def test_classify_task_active_only_skips_closed_job_role_refresh(self):
         company = Company.objects.create(name="ActiveOnlyRouteCo")

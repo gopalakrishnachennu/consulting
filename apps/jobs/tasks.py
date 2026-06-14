@@ -12,6 +12,83 @@ from harvest.url_health import check_job_posting_live
 logger = logging.getLogger(__name__)
 
 
+_JOB_DEPARTMENT_SYNC_ALIASES: dict[str, str] = {
+    "information technology": Job.Department.IT_MANAGEMENT,
+    "it": Job.Department.IT_MANAGEMENT,
+    "non it business": Job.Department.MANAGEMENT,
+    "non-it business": Job.Department.MANAGEMENT,
+    "business": Job.Department.MANAGEMENT,
+    "engineering": Job.Department.SOFTWARE_DEV,
+    "engineering non it": Job.Department.CIVIL_ENG,
+    "engineering construction": Job.Department.CIVIL_ENG,
+    "devops sre": Job.Department.DEVOPS_CLOUD,
+    "hr people": Job.Department.HR,
+    "people": Job.Department.HR,
+    "healthcare clinical": Job.Department.HEALTHCARE,
+}
+
+
+def _department_sync_value(raw_department: str | None) -> str:
+    """
+    Convert RawJob.department_normalized/freeform category labels to Job.department
+    enum codes before syncing. Job.department is a varchar(20) choice field; raw
+    labels like "Information Technology" must never be written directly.
+    """
+    raw = (raw_department or "").strip()
+    if not raw:
+        return ""
+
+    valid_values = {value for value, _label in Job.Department.choices}
+    if raw in valid_values:
+        return raw
+
+    lowered = raw.lower().strip()
+    label_map = {label.lower(): value for value, label in Job.Department.choices}
+    if lowered in label_map:
+        return label_map[lowered]
+
+    compact = lowered.replace("&", " ").replace("/", " ").replace("_", " ").replace("-", " ")
+    compact = " ".join(compact.split())
+    return _JOB_DEPARTMENT_SYNC_ALIASES.get(compact, "")
+
+
+def _department_sync_sql_case(source_column: str = "department_normalized") -> str:
+    """
+    SQL equivalent of _department_sync_value for the production bulk UPDATE path.
+    The returned expression only emits valid Job.department enum codes or ''.
+    """
+    value_pairs: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    for value, label in Job.Department.choices:
+        for raw in (value, label):
+            key = str(raw).lower().replace("&", " ").replace("/", " ").replace("_", " ").replace("-", " ")
+            key = " ".join(key.split())
+            if key and key not in seen:
+                seen.add(key)
+                value_pairs.append((key, value))
+
+    for key, value in _JOB_DEPARTMENT_SYNC_ALIASES.items():
+        key = " ".join(key.lower().replace("&", " ").replace("/", " ").replace("_", " ").replace("-", " ").split())
+        if key and key not in seen:
+            seen.add(key)
+            value_pairs.append((key, value))
+
+    normalized_expr = (
+        f"btrim(lower(regexp_replace(replace(replace(replace(replace({source_column}, '&', ' '), "
+        f"'/', ' '), '_', ' '), '-', ' '), "
+        r"'\s+', ' ', 'g')))"
+    )
+    cases = "\n".join(
+        f"            WHEN {normalized_expr} = '{key}' THEN '{value}'"
+        for key, value in value_pairs
+    )
+    return f"""CASE
+{cases}
+            ELSE ''
+        END"""
+
+
 @shared_task
 def generate_job_matches_task(job_id: int, notify: bool = True):
     """
@@ -596,13 +673,14 @@ def _sync_classifications_to_jobs(*, force: bool = False, active_only: bool = Fa
                 job.country = raw.country
                 changed.append("country")
 
+            mapped_department = _department_sync_value(raw.department_normalized if raw else "")
             if (
                 raw
-                and raw.department_normalized
+                and mapped_department
                 and job.department_source != "manual"
                 and (force or not job.department)
             ):
-                job.department = raw.department_normalized
+                job.department = mapped_department
                 job.department_source = "raw_job"
                 changed.extend(["department", "department_source"])
 
@@ -617,32 +695,40 @@ def _sync_classifications_to_jobs(*, force: bool = False, active_only: bool = Fa
     where_filter = "" if force else """
               AND (
                   (r.country <> '' AND (j.country IS NULL OR j.country = ''))
-                  OR (r.department_normalized <> '' AND j.department_source <> 'manual'
+                  OR (r.mapped_department <> '' AND j.department_source <> 'manual'
                       AND (j.department IS NULL OR j.department = ''))
               )"""
     job_scope_filter = ""
     if active_only:
         job_scope_filter = "AND j.is_archived = false AND j.status IN ('POOL', 'OPEN')"
 
+    department_case = _department_sync_sql_case("department_normalized")
     with connection.cursor() as cur:
         cur.execute(f"""
+            WITH raw_mapped AS (
+                SELECT
+                    id,
+                    country,
+                    {department_case} AS mapped_department
+                FROM harvest_rawjob
+                WHERE is_active = true
+            )
             UPDATE jobs_job j
             SET
                 country            = COALESCE(NULLIF(r.country, ''), j.country),
                 department         = CASE
                                        WHEN j.department_source = 'manual' THEN j.department
-                                       WHEN r.department_normalized <> ''  THEN r.department_normalized
+                                       WHEN r.mapped_department <> ''      THEN r.mapped_department
                                        ELSE j.department
                                      END,
                 department_source  = CASE
                                        WHEN j.department_source = 'manual'   THEN j.department_source
-                                       WHEN r.department_normalized <> ''    THEN 'raw_job'
+                                       WHEN r.mapped_department <> ''        THEN 'raw_job'
                                        ELSE j.department_source
                                      END,
                 classified_at      = NOW()
-            FROM harvest_rawjob r
+            FROM raw_mapped r
             WHERE r.id = j.source_raw_job_id
-              AND r.is_active = true
               {job_scope_filter}
               {where_filter}
         """)
