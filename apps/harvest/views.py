@@ -4694,7 +4694,9 @@ class UnknownCountryReviewView(SuperuserRequiredMixin, View):
         )
         for row in top_locations:
             risk = _unknown_country_location_risk(row["location_raw"])
-            sample_qs = qs.filter(location_raw=row["location_raw"]).values("company_name", "title")[:3]
+            sample_qs = qs.filter(location_raw=row["location_raw"]).values(
+                "id", "company_name", "title", "original_url",
+            )[:3]
             row["risk_reason"] = risk
             row["is_safe_bulk"] = not risk
             row["can_bulk_assign_country"] = _unknown_country_can_bulk_assign_country(row["location_raw"])

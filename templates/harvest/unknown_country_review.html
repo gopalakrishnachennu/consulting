@@ -190,6 +190,14 @@
             <div class="rounded-lg border border-slate-200 bg-white px-3 py-2">
               <div class="truncate font-semibold text-slate-700">{{ sample.company_name|default:"-" }}</div>
               <div class="truncate">{{ sample.title|default:"-" }}</div>
+              <div class="mt-1 flex flex-wrap items-center gap-2 text-[11px] font-semibold">
+                <a href="{% url 'harvest-rawjob-detail' sample.id %}" target="_blank"
+                   class="text-indigo-600 hover:underline">Review raw</a>
+                {% if sample.original_url %}
+                <a href="{{ sample.original_url }}" target="_blank" rel="noopener"
+                   class="text-slate-500 hover:text-indigo-600 hover:underline">Live posting</a>
+                {% endif %}
+              </div>
             </div>
             {% endfor %}
           </div>
@@ -290,11 +298,18 @@
               <span class="mt-0.5 inline-block rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-500">{{ job.platform_slug|default:"-" }}</span>
             </td>
             <td class="max-w-[280px] px-3 py-2 align-top">
-              <div class="flex items-start gap-1.5">
-                <a href="{% url 'harvest-rawjob-detail' job.pk %}" class="block truncate font-medium text-indigo-600 hover:underline" title="{{ job.title }}">{{ job.title|default:"-" }}</a>
+              <div class="min-w-0">
+                <a href="{% url 'harvest-rawjob-detail' job.pk %}" target="_blank"
+                   class="block truncate font-semibold text-indigo-700 hover:underline"
+                   title="{{ job.title }}">{{ job.title|default:"-" }}</a>
+                <div class="mt-1 flex flex-wrap items-center gap-2 text-[11px] font-semibold">
+                  <a href="{% url 'harvest-rawjob-detail' job.pk %}" target="_blank"
+                     class="rounded bg-indigo-50 px-2 py-0.5 text-indigo-700 hover:bg-indigo-100">Review raw</a>
                 {% if job.original_url %}
-                <a href="{{ job.original_url }}" target="_blank" rel="noopener" class="shrink-0 text-slate-400 hover:text-indigo-600" title="Open the live posting ↗">↗</a>
+                  <a href="{{ job.original_url }}" target="_blank" rel="noopener"
+                     class="rounded bg-slate-100 px-2 py-0.5 text-slate-600 hover:bg-slate-200">Live posting</a>
                 {% endif %}
+                </div>
               </div>
             </td>
             <td class="max-w-[300px] px-3 py-2 align-top">

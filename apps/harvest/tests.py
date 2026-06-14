@@ -3569,6 +3569,16 @@ class UnknownCountryReviewActionTests(TestCase):
         self.assertIn(match.pk, ids)
         self.assertNotIn(miss.pk, ids)
 
+    def test_review_page_exposes_raw_and_live_job_links(self):
+        job = self._make_job(location_raw="Remote", title="Cloud Engineer")
+
+        resp = self.client.get(reverse("harvest-unknown-country-review"))
+
+        self.assertContains(resp, "Review raw")
+        self.assertContains(resp, "Live posting")
+        self.assertContains(resp, reverse("harvest-rawjob-detail", args=[job.pk]))
+        self.assertContains(resp, job.original_url)
+
 
 class LocationLadderPhaseTests(TestCase):
     """Phases A–E of the location resolution ladder."""
