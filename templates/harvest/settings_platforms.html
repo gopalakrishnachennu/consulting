@@ -10,7 +10,7 @@
   <div class="page-header flex items-start justify-between mb-6">
     <div>
       <h1 class="text-2xl font-bold text-gray-900">Platform Registry</h1>
-      <p class="text-sm text-gray-500 mt-0.5">Configure ATS platforms — the detection engine matches company career URLs against these patterns.</p>
+      <p class="text-sm text-gray-500 mt-0.5">Configure ATS detection, list-payload capability, and per-platform scraping throttle rules.</p>
     </div>
     <a href="{% url 'harvest-platform-create' %}" class="btn-primary inline-flex items-center gap-2">
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
@@ -19,7 +19,7 @@
   </div>
 
   <!-- Stats Row -->
-  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+  <div class="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6">
     <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
       <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Total Platforms</p>
       <p class="text-2xl font-bold text-gray-900">{{ total_platforms }}</p>
@@ -37,6 +37,11 @@
       <p class="text-2xl font-bold text-blue-900">{{ company_label_count }}</p>
       <a href="{% url 'harvest-labels' %}" class="text-sm font-semibold text-blue-600 hover:underline">View All →</a>
     </div>
+    <div class="bg-indigo-50 rounded-xl border border-indigo-200 shadow-sm p-4">
+      <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Runtime Rules</p>
+      <p class="text-2xl font-bold text-indigo-900">{{ runtime_config_count }}</p>
+      <p class="text-xs text-indigo-700">configured throttles</p>
+    </div>
   </div>
 
   <!-- Messages -->
@@ -47,6 +52,15 @@
   </div>
   {% endfor %}
   {% endif %}
+
+  <div class="mb-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+    <div class="font-semibold">What matters during scraping</div>
+    <p class="mt-1 text-xs leading-relaxed text-blue-800">
+      URL patterns detect the ATS. <strong>Title in list</strong> allows early title filtering.
+      <strong>JD in list</strong> lets the content gate classify from the list payload without an extra detail-page request.
+      Runtime delay/cadence below is platform-specific; worker concurrency and global batch rules stay in Pipeline Settings.
+    </p>
+  </div>
 
   <!-- Platforms Table -->
   {% if platforms %}
@@ -62,7 +76,7 @@
           <th class="tbl-th hidden md:table-cell">URL Patterns</th>
           <th class="tbl-th-right">Companies</th>
           <th class="tbl-th-right hidden xl:table-cell">No Tenant</th>
-          <th class="tbl-th text-center hidden lg:table-cell">Rate Limit</th>
+          <th class="tbl-th hidden lg:table-cell">Runtime</th>
           <th class="tbl-th hidden lg:table-cell">Last Harvested</th>
           <th class="tbl-th text-center">On/Off</th>
           <th class="tbl-th-right">Actions</th>
@@ -78,6 +92,17 @@
               <span class="font-semibold text-gray-900">{{ platform.name }}</span>
             </div>
             <p class="text-xs text-gray-400 ml-5 mt-0.5 font-mono">{{ platform.slug }}</p>
+            <div class="ml-5 mt-1 flex flex-wrap gap-1">
+              {% if platform.title_in_list %}
+              <span class="badge-blue text-[10px]">Title in list</span>
+              {% endif %}
+              {% if platform.list_has_description %}
+              <span class="badge-green text-[10px]">JD in list</span>
+              {% endif %}
+              {% if not platform.title_in_list and not platform.list_has_description %}
+              <span class="badge-gray text-[10px]">Detail fetch needed</span>
+              {% endif %}
+            </div>
           </td>
           <!-- Support -->
           <td class="tbl-td hidden lg:table-cell">
@@ -136,9 +161,34 @@
             <span class="tbl-mono text-gray-300">0</span>
             {% endif %}
           </td>
-          <!-- Rate Limit -->
-          <td class="tbl-td text-center hidden lg:table-cell">
-            <span class="text-xs font-mono text-gray-600">{{ platform.rate_limit_per_min }}/min</span>
+          <!-- Runtime -->
+          <td class="tbl-td hidden lg:table-cell">
+            {% if platform.runtime_config %}
+            <div class="space-y-0.5 text-xs text-gray-600">
+              <div>
+                <span class="font-mono font-semibold text-gray-800">{{ platform.rate_limit_per_min }}/min</span>
+                <span class="text-gray-300">·</span>
+                <span class="font-mono">{{ platform.runtime_config.inter_request_delay_ms }}ms delay</span>
+              </div>
+              <div>
+                <span>{{ platform.runtime_config.fetch_cadence_hours }}h cadence</span>
+                <span class="text-gray-300">·</span>
+                <span>quality ≥ {{ platform.runtime_config.min_quality_score|floatformat:2 }}</span>
+              </div>
+              <div class="flex flex-wrap gap-1">
+                {% if platform.runtime_config.auto_backfill %}
+                <span class="badge-green text-[10px]">JD backfill P{{ platform.runtime_config.backfill_priority }}</span>
+                {% else %}
+                <span class="badge-gray text-[10px]">Manual JD</span>
+                {% endif %}
+                {% if not platform.runtime_config.is_active %}
+                <span class="badge-yellow text-[10px]">Runtime off</span>
+                {% endif %}
+              </div>
+            </div>
+            {% else %}
+            <span class="badge-yellow text-xs">Runtime missing</span>
+            {% endif %}
           </td>
           <!-- Last Harvested -->
           <td class="tbl-td hidden lg:table-cell">
@@ -187,7 +237,7 @@
   <div class="mt-6 bg-blue-50 rounded-xl border border-blue-100 p-4 flex gap-3">
     <span class="text-blue-400 flex-shrink-0 mt-0.5">💡</span>
     <p class="text-xs text-blue-700">
-      <strong>How detection works:</strong> When a company is scanned, the engine checks its <code class="font-mono bg-blue-100 px-1 rounded">career_site_url</code> and <code class="font-mono bg-blue-100 px-1 rounded">website</code> against all platform URL patterns. No match → HTTP redirect follow → HTML parse. Results stored as <strong>Company Platform Labels</strong>.
+      <strong>How detection works:</strong> When a company is scanned, the engine checks its <code class="font-mono bg-blue-100 px-1 rounded">career_site_url</code> and <code class="font-mono bg-blue-100 px-1 rounded">website</code> against all platform URL patterns. No match → HTTP redirect follow → HTML parse. Results are stored as <strong>Company Platform Labels</strong>; platform runtime delay is honored before each fetch.
     </p>
   </div>
 

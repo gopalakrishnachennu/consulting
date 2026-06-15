@@ -2,17 +2,54 @@ import re
 
 from django import forms
 
-from .models import HarvestRoleCategory, JobBoardPlatform, JobDomain
+from .models import HarvestRoleCategory, JobBoardPlatform, JobDomain, PlatformEngineConfig
 
 
 class JobBoardPlatformForm(forms.ModelForm):
+    config_auto_backfill = forms.BooleanField(
+        required=False,
+        label="Auto JD backfill",
+        help_text="Queue detail-description fetches for this platform when list data is not enough.",
+    )
+    config_backfill_priority = forms.IntegerField(
+        min_value=1,
+        max_value=10,
+        label="Backfill priority",
+        help_text="1 = highest priority, 10 = lowest.",
+    )
+    config_fetch_cadence_hours = forms.IntegerField(
+        min_value=0,
+        max_value=720,
+        label="Fetch cadence hours",
+        help_text="Minimum hours between scheduled fetches for companies on this platform.",
+    )
+    config_inter_request_delay_ms = forms.IntegerField(
+        min_value=0,
+        max_value=60000,
+        label="Inter-request delay ms",
+        help_text="Delay enforced before each fetch. API boards can be lower; scraper boards should be slower.",
+    )
+    config_min_quality_score = forms.FloatField(
+        min_value=0.0,
+        max_value=1.0,
+        label="Minimum quality score",
+        help_text="Jobs below this floor are treated as low quality after enrichment.",
+    )
+    config_is_active = forms.BooleanField(
+        required=False,
+        label="Runtime config active",
+        help_text="Disable only when this platform should ignore per-platform runtime rules.",
+    )
+
     class Meta:
         model = JobBoardPlatform
         fields = [
             "name", "slug", "url_patterns", "api_type", "fetch_endpoint_tmpl",
             "headers_json", "rate_limit_per_min", "requires_auth",
-            "is_enabled", "title_in_list", "unknown_jd_budget_per_run",
+            "is_enabled", "title_in_list", "list_has_description", "unknown_jd_budget_per_run",
             "support_tier", "color_hex", "notes",
+            "config_auto_backfill", "config_backfill_priority", "config_fetch_cadence_hours",
+            "config_inter_request_delay_ms", "config_min_quality_score", "config_is_active",
         ]
         widgets = {
             "url_patterns": forms.Textarea(
@@ -39,6 +76,80 @@ class JobBoardPlatformForm(forms.ModelForm):
             "fetch_endpoint_tmpl": "Use {tenant} as a placeholder for the company's tenant/token.",
             "color_hex": "Badge colour shown in the company list.",
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        cfg = None
+        if self.instance and self.instance.pk:
+            try:
+                cfg = self.instance.config
+            except PlatformEngineConfig.DoesNotExist:
+                cfg = None
+
+        runtime_defaults = {
+            "config_auto_backfill": False,
+            "config_backfill_priority": 5,
+            "config_fetch_cadence_hours": 24,
+            "config_inter_request_delay_ms": 1500,
+            "config_min_quality_score": 0.3,
+            "config_is_active": True,
+        }
+        if cfg:
+            runtime_defaults.update({
+                "config_auto_backfill": cfg.auto_backfill,
+                "config_backfill_priority": cfg.backfill_priority,
+                "config_fetch_cadence_hours": cfg.fetch_cadence_hours,
+                "config_inter_request_delay_ms": cfg.inter_request_delay_ms,
+                "config_min_quality_score": cfg.min_quality_score,
+                "config_is_active": cfg.is_active,
+            })
+        for field_name, value in runtime_defaults.items():
+            self.fields[field_name].initial = value
+
+    def clean_url_patterns(self):
+        patterns = self.cleaned_data.get("url_patterns") or []
+        if not isinstance(patterns, list):
+            raise forms.ValidationError("Enter a JSON array of URL pattern strings.")
+
+        normalized = []
+        seen = set()
+        for pattern in patterns:
+            text = str(pattern or "").strip().lower()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            normalized.append(text)
+
+        if not normalized:
+            raise forms.ValidationError("Add at least one URL pattern.")
+        return normalized
+
+    def clean_headers_json(self):
+        headers = self.cleaned_data.get("headers_json") or {}
+        if not isinstance(headers, dict):
+            raise forms.ValidationError("Enter a JSON object of HTTP headers.")
+        return headers
+
+    def save(self, commit=True):
+        platform = super().save(commit=commit)
+        if commit:
+            cfg, _ = PlatformEngineConfig.objects.get_or_create(platform=platform)
+            cfg.auto_backfill = self.cleaned_data["config_auto_backfill"]
+            cfg.backfill_priority = self.cleaned_data["config_backfill_priority"]
+            cfg.fetch_cadence_hours = self.cleaned_data["config_fetch_cadence_hours"]
+            cfg.inter_request_delay_ms = self.cleaned_data["config_inter_request_delay_ms"]
+            cfg.min_quality_score = self.cleaned_data["config_min_quality_score"]
+            cfg.is_active = self.cleaned_data["config_is_active"]
+            cfg.save(update_fields=[
+                "auto_backfill",
+                "backfill_priority",
+                "fetch_cadence_hours",
+                "inter_request_delay_ms",
+                "min_quality_score",
+                "is_active",
+                "updated_at",
+            ])
+        return platform
 
 
 class HarvestRoleCategoryForm(forms.ModelForm):

@@ -1,7 +1,9 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-8 max-w-2xl">
+{% include 'jobs/_pipeline_subnav.html' %}
+
+<div class="container mx-auto px-4 py-8 max-w-4xl">
 
   <!-- Breadcrumb -->
   <div class="flex items-center gap-2 text-sm mb-6">
@@ -126,7 +128,7 @@
         </div>
 
         <!-- Rate Limit + Color + Selective Harvest -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
           <div>
             <label for="{{ form.rate_limit_per_min.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-1">Rate Limit</label>
             <div class="flex items-center gap-2">
@@ -150,14 +152,31 @@
               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
             <p class="text-xs text-gray-400 mt-1">Per company run</p>
           </div>
-          <div class="flex flex-col justify-end">
-            <label class="flex items-center gap-3 p-3 border border-gray-200 rounded-xl hover:bg-gray-50 cursor-pointer">
+        </div>
+
+        <!-- List Payload Capability -->
+        <div class="mb-5 rounded-xl border border-blue-100 bg-blue-50/40 p-4">
+          <div class="mb-3">
+            <h2 class="text-sm font-bold text-gray-900">List Payload Capability</h2>
+            <p class="text-xs text-gray-500 mt-0.5">These flags directly affect title filtering and JD gate behavior before extra detail-page requests are made.</p>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label class="flex items-start gap-3 p-3 border rounded-xl hover:bg-white/70 cursor-pointer {% if form.title_in_list.value %}border-blue-200 bg-white{% else %}border-gray-200 bg-white/60{% endif %}">
               <input type="checkbox" name="title_in_list" id="{{ form.title_in_list.id_for_label }}"
                 {% if form.title_in_list.value %}checked{% endif %}
-                class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500/30">
+                class="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500/30">
               <div>
-                <span class="text-sm font-medium text-gray-700">Title in list</span>
-                <p class="text-xs text-gray-400">Can classify before JD fetch</p>
+                <span class="text-sm font-semibold text-gray-800">Title in list</span>
+                <p class="text-xs text-gray-500 mt-0.5">Allows selective title filtering before JD fetch.</p>
+              </div>
+            </label>
+            <label class="flex items-start gap-3 p-3 border rounded-xl hover:bg-white/70 cursor-pointer {% if form.list_has_description.value %}border-green-200 bg-white{% else %}border-gray-200 bg-white/60{% endif %}">
+              <input type="checkbox" name="list_has_description" id="{{ form.list_has_description.id_for_label }}"
+                {% if form.list_has_description.value %}checked{% endif %}
+                class="mt-0.5 h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500/30">
+              <div>
+                <span class="text-sm font-semibold text-gray-800">JD in list payload</span>
+                <p class="text-xs text-gray-500 mt-0.5">Lets the content gate classify from list data with zero extra HTTP calls.</p>
               </div>
             </label>
           </div>
@@ -182,6 +201,73 @@
               <div>
                 <span class="text-sm font-medium text-gray-700">Requires Auth</span>
                 <p class="text-xs text-gray-400">Needs API key / token to access</p>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Runtime Controls -->
+        <div class="mb-5 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
+          <div class="mb-3">
+            <h2 class="text-sm font-bold text-gray-900">Per-Platform Runtime Controls</h2>
+            <p class="text-xs text-gray-500 mt-0.5">These settings are read by the harvesting runtime. They are separate from global worker concurrency in Pipeline Settings.</p>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            <div>
+              <label for="{{ form.config_inter_request_delay_ms.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-1">Request Delay</label>
+              <input type="number" name="config_inter_request_delay_ms" id="{{ form.config_inter_request_delay_ms.id_for_label }}"
+                min="0" max="60000" step="100"
+                value="{{ form.config_inter_request_delay_ms.value|default:'1500' }}"
+                class="w-full border {% if form.config_inter_request_delay_ms.errors %}border-red-400{% else %}border-gray-300{% endif %} rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500">
+              <p class="text-xs text-gray-400 mt-1">Milliseconds before each fetch</p>
+              {% if form.config_inter_request_delay_ms.errors %}<p class="text-xs text-red-600 mt-1">{{ form.config_inter_request_delay_ms.errors.0 }}</p>{% endif %}
+            </div>
+            <div>
+              <label for="{{ form.config_fetch_cadence_hours.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-1">Cadence</label>
+              <input type="number" name="config_fetch_cadence_hours" id="{{ form.config_fetch_cadence_hours.id_for_label }}"
+                min="0" max="720" step="1"
+                value="{{ form.config_fetch_cadence_hours.value|default:'24' }}"
+                class="w-full border {% if form.config_fetch_cadence_hours.errors %}border-red-400{% else %}border-gray-300{% endif %} rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500">
+              <p class="text-xs text-gray-400 mt-1">Hours between scheduled fetches</p>
+              {% if form.config_fetch_cadence_hours.errors %}<p class="text-xs text-red-600 mt-1">{{ form.config_fetch_cadence_hours.errors.0 }}</p>{% endif %}
+            </div>
+            <div>
+              <label for="{{ form.config_backfill_priority.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-1">Backfill Priority</label>
+              <input type="number" name="config_backfill_priority" id="{{ form.config_backfill_priority.id_for_label }}"
+                min="1" max="10" step="1"
+                value="{{ form.config_backfill_priority.value|default:'5' }}"
+                class="w-full border {% if form.config_backfill_priority.errors %}border-red-400{% else %}border-gray-300{% endif %} rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500">
+              <p class="text-xs text-gray-400 mt-1">1 is highest</p>
+              {% if form.config_backfill_priority.errors %}<p class="text-xs text-red-600 mt-1">{{ form.config_backfill_priority.errors.0 }}</p>{% endif %}
+            </div>
+            <div>
+              <label for="{{ form.config_min_quality_score.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-1">Quality Floor</label>
+              <input type="number" name="config_min_quality_score" id="{{ form.config_min_quality_score.id_for_label }}"
+                min="0" max="1" step="0.01"
+                value="{{ form.config_min_quality_score.value|default:'0.3' }}"
+                class="w-full border {% if form.config_min_quality_score.errors %}border-red-400{% else %}border-gray-300{% endif %} rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500">
+              <p class="text-xs text-gray-400 mt-1">0 to 1 after enrichment</p>
+              {% if form.config_min_quality_score.errors %}<p class="text-xs text-red-600 mt-1">{{ form.config_min_quality_score.errors.0 }}</p>{% endif %}
+            </div>
+          </div>
+
+          <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label class="flex items-start gap-3 p-3 border border-gray-200 rounded-xl bg-white/70 hover:bg-white cursor-pointer">
+              <input type="checkbox" name="config_auto_backfill" id="{{ form.config_auto_backfill.id_for_label }}"
+                {% if form.config_auto_backfill.value %}checked{% endif %}
+                class="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500/30">
+              <div>
+                <span class="text-sm font-semibold text-gray-800">Auto JD backfill for this platform</span>
+                <p class="text-xs text-gray-500 mt-0.5">Queue detail-description fetches when list data is not enough.</p>
+              </div>
+            </label>
+            <label class="flex items-start gap-3 p-3 border border-gray-200 rounded-xl bg-white/70 hover:bg-white cursor-pointer">
+              <input type="checkbox" name="config_is_active" id="{{ form.config_is_active.id_for_label }}"
+                {% if form.config_is_active.value %}checked{% endif %}
+                class="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500/30">
+              <div>
+                <span class="text-sm font-semibold text-gray-800">Runtime config active</span>
+                <p class="text-xs text-gray-500 mt-0.5">When off, the platform falls back to global/default runtime behavior.</p>
               </div>
             </label>
           </div>

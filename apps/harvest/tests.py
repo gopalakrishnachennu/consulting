@@ -115,6 +115,165 @@ class PlatformRegistryDetectionTests(TestCase):
         self.assertEqual(method, "UNDETECTED")
 
 
+class PlatformSettingsViewTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+
+        self.user = get_user_model().objects.create_superuser(
+            "platform-admin@example.com",
+            "platform-admin@example.com",
+            "pw",
+        )
+        self.client.force_login(self.user)
+
+    def test_platform_settings_show_content_and_runtime_controls(self):
+        from harvest.models import JobBoardPlatform, PlatformEngineConfig
+
+        platform = JobBoardPlatform.objects.create(
+            name="Example Platform",
+            slug="example-platform",
+            url_patterns=["jobs.example.com"],
+            api_type=JobBoardPlatform.ApiType.GREENHOUSE_API,
+            support_tier=JobBoardPlatform.SupportTier.HEALTHY,
+            title_in_list=True,
+            list_has_description=True,
+            rate_limit_per_min=17,
+        )
+        PlatformEngineConfig.objects.create(
+            platform=platform,
+            auto_backfill=True,
+            backfill_priority=2,
+            fetch_cadence_hours=12,
+            inter_request_delay_ms=2400,
+            min_quality_score=0.42,
+            is_active=True,
+        )
+
+        list_response = self.client.get(reverse("harvest-platforms"))
+        self.assertEqual(list_response.status_code, 200)
+        list_html = list_response.content.decode()
+        self.assertIn("Runtime Rules", list_html)
+        self.assertIn("Title in list", list_html)
+        self.assertIn("JD in list", list_html)
+        self.assertIn("2400ms delay", list_html)
+        self.assertIn("12h cadence", list_html)
+
+        edit_response = self.client.get(reverse("harvest-platform-edit", args=[platform.pk]))
+        self.assertEqual(edit_response.status_code, 200)
+        edit_html = edit_response.content.decode()
+        self.assertIn("List Payload Capability", edit_html)
+        self.assertIn("JD in list payload", edit_html)
+        self.assertIn("Per-Platform Runtime Controls", edit_html)
+        self.assertIn('name="config_inter_request_delay_ms"', edit_html)
+
+    def test_platform_edit_updates_runtime_config_and_list_description_flag(self):
+        from harvest.models import JobBoardPlatform, PlatformEngineConfig
+
+        platform = JobBoardPlatform.objects.create(
+            name="Runtime Platform",
+            slug="runtime-platform",
+            url_patterns=["old.example.com"],
+            api_type=JobBoardPlatform.ApiType.HTML_SCRAPE,
+            support_tier=JobBoardPlatform.SupportTier.EXPERIMENTAL,
+            list_has_description=False,
+        )
+
+        response = self.client.post(
+            reverse("harvest-platform-edit", args=[platform.pk]),
+            {
+                "name": "Runtime Platform",
+                "slug": "runtime-platform",
+                "url_patterns": '["new.example.com", "NEW.example.com", ""]',
+                "api_type": JobBoardPlatform.ApiType.GREENHOUSE_API,
+                "fetch_endpoint_tmpl": "https://api.example.com/{tenant}/jobs",
+                "headers_json": '{"Accept": "application/json"}',
+                "rate_limit_per_min": "22",
+                "unknown_jd_budget_per_run": "4",
+                "support_tier": JobBoardPlatform.SupportTier.HEALTHY,
+                "color_hex": "#123456",
+                "notes": "Verified in GUI.",
+                "is_enabled": "on",
+                "title_in_list": "on",
+                "list_has_description": "on",
+                "config_auto_backfill": "on",
+                "config_backfill_priority": "3",
+                "config_fetch_cadence_hours": "18",
+                "config_inter_request_delay_ms": "3100",
+                "config_min_quality_score": "0.58",
+                "config_is_active": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        platform.refresh_from_db()
+        self.assertEqual(platform.url_patterns, ["new.example.com"])
+        self.assertTrue(platform.title_in_list)
+        self.assertTrue(platform.list_has_description)
+        self.assertEqual(platform.rate_limit_per_min, 22)
+
+        cfg = PlatformEngineConfig.objects.get(platform=platform)
+        self.assertTrue(cfg.auto_backfill)
+        self.assertEqual(cfg.backfill_priority, 3)
+        self.assertEqual(cfg.fetch_cadence_hours, 18)
+        self.assertEqual(cfg.inter_request_delay_ms, 3100)
+        self.assertAlmostEqual(cfg.min_quality_score, 0.58)
+        self.assertTrue(cfg.is_active)
+
+    def test_platform_form_rejects_non_array_url_patterns(self):
+        from harvest.models import JobBoardPlatform
+
+        response = self.client.post(
+            reverse("harvest-platform-create"),
+            {
+                "name": "Bad Platform",
+                "slug": "bad-platform",
+                "url_patterns": '{"host": "jobs.example.com"}',
+                "api_type": JobBoardPlatform.ApiType.UNKNOWN,
+                "headers_json": "{}",
+                "rate_limit_per_min": "10",
+                "unknown_jd_budget_per_run": "2",
+                "support_tier": JobBoardPlatform.SupportTier.EXPERIMENTAL,
+                "color_hex": "#6B7280",
+                "config_backfill_priority": "5",
+                "config_fetch_cadence_hours": "24",
+                "config_inter_request_delay_ms": "1500",
+                "config_min_quality_score": "0.3",
+                "config_is_active": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Enter a JSON array of URL pattern strings.")
+
+
+class EngineConfigViewTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+
+        self.user = get_user_model().objects.create_superuser(
+            "engine-admin@example.com",
+            "engine-admin@example.com",
+            "pw",
+        )
+        self.client.force_login(self.user)
+
+    def test_engine_config_can_clear_hard_negative_phrases(self):
+        from harvest.models import HarvestEngineConfig
+
+        cfg = HarvestEngineConfig.get()
+        cfg.hard_negative_phrases = ["registered nurse", "warehouse worker"]
+        cfg.save()
+
+        response = self.client.post(
+            reverse("harvest-engine-config"),
+            {"hard_negative_phrases": ""},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        cfg.refresh_from_db()
+        self.assertEqual(cfg.hard_negative_phrases, [])
+
+
 class HarvestUrlHashDedupeTests(SimpleTestCase):
     def test_tracking_query_params_do_not_change_hash(self):
         from harvest.normalizer import compute_url_hash

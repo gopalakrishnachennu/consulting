@@ -143,6 +143,11 @@ _CITY_COUNTRY: dict[str, str] = {
     "tel aviv": "Israel", "tel-aviv": "Israel",
     # UAE
     "dubai": "United Arab Emirates", "abu dhabi": "United Arab Emirates",
+    # Spain / Mexico — keep key backlog cities even when geonamescache is not installed.
+    "madrid": "Spain",
+    "barcelona": "Spain",
+    "tijuana": "Mexico",
+    "mexico city": "Mexico",
     # Brazil
     "são paulo": "Brazil", "sao paulo": "Brazil",
     "rio de janeiro": "Brazil",
@@ -267,9 +272,41 @@ _REGION_PATS = [
     for kw, region in _REGIONS.items()
 ]
 
+_COUNTRY_HINTS = {
+    "us": "United States",
+    "u.s.": "United States",
+    "usa": "United States",
+    "u.s.a.": "United States",
+    "united states": "United States",
+    "uk": "United Kingdom",
+    "u.k.": "United Kingdom",
+    "gb": "United Kingdom",
+    "great britain": "United Kingdom",
+    "united kingdom": "United Kingdom",
+    "in": "India",
+    "india": "India",
+    "ca": "Canada",
+    "canada": "Canada",
+    "au": "Australia",
+    "australia": "Australia",
+    "de": "Germany",
+    "germany": "Germany",
+    "es": "Spain",
+    "spain": "Spain",
+    "mx": "Mexico",
+    "mexico": "Mexico",
+    "pl": "Poland",
+    "poland": "Poland",
+    "il": "Israel",
+    "israel": "Israel",
+}
+
 
 def _try_country_converter(text: str) -> str | None:
     """Use country-converter to resolve a location string. Returns full country name or None."""
+    key = re.sub(r"\s+", " ", (text or "").strip().lower())
+    if key in _COUNTRY_HINTS:
+        return _COUNTRY_HINTS[key]
     try:
         import country_converter as coco  # type: ignore
         result = coco.convert(names=[text], to="name_short", not_found=None)

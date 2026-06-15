@@ -38,6 +38,7 @@ from .models import (
     JobDomain,
     HarvestSkippedTitle,
     JobBoardPlatform,
+    PlatformEngineConfig,
     RawJob,
     RawJobDuplicatePair,
 )
@@ -426,14 +427,20 @@ class PlatformListView(SuperuserRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         platforms = list(
-            JobBoardPlatform.objects.annotate(
+            JobBoardPlatform.objects.select_related("config").annotate(
                 company_count=Count("labels"),
                 missing_tenant_count=Count("labels", filter=Q(labels__tenant_id="")),
             ).order_by("name")
         )
+        runtime_config_count = 0
         for platform in platforms:
             platform.implementation_kind = kind_for_slug(platform.slug).value
             platform.harvester_class_name = harvester_class_name_for_slug(platform.slug)
+            try:
+                platform.runtime_config = platform.config
+                runtime_config_count += 1
+            except PlatformEngineConfig.DoesNotExist:
+                platform.runtime_config = None
         total_platforms = JobBoardPlatform.objects.count()
         enabled_count = JobBoardPlatform.objects.filter(is_enabled=True).count()
         ctx["platforms"] = platforms
@@ -442,6 +449,7 @@ class PlatformListView(SuperuserRequiredMixin, TemplateView):
         ctx["total_platforms"] = total_platforms
         ctx["enabled_count"] = enabled_count
         ctx["disabled_count"] = total_platforms - enabled_count
+        ctx["runtime_config_count"] = runtime_config_count
         ctx["company_label_count"] = CompanyPlatformLabel.objects.count()
         return ctx
 
@@ -3677,8 +3685,8 @@ class EngineConfigView(SuperuserRequiredMixin, View):
         for field in bool_fields:
             setattr(cfg, field, field in request.POST)
 
-        hard_negatives_raw = request.POST.get("hard_negative_phrases", "")
-        if hard_negatives_raw:
+        hard_negatives_raw = request.POST.get("hard_negative_phrases")
+        if hard_negatives_raw is not None:
             cfg.hard_negative_phrases = [
                 line.strip().lower()
                 for line in hard_negatives_raw.splitlines()

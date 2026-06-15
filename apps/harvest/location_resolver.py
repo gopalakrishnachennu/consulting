@@ -49,8 +49,11 @@ COUNTRY_NAME_TO_CODE = {
     "brazil": "BR",
     "mexico": "MX",
     "poland": "PL",
+    "spain": "ES",
+    "israel": "IL",
     "sweden": "SE",
     "switzerland": "CH",
+    "south africa": "ZA",
     "united arab emirates": "AE",
     "uae": "AE",
 }
@@ -70,8 +73,11 @@ COUNTRY_CODE_TO_NAME = {
     "BR": "Brazil",
     "MX": "Mexico",
     "PL": "Poland",
+    "ES": "Spain",
+    "IL": "Israel",
     "SE": "Sweden",
     "CH": "Switzerland",
+    "ZA": "South Africa",
     "AE": "United Arab Emirates",
 }
 _KNOWN_COUNTRY_CODES = set(COUNTRY_CODE_TO_NAME)
