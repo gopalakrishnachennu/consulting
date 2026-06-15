@@ -170,6 +170,9 @@ class PlatformConfig(models.Model):
         ROSE   = 'rose',   'Rose'
         AMBER  = 'amber',  'Amber'
         SLATE  = 'slate',  'Slate'
+        SAFFRON = 'saffron', 'Saffron'
+        CHAKRA = 'chakra', 'Chakra'
+        BANYAN = 'banyan', 'Banyan'
 
     color_theme = models.CharField(
         max_length=20,

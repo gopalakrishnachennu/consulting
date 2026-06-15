@@ -36,6 +36,31 @@ class PlatformConfigTests(TestCase):
         self.assertEqual(config.site_name, "EduConsult")
         self.assertTrue(config.enable_consultant_registration)
 
+    def test_india_inspired_color_themes_persist(self):
+        config = PlatformConfig.load()
+        config.color_theme = PlatformConfig.ColorTheme.SAFFRON
+        config.save()
+        self.assertEqual(PlatformConfig.load().color_theme, PlatformConfig.ColorTheme.SAFFRON)
+
+        config.color_theme = PlatformConfig.ColorTheme.CHAKRA
+        config.save()
+        self.assertEqual(PlatformConfig.load().color_theme, PlatformConfig.ColorTheme.CHAKRA)
+
+
+class PlatformConfigAdminViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_superuser("platform_admin", "platform@example.com", "pass")
+        self.client.force_login(self.user)
+
+    def test_layout_tab_contains_india_inspired_palettes(self):
+        resp = self.client.get(reverse("platform-config"))
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'value="saffron"')
+        self.assertContains(resp, 'value="chakra"')
+        self.assertContains(resp, 'value="banyan"')
+        self.assertContains(resp, "India-inspired palettes")
+
 
 class DeploymentInfoContextProcessorTests(TestCase):
     def setUp(self):
