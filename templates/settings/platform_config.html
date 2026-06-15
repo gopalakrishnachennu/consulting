@@ -561,223 +561,154 @@
                 <div>
                     <h3 class="text-base font-semibold text-gray-800 mb-1">Brand Color</h3>
                     <p class="text-sm text-gray-500 mb-2">One primary color drives the entire UI: nav, buttons, hero gradients, active states, and focus rings.</p>
-                    <p class="text-sm text-gray-500 mb-4">The India-inspired palettes keep strong contrast while bringing in saffron, chakra navy, and deep green more intentionally.</p>
+                    <p class="text-sm text-gray-500 mb-5">The India-inspired palettes keep strong contrast while bringing in saffron, chakra navy, ivory, and deep green more intentionally.</p>
 
-                        {% with ct=PLATFORM_CONFIG.color_theme|default:"indigo" %}
-
-                        <div class="mb-5">
-                            <div class="flex items-center justify-between gap-3 mb-3">
-                                <div>
-                                    <div class="text-sm font-semibold text-gray-800">Core palettes</div>
-                                    <div class="text-xs text-gray-500">Neutral business themes for broad compatibility.</div>
+                    {% with ct=PLATFORM_CONFIG.color_theme|default:"indigo" %}
+                    <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1.7fr)_minmax(360px,1fr)] gap-6">
+                        <div class="space-y-5">
+                            {% for group in theme_groups %}
+                            <div class="{% if group.key == 'india' %}rounded-2xl border border-orange-100 bg-orange-50/60 p-4{% else %}{% endif %}">
+                                <div class="flex items-center justify-between gap-3 mb-3">
+                                    <div>
+                                        <div class="text-sm font-semibold text-gray-800">{{ group.label }}</div>
+                                        <div class="text-xs text-gray-500">{{ group.description }}</div>
+                                    </div>
+                                    {% if group.key == 'india' %}
+                                    <span class="inline-flex items-center rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-orange-700 border border-orange-200">
+                                        Indian tones
+                                    </span>
+                                    {% endif %}
+                                </div>
+                                <div class="grid grid-cols-2 sm:grid-cols-3 {% if group.key == 'core' %}xl:grid-cols-4{% else %}xl:grid-cols-3{% endif %} gap-3">
+                                    {% for theme in group.themes %}
+                                    <label class="relative cursor-pointer group">
+                                        <input type="radio" name="color_theme" value="{{ theme.slug }}" {% if ct == theme.slug %}checked{% endif %} class="sr-only peer js-theme-radio">
+                                        <div class="flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition border-gray-200 hover:border-gray-300 bg-white peer-checked:border-slate-900 peer-checked:ring-2 peer-checked:ring-slate-200 peer-checked:shadow-sm">
+                                            {% if theme.badge %}
+                                            <span class="absolute left-2 top-2 inline-flex items-center rounded-full bg-gray-900 px-2 py-0.5 text-[10px] font-semibold text-white">
+                                                {{ theme.badge }}
+                                            </span>
+                                            {% endif %}
+                                            <div class="flex gap-1.5 mt-2">
+                                                {% for swatch in theme.swatches %}
+                                                <span class="w-6 h-6 rounded-full border border-gray-100" style="background:{{ swatch }}"></span>
+                                                {% endfor %}
+                                            </div>
+                                            <span class="text-xs font-semibold text-gray-700">{{ theme.label }}</span>
+                                            <span class="text-[10px] text-gray-400 text-center">{{ theme.tagline }}</span>
+                                            <span class="text-[10px] text-gray-500 text-center">{{ theme.contrast_overview }}</span>
+                                        </div>
+                                        <span class="hidden peer-checked:flex absolute top-2 right-2 w-5 h-5 bg-slate-900 rounded-full items-center justify-center">
+                                            <svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                                        </span>
+                                    </label>
+                                    {% endfor %}
                                 </div>
                             </div>
-                            <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
-
-                        {# Indigo #}
-                        <label class="relative cursor-pointer group">
-                            <input type="radio" name="color_theme" value="indigo" {% if ct == "indigo" %}checked{% endif %} class="sr-only peer">
-                            <div class="flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition
-                                        peer-checked:border-indigo-500 peer-checked:ring-2 peer-checked:ring-indigo-100
-                                        border-gray-200 hover:border-gray-300 bg-white">
-                                <div class="flex gap-1.5">
-                                    <span class="w-6 h-6 rounded-full" style="background:#4f46e5"></span>
-                                    <span class="w-6 h-6 rounded-full" style="background:#3b82f6"></span>
-                                    <span class="w-6 h-6 rounded-full" style="background:#06b6d4"></span>
-                                </div>
-                                <span class="text-xs font-semibold text-gray-700">Indigo</span>
-                                <span class="text-[10px] text-gray-400">Professional</span>
-                            </div>
-                            {% if ct == "indigo" %}<span class="absolute top-2 right-2 w-4 h-4 bg-indigo-500 rounded-full flex items-center justify-center"><svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></span>{% endif %}
-                        </label>
-
-                        {# Violet #}
-                        <label class="relative cursor-pointer group">
-                            <input type="radio" name="color_theme" value="violet" {% if ct == "violet" %}checked{% endif %} class="sr-only peer">
-                            <div class="flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition
-                                        peer-checked:border-violet-500 peer-checked:ring-2 peer-checked:ring-violet-100
-                                        border-gray-200 hover:border-gray-300 bg-white">
-                                <div class="flex gap-1.5">
-                                    <span class="w-6 h-6 rounded-full" style="background:#7c3aed"></span>
-                                    <span class="w-6 h-6 rounded-full" style="background:#8b5cf6"></span>
-                                    <span class="w-6 h-6 rounded-full" style="background:#a78bfa"></span>
-                                </div>
-                                <span class="text-xs font-semibold text-gray-700">Violet</span>
-                                <span class="text-[10px] text-gray-400">Bold & Modern</span>
-                            </div>
-                            {% if ct == "violet" %}<span class="absolute top-2 right-2 w-4 h-4 bg-violet-500 rounded-full flex items-center justify-center"><svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></span>{% endif %}
-                        </label>
-
-                        {# Blue #}
-                        <label class="relative cursor-pointer group">
-                            <input type="radio" name="color_theme" value="blue" {% if ct == "blue" %}checked{% endif %} class="sr-only peer">
-                            <div class="flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition
-                                        peer-checked:border-blue-500 peer-checked:ring-2 peer-checked:ring-blue-100
-                                        border-gray-200 hover:border-gray-300 bg-white">
-                                <div class="flex gap-1.5">
-                                    <span class="w-6 h-6 rounded-full" style="background:#1d4ed8"></span>
-                                    <span class="w-6 h-6 rounded-full" style="background:#2563eb"></span>
-                                    <span class="w-6 h-6 rounded-full" style="background:#38bdf8"></span>
-                                </div>
-                                <span class="text-xs font-semibold text-gray-700">Blue</span>
-                                <span class="text-[10px] text-gray-400">Corporate</span>
-                            </div>
-                            {% if ct == "blue" %}<span class="absolute top-2 right-2 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center"><svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></span>{% endif %}
-                        </label>
-
-                        {# Emerald #}
-                        <label class="relative cursor-pointer group">
-                            <input type="radio" name="color_theme" value="emerald" {% if ct == "emerald" %}checked{% endif %} class="sr-only peer">
-                            <div class="flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition
-                                        peer-checked:border-emerald-500 peer-checked:ring-2 peer-checked:ring-emerald-100
-                                        border-gray-200 hover:border-gray-300 bg-white">
-                                <div class="flex gap-1.5">
-                                    <span class="w-6 h-6 rounded-full" style="background:#047857"></span>
-                                    <span class="w-6 h-6 rounded-full" style="background:#059669"></span>
-                                    <span class="w-6 h-6 rounded-full" style="background:#34d399"></span>
-                                </div>
-                                <span class="text-xs font-semibold text-gray-700">Emerald</span>
-                                <span class="text-[10px] text-gray-400">Growth</span>
-                            </div>
-                            {% if ct == "emerald" %}<span class="absolute top-2 right-2 w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center"><svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></span>{% endif %}
-                        </label>
-
-                        {# Teal #}
-                        <label class="relative cursor-pointer group">
-                            <input type="radio" name="color_theme" value="teal" {% if ct == "teal" %}checked{% endif %} class="sr-only peer">
-                            <div class="flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition
-                                        peer-checked:border-teal-500 peer-checked:ring-2 peer-checked:ring-teal-100
-                                        border-gray-200 hover:border-gray-300 bg-white">
-                                <div class="flex gap-1.5">
-                                    <span class="w-6 h-6 rounded-full" style="background:#0f766e"></span>
-                                    <span class="w-6 h-6 rounded-full" style="background:#0d9488"></span>
-                                    <span class="w-6 h-6 rounded-full" style="background:#2dd4bf"></span>
-                                </div>
-                                <span class="text-xs font-semibold text-gray-700">Teal</span>
-                                <span class="text-[10px] text-gray-400">Trustworthy</span>
-                            </div>
-                            {% if ct == "teal" %}<span class="absolute top-2 right-2 w-4 h-4 bg-teal-500 rounded-full flex items-center justify-center"><svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></span>{% endif %}
-                        </label>
-
-                        {# Rose #}
-                        <label class="relative cursor-pointer group">
-                            <input type="radio" name="color_theme" value="rose" {% if ct == "rose" %}checked{% endif %} class="sr-only peer">
-                            <div class="flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition
-                                        peer-checked:border-rose-500 peer-checked:ring-2 peer-checked:ring-rose-100
-                                        border-gray-200 hover:border-gray-300 bg-white">
-                                <div class="flex gap-1.5">
-                                    <span class="w-6 h-6 rounded-full" style="background:#be123c"></span>
-                                    <span class="w-6 h-6 rounded-full" style="background:#e11d48"></span>
-                                    <span class="w-6 h-6 rounded-full" style="background:#fb7185"></span>
-                                </div>
-                                <span class="text-xs font-semibold text-gray-700">Rose</span>
-                                <span class="text-[10px] text-gray-400">Energetic</span>
-                            </div>
-                            {% if ct == "rose" %}<span class="absolute top-2 right-2 w-4 h-4 bg-rose-500 rounded-full flex items-center justify-center"><svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></span>{% endif %}
-                        </label>
-
-                        {# Amber #}
-                        <label class="relative cursor-pointer group">
-                            <input type="radio" name="color_theme" value="amber" {% if ct == "amber" %}checked{% endif %} class="sr-only peer">
-                            <div class="flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition
-                                        peer-checked:border-amber-500 peer-checked:ring-2 peer-checked:ring-amber-100
-                                        border-gray-200 hover:border-gray-300 bg-white">
-                                <div class="flex gap-1.5">
-                                    <span class="w-6 h-6 rounded-full" style="background:#92400e"></span>
-                                    <span class="w-6 h-6 rounded-full" style="background:#d97706"></span>
-                                    <span class="w-6 h-6 rounded-full" style="background:#fbbf24"></span>
-                                </div>
-                                <span class="text-xs font-semibold text-gray-700">Amber</span>
-                                <span class="text-[10px] text-gray-400">Warm</span>
-                            </div>
-                            {% if ct == "amber" %}<span class="absolute top-2 right-2 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center"><svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></span>{% endif %}
-                        </label>
-
-                        {# Slate #}
-                        <label class="relative cursor-pointer group">
-                            <input type="radio" name="color_theme" value="slate" {% if ct == "slate" %}checked{% endif %} class="sr-only peer">
-                            <div class="flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition
-                                        peer-checked:border-slate-600 peer-checked:ring-2 peer-checked:ring-slate-100
-                                        border-gray-200 hover:border-gray-300 bg-white">
-                                <div class="flex gap-1.5">
-                                    <span class="w-6 h-6 rounded-full" style="background:#0f172a"></span>
-                                    <span class="w-6 h-6 rounded-full" style="background:#1e293b"></span>
-                                    <span class="w-6 h-6 rounded-full" style="background:#475569"></span>
-                                </div>
-                                <span class="text-xs font-semibold text-gray-700">Slate</span>
-                                <span class="text-[10px] text-gray-400">Dark & Minimal</span>
-                            </div>
-                            {% if ct == "slate" %}<span class="absolute top-2 right-2 w-4 h-4 bg-slate-600 rounded-full flex items-center justify-center"><svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></span>{% endif %}
-                        </label>
-                            </div>
+                            {% endfor %}
                         </div>
 
-                        <div class="rounded-2xl border border-orange-100 bg-orange-50/60 p-4">
-                            <div class="flex items-center justify-between gap-3 mb-3">
+                        <aside class="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+                            <div class="flex items-start justify-between gap-3 mb-3">
                                 <div>
-                                    <div class="text-sm font-semibold text-gray-800">India-inspired palettes</div>
-                                    <div class="text-xs text-gray-600">Saffron-led palettes tuned for CHENN rather than generic startup colors.</div>
+                                    <div class="text-sm font-semibold text-gray-900">Live preview</div>
+                                    <div class="text-xs text-gray-500">Click any palette to preview it before saving. The selected nav layout is reflected here too.</div>
                                 </div>
-                                <span class="inline-flex items-center rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-orange-700 border border-orange-200">
-                                    Indian tones
+                                <span id="theme-preview-overall" class="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    {{ selected_theme_preview.contrast.overall_label }}
                                 </span>
                             </div>
-                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
 
-                        {# Saffron #}
-                        <label class="relative cursor-pointer group">
-                            <input type="radio" name="color_theme" value="saffron" {% if ct == "saffron" %}checked{% endif %} class="sr-only peer">
-                            <div class="flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition
-                                        peer-checked:border-orange-500 peer-checked:ring-2 peer-checked:ring-orange-100
-                                        border-gray-200 hover:border-orange-300 bg-white">
-                                <div class="flex gap-1.5">
-                                    <span class="w-6 h-6 rounded-full" style="background:#c2410c"></span>
-                                    <span class="w-6 h-6 rounded-full" style="background:#f97316"></span>
-                                    <span class="w-6 h-6 rounded-full" style="background:#fbbf24"></span>
+                            <div class="rounded-2xl overflow-hidden border border-gray-200 bg-gray-50 mb-4">
+                                <div id="theme-preview-top" class="hidden">
+                                    <div id="theme-preview-topbar" class="h-10 px-3 flex items-center justify-between text-white text-xs font-semibold" style="background: {{ selected_theme_preview.nav }};">
+                                        <span>CHENN</span>
+                                        <span class="opacity-80">Pipeline</span>
+                                    </div>
+                                    <div class="p-4 bg-white">
+                                        <div id="theme-preview-hero" class="rounded-xl h-20 p-3 text-white flex flex-col justify-between" style="background: {{ selected_theme_preview.gradient }};">
+                                            <span class="text-xs font-semibold opacity-90">Command Surface</span>
+                                            <span class="text-base font-bold">Theme preview</span>
+                                        </div>
+                                    </div>
                                 </div>
-                                <span class="text-xs font-semibold text-gray-700">Saffron</span>
-                                <span class="text-[10px] text-gray-400">Warm Indian primary</span>
-                            </div>
-                            {% if ct == "saffron" %}<span class="absolute top-2 right-2 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center"><svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></span>{% endif %}
-                        </label>
-
-                        {# Chakra #}
-                        <label class="relative cursor-pointer group">
-                            <input type="radio" name="color_theme" value="chakra" {% if ct == "chakra" %}checked{% endif %} class="sr-only peer">
-                            <div class="flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition
-                                        peer-checked:border-blue-600 peer-checked:ring-2 peer-checked:ring-blue-100
-                                        border-gray-200 hover:border-blue-300 bg-white">
-                                <div class="flex gap-1.5">
-                                    <span class="w-6 h-6 rounded-full" style="background:#ff9933"></span>
-                                    <span class="w-6 h-6 rounded-full" style="background:#1d3fa6"></span>
-                                    <span class="w-6 h-6 rounded-full" style="background:#138808"></span>
+                                <div id="theme-preview-left" class="hidden">
+                                    <div class="flex h-32 bg-white">
+                                        <div id="theme-preview-sidebar" class="w-16 text-white p-2 flex flex-col gap-2" style="background: {{ selected_theme_preview.nav_dark }};">
+                                            <span class="w-8 h-2 rounded bg-white/80"></span>
+                                            <span class="w-10 h-2 rounded bg-white/30"></span>
+                                            <span class="w-9 h-2 rounded bg-white/30"></span>
+                                        </div>
+                                        <div class="flex-1 p-4 bg-gray-50">
+                                            <div id="theme-preview-hero-left" class="rounded-xl h-full p-3 text-white flex flex-col justify-between" style="background: {{ selected_theme_preview.gradient }};">
+                                                <span class="text-xs font-semibold opacity-90">Workspace</span>
+                                                <span class="text-base font-bold">Left nav preview</span>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                                <span class="text-xs font-semibold text-gray-700">Chakra</span>
-                                <span class="text-[10px] text-gray-400">Tricolor with navy anchor</span>
                             </div>
-                            {% if ct == "chakra" %}<span class="absolute top-2 right-2 w-4 h-4 bg-blue-600 rounded-full flex items-center justify-center"><svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></span>{% endif %}
-                        </label>
 
-                        {# Banyan #}
-                        <label class="relative cursor-pointer group">
-                            <input type="radio" name="color_theme" value="banyan" {% if ct == "banyan" %}checked{% endif %} class="sr-only peer">
-                            <div class="flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition
-                                        peer-checked:border-green-600 peer-checked:ring-2 peer-checked:ring-green-100
-                                        border-gray-200 hover:border-green-300 bg-white">
-                                <div class="flex gap-1.5">
-                                    <span class="w-6 h-6 rounded-full" style="background:#f59e0b"></span>
-                                    <span class="w-6 h-6 rounded-full" style="background:#157139"></span>
-                                    <span class="w-6 h-6 rounded-full" style="background:#0f766e"></span>
+                            <div class="mb-4">
+                                <div class="flex items-center justify-between gap-3 mb-2">
+                                    <div>
+                                        <div id="theme-preview-name" class="text-base font-semibold text-gray-900">{{ selected_theme_preview.label }}</div>
+                                        <div id="theme-preview-tagline" class="text-xs text-gray-500">{{ selected_theme_preview.tagline }}</div>
+                                    </div>
+                                    <div id="theme-preview-swatches" class="flex gap-1.5">
+                                        {% for swatch in selected_theme_preview.swatches %}
+                                        <span class="w-5 h-5 rounded-full border border-gray-100" style="background:{{ swatch }}"></span>
+                                        {% endfor %}
+                                    </div>
                                 </div>
-                                <span class="text-xs font-semibold text-gray-700">Banyan</span>
-                                <span class="text-[10px] text-gray-400">Deep green with saffron edge</span>
+                                <div id="theme-preview-family" class="text-xs text-gray-500">{{ selected_theme_preview.group_label }}</div>
                             </div>
-                            {% if ct == "banyan" %}<span class="absolute top-2 right-2 w-4 h-4 bg-green-600 rounded-full flex items-center justify-center"><svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></span>{% endif %}
-                        </label>
-                            </div>
-                        </div>
 
-                        {% endwith %}
+                            <div class="mb-4">
+                                <div class="text-sm font-semibold text-gray-800 mb-2">Theme usage preview</div>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div class="rounded-xl border border-gray-200 p-3 bg-gray-50">
+                                        <div class="text-[11px] uppercase tracking-wide text-gray-400 mb-2">Primary button</div>
+                                        <button type="button" id="theme-preview-primary" class="w-full rounded-lg px-3 py-2 text-sm font-semibold text-white" style="background: {{ selected_theme_preview.brand_600 }};">Approve Job</button>
+                                    </div>
+                                    <div class="rounded-xl border border-gray-200 p-3 bg-gray-50">
+                                        <div class="text-[11px] uppercase tracking-wide text-gray-400 mb-2">Secondary action</div>
+                                        <button type="button" id="theme-preview-secondary" class="w-full rounded-lg px-3 py-2 text-sm font-semibold border" style="background: {{ selected_theme_preview.brand_50 }}; color: {{ selected_theme_preview.text }}; border-color: {{ selected_theme_preview.brand_200 }};">Open Details</button>
+                                    </div>
+                                    <div class="rounded-xl border border-gray-200 p-3 bg-gray-50">
+                                        <div class="text-[11px] uppercase tracking-wide text-gray-400 mb-2">Active nav</div>
+                                        <div id="theme-preview-active-nav" class="inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold text-white" style="background: {{ selected_theme_preview.nav_dark }};">Jobs Pipeline</div>
+                                    </div>
+                                    <div class="rounded-xl border border-gray-200 p-3 bg-gray-50">
+                                        <div class="text-[11px] uppercase tracking-wide text-gray-400 mb-2">Link + badge</div>
+                                        <div class="flex items-center justify-between gap-2">
+                                            <a href="#" id="theme-preview-link" class="text-sm font-semibold" style="color: {{ selected_theme_preview.text }};">Open report</a>
+                                            <span id="theme-preview-badge" class="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold border" style="background: {{ selected_theme_preview.brand_50 }}; color: {{ selected_theme_preview.text }}; border-color: {{ selected_theme_preview.brand_200 }};">Live</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <div class="text-sm font-semibold text-gray-800 mb-2">Contrast status</div>
+                                <div class="space-y-2 text-sm">
+                                    <div class="flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-3 py-2 bg-gray-50">
+                                        <span class="text-gray-600">Navigation on white text</span>
+                                        <span id="theme-preview-contrast-nav" class="font-semibold text-gray-900">{{ selected_theme_preview.contrast.nav_grade }} · {{ selected_theme_preview.contrast.nav_ratio }}:1</span>
+                                    </div>
+                                    <div class="flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-3 py-2 bg-gray-50">
+                                        <span class="text-gray-600">Primary button</span>
+                                        <span id="theme-preview-contrast-button" class="font-semibold text-gray-900">{{ selected_theme_preview.contrast.button_grade }} · {{ selected_theme_preview.contrast.button_ratio }}:1</span>
+                                    </div>
+                                    <div class="flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-3 py-2 bg-gray-50">
+                                        <span class="text-gray-600">Link on white</span>
+                                        <span id="theme-preview-contrast-link" class="font-semibold text-gray-900">{{ selected_theme_preview.contrast.link_grade }} · {{ selected_theme_preview.contrast.link_ratio }}:1</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </aside>
+                    </div>
+                    {% endwith %}
                 </div>
 
                 <hr class="border-gray-200">
@@ -866,10 +797,35 @@
         </div>
     </form>
 
+    {{ theme_catalog|json_script:"theme-catalog-data" }}
     <script>
         (function () {
             const tabs = document.querySelectorAll('.platform-tab');
             const panels = ['#tab-general', '#tab-email', '#tab-data-pipeline', '#tab-job-pool', '#tab-layout'].map(id => document.querySelector(id));
+            const themeCatalogElement = document.getElementById('theme-catalog-data');
+            const themeCatalog = themeCatalogElement ? JSON.parse(themeCatalogElement.textContent) : {};
+            const themeInputs = document.querySelectorAll('.js-theme-radio');
+            const navInputs = document.querySelectorAll('input[name="nav_layout"]');
+            const themePreviewName = document.getElementById('theme-preview-name');
+            const themePreviewTagline = document.getElementById('theme-preview-tagline');
+            const themePreviewFamily = document.getElementById('theme-preview-family');
+            const themePreviewSwatches = document.getElementById('theme-preview-swatches');
+            const themePreviewOverall = document.getElementById('theme-preview-overall');
+            const themePreviewTop = document.getElementById('theme-preview-top');
+            const themePreviewLeft = document.getElementById('theme-preview-left');
+            const themePreviewTopbar = document.getElementById('theme-preview-topbar');
+            const themePreviewSidebar = document.getElementById('theme-preview-sidebar');
+            const themePreviewHero = document.getElementById('theme-preview-hero');
+            const themePreviewHeroLeft = document.getElementById('theme-preview-hero-left');
+            const themePreviewPrimary = document.getElementById('theme-preview-primary');
+            const themePreviewSecondary = document.getElementById('theme-preview-secondary');
+            const themePreviewActiveNav = document.getElementById('theme-preview-active-nav');
+            const themePreviewLink = document.getElementById('theme-preview-link');
+            const themePreviewBadge = document.getElementById('theme-preview-badge');
+            const themePreviewContrastNav = document.getElementById('theme-preview-contrast-nav');
+            const themePreviewContrastButton = document.getElementById('theme-preview-contrast-button');
+            const themePreviewContrastLink = document.getElementById('theme-preview-contrast-link');
+            const defaultThemeSlug = "{{ selected_theme_preview.slug|escapejs }}";
 
             function activate(targetId) {
                 panels.forEach(panel => {
@@ -892,14 +848,93 @@
                 });
             }
 
+            function selectedValue(name, fallback) {
+                const input = document.querySelector(`input[name="${name}"]:checked`);
+                return input ? input.value : fallback;
+            }
+
+            function updateOverallTone(tone) {
+                if (!themePreviewOverall) return;
+                const palette = {
+                    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                    green: 'bg-green-50 text-green-700 border-green-200',
+                    amber: 'bg-amber-50 text-amber-700 border-amber-200',
+                    rose: 'bg-rose-50 text-rose-700 border-rose-200'
+                };
+                themePreviewOverall.className = `inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold border ${palette[tone] || palette.green}`;
+            }
+
+            function updateThemePreview(slug) {
+                const theme = themeCatalog[slug] || themeCatalog[defaultThemeSlug];
+                if (!theme) return;
+
+                if (themePreviewName) themePreviewName.textContent = theme.label;
+                if (themePreviewTagline) themePreviewTagline.textContent = theme.tagline;
+                if (themePreviewFamily) themePreviewFamily.textContent = theme.group_label;
+                if (themePreviewSwatches) {
+                    themePreviewSwatches.innerHTML = theme.swatches.map((swatch) =>
+                        `<span class="w-5 h-5 rounded-full border border-gray-100" style="background:${swatch}"></span>`
+                    ).join('');
+                }
+                if (themePreviewTopbar) themePreviewTopbar.style.background = theme.nav;
+                if (themePreviewSidebar) themePreviewSidebar.style.background = theme.nav_dark;
+                if (themePreviewHero) themePreviewHero.style.background = theme.gradient;
+                if (themePreviewHeroLeft) themePreviewHeroLeft.style.background = theme.gradient;
+                if (themePreviewPrimary) themePreviewPrimary.style.background = theme.brand_600;
+                if (themePreviewSecondary) {
+                    themePreviewSecondary.style.background = theme.brand_50;
+                    themePreviewSecondary.style.color = theme.text;
+                    themePreviewSecondary.style.borderColor = theme.brand_200;
+                }
+                if (themePreviewActiveNav) themePreviewActiveNav.style.background = theme.nav_dark;
+                if (themePreviewLink) themePreviewLink.style.color = theme.text;
+                if (themePreviewBadge) {
+                    themePreviewBadge.style.background = theme.brand_50;
+                    themePreviewBadge.style.color = theme.text;
+                    themePreviewBadge.style.borderColor = theme.brand_200;
+                }
+                if (themePreviewContrastNav) {
+                    themePreviewContrastNav.textContent = `${theme.contrast.nav_grade} · ${theme.contrast.nav_ratio}:1`;
+                }
+                if (themePreviewContrastButton) {
+                    themePreviewContrastButton.textContent = `${theme.contrast.button_grade} · ${theme.contrast.button_ratio}:1`;
+                }
+                if (themePreviewContrastLink) {
+                    themePreviewContrastLink.textContent = `${theme.contrast.link_grade} · ${theme.contrast.link_ratio}:1`;
+                }
+                if (themePreviewOverall) {
+                    themePreviewOverall.textContent = theme.contrast.overall_label;
+                    updateOverallTone(theme.contrast.overall_tone);
+                }
+            }
+
+            function updateLayoutPreview(layout) {
+                if (themePreviewTop) {
+                    themePreviewTop.classList.toggle('hidden', layout !== 'top');
+                }
+                if (themePreviewLeft) {
+                    themePreviewLeft.classList.toggle('hidden', layout !== 'left');
+                }
+            }
+
             tabs.forEach(tab => {
                 tab.addEventListener('click', () => {
                     activate(tab.dataset.target);
                 });
             });
 
+            themeInputs.forEach(input => {
+                input.addEventListener('change', () => updateThemePreview(input.value));
+            });
+
+            navInputs.forEach(input => {
+                input.addEventListener('change', () => updateLayoutPreview(input.value));
+            });
+
             // Default to General tab on load
             activate('#tab-general');
+            updateThemePreview(selectedValue('color_theme', defaultThemeSlug));
+            updateLayoutPreview(selectedValue('nav_layout', 'top'));
         })();
     </script>
 </div>

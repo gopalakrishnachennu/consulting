@@ -46,6 +46,7 @@ from .security import decrypt_value
 from .llm_services import list_openai_models, sort_models_by_cost, get_cost_info
 from .llm_pricing import PRICING_PER_1M
 from .feature_flags import feature_enabled_for, invalidate_feature_flag_cache
+from .theme_catalog import get_theme_catalog, get_theme_definition, get_theme_groups
 
 
 class TaskProgressAPIView(LoginRequiredMixin, UserPassesTestMixin, View):
@@ -191,6 +192,15 @@ class PlatformConfigView(AdminRequiredMixin, UpdateView):
         for log in PipelineRunLog.objects.all():
             logs[log.task_name] = log
         context["pipeline_run_logs"] = logs
+        form = context.get("form")
+        selected_theme_slug = (
+            form.data.get("color_theme")
+            if form is not None and getattr(form, "is_bound", False)
+            else getattr(self.object, "color_theme", PlatformConfig.ColorTheme.INDIGO)
+        )
+        context["theme_groups"] = get_theme_groups()
+        context["theme_catalog"] = get_theme_catalog()
+        context["selected_theme_preview"] = get_theme_definition(selected_theme_slug)
         # Pool count for the Job Pool settings tab
         try:
             from jobs.models import Job

@@ -8,13 +8,18 @@ from django.conf import settings
 
 from core.notification_utils import get_cached_unread_count
 from core.feature_flags import feature_enabled_for
+from core.theme_catalog import get_theme_definition
 
 
 def platform_settings(request):
     """Expose singleton PlatformConfig as PLATFORM_CONFIG (base.html, etc.)."""
     from core.models import PlatformConfig
 
-    return {'PLATFORM_CONFIG': PlatformConfig.load()}
+    config = PlatformConfig.load()
+    return {
+        'PLATFORM_CONFIG': config,
+        'ACTIVE_THEME': get_theme_definition(getattr(config, "color_theme", "indigo")),
+    }
 
 
 @lru_cache(maxsize=1)

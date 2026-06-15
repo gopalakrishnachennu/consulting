@@ -46,6 +46,10 @@ class PlatformConfigTests(TestCase):
         config.save()
         self.assertEqual(PlatformConfig.load().color_theme, PlatformConfig.ColorTheme.CHAKRA)
 
+        config.color_theme = PlatformConfig.ColorTheme.ASHOKA
+        config.save()
+        self.assertEqual(PlatformConfig.load().color_theme, PlatformConfig.ColorTheme.ASHOKA)
+
 
 class PlatformConfigAdminViewTests(TestCase):
     def setUp(self):
@@ -59,7 +63,12 @@ class PlatformConfigAdminViewTests(TestCase):
         self.assertContains(resp, 'value="saffron"')
         self.assertContains(resp, 'value="chakra"')
         self.assertContains(resp, 'value="banyan"')
+        self.assertContains(resp, 'value="kesari"')
+        self.assertContains(resp, 'value="ashoka"')
+        self.assertContains(resp, 'value="ivory_saffron"')
         self.assertContains(resp, "India-inspired palettes")
+        self.assertContains(resp, "Live preview")
+        self.assertContains(resp, "Contrast status")
 
 
 class DeploymentInfoContextProcessorTests(TestCase):

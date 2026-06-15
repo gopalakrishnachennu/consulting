@@ -173,6 +173,9 @@ class PlatformConfig(models.Model):
         SAFFRON = 'saffron', 'Saffron'
         CHAKRA = 'chakra', 'Chakra'
         BANYAN = 'banyan', 'Banyan'
+        KESARI = 'kesari', 'Kesari'
+        ASHOKA = 'ashoka', 'Ashoka'
+        IVORY_SAFFRON = 'ivory_saffron', 'Ivory Saffron'
 
     color_theme = models.CharField(
         max_length=20,
