@@ -537,6 +537,9 @@ class JobUrlRevalidationTests(TestCase):
         validate_job_urls_task.apply(kwargs={"batch_size": 50}).get()
         self.job.refresh_from_db()
         self.assertFalse(self.job.original_link_is_live)
+        self.assertEqual(self.job.original_link_health, Job.LinkHealthState.DEAD)
+        self.assertEqual(self.job.original_link_reason, "http_404")
+        self.assertEqual(self.job.original_link_status_code, 404)
         self.assertTrue(self.job.possibly_filled)
         self.assertIsNotNone(self.job.original_link_last_checked_at)
 
@@ -545,6 +548,9 @@ class JobUrlRevalidationTests(TestCase):
         validate_job_urls_task.apply(kwargs={"batch_size": 50}).get()
         self.job.refresh_from_db()
         self.assertTrue(self.job.original_link_is_live)
+        self.assertEqual(self.job.original_link_health, Job.LinkHealthState.LIVE)
+        self.assertEqual(self.job.original_link_reason, "detail_live_markers")
+        self.assertEqual(self.job.original_link_status_code, 200)
         self.assertFalse(self.job.possibly_filled)
 
     @patch('jobs.tasks._check_job_url', return_value=True)

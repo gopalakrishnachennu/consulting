@@ -4202,3 +4202,62 @@ class VetGateConfigViewTests(TestCase):
         self.assertTrue(engine_cfg.backfill_jd_include_cold)
         self.assertTrue(engine_cfg.validate_links_include_synced)
         self.assertEqual(engine_cfg.validate_links_recent_hours, 240)
+
+
+class RawJobManualRecheckPropagationTests(TestCase):
+    def setUp(self):
+        from companies.models import Company
+        from django.contrib.auth import get_user_model
+        from harvest.models import RawJob
+        from jobs.models import Job
+
+        self.user = get_user_model().objects.create_superuser(
+            "raw-link-admin@example.com",
+            "raw-link-admin@example.com",
+            "pw",
+        )
+        self.client.force_login(self.user)
+        self.company = Company.objects.create(name="Link Health Co")
+        self.raw = RawJob.objects.create(
+            company=self.company,
+            company_name=self.company.name,
+            title="Platform Engineer",
+            original_url="https://example.com/jobs/platform-engineer",
+            url_hash="raw-recheck-propagates",
+            platform_slug="workday",
+            sync_status=RawJob.SyncStatus.SYNCED,
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            title=self.raw.title,
+            company=self.company.name,
+            company_obj=self.company,
+            description="JD",
+            original_link=self.raw.original_url,
+            posted_by=self.user,
+            status=Job.Status.OPEN,
+            source_raw_job=self.raw,
+            url_hash=self.raw.url_hash,
+            original_link_is_live=True,
+            original_link_health=Job.LinkHealthState.LIVE,
+        )
+
+    @patch(
+        "harvest.url_health.check_job_posting_live",
+        return_value=SimpleNamespace(
+            is_live=False,
+            status_code=404,
+            reason="http_404",
+            final_url="https://example.com/jobs/platform-engineer",
+        ),
+    )
+    def test_single_raw_recheck_updates_linked_job(self, _mock_check):
+        response = self.client.post(reverse("harvest-rawjob-recheck-live", args=[self.raw.pk]))
+
+        self.assertEqual(response.status_code, 302)
+        self.raw.refresh_from_db()
+        self.job.refresh_from_db()
+        self.assertFalse(self.raw.is_active)
+        self.assertFalse(self.job.original_link_is_live)
+        self.assertEqual(self.job.original_link_health, "DEAD")
+        self.assertEqual(self.job.original_link_reason, "http_404")

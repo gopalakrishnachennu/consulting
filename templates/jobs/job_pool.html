@@ -267,12 +267,16 @@
 
                     <!-- Posting availability -->
                     <td class="tbl-td">
-                        {% if job.original_link_is_live %}
-                        <span class="badge-green" title="Source posting URL currently responds as live">
+                        {% if job.original_link_health == 'LIVE' %}
+                        <span class="badge-green" title="Source posting URL was confirmed live{% if job.original_link_last_checked_at %} · checked {{ job.original_link_last_checked_at|date:'M j, H:i' }}{% endif %}">
                             Active
                         </span>
+                        {% elif job.original_link_health == 'INCONCLUSIVE' %}
+                        <span class="badge-yellow" title="{{ job.original_link_reason|default:'Source posting could not be confirmed yet' }}{% if job.original_link_last_checked_at %} · checked {{ job.original_link_last_checked_at|date:'M j, H:i' }}{% endif %}">
+                            Unconfirmed
+                        </span>
                         {% else %}
-                        <span class="badge-red" title="Source posting URL is no longer reachable">
+                        <span class="badge-red" title="{{ job.original_link_reason|default:'Source posting URL appears gone' }}{% if job.original_link_last_checked_at %} · checked {{ job.original_link_last_checked_at|date:'M j, H:i' }}{% endif %}">
                             No Longer Available
                         </span>
                         {% endif %}

@@ -179,9 +179,17 @@
       </span>
       {% endif %}
 
-      {# Link not live #}
-      {% if not object.original_link_is_live and object.original_link %}
-      <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-600 border border-red-100">Link down</span>
+      {# Link health #}
+      {% if object.original_link and object.original_link_health == 'DEAD' %}
+      <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-600 border border-red-100"
+            title="{{ object.original_link_reason|default:'Source posting appears gone' }}">
+        Link down
+      </span>
+      {% elif object.original_link and object.original_link_health == 'INCONCLUSIVE' %}
+      <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200"
+            title="{{ object.original_link_reason|default:'Checker could not confirm the posting yet' }}">
+        Link unconfirmed
+      </span>
       {% endif %}
 
       {# Applications count #}
@@ -199,6 +207,18 @@
         View Original
         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
       </a>
+      {% if object.original_link_last_checked_at %}
+      <span class="text-gray-300">·</span>
+      <span class="text-gray-500">Link check {{ object.original_link_last_checked_at|date:"M j, Y H:i" }}</span>
+      {% endif %}
+      {% if object.original_link_reason %}
+      <span class="text-gray-300">·</span>
+      <span class="text-gray-500">{{ object.original_link_reason }}</span>
+      {% endif %}
+      {% if object.original_link_final_url and object.original_link_final_url != object.original_link %}
+      <span class="text-gray-300">·</span>
+      <a href="{{ object.original_link_final_url }}" target="_blank" class="text-gray-500 hover:underline">Final checked URL</a>
+      {% endif %}
       {% endif %}
       {% if object.source_raw_job %}
       <span class="text-gray-300">·</span>

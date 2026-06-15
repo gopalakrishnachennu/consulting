@@ -219,10 +219,11 @@ def _sync_rawjob_to_pool(raw_job, *, posted_by):
     Returns ``(job, created_new)``.
     """
     from django.utils import timezone as _tz
+    from jobs.link_health import JOB_LINK_HEALTH_UPDATE_FIELDS, apply_link_health_payload_to_job
     from jobs.models import Job
     from jobs.quality import compute_quality_score
     from jobs.gating import apply_gate_result_to_job, evaluate_raw_job_gate
-    from .url_health import check_job_posting_live, is_definitive_inactive
+    from .url_health import build_link_health_payload, check_job_posting_live, link_health_state
 
     existing = _find_existing_live_job_for_rawjob(raw_job)
     if existing:
@@ -238,23 +239,18 @@ def _sync_rawjob_to_pool(raw_job, *, posted_by):
             raw_job.original_url,
             platform_slug=(raw_job.platform_slug or ""),
         )
-        if not live.is_live and is_definitive_inactive(live):
-            payload = dict(raw_job.raw_payload or {})
-            payload["link_health"] = {
-                "is_live": False,
-                "reason": live.reason,
-                "status_code": live.status_code,
-                "checked_at": _tz.now().isoformat(),
-                "final_url": live.final_url,
-                "decisive": True,
-            }
+        checked_at = _tz.now()
+        payload = dict(raw_job.raw_payload or {})
+        payload["link_health"] = build_link_health_payload(live, checked_at_iso=checked_at.isoformat())
+        raw_job.raw_payload = payload
+        if link_health_state(live) == "DEAD":
             raw_job.is_active = False
-            raw_job.raw_payload = payload
             raw_job.save(update_fields=["is_active", "raw_payload", "updated_at"])
             _invalidate_rawjobs_dashboard_cache()
             raise ValueError(
                 f"Cannot promote to vet queue: posting appears inactive ({live.reason})."
             )
+        raw_job.save(update_fields=["raw_payload", "updated_at"])
 
     gate = evaluate_raw_job_gate(raw_job)
     if not gate.passed:
@@ -287,6 +283,10 @@ def _sync_rawjob_to_pool(raw_job, *, posted_by):
             country=job_country,
             department=raw_job.department_normalized or "",
         )
+        apply_link_health_payload_to_job(
+            job,
+            ((raw_job.raw_payload or {}).get("link_health") or {}),
+        )
         apply_gate_result_to_job(job, gate)
         job.quality_score = compute_quality_score(job)
         job.validation_score = int(round(gate.vet_priority_score * 100))
@@ -314,6 +314,7 @@ def _sync_rawjob_to_pool(raw_job, *, posted_by):
                 "data_quality_score", "trust_score", "candidate_fit_score", "vet_priority_score",
                 "quality_score", "validation_score", "validation_result",
                 "validation_run_at", "gate_checked_at",
+                *JOB_LINK_HEALTH_UPDATE_FIELDS,
             ]
         )
         payload = dict(raw_job.raw_payload or {})
@@ -1193,7 +1194,9 @@ class RawJobCheckLiveStatusView(SuperuserRequiredMixin, View):
     """POST — recheck a single raw-job posting URL and update is_active immediately."""
 
     def post(self, request, pk):
-        from .url_health import check_job_posting_live, is_definitive_inactive
+        from jobs.link_health import JOB_LINK_HEALTH_UPDATE_FIELDS, apply_link_health_payload_to_job
+        from jobs.models import Job
+        from .url_health import build_link_health_payload, check_job_posting_live, link_health_state
 
         raw_job = get_object_or_404(RawJob, pk=pk)
         url = (raw_job.original_url or "").strip()
@@ -1201,34 +1204,45 @@ class RawJobCheckLiveStatusView(SuperuserRequiredMixin, View):
             messages.error(request, "No source URL available for this row.")
             return redirect("harvest-rawjob-detail", pk=pk)
 
+        now = timezone.now()
         result = check_job_posting_live(url, platform_slug=(raw_job.platform_slug or ""))
         payload = dict(raw_job.raw_payload or {})
-        payload["link_health"] = {
-            "is_live": bool(result.is_live),
-            "reason": result.reason,
-            "status_code": int(result.status_code or 0),
-            "checked_at": timezone.now().isoformat(),
-            "final_url": result.final_url,
-            "decisive": bool((not result.is_live) and is_definitive_inactive(result)),
-        }
+        payload["link_health"] = build_link_health_payload(result, checked_at_iso=now.isoformat())
         # Only flip inactive on definitive evidence to avoid transient false negatives.
-        if result.is_live:
+        state = link_health_state(result)
+        if state == "LIVE":
             raw_job.is_active = True
-        elif is_definitive_inactive(result):
+        elif state == "DEAD":
             raw_job.is_active = False
         raw_job.raw_payload = payload
         raw_job.save(update_fields=["is_active", "raw_payload", "updated_at"])
         _invalidate_rawjobs_dashboard_cache()
 
-        if result.is_live:
+        linked_jobs = list(
+            Job.objects.filter(
+                source_raw_job=raw_job,
+                status__in=[Job.Status.OPEN, Job.Status.POOL],
+                is_archived=False,
+            )
+        )
+        for job in linked_jobs:
+            apply_link_health_payload_to_job(job, payload["link_health"], checked_at=now)
+            job.save(update_fields=JOB_LINK_HEALTH_UPDATE_FIELDS)
+
+        if state == "LIVE":
             messages.success(
                 request,
                 f"Link health check: ACTIVE ({result.reason}, HTTP {result.status_code}).",
             )
-        else:
+        elif state == "DEAD":
             messages.warning(
                 request,
                 f"Link health check: INACTIVE ({result.reason}, HTTP {result.status_code}).",
+            )
+        else:
+            messages.info(
+                request,
+                f"Link health check: INCONCLUSIVE ({result.reason}, HTTP {result.status_code}). Row kept active until a definitive dead signal appears.",
             )
         return redirect("harvest-rawjob-detail", pk=pk)
 

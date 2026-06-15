@@ -1192,18 +1192,11 @@ class JobPoolRefreshLinksView(LoginRequiredMixin, EmployeeRequiredMixin, View):
 
     def post(self, request):
         try:
-            # Force recheck by clearing the "last checked" timestamp for all pool/open jobs.
-            Job.objects.filter(
-                status__in=[Job.Status.POOL, Job.Status.OPEN],
-                is_archived=False,
-                original_link__isnull=False,
-            ).exclude(original_link="").update(original_link_last_checked_at=None)
-
-            from .tasks import validate_job_urls_task
+            from .tasks import refresh_all_pool_link_health_task
 
             # Run async when Celery is up; fallback inline when queue unavailable.
             try:
-                r = validate_job_urls_task.delay(5000)
+                r = refresh_all_pool_link_health_task.delay(5000, 5000)
                 from urllib.parse import urlencode
 
                 from django.urls import reverse
@@ -1211,14 +1204,16 @@ class JobPoolRefreshLinksView(LoginRequiredMixin, EmployeeRequiredMixin, View):
                 q = urlencode({"tp": r.id, "tpl": "Job posting URL check"})
                 messages.success(
                     request,
-                    "Started link status refresh in background. Watch the progress bar at the bottom.",
+                    "Started full link-health refresh in background for manual + harvested jobs.",
                 )
                 return redirect(f"{reverse('job-pool')}?{q}")
             except Exception:
-                result = validate_job_urls_task.apply(kwargs={"batch_size": 5000}).get()
+                result = refresh_all_pool_link_health_task.apply(kwargs={"manual_batch_size": 5000, "raw_batch_size": 5000}).get()
                 messages.success(
                     request,
-                    f"Link status refresh completed now. Checked {result.get('processed', 0)} jobs.",
+                    "Link status refresh completed now. "
+                    f"Manual jobs checked: {result.get('manual_jobs', {}).get('processed', 0)}. "
+                    f"Harvest-linked raw jobs checked: {result.get('linked_raw_jobs', {}).get('checked', 0)}.",
                 )
         except Exception:
             logger.exception("Manual pool link refresh failed")

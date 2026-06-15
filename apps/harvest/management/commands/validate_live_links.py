@@ -30,7 +30,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         from harvest.models import RawJob
-        from harvest.url_health import check_job_posting_live, is_definitive_inactive
+        from harvest.url_health import build_link_health_payload, check_job_posting_live, link_health_state
 
         batch_size = options["batch_size"]
         concurrency = options["concurrency"]
@@ -50,8 +50,6 @@ class Command(BaseCommand):
 
         checked = alive = dead = inconclusive = 0
         reason_counts: dict[str, int] = {}
-        dead_ids: list[int] = []
-
         def check_one(job_id, url, slug):
             try:
                 return job_id, check_job_posting_live(url, platform_slug=slug or "")
@@ -72,34 +70,54 @@ class Command(BaseCommand):
                     pool.submit(check_one, r["id"], r["original_url"], r.get("platform_slug", "")): r["id"]
                     for r in chunk
                 }
-                chunk_dead: list[int] = []
+                chunk_results: dict[int, object] = {}
                 for fut in as_completed(futures):
                     job_id, result = fut.result()
                     checked += 1
                     reason = (getattr(result, "reason", "") or "").strip()[:80]
                     reason_counts[reason] = reason_counts.get(reason, 0) + 1
-
-                    if result.is_live:
+                    state = link_health_state(result)
+                    chunk_results[job_id] = result
+                    if state == "LIVE":
                         alive += 1
-                    elif is_definitive_inactive(result):
+                    elif state == "DEAD":
                         dead += 1
-                        chunk_dead.append(job_id)
-                        dead_ids.append(job_id)
                     else:
                         inconclusive += 1
 
-            if chunk_dead and not dry_run:
+            if chunk_results and not dry_run:
                 now = timezone.now()
-                RawJob.objects.filter(pk__in=chunk_dead).update(is_active=False)
-                for raw in RawJob.objects.filter(pk__in=chunk_dead).only("id", "raw_payload"):
+                checked_at_iso = now.isoformat()
+                raws = list(RawJob.objects.filter(pk__in=chunk_results.keys()).only("id", "raw_payload", "is_active"))
+                for raw in raws:
                     payload = dict(raw.raw_payload or {})
-                    payload["link_health"] = {
-                        "is_live": False,
-                        "checked_at": now.isoformat(),
-                        "decisive": True,
-                    }
+                    payload["link_health"] = build_link_health_payload(chunk_results[raw.id], checked_at_iso=checked_at_iso)
                     raw.raw_payload = payload
-                    raw.save(update_fields=["raw_payload", "updated_at"])
+                    if payload["link_health"]["state"] == "DEAD":
+                        raw.is_active = False
+                    raw.updated_at = now
+                RawJob.objects.bulk_update(raws, ["is_active", "raw_payload", "updated_at"])
+
+                try:
+                    from jobs.link_health import JOB_LINK_HEALTH_UPDATE_FIELDS, apply_link_health_payload_to_job
+                    from jobs.models import Job
+
+                    linked_jobs = list(
+                        Job.objects.filter(
+                            source_raw_job_id__in=chunk_results.keys(),
+                            status__in=[Job.Status.OPEN, Job.Status.POOL],
+                            is_archived=False,
+                        )
+                    )
+                    for job in linked_jobs:
+                        apply_link_health_payload_to_job(
+                            job,
+                            build_link_health_payload(chunk_results[job.source_raw_job_id], checked_at_iso=checked_at_iso),
+                            checked_at=now,
+                        )
+                        job.save(update_fields=JOB_LINK_HEALTH_UPDATE_FIELDS)
+                except Exception:
+                    pass
 
             pct = int(checked / total * 100) if total else 0
             self.stdout.write(

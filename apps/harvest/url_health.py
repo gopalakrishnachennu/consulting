@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from urllib.parse import urlparse
 
 import requests
+from bs4 import BeautifulSoup
 
 
 _WS_RE = re.compile(r"\s+")
@@ -75,6 +76,18 @@ _DEAD_MARKERS_BY_PLATFORM = {
         "this job is no longer posted",
         "this position is no longer posted",
     ),
+    "jobvite": (
+        "job is no longer available",
+        "the job you are looking for is no longer available",
+    ),
+    "taleo": (
+        "this requisition is no longer available",
+        "job opening is no longer available",
+    ),
+    "dayforce": (
+        "job posting is no longer available",
+        "this job opportunity is no longer available",
+    ),
     "greenhouse": (
         "this job has been filled",
         "this role is no longer open",
@@ -82,6 +95,25 @@ _DEAD_MARKERS_BY_PLATFORM = {
     "lever": (
         "this posting is no longer available",
         "the position has been filled",
+    ),
+    "workable": (
+        "this job has been archived",
+        "the job you tried to access is not available",
+    ),
+    "recruitee": (
+        "this offer is no longer available",
+        "we could not find this offer",
+    ),
+    "teamtailor": (
+        "this job is no longer accepting applications",
+    ),
+    "zoho": (
+        "job opening is no longer available",
+        "this posting is no longer accepting applications",
+    ),
+    "ultipro": (
+        "this opportunity is no longer available",
+        "job opportunity not found",
     ),
 }
 
@@ -110,6 +142,41 @@ _LIVE_MARKERS_BY_PLATFORM = {
         "job summary",
         "job description",
     ),
+    "jobvite": (
+        "share this job",
+        "job description",
+    ),
+    "taleo": (
+        "job field",
+        "all jobs",
+    ),
+    "workable": (
+        "about workable",
+        "requirements",
+    ),
+    "recruitee": (
+        "apply to this job",
+        "department",
+    ),
+    "dayforce": (
+        "job location",
+        "posted date",
+    ),
+    "breezy": (
+        "apply for this position",
+    ),
+    "teamtailor": (
+        "connect",
+        "departments",
+    ),
+    "zoho": (
+        "job description",
+        "job opening",
+    ),
+    "ultipro": (
+        "opportunitydetail",
+        "briefdescription",
+    ),
 }
 
 _UA = {
@@ -125,6 +192,42 @@ class LinkHealthResult:
     status_code: int
     reason: str
     final_url: str
+
+
+_CONFIRMED_LIVE_REASONS = {
+    "workday_cxs_live",
+    "workday_search_match",
+    "oracle_hcm_live",
+    "greenhouse_api_live",
+    "lever_api_live",
+    "ashby_api_live",
+    "smartrecruiters_api_live",
+    "bamboohr_api_live",
+    "workable_api_live",
+    "recruitee_api_live",
+    "dayforce_api_live",
+    "icims_detail_live",
+    "jobvite_detail_live",
+    "taleo_detail_live",
+    "breezy_detail_live",
+    "teamtailor_detail_live",
+    "zoho_detail_live",
+    "ultipro_detail_live",
+    "detail_live_markers",
+    "detail_long_content",
+}
+
+_INCONCLUSIVE_LIVE_REASONS = {
+    "ok",
+    "bot_block_assumed_live",
+    "login_wall_assumed_live",
+    "head_ok_get_failed",
+    "request_error_unknown",
+    "workday_cxs_http_error",
+    "workday_cxs_non_json",
+    "workday_cxs_empty",
+    "workday_cxs_error",
+}
 
 
 def _norm_text(raw: str) -> str:
@@ -160,7 +263,47 @@ def _looks_like_detail_path(path: str, platform_slug: str) -> bool:
         return "/job/" in p or "/details/" in p
     if slug == "icims":
         return "/jobs/" in p and "/search" not in p
+    if slug == "jobvite":
+        return "/job/" in p
+    if slug == "taleo":
+        return "jobdetail.ftl" in p
+    if slug == "workable":
+        return "/j/" in p
+    if slug == "recruitee":
+        return "/o/" in p
+    if slug == "dayforce":
+        return "/jobs/" in p
+    if slug == "breezy":
+        return "/p/" in p
+    if slug == "teamtailor":
+        return "/jobs/" in p
     return any(seg in p for seg in ("/job/", "/jobs/", "/details/", "/positions/"))
+
+
+def link_health_state(result: LinkHealthResult) -> str:
+    if is_definitive_inactive(result):
+        return "DEAD"
+    reason = (result.reason or "").strip().lower()
+    if reason in _CONFIRMED_LIVE_REASONS:
+        return "LIVE"
+    if reason in _INCONCLUSIVE_LIVE_REASONS or reason.startswith("transient_http_"):
+        return "INCONCLUSIVE"
+    if result.is_live:
+        return "INCONCLUSIVE"
+    return "INCONCLUSIVE"
+
+
+def build_link_health_payload(result: LinkHealthResult, *, checked_at_iso: str) -> dict:
+    state = link_health_state(result)
+    return {
+        "state": state,
+        "is_live": bool(result.is_live),
+        "reason": (result.reason or "")[:120],
+        "status_code": int(result.status_code or 0),
+        "checked_at": checked_at_iso,
+        "final_url": result.final_url or "",
+        "decisive": state == "DEAD",
+    }
 
 
 def is_definitive_inactive(result: LinkHealthResult) -> bool:
@@ -200,6 +343,12 @@ def is_definitive_inactive(result: LinkHealthResult) -> bool:
         "smartrecruiters_api_not_found",
         # BambooHR
         "bamboohr_api_not_found",
+        # Workable
+        "workable_api_not_found",
+        # Recruitee
+        "recruitee_api_not_found",
+        # Dayforce
+        "dayforce_api_not_found",
         # iCIMS
         "icims_api_not_found",
     }:
@@ -438,6 +587,309 @@ def _bamboohr_liveness(url: str) -> "LinkHealthResult | None":
         return None
 
 
+def _fetch_html_detail_liveness(
+    url: str,
+    *,
+    platform_slug: str,
+    title_selectors: tuple[str, ...],
+    body_selectors: tuple[str, ...],
+) -> "LinkHealthResult | None":
+    try:
+        resp = requests.get(
+            url,
+            headers={"Accept": "text/html,application/xhtml+xml", **_UA},
+            timeout=12,
+            allow_redirects=True,
+        )
+        status = int(resp.status_code or 0)
+        final_url = str(getattr(resp, "url", "") or url)
+        if status in {404, 410, 451}:
+            return LinkHealthResult(False, status, f"http_{status}", final_url)
+        if status >= 400:
+            return None
+
+        text = _norm_text(resp.text or "")
+        if any(m in text for m in _BOT_BLOCK_MARKERS):
+            return LinkHealthResult(True, status, "bot_block_assumed_live", final_url)
+        if any(m in text for m in _LOGIN_WALL_MARKERS):
+            return LinkHealthResult(True, status, "login_wall_assumed_live", final_url)
+        if _contains_dead_marker(text, platform_slug):
+            return LinkHealthResult(False, status, "soft_404_marker", final_url)
+
+        soup = BeautifulSoup(resp.text or "", "html.parser")
+        title_text = ""
+        for selector in title_selectors:
+            el = soup.select_one(selector)
+            if el:
+                title_text = el.get_text(" ", strip=True)
+                if title_text:
+                    break
+
+        body_text = ""
+        for selector in body_selectors:
+            el = soup.select_one(selector)
+            if el:
+                body_text = el.get_text(" ", strip=True)
+                if len(body_text) >= 120:
+                    break
+                body_text = ""
+
+        if title_text and (body_text or _contains_live_marker(text, platform_slug)):
+            return LinkHealthResult(True, status, f"{platform_slug}_detail_live", final_url)
+        if body_text:
+            return LinkHealthResult(True, status, f"{platform_slug}_detail_live", final_url)
+        return None
+    except Exception:
+        return None
+
+
+def _workable_liveness(url: str) -> "LinkHealthResult | None":
+    m = re.search(r"(?:apply|jobs)\.workable\.com/([^/?#]+)/j/([^/?#]+)", url, re.I)
+    if not m:
+        return None
+    company_slug, job_shortcode = m.group(1), m.group(2)
+    api_url = f"https://apply.workable.com/api/v1/accounts/{company_slug}/jobs/{job_shortcode}"
+    try:
+        resp = requests.get(api_url, headers={"Accept": "application/json", **_UA}, timeout=12)
+        status = int(resp.status_code or 0)
+        if status == 404:
+            return LinkHealthResult(False, status, "workable_api_not_found", api_url)
+        if status >= 400:
+            return None
+        data = resp.json() if resp.content else {}
+        if any((data or {}).get(k) for k in ("title", "description", "requirements", "benefits")):
+            return LinkHealthResult(True, status, "workable_api_live", api_url)
+        return None
+    except Exception:
+        return None
+
+
+def _recruitee_liveness(url: str) -> "LinkHealthResult | None":
+    m = re.search(r"https?://([\w-]+)\.recruitee\.com/o/([^/?#]+)", url, re.I)
+    if not m:
+        return None
+    tenant, opening_slug = m.group(1), m.group(2)
+    api_url = f"https://{tenant}.recruitee.com/api/offers/"
+    try:
+        resp = requests.get(api_url, headers={"Accept": "application/json", **_UA}, timeout=12)
+        status = int(resp.status_code or 0)
+        if status >= 400:
+            return None
+        data = resp.json() if resp.content else {}
+        offers = (data or {}).get("offers") or []
+        offer = next(
+            (
+                o for o in offers
+                if (o.get("slug") or "") == opening_slug
+                or str(o.get("id") or "") == opening_slug
+                or opening_slug in (o.get("careers_url") or "")
+            ),
+            None,
+        )
+        if offer:
+            return LinkHealthResult(True, status, "recruitee_api_live", api_url)
+        if offers:
+            return LinkHealthResult(False, status, "recruitee_api_not_found", api_url)
+        return None
+    except Exception:
+        return None
+
+
+def _icims_liveness(url: str) -> "LinkHealthResult | None":
+    m = re.search(r"([\w-]+)\.icims\.com/jobs/\d+", url, re.I)
+    if not m:
+        return None
+    return _fetch_html_detail_liveness(
+        url,
+        platform_slug="icims",
+        title_selectors=("h1.iCIMS_JobTitle", "h1"),
+        body_selectors=(
+            ".iCIMS_JobContent",
+            ".iCIMS_InfoMsg_Job",
+            "[class*='job-description']",
+            "[class*='jobDescription']",
+            "[itemprop='description']",
+            "article",
+            "main",
+        ),
+    )
+
+
+def _jobvite_liveness(url: str) -> "LinkHealthResult | None":
+    m = re.search(r"jobs\.jobvite\.com/([^/?#]+)/job/([^/?#]+)", url, re.I)
+    if not m:
+        return None
+    detail_url = f"https://jobs.jobvite.com/{m.group(1)}/job/{m.group(2)}"
+    return _fetch_html_detail_liveness(
+        detail_url,
+        platform_slug="jobvite",
+        title_selectors=("h2.jv-header", "h1", "h2"),
+        body_selectors=(
+            ".jv-job-detail-description",
+            ".jv-job-detail",
+            "[class*='job-description']",
+            "article",
+            "main",
+        ),
+    )
+
+
+def _taleo_liveness(url: str) -> "LinkHealthResult | None":
+    m = re.search(
+        r"([\w-]+)\.taleo\.net/careersection/([^/]+)/jobdetail\.ftl\?.*?job=([^&]+)",
+        url,
+        re.I,
+    )
+    if not m:
+        return None
+    detail_url = (
+        f"https://{m.group(1)}.taleo.net/careersection/{m.group(2)}"
+        f"/jobdetail.ftl?job={m.group(3)}&lang=en"
+    )
+    return _fetch_html_detail_liveness(
+        detail_url,
+        platform_slug="taleo",
+        title_selectors=(
+            "#requisitionDescriptionInterface\\.reqTitleLinkAction\\.row1",
+            "h1",
+            ".pageTitle",
+        ),
+        body_selectors=(
+            "#requisitionDescriptionInterface\\.ID1702\\.row1",
+            "[id*='requisitionDescription']",
+            ".contentlinepanel",
+            "[class*='job-description']",
+            "article",
+            "main",
+        ),
+    )
+
+
+def _dayforce_liveness(url: str) -> "LinkHealthResult | None":
+    m = re.search(
+        r"jobs\.dayforcehcm\.com/(?:([a-z]{2}-[A-Z]{2})/)?([^/]+)/([^/]+)/jobs/([^/?#]+)",
+        url,
+        re.I,
+    )
+    if not m:
+        return None
+    slug, job_id = m.group(2), m.group(4)
+    api_url = f"https://jobs.dayforcehcm.com/api/geo/{slug}/jobposting/{job_id}"
+    try:
+        resp = requests.get(
+            api_url,
+            headers={
+                "Accept": "application/json, text/plain, */*",
+                "Referer": url,
+                **_UA,
+            },
+            timeout=12,
+        )
+        status = int(resp.status_code or 0)
+        if status == 404:
+            return LinkHealthResult(False, status, "dayforce_api_not_found", api_url)
+        if status >= 400:
+            return None
+        data = resp.json() if resp.content else {}
+        payload = data.get("data") if isinstance(data, dict) and isinstance(data.get("data"), dict) else data
+        if isinstance(payload, dict) and any(payload.get(k) for k in ("JobTitle", "title", "Description", "description")):
+            return LinkHealthResult(True, status, "dayforce_api_live", api_url)
+        return None
+    except Exception:
+        return None
+
+
+def _breezy_liveness(url: str) -> "LinkHealthResult | None":
+    m = re.search(r"([\w-]+)\.breezy\.hr/p/([^/?#]+)", url, re.I)
+    if not m:
+        return None
+    detail_url = f"https://{m.group(1)}.breezy.hr/p/{m.group(2)}"
+    return _fetch_html_detail_liveness(
+        detail_url,
+        platform_slug="breezy",
+        title_selectors=("h1", "h2"),
+        body_selectors=(
+            ".description",
+            "[class*='job-description']",
+            "[class*='posting']",
+            "article",
+            "main",
+        ),
+    )
+
+
+def _teamtailor_liveness(url: str) -> "LinkHealthResult | None":
+    m = re.search(r"([\w-]+)\.teamtailor\.com/jobs/(\d+[^?#]*)", url, re.I)
+    if not m:
+        return None
+    return _fetch_html_detail_liveness(
+        url,
+        platform_slug="teamtailor",
+        title_selectors=("h1", "[class*='title']"),
+        body_selectors=(
+            "[class*='job-description']",
+            "[class*='jobDescription']",
+            "[itemprop='description']",
+            ".content",
+            "article",
+            "main",
+        ),
+    )
+
+
+def _zoho_liveness(url: str) -> "LinkHealthResult | None":
+    if not re.search(r"(jobs\.zoho\.com/portal/|zohorecruit\.com/jobs/careers/)", url, re.I):
+        return None
+    return _fetch_html_detail_liveness(
+        url,
+        platform_slug="zoho",
+        title_selectors=("h1", "[class*='title']"),
+        body_selectors=(
+            "[class*='job-description']",
+            "[class*='jobDescription']",
+            "[itemprop='description']",
+            ".careers-jobdetail-desc",
+            ".jobDetail",
+            "article",
+            "main",
+        ),
+    )
+
+
+def _ultipro_liveness(url: str) -> "LinkHealthResult | None":
+    if not re.search(
+        r"(?:recruiting\.ultipro\.com|recruiting\.ukg\.net)/[^/]+/JobBoard/[^/]+/OpportunityDetail\?opportunityId=",
+        url,
+        re.I,
+    ):
+        return None
+    try:
+        resp = requests.get(
+            url,
+            headers={"Accept": "text/html,application/xhtml+xml", **_UA},
+            timeout=12,
+            allow_redirects=True,
+        )
+        status = int(resp.status_code or 0)
+        final_url = str(getattr(resp, "url", "") or url)
+        if status in {404, 410, 451}:
+            return LinkHealthResult(False, status, f"http_{status}", final_url)
+        if status >= 400:
+            return None
+        text = _norm_text(resp.text or "")
+        if any(m in text for m in _BOT_BLOCK_MARKERS):
+            return LinkHealthResult(True, status, "bot_block_assumed_live", final_url)
+        if any(m in text for m in _LOGIN_WALL_MARKERS):
+            return LinkHealthResult(True, status, "login_wall_assumed_live", final_url)
+        if _contains_dead_marker(text, "ultipro"):
+            return LinkHealthResult(False, status, "soft_404_marker", final_url)
+        if "candidateopportunitydetail(" in text or "briefdescription" in text or "opportunitydetail" in text:
+            return LinkHealthResult(True, status, "ultipro_detail_live", final_url)
+        return None
+    except Exception:
+        return None
+
+
 # Map URL hostname/pattern → liveness function for quick lookup
 _PLATFORM_LIVENESS_REGISTRY: list[tuple[str, object]] = [
     ("myworkdayjobs.com",     _workday_cxs_liveness),
@@ -447,6 +899,18 @@ _PLATFORM_LIVENESS_REGISTRY: list[tuple[str, object]] = [
     ("ashbyhq.com",           _ashby_liveness),
     ("smartrecruiters.com",   _smartrecruiters_liveness),
     ("bamboohr.com",          _bamboohr_liveness),
+    ("workable.com",          _workable_liveness),
+    ("recruitee.com",         _recruitee_liveness),
+    ("icims.com",             _icims_liveness),
+    ("jobvite.com",           _jobvite_liveness),
+    ("taleo.net",             _taleo_liveness),
+    ("dayforcehcm.com",       _dayforce_liveness),
+    ("breezy.hr",             _breezy_liveness),
+    ("teamtailor.com",        _teamtailor_liveness),
+    ("jobs.zoho.com",         _zoho_liveness),
+    ("zohorecruit.com",       _zoho_liveness),
+    ("recruiting.ultipro.com", _ultipro_liveness),
+    ("recruiting.ukg.net",    _ultipro_liveness),
 ]
 
 _INCONCLUSIVE_API_REASONS = {

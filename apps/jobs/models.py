@@ -5,6 +5,11 @@ from users.models import MarketingRole
 from companies.models import Company
 
 class Job(models.Model):
+    class LinkHealthState(models.TextChoices):
+        LIVE = "LIVE", _("Live")
+        INCONCLUSIVE = "INCONCLUSIVE", _("Inconclusive")
+        DEAD = "DEAD", _("Dead")
+
     class JobType(models.TextChoices):
         FULL_TIME = 'FULL_TIME', _('Full Time')
         PART_TIME = 'PART_TIME', _('Part Time')
@@ -55,6 +60,30 @@ class Job(models.Model):
     original_link_is_live = models.BooleanField(
         default=True,
         help_text="Set via background checker. False when the original job URL appears to be gone.",
+    )
+    original_link_health = models.CharField(
+        max_length=16,
+        choices=LinkHealthState.choices,
+        default=LinkHealthState.LIVE,
+        db_index=True,
+        help_text="Tri-state source link health: LIVE, INCONCLUSIVE, or DEAD.",
+    )
+    original_link_reason = models.CharField(
+        max_length=120,
+        blank=True,
+        default="",
+        help_text="Last link-health reason code from the checker.",
+    )
+    original_link_status_code = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="Last HTTP status code observed during the link-health check.",
+    )
+    original_link_final_url = models.URLField(
+        max_length=1024,
+        blank=True,
+        default="",
+        help_text="Resolved URL after redirects during the last link-health check.",
     )
     possibly_filled = models.BooleanField(
         default=False,

@@ -5,8 +5,10 @@ from django.test import SimpleTestCase
 
 from harvest.url_health import (
     LinkHealthResult,
+    build_link_health_payload,
     check_job_posting_live,
     is_definitive_inactive,
+    link_health_state,
 )
 
 
@@ -86,6 +88,26 @@ class UrlHealthTests(SimpleTestCase):
         self.assertTrue(result.is_live)
         self.assertEqual(result.reason, "transient_http_503")
         self.assertFalse(is_definitive_inactive(result))
+        self.assertEqual(link_health_state(result), "INCONCLUSIVE")
+
+    @patch("harvest.url_health.requests.get")
+    def test_workable_api_404_is_definitive_dead(self, m_get):
+        m_get.return_value = _Resp(status_code=404, url="https://apply.workable.com/api/v1/accounts/acme/jobs/abc")
+        result = check_job_posting_live(
+            "https://apply.workable.com/acme/j/abc",
+            platform_slug="workable",
+        )
+        self.assertFalse(result.is_live)
+        self.assertEqual(result.reason, "workable_api_not_found")
+        self.assertTrue(is_definitive_inactive(result))
+        self.assertEqual(link_health_state(result), "DEAD")
+
+    def test_build_payload_contains_state(self):
+        result = LinkHealthResult(True, 200, "detail_live_markers", "https://example.com/job/123")
+        payload = build_link_health_payload(result, checked_at_iso="2026-06-15T18:00:00+00:00")
+        self.assertEqual(payload["state"], "LIVE")
+        self.assertEqual(payload["reason"], "detail_live_markers")
+        self.assertEqual(payload["status_code"], 200)
 
     def test_definitive_policy(self):
         self.assertTrue(is_definitive_inactive(LinkHealthResult(False, 404, "http_404", "")))

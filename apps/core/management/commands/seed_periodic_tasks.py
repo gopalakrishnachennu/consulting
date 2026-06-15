@@ -51,9 +51,9 @@ TASKS = [
         "name": "Job URLs — validate",
         "task": "jobs.tasks.validate_job_urls_task",
         "category": "jobs",
-        "description": "Checks that all active job posting URLs still resolve (HTTP 200).",
-        "cron": {"minute": "0", "hour": "3", "day_of_week": "*", "day_of_month": "*", "month_of_year": "*"},
-        "schedule_label": "Daily 03:00 UTC",
+        "description": "Checks manually-created OPEN/POOL jobs that are not linked to RawJob rows.",
+        "cron": {"minute": "30", "hour": "3", "day_of_week": "*", "day_of_month": "*", "month_of_year": "*"},
+        "schedule_label": "Daily 03:30 UTC",
         "kwargs": {"batch_size": 100},
     },
     {
@@ -170,7 +170,7 @@ TASKS = [
         "description": "Checks active RawJob URLs for liveness and marks expired jobs inactive. Handles SPA-based ATS (Oracle HCM, Workday) via API, not brittle HTML scraping.",
         "cron": {"minute": "0", "hour": "3", "day_of_week": "*", "day_of_month": "*", "month_of_year": "*"},
         "schedule_label": "Daily 03:00 UTC",
-        "kwargs": {"batch_size": 200, "concurrency": 20},
+        "kwargs": {"batch_size": 200, "concurrency": 20, "pending_only": False, "recent_hours": 0},
     },
 ]
 

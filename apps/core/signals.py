@@ -92,12 +92,12 @@ def sync_periodic_tasks(sender, instance: PlatformConfig, **kwargs):
         },
     )
 
-    # Job URL validator – daily at 04:00
+    # Job URL validator – daily at 03:30
     jobs_task_name = "jobs.tasks.validate_job_urls_task"
     jobs_name = "GoCareers: Validate Job URLs"
     jobs_cron, _ = CrontabSchedule.objects.get_or_create(
-        minute="0",
-        hour="4",
+        minute="30",
+        hour="3",
         day_of_week="*",
         day_of_month="*",
         month_of_year="*",
@@ -111,11 +111,11 @@ def sync_periodic_tasks(sender, instance: PlatformConfig, **kwargs):
         },
     )
 
-    # Auto-close stale / dead-link jobs – daily at 04:30 (after URL validation)
+    # Auto-close stale / dead-link jobs – daily at 04:00 (after URL validation)
     auto_close_task_name = "jobs.tasks.auto_close_jobs_task"
     auto_close_name = "GoCareers: Auto-close stale jobs"
     auto_close_cron, _ = CrontabSchedule.objects.get_or_create(
-        minute="30",
+        minute="0",
         hour="4",
         day_of_week="*",
         day_of_month="*",
@@ -167,5 +167,4 @@ def sync_periodic_tasks(sender, instance: PlatformConfig, **kwargs):
             "enabled": True,
         },
     )
-
 

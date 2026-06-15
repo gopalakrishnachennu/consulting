@@ -11,10 +11,11 @@ class JobAdmin(admin.ModelAdmin):
         'posted_by',
         'status',
         'possibly_filled',
+        'original_link_health',
         'original_link_is_live',
         'created_at',
     )
-    list_filter = ('status', 'job_type', 'possibly_filled', 'created_at')
+    list_filter = ('status', 'job_type', 'possibly_filled', 'original_link_health', 'created_at')
     search_fields = ('title', 'company', 'description', 'original_link')
     date_hierarchy = 'created_at'
 

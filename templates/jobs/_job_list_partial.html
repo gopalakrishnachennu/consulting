@@ -116,9 +116,13 @@
                     {{ job.get_department_display }}
                 </span>
                 {% endif %}
-                {% if not job.original_link_is_live %}
-                <span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-red-50 text-red-800 border border-red-200" title="Daily URL check could not confirm the posting URL">
-                    Link not live
+                {% if job.original_link_health == 'DEAD' %}
+                <span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-red-50 text-red-800 border border-red-200" title="{{ job.original_link_reason|default:'Source posting appears gone' }}{% if job.original_link_last_checked_at %} · checked {{ job.original_link_last_checked_at|date:'M j, H:i' }}{% endif %}">
+                    Link gone
+                </span>
+                {% elif job.original_link_health == 'INCONCLUSIVE' %}
+                <span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-amber-50 text-amber-900 border border-amber-200" title="{{ job.original_link_reason|default:'Checker could not confirm the posting yet' }}{% if job.original_link_last_checked_at %} · checked {{ job.original_link_last_checked_at|date:'M j, H:i' }}{% endif %}">
+                    Link unconfirmed
                 </span>
                 {% endif %}
                 {% if job.possibly_filled %}

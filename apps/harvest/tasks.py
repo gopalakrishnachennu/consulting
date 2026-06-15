@@ -2564,6 +2564,7 @@ def validate_raw_job_urls_task(
     max_jobs: int | None = None,
     pending_only: bool = False,
     recent_hours: int | None = None,
+    linked_pool_or_open_only: bool = False,
 ):
     """
     Validate raw job URLs with multi-signal liveness detection and mark inactive
@@ -2584,7 +2585,7 @@ def validate_raw_job_urls_task(
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from .models import HarvestOpsRun, RawJob
     from .ops_audit import begin_ops_run, finish_ops_run
-    from .url_health import check_job_posting_live, is_definitive_inactive
+    from .url_health import build_link_health_payload, check_job_posting_live, link_health_state
 
     task_id = getattr(self.request, "id", "") or ""
     singleton_queue = {
@@ -2594,6 +2595,7 @@ def validate_raw_job_urls_task(
         "max_jobs": max_jobs,
         "pending_only": pending_only,
         "recent_hours": recent_hours,
+        "linked_pool_or_open_only": linked_pool_or_open_only,
     }
     singleton_lock = _acquire_ops_singleton(
         HarvestOpsRun.Operation.VALIDATE_URLS,
@@ -2612,6 +2614,13 @@ def validate_raw_job_urls_task(
         qs = qs.filter(sync_status=RawJob.SyncStatus.PENDING)
     if recent_hours and recent_hours > 0:
         qs = qs.filter(fetched_at__gte=timezone.now() - timedelta(hours=int(recent_hours)))
+    if linked_pool_or_open_only:
+        from jobs.models import Job
+
+        qs = qs.filter(
+            synced_jobs__status__in=[Job.Status.OPEN, Job.Status.POOL],
+            synced_jobs__is_archived=False,
+        ).distinct()
     if max_jobs:
         qs = qs[:max_jobs]
 
@@ -2627,6 +2636,7 @@ def validate_raw_job_urls_task(
             "max_jobs": max_jobs,
             "pending_only": pending_only,
             "recent_hours": recent_hours,
+            "linked_pool_or_open_only": linked_pool_or_open_only,
             "urls_planned": total,
         },
     )
@@ -2659,79 +2669,84 @@ def validate_raw_job_urls_task(
                     pool.submit(check_url, row["id"], row["original_url"], row.get("platform_slug") or platform_slug or ""): row["id"]
                     for row in chunk
                 }
-                dead_ids = []
-                alive_ids = []
-                inactive_reasons: dict[int, str] = {}
+                results_by_id: dict[int, object] = {}
                 for future in as_completed(futures):
                     job_id, result = future.result()
                     checked += 1
                     reason = (getattr(result, "reason", "") or "unknown").strip()[:120]
                     reason_counts[reason] = reason_counts.get(reason, 0) + 1
-                    if bool(result.is_live):
+                    state = link_health_state(result)
+                    results_by_id[job_id] = result
+                    if state == "LIVE":
                         alive += 1
-                        alive_ids.append(job_id)
+                    elif state == "DEAD":
+                        dead += 1
                     else:
-                        if is_definitive_inactive(result):
-                            dead += 1
-                            dead_ids.append(job_id)
-                            inactive_reasons[job_id] = reason
-                        else:
-                            inconclusive += 1
+                        inconclusive += 1
 
-                # Mark definitively closed jobs inactive in one batch update.
-                if dead_ids:
+                if results_by_id:
                     now = timezone.now()
-                    RawJob.objects.filter(pk__in=dead_ids).update(is_active=False)
-                    # Store reason metadata for auditability on detail page.
-                    for raw in RawJob.objects.filter(pk__in=dead_ids).only("id", "raw_payload"):
+                    checked_at_iso = now.isoformat()
+                    raw_updates = list(
+                        RawJob.objects.filter(pk__in=results_by_id.keys()).only("id", "raw_payload", "is_active")
+                    )
+                    for raw in raw_updates:
                         payload = dict(raw.raw_payload or {})
-                        payload["link_health"] = {
-                            "is_live": False,
-                            "reason": inactive_reasons.get(raw.id, "inactive"),
-                            "checked_at": now.isoformat(),
-                            "decisive": True,
-                        }
+                        payload["link_health"] = build_link_health_payload(
+                            results_by_id[raw.id],
+                            checked_at_iso=checked_at_iso,
+                        )
                         raw.raw_payload = payload
-                        raw.save(update_fields=["raw_payload", "updated_at"])
+                        if payload["link_health"]["state"] == "DEAD":
+                            raw.is_active = False
+                        raw.updated_at = now
+                    RawJob.objects.bulk_update(raw_updates, ["is_active", "raw_payload", "updated_at"])
 
-                    # Propagate to linked Job records — no second HTTP call needed.
                     try:
+                        from jobs.link_health import (
+                            JOB_LINK_HEALTH_UPDATE_FIELDS,
+                            apply_link_health_payload_to_job,
+                        )
                         from jobs.models import Job
                         from jobs.notify import notify_job_posting_link_unhealthy
+
                         linked_jobs = list(
                             Job.objects.filter(
-                                source_raw_job_id__in=dead_ids,
+                                source_raw_job_id__in=results_by_id.keys(),
                                 status__in=[Job.Status.OPEN, Job.Status.POOL],
                                 is_archived=False,
-                            ).only("id", "status", "possibly_filled", "original_link")
+                            ).only(
+                                "id",
+                                "status",
+                                "possibly_filled",
+                                "original_link",
+                                "source_raw_job_id",
+                                "original_link_is_live",
+                                "original_link_health",
+                                "original_link_reason",
+                                "original_link_status_code",
+                                "original_link_final_url",
+                                "original_link_last_checked_at",
+                            )
                         )
                         for job in linked_jobs:
                             was_pf = job.possibly_filled
-                            job.original_link_is_live = False
-                            job.original_link_last_checked_at = now
-                            job.possibly_filled = job.status == Job.Status.OPEN
-                            job.save(update_fields=[
-                                "original_link_is_live", "original_link_last_checked_at", "possibly_filled"
-                            ])
+                            apply_link_health_payload_to_job(
+                                job,
+                                build_link_health_payload(
+                                    results_by_id[job.source_raw_job_id],
+                                    checked_at_iso=checked_at_iso,
+                                ),
+                                checked_at=now,
+                            )
+                            job.save(update_fields=JOB_LINK_HEALTH_UPDATE_FIELDS)
                             if job.possibly_filled and not was_pf:
                                 try:
                                     notify_job_posting_link_unhealthy(job)
                                 except Exception:
                                     pass
                     except Exception:
-                        logger.warning("validate_raw_job_urls: failed to propagate dead status to Jobs", exc_info=True)
-
-                # Stamp last_checked_at on linked Jobs whose URL is still live.
-                if alive_ids:
-                    try:
-                        from jobs.models import Job
-                        Job.objects.filter(
-                            source_raw_job_id__in=alive_ids,
-                            status__in=[Job.Status.OPEN, Job.Status.POOL],
-                            is_archived=False,
-                        ).update(original_link_is_live=True, original_link_last_checked_at=timezone.now())
-                    except Exception:
-                        logger.warning("validate_raw_job_urls: failed to stamp live status on Jobs", exc_info=True)
+                        logger.warning("validate_raw_job_urls: failed to propagate status to Jobs", exc_info=True)
 
             offset += batch_size
             _val_msg = f"Checked {checked:,}/{total:,} — {alive:,} live, {dead:,} inactive, {inconclusive:,} inconclusive"
@@ -2920,6 +2935,7 @@ def sync_harvested_to_pool_task(
     from .models import HarvestOpsRun, RawJob
     from .ops_audit import begin_ops_run, finish_ops_run
     from jobs.models import Job, PipelineEvent
+    from jobs.link_health import JOB_LINK_HEALTH_UPDATE_FIELDS, apply_link_health_payload_to_job
     from jobs.dedup import find_existing_job_by_url
     from jobs.quality import compute_quality_score
     from jobs.gating import apply_gate_result_to_job, evaluate_raw_job_gate
@@ -3192,6 +3208,10 @@ def sync_harvested_to_pool_task(
                             country=job_country[:100],                    # Job.country max_length=100
                             department=(rj.department_normalized or "")[:20],  # Job.department max_length=20
                         )
+                        apply_link_health_payload_to_job(
+                            job,
+                            ((rj.raw_payload or {}).get("link_health") or {}),
+                        )
                         apply_gate_result_to_job(job, gate)
                         job.quality_score = compute_quality_score(job)
                         job.validation_score = int(round(gate.vet_priority_score * 100))
@@ -3219,6 +3239,7 @@ def sync_harvested_to_pool_task(
                                 "data_quality_score", "trust_score", "candidate_fit_score", "vet_priority_score",
                                 "quality_score", "validation_score", "validation_result", "validation_run_at",
                                 "gate_checked_at",
+                                *JOB_LINK_HEALTH_UPDATE_FIELDS,
                             ]
                         )
                         payload = dict(rj.raw_payload or {})

@@ -448,6 +448,8 @@
             <div>
               <dt class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Link Health</dt>
               <dd class="text-xs text-slate-600">
+                {{ rawjob.raw_payload.link_health.state|default:"UNKNOWN" }}
+                ·
                 {{ rawjob.raw_payload.link_health.reason|default:"unknown" }}
                 {% if rawjob.raw_payload.link_health.status_code %} · HTTP {{ rawjob.raw_payload.link_health.status_code }}{% endif %}
                 {% if rawjob.raw_payload.link_health.decisive %} · decisive{% else %} · inconclusive{% endif %}

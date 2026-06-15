@@ -6,8 +6,9 @@ import logging
 
 from django.utils import timezone
 
+from .link_health import JOB_LINK_HEALTH_UPDATE_FIELDS, apply_link_health_payload_to_job
 from .models import Job
-from harvest.url_health import check_job_posting_live
+from harvest.url_health import LinkHealthResult, build_link_health_payload, check_job_posting_live
 
 logger = logging.getLogger(__name__)
 
@@ -137,15 +138,14 @@ def _normalize_url(url: str) -> str:
     return url
 
 
-def _check_job_url(url: str) -> bool:
+def _check_job_url(url: str):
     if not url:
-        return False
+        return check_job_posting_live("")
     url = _normalize_url(url)
     try:
-        result = check_job_posting_live(url)
-        return bool(result.is_live)
+        return check_job_posting_live(url)
     except Exception:
-        return False
+        return check_job_posting_live("")
 
 
 @shared_task
@@ -260,7 +260,7 @@ def _notify_pool_review_emails(job: Job, validation_result: dict):
 
 
 @shared_task(bind=True)
-def validate_job_urls_task(self, batch_size: int = 50):
+def validate_job_urls_task(self, batch_size: int = 50, force_all: bool = False):
     """
     Re-check original job URLs and flag jobs as 'possibly_filled' when their source goes away.
     Runs daily via Celery beat (see core.signals).
@@ -273,11 +273,12 @@ def validate_job_urls_task(self, batch_size: int = 50):
     qs = Job.objects.filter(status__in=[Job.Status.OPEN, Job.Status.POOL], is_archived=False)
     qs = qs.filter(original_link__isnull=False).exclude(original_link="")
     qs = qs.filter(source_raw_job__isnull=True)
-    qs = qs.filter(
-        original_link_last_checked_at__lt=cutoff
-    ) | qs.filter(
-        original_link_last_checked_at__isnull=True
-    )
+    if not force_all:
+        qs = qs.filter(
+            original_link_last_checked_at__lt=cutoff
+        ) | qs.filter(
+            original_link_last_checked_at__isnull=True
+        )
 
     jobs = list(qs[:batch_size])
     total_n = len(jobs)
@@ -287,12 +288,20 @@ def validate_job_urls_task(self, batch_size: int = 50):
     processed = 0
     for i, job in enumerate(jobs, start=1):
         was_pf = job.possibly_filled
-        is_live = _check_job_url(job.original_link)
-        job.original_link_is_live = is_live
-        job.original_link_last_checked_at = now
-        # If URL is not live and job is still marked OPEN, flag as possibly filled.
-        job.possibly_filled = not is_live and job.status == Job.Status.OPEN
-        job.save(update_fields=["original_link_is_live", "original_link_last_checked_at", "possibly_filled"])
+        result = _check_job_url(job.original_link)
+        if isinstance(result, bool):
+            result = LinkHealthResult(
+                is_live=result,
+                status_code=200 if result else 404,
+                reason="detail_live_markers" if result else "http_404",
+                final_url=job.original_link or "",
+            )
+        apply_link_health_payload_to_job(
+            job,
+            build_link_health_payload(result, checked_at_iso=now.isoformat()),
+            checked_at=now,
+        )
+        job.save(update_fields=JOB_LINK_HEALTH_UPDATE_FIELDS)
         processed += 1
         if job.possibly_filled and not was_pf:
             try:
@@ -320,6 +329,36 @@ def validate_job_urls_task(self, batch_size: int = 50):
     except Exception:
         pass
     return result
+
+
+@shared_task(bind=True)
+def refresh_all_pool_link_health_task(self, manual_batch_size: int = 5000, raw_batch_size: int = 5000):
+    """
+    Full manual refresh for pool/open jobs.
+
+    Runs both validators:
+    - validate_job_urls_task for manually-created jobs (no source_raw_job)
+    - validate_raw_job_urls_task for harvest-linked jobs
+    """
+    from harvest.tasks import validate_raw_job_urls_task
+
+    update_task_progress(self, current=0, total=2, message="Refreshing manual job links…")
+    manual_result = validate_job_urls_task.apply(
+        kwargs={"batch_size": manual_batch_size, "force_all": True}
+    ).get()
+    update_task_progress(self, current=1, total=2, message="Refreshing harvested-linked job links…")
+    raw_result = validate_raw_job_urls_task.apply(
+        kwargs={
+            "batch_size": 100,
+            "concurrency": 8,
+            "max_jobs": raw_batch_size,
+            "pending_only": False,
+            "recent_hours": 0,
+            "linked_pool_or_open_only": True,
+        }
+    ).get()
+    update_task_progress(self, current=2, total=2, message="Link refresh complete.")
+    return {"manual_jobs": manual_result, "linked_raw_jobs": raw_result}
 
 
 @shared_task

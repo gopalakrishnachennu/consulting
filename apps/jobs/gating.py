@@ -319,6 +319,11 @@ def apply_gate_result_to_job(job: Job, gate: GateResult) -> None:
 
 
 def evaluate_job_gate(job: Job) -> GateResult:
+    link_health_state = (
+        getattr(job, "original_link_health", "") or
+        (Job.LinkHealthState.LIVE if job.original_link_is_live else Job.LinkHealthState.DEAD)
+    )
+    active_posting = link_health_state != Job.LinkHealthState.DEAD
     title_ok = _is_title_meaningful(job.title)
     desc = (job.description or "").strip()
     words = len(desc.split())
@@ -334,7 +339,7 @@ def evaluate_job_gate(job: Job) -> GateResult:
         and Job.objects.filter(url_hash=job.url_hash, is_archived=False).exclude(pk=job.pk).exists()
     )
     checks = {
-        "active_posting": bool(job.original_link_is_live),
+        "active_posting": active_posting,
         "valid_source_url": has_url,
         "tenant_platform_match": True,
         "dedupe_passed": dedupe_passed,
@@ -344,7 +349,7 @@ def evaluate_job_gate(job: Job) -> GateResult:
     reasons: list[str] = []
     if not has_url:
         reasons.append(REASON_MISSING_URL)
-    if not job.original_link_is_live:
+    if not active_posting:
         reasons.append(REASON_INACTIVE_POSTING)
     if not company_ok:
         reasons.append(
@@ -361,7 +366,13 @@ def evaluate_job_gate(job: Job) -> GateResult:
     val = _clamp01(_as_float(job.validation_score, 0.0) / 100.0)
     quality = _clamp01(_as_float(job.quality_score, 0.0))
     data_quality = _clamp01((0.6 * quality) + (0.4 * val))
-    trust = _clamp01((0.6 if job.original_link_is_live else 0.2) + (0.2 if dedupe_passed else 0.0) + (0.2 if company_ok else 0.0))
+    if link_health_state == Job.LinkHealthState.LIVE:
+        link_trust = 0.6
+    elif link_health_state == Job.LinkHealthState.INCONCLUSIVE:
+        link_trust = 0.4
+    else:
+        link_trust = 0.2
+    trust = _clamp01(link_trust + (0.2 if dedupe_passed else 0.0) + (0.2 if company_ok else 0.0))
     fit = _clamp01(sum(1 for x in [title_ok, has_clean_jd, bool((job.location or "").strip()), bool((job.salary_range or "").strip())] if x) / 4.0)
     vet_priority = _clamp01((0.45 * data_quality) + (0.35 * trust) + (0.20 * fit))
 

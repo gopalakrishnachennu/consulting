@@ -105,7 +105,7 @@ app.conf.beat_schedule = {
     "harvest-validate-live-links-daily": {
         "task": "harvest.validate_raw_job_urls",
         "schedule": crontab(hour=3, minute=0),       # daily 03:00 UTC
-        "kwargs": {"batch_size": 300, "concurrency": 25},
+        "kwargs": {"batch_size": 300, "concurrency": 25, "pending_only": False, "recent_hours": 0},
         "options": {"queue": "harvest"},
     },
     "harvest-release-stale-jd-locks": {
