@@ -215,7 +215,13 @@ class Job(models.Model):
     parsed_jd_status = models.CharField(max_length=20, blank=True)
     parsed_jd_error = models.TextField(blank=True)
     parsed_jd_updated_at = models.DateTimeField(null=True, blank=True)
-    
+    # JD Extraction Engine (V4) cache/version metadata — content-hash + versions so a
+    # cached parse is reused only when the JD text and extractor versions all match.
+    parsed_jd_hash = models.CharField(max_length=64, blank=True, db_index=True)
+    parsed_jd_model = models.CharField(max_length=100, blank=True)
+    parsed_jd_prompt_version = models.CharField(max_length=40, blank=True)
+    parsed_jd_schema_version = models.CharField(max_length=40, blank=True)
+
     # Phase 5: Job source tracking
     job_source = models.CharField(
         max_length=100, blank=True,

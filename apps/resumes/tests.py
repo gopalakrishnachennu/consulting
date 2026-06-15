@@ -214,3 +214,155 @@ class LLMConfigProviderTests(TestCase):
         self.assertEqual(cfg.effective_base_url(), "https://api.deepseek.com")
         cfg.provider, cfg.base_url = "custom", "https://x.y/v1"
         self.assertEqual(cfg.effective_base_url(), "https://x.y/v1")
+
+
+# ── Resume Engine V4 P1a — JD Extraction Engine ──────────────────────────────
+from unittest.mock import patch, MagicMock
+import json as _json
+from resumes.pipeline import jd_extractor_schemas as _S
+
+
+def _valid_parsed_jd():
+    return {
+        "job_metadata": {"company_name": "Acme", "job_title": "Data Engineer"},
+        "role_classification": {
+            "primary_role_family": "data_engineer", "sub_role": None,
+            "secondary_role_families": [], "role_blend_summary": "",
+            "seniority": "mid", "resume_positioning_hint": "Data Engineer"},
+        "requirements": {
+            "screen_out_requirements": [],
+            "must_have_skills": [
+                {"raw_term": "Apache Spark", "normalized_term": "Spark", "category": "data",
+                 "importance": "must_have", "source_section": "Minimum Qualifications",
+                 "evidence_text": "Experience with Apache Spark required", "confidence": 0.95}],
+            "nice_to_have_skills": [],
+            "alternative_requirement_groups": [
+                {"group_label": "language", "type": "one_of", "minimum_required": 1,
+                 "options": [{"raw_term": "Python", "normalized_term": "Python", "category": "lang"},
+                             {"raw_term": "Scala", "normalized_term": "Scala", "category": "lang"}],
+                 "importance": "must_have", "evidence_text": "Python or Scala", "confidence": 0.9}]},
+        "skill_categories": {"data_tools": [{"raw_term": "Airflow", "normalized_term": "Airflow"}]},
+        "responsibility_themes": [{"theme": "build pipelines", "depth": "develop",
+            "importance": "high", "evidence_text": "build batch pipelines", "confidence": 0.9}],
+        "domain": {"primary_domain": "healthcare", "domain_keywords": ["claims"]},
+        "ats_keywords": [], "soft_skills": [],
+        "special_resume_requirements": [],
+        "ignored_sections": [], "exact_phrase_controls": [], "hidden_priorities": [],
+        "extraction_quality": {"overall_extraction_confidence": 0.9, "needs_human_review": False,
+            "low_confidence_items": [], "extraction_warnings": []},
+    }
+
+
+class _FakeConfig:
+    validation_model = "deepseek/deepseek-chat"
+    max_output_tokens = 4000
+
+
+class _FakeLLM:
+    """Mock PipelineLLMClient — returns a queued list of (content) responses."""
+    def __init__(self, *a, **k):
+        self.config = _FakeConfig()
+        self.default_model = "gpt-4o-mini"
+        self.default_temperature = 0.1
+    def is_available(self):
+        return True, ""
+    def check_token_cap(self):
+        return True, ""
+
+
+class JDExtractorValidationTests(TestCase):
+    def test_valid_passes(self):
+        v = _S.validate_parsed_jd(_valid_parsed_jd())
+        self.assertTrue(v["ok"], v["errors"])
+
+    def test_missing_role_family_fails(self):
+        d = _valid_parsed_jd(); d["role_classification"]["primary_role_family"] = ""
+        v = _S.validate_parsed_jd(d)
+        self.assertFalse(v["ok"])
+        self.assertTrue(any("VAL_002" in e for e in v["errors"]))
+
+    def test_noise_misfiled_fails(self):
+        d = _valid_parsed_jd()
+        d["requirements"]["must_have_skills"].append(
+            {"raw_term": "401k benefits", "normalized_term": "401k benefits",
+             "importance": "must_have", "evidence_text": "x"})
+        v = _S.validate_parsed_jd(d)
+        self.assertFalse(v["ok"])
+        self.assertTrue(any("VAL_006" in e for e in v["errors"]))
+
+    def test_high_importance_needs_evidence(self):
+        d = _valid_parsed_jd(); d["requirements"]["must_have_skills"][0]["evidence_text"] = ""
+        v = _S.validate_parsed_jd(d)
+        self.assertFalse(v["ok"])
+        self.assertTrue(any("VAL_005" in e for e in v["errors"]))
+
+
+class JDExtractorEngineTests(TestCase):
+    def setUp(self):
+        self.emp = User.objects.create_user(username="jdx_emp", password="p", role=User.Role.EMPLOYEE)
+        self.job = Job.objects.create(
+            title="Data Engineer", company="Acme", posted_by=self.emp,
+            description="Build batch pipelines with Apache Spark. Python or Scala required.",
+            original_link="https://x/de1")
+
+    def _patch_llm(self, responses):
+        fake = _FakeLLM()
+        calls = {"n": 0}
+        def _call(system, user, **kw):
+            i = min(calls["n"], len(responses) - 1)
+            calls["n"] += 1
+            return responses[i], 100, None
+        fake.call = _call
+        fake._calls = calls
+        return fake
+
+    def test_extracts_and_stores(self):
+        from resumes.pipeline.jd_extractor import extract_jd
+        fake = self._patch_llm([_json.dumps(_valid_parsed_jd())])
+        with patch("resumes.pipeline.llm_client.PipelineLLMClient", return_value=fake):
+            data = extract_jd(self.job)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.parsed_jd_status, _S.STATUS_OK_LLM)
+        self.assertEqual(data["role_classification"]["primary_role_family"], "data_engineer")
+        self.assertIn("parser_metadata", data)
+        self.assertTrue(self.job.parsed_jd_hash)
+        self.assertEqual(fake._calls["n"], 1)
+
+    def test_cache_hit_skips_llm(self):
+        from resumes.pipeline.jd_extractor import extract_jd
+        fake = self._patch_llm([_json.dumps(_valid_parsed_jd())])
+        with patch("resumes.pipeline.llm_client.PipelineLLMClient", return_value=fake):
+            extract_jd(self.job)
+            extract_jd(self.job)  # second call — should hit cache
+        self.assertEqual(fake._calls["n"], 1)  # LLM called once only
+
+    def test_repair_retry_then_pass(self):
+        from resumes.pipeline.jd_extractor import extract_jd
+        bad = _valid_parsed_jd(); bad["role_classification"]["primary_role_family"] = ""
+        good = _valid_parsed_jd()
+        fake = self._patch_llm([_json.dumps(bad), _json.dumps(good)])
+        with patch("resumes.pipeline.llm_client.PipelineLLMClient", return_value=fake):
+            extract_jd(self.job)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.parsed_jd_status, _S.STATUS_OK_LLM)
+        self.assertEqual(fake._calls["n"], 2)  # retried once
+
+    def test_fallback_when_llm_unavailable(self):
+        from resumes.pipeline.jd_extractor import extract_jd
+        fake = _FakeLLM()
+        fake.is_available = lambda: (False, "no key")
+        with patch("resumes.pipeline.llm_client.PipelineLLMClient", return_value=fake):
+            data = extract_jd(self.job)
+        self.job.refresh_from_db()
+        self.assertIn(self.job.parsed_jd_status, (_S.STATUS_RULES_FALLBACK, _S.STATUS_FAILED))
+        self.assertIn("parser_metadata", data)
+
+
+class JDParserDiffTests(TestCase):
+    def test_diff_finds_new_skills(self):
+        from resumes.pipeline.parser_diff import diff_parsers
+        legacy = {"required_skills": ["python"]}
+        d = diff_parsers(legacy, _valid_parsed_jd())
+        self.assertIn("spark", d["new_skills_found_by_llm"])
+        self.assertEqual(d["llm_primary_role_family"], "data_engineer")
+        self.assertTrue(d["llm_has_alternative_groups"])
