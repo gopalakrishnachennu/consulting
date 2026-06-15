@@ -5,7 +5,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}{{ PLATFORM_CONFIG.site_name|default:"Chennu" }} - {{ PLATFORM_CONFIG.site_tagline|default:"Dashboard" }}{% endblock %}</title>
+    <title>{% block title %}{{ SITE_NAME|default:"Chennu" }} - {{ SITE_TAGLINE|default:"Dashboard" }}{% endblock %}</title>
 
     {# ── Favicon — adaptive SVG + fallback PNG ── #}
     <link rel="icon" type="image/svg+xml" href="{% static 'images/favicon.svg' %}">
@@ -15,7 +15,8 @@
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/@alpinejs/collapse@3.13.3/dist/cdn.min.js" defer></script>
     <script src="https://unpkg.com/alpinejs@3.13.3/dist/cdn.min.js" defer></script>
-    <meta name="description" content="{{ PLATFORM_CONFIG.meta_description }}">
+    <meta name="description" content="{{ META_DESCRIPTION }}">
+    <meta name="keywords" content="{{ META_KEYWORDS }}">
 
     {# ── Brand color theme — CSS variables driven by PlatformConfig.color_theme ── #}
     <style>

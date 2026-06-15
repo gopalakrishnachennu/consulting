@@ -108,6 +108,8 @@ MIDDLEWARE = [
     'core.middleware.AuditMiddleware',  # Audit Log
     'core.middleware.ErrorTrackingMiddleware',  # Error + slow request tracking
     'config.middleware.ImpersonateMiddleware',
+    'core.middleware.PlatformSessionTimeoutMiddleware',
+    'core.middleware.MaintenanceModeMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'config.middleware.RequestLoggingMiddleware',

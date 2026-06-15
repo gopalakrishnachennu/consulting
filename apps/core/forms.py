@@ -102,6 +102,36 @@ class PlatformConfigForm(forms.ModelForm):
             self.save_m2m()
         return instance
 
+    def clean_session_timeout_minutes(self):
+        value = self.cleaned_data.get("session_timeout_minutes")
+        if value is None or value < 5 or value > 1440:
+            raise forms.ValidationError("Session timeout must be between 5 and 1440 minutes.")
+        return value
+
+    def clean_max_upload_size_mb(self):
+        value = self.cleaned_data.get("max_upload_size_mb")
+        if value is None or value < 1 or value > 100:
+            raise forms.ValidationError("Max upload size must be between 1 and 100 MB.")
+        return value
+
+    def clean_email_poll_interval_seconds(self):
+        value = self.cleaned_data.get("email_poll_interval_seconds")
+        if value is None or value < 15 or value > 86400:
+            raise forms.ValidationError("Email poll interval must be between 15 and 86400 seconds.")
+        return value
+
+    def clean_email_ai_confidence_threshold(self):
+        value = self.cleaned_data.get("email_ai_confidence_threshold")
+        if value is None or value < 0 or value > 100:
+            raise forms.ValidationError("AI confidence threshold must be between 0 and 100.")
+        return value
+
+    def clean_maintenance_message(self):
+        value = (self.cleaned_data.get("maintenance_message") or "").strip()
+        if self.cleaned_data.get("maintenance_mode") and not value:
+            raise forms.ValidationError("Maintenance mode requires a visible message for non-admin users.")
+        return value
+
 
 class BroadcastForm(forms.ModelForm):
     """Admin broadcast: title, body, optional link, audience, optional org scope."""

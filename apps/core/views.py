@@ -201,6 +201,18 @@ class PlatformConfigView(AdminRequiredMixin, UpdateView):
         context["theme_groups"] = get_theme_groups()
         context["theme_catalog"] = get_theme_catalog()
         context["selected_theme_preview"] = get_theme_definition(selected_theme_slug)
+        context["selected_nav_layout"] = (
+            (form.data.get("nav_layout") if form is not None and getattr(form, "is_bound", False) else None)
+            or getattr(self.object, "nav_layout", PlatformConfig.NavLayout.TOP)
+        )
+        context["active_settings_tab"] = (
+            (form.data.get("active_tab") if form is not None and getattr(form, "is_bound", False) else None)
+            or "tab-general"
+        )
+        context["logo_preview_url"] = (
+            (form.data.get("logo_url") if form is not None and getattr(form, "is_bound", False) else None)
+            or getattr(self.object, "logo_url", "")
+        )
         # Pool count for the Job Pool settings tab
         try:
             from jobs.models import Job
@@ -209,9 +221,18 @@ class PlatformConfigView(AdminRequiredMixin, UpdateView):
             context["pool_job_count"] = 0
         return context
 
+    def get_success_url(self):
+        active_tab = (self.request.POST.get("active_tab") or "").strip().lstrip("#")
+        base_url = reverse("platform-config")
+        return f"{base_url}#{active_tab}" if active_tab else base_url
+
     def form_valid(self, form):
         messages.success(self.request, "Platform configuration updated successfully.")
         return super().form_valid(form)
+
+    def form_invalid(self, form):
+        messages.error(self.request, "Platform configuration was not saved. Fix the highlighted fields and try again.")
+        return super().form_invalid(form)
 
 
 class DataPipelineDashboardView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):

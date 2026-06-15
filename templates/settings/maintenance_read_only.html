@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Maintenance Mode{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-2xl px-4 py-16">
+    <div class="rounded-2xl border border-amber-200 bg-amber-50 p-8 shadow-sm">
+        <div class="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+            <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v4m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.2 16c-.77 1.33.19 3 1.73 3z"/>
+            </svg>
+        </div>
+        <h1 class="text-2xl font-bold text-slate-900">Read-only maintenance mode is active</h1>
+        <p class="mt-3 text-sm leading-6 text-slate-600">
+            Non-admin users can still browse the platform, but saving changes is temporarily blocked.
+        </p>
+        <div class="mt-6 rounded-xl border border-amber-200 bg-white px-4 py-3 text-sm text-slate-700">
+            {{ maintenance_message }}
+        </div>
+        <div class="mt-6 flex flex-wrap gap-3">
+            <a href="javascript:history.back()" class="inline-flex items-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                Go back
+            </a>
+            <a href="{% url 'home' %}" class="inline-flex items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">
+                Home
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

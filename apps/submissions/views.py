@@ -33,11 +33,12 @@ from users.models import User, ConsultantProfile
 from jobs.services import ensure_parsed_jd
 from companies.models import Company, CompanyDoNotSubmit
 from config.constants import (
-    PAGINATION_SUBMISSIONS, MAX_UPLOAD_SIZE, MAX_UPLOAD_SIZE_MB,
+    PAGINATION_SUBMISSIONS,
     MSG_SUBMISSION_SUCCESS, MSG_SUBMISSION_MISMATCH, MSG_SUBMISSION_SELF_ONLY, MSG_FILE_TOO_LARGE,
 )
 from core.notification_utils import notify_submission_pipeline_event
 from core.feature_flags import feature_enabled_for
+from core.runtime_settings import get_max_upload_size_bytes, get_max_upload_size_mb
 from config.pagination import PAGE_SIZE_OPTIONS, get_page_size, build_pagination_window
 
 def _norm(s: str) -> str:
@@ -141,8 +142,8 @@ class SubmissionCreateView(LoginRequiredMixin, CreateView):
         # 3. File Validation (Basic)
         proof_file = form.cleaned_data.get('proof_file')
         if proof_file:
-            if proof_file.size > MAX_UPLOAD_SIZE:
-                form.add_error('proof_file', MSG_FILE_TOO_LARGE.format(max_mb=MAX_UPLOAD_SIZE_MB))
+            if proof_file.size > get_max_upload_size_bytes():
+                form.add_error('proof_file', MSG_FILE_TOO_LARGE.format(max_mb=get_max_upload_size_mb()))
                 return self.form_invalid(form)
             if not form.instance.submitted_at:
                 form.instance.submitted_at = timezone.now()
@@ -2164,8 +2165,8 @@ class ConsultantSelfApplyView(LoginRequiredMixin, UserPassesTestMixin, View):
             source = ApplicationSubmission.Source.SELF_APPLIED
 
         # File size check
-        if proof_file and proof_file.size > MAX_UPLOAD_SIZE:
-            messages.error(request, f"File too large. Max {MAX_UPLOAD_SIZE_MB}MB.")
+        if proof_file and proof_file.size > get_max_upload_size_bytes():
+            messages.error(request, f"File too large. Max {get_max_upload_size_mb()}MB.")
             return render(request, self.template_name, {
                 'job_types': Job.JobType.choices,
                 'post': request.POST,

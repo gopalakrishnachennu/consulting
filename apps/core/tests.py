@@ -1,13 +1,34 @@
 from datetime import timedelta
 
+from django import forms
+from django.contrib.auth.models import AnonymousUser
+from django.contrib.sessions.middleware import SessionMiddleware
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.http import HttpResponse
 from django.test import TestCase, Client, RequestFactory
 from django.urls import reverse
 from django.utils import timezone
 from unittest.mock import patch
-from users.models import User, UserEmailNotificationPreferences
+from users.models import User, UserEmailNotificationPreferences, ConsultantProfile
 from .models import PlatformConfig, LLMConfig, AuditLog, Notification, BroadcastMessage
+from .forms import PlatformConfigForm
+from .middleware import MaintenanceModeMiddleware, PlatformSessionTimeoutMiddleware
 from .notification_utils import create_notification, sanitize_internal_link
 from .broadcast_utils import _recipient_queryset
+
+
+def build_platform_config_payload(config: PlatformConfig, **overrides):
+    form = PlatformConfigForm(instance=config)
+    data = {}
+    for name, field in form.fields.items():
+        value = overrides.get(name, form.initial.get(name, getattr(config, name, "")))
+        if isinstance(field, forms.BooleanField):
+            if value:
+                data[name] = "on"
+        else:
+            data[name] = "" if value is None else value
+    data.setdefault("active_tab", overrides.get("active_tab", "tab-general"))
+    return data
 
 
 class PlatformConfigTests(TestCase):
@@ -69,6 +90,40 @@ class PlatformConfigAdminViewTests(TestCase):
         self.assertContains(resp, "India-inspired palettes")
         self.assertContains(resp, "Live preview")
         self.assertContains(resp, "Contrast status")
+
+    def test_invalid_post_keeps_active_tab_and_shows_errors(self):
+        config = PlatformConfig.load()
+        payload = build_platform_config_payload(
+            config,
+            email_poll_interval_seconds=10,
+            active_tab="tab-email",
+        )
+
+        resp = self.client.post(reverse("platform-config"), payload)
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Platform configuration was not saved.")
+        self.assertContains(resp, 'value="tab-email"')
+        self.assertContains(resp, "Email poll interval must be between 15 and 86400 seconds.")
+
+    def test_success_redirect_preserves_tab_hash(self):
+        config = PlatformConfig.load()
+        payload = build_platform_config_payload(config, active_tab="tab-layout")
+
+        resp = self.client.post(reverse("platform-config"), payload)
+
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(resp["Location"].endswith("#tab-layout"))
+
+    def test_general_tab_exposes_hidden_platform_fields(self):
+        resp = self.client.get(reverse("platform-config"))
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Meta Keywords")
+        self.assertContains(resp, "Match resume title to JD by default")
+        self.assertContains(resp, "Terms of Service URL")
+        self.assertContains(resp, "Privacy Policy URL")
+        self.assertContains(resp, "Header preview")
 
 
 class DeploymentInfoContextProcessorTests(TestCase):
@@ -194,6 +249,94 @@ class HomeViewTests(TestCase):
         self.assertEqual(resp.status_code, 302)
 
 
+class SiteConfigContextProcessorTests(TestCase):
+    def test_platform_config_overrides_branding_context(self):
+        from config.context_processors import site_config
+
+        config = PlatformConfig.load()
+        config.site_name = "CHENN"
+        config.site_tagline = "Connecting Top Tech Talent with Opportunities"
+        config.meta_description = "Custom SEO description"
+        config.meta_keywords = "tech, consulting"
+        config.contact_email = "ops@chennu.co"
+        config.support_phone = "+1-555-0100"
+        config.linkedin_url = "https://linkedin.com/company/chennu"
+        config.github_url = "https://github.com/chennu"
+        config.save()
+
+        request = RequestFactory().get("/")
+        request.user = AnonymousUser()
+        context = site_config(request)
+
+        self.assertEqual(context["SITE_NAME"], "CHENN")
+        self.assertEqual(context["SITE_TAGLINE"], "Connecting Top Tech Talent with Opportunities")
+        self.assertEqual(context["META_DESCRIPTION"], "Custom SEO description")
+        self.assertEqual(context["META_KEYWORDS"], "tech, consulting")
+        self.assertEqual(context["COMPANY_EMAIL"], "ops@chennu.co")
+        self.assertEqual(context["COMPANY_PHONE"], "+1-555-0100")
+        self.assertEqual(context["SOCIAL_LINKEDIN"], "https://linkedin.com/company/chennu")
+        self.assertEqual(context["SOCIAL_GITHUB"], "https://github.com/chennu")
+
+
+class PlatformRuntimeMiddlewareTests(TestCase):
+    def _request_with_session(self, method, path, user):
+        request = getattr(RequestFactory(), method.lower())(path)
+        session_middleware = SessionMiddleware(lambda req: HttpResponse("ok"))
+        session_middleware.process_request(request)
+        request.session.save()
+        request.user = user
+        request.real_user = user
+        request.is_impersonating = False
+        return request
+
+    def test_session_timeout_middleware_uses_platform_config(self):
+        config = PlatformConfig.load()
+        config.session_timeout_minutes = 45
+        config.save()
+        user = User.objects.create_user("timed_user", password="pass")
+        request = self._request_with_session("GET", "/", user)
+
+        response = PlatformSessionTimeoutMiddleware(lambda req: HttpResponse("ok"))(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertGreaterEqual(request.session.get_expiry_age(), 45 * 60 - 2)
+        self.assertLessEqual(request.session.get_expiry_age(), 45 * 60)
+
+    def test_maintenance_mode_blocks_non_admin_mutations(self):
+        config = PlatformConfig.load()
+        config.maintenance_mode = True
+        config.maintenance_message = "System upgrade in progress"
+        config.save()
+        user = User.objects.create_user("regular_user", password="pass", role=User.Role.CONSULTANT)
+        request = self._request_with_session("POST", "/jobs/", user)
+
+        response = MaintenanceModeMiddleware(lambda req: HttpResponse("ok"))(request)
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("System upgrade in progress", response.content.decode())
+
+    def test_maintenance_mode_allows_admin_mutations(self):
+        config = PlatformConfig.load()
+        config.maintenance_mode = True
+        config.save()
+        admin = User.objects.create_superuser("admin_user", "admin@example.com", "pass")
+        request = self._request_with_session("POST", "/jobs/", admin)
+
+        response = MaintenanceModeMiddleware(lambda req: HttpResponse("ok"))(request)
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_maintenance_mode_allows_login_post(self):
+        config = PlatformConfig.load()
+        config.maintenance_mode = True
+        config.save()
+        request = self._request_with_session("POST", "/accounts/login/", AnonymousUser())
+
+        response = MaintenanceModeMiddleware(lambda req: HttpResponse("ok"))(request)
+
+        self.assertEqual(response.status_code, 200)
+
+
 class AdminDashboardCompanyKpiTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_superuser("dash_admin", "dash@example.com", "pass")
@@ -223,6 +366,41 @@ class AdminDashboardCompanyKpiTests(TestCase):
         self.assertEqual(resp.context["company_total"], 2)
         self.assertEqual(resp.context["company_with_platform"], 1)
         self.assertContains(resp, "1 with platforms")
+
+
+class SubmissionUploadLimitRuntimeTests(TestCase):
+    def setUp(self):
+        config = PlatformConfig.load()
+        config.maintenance_mode = False
+        config.save()
+        self.user = User.objects.create_user(
+            username="consultant_runtime",
+            email="consultant@example.com",
+            password="pass",
+            role=User.Role.CONSULTANT,
+        )
+        self.consultant = ConsultantProfile.objects.create(user=self.user, status=ConsultantProfile.Status.ACTIVE)
+        self.client.force_login(self.user)
+
+    def test_self_apply_uses_platform_upload_limit(self):
+        config = PlatformConfig.load()
+        config.max_upload_size_mb = 1
+        config.save()
+
+        proof_file = SimpleUploadedFile("proof.txt", b"a" * (1024 * 1024 + 16), content_type="text/plain")
+        resp = self.client.post(
+            reverse("consultant-self-apply"),
+            {
+                "title": "Cloud Engineer",
+                "company_name": "Acme Corp",
+                "job_type": "FULL_TIME",
+                "source": "SELF_APPLIED",
+                "proof_file": proof_file,
+            },
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "File too large. Max 1MB.")
 
 
 class AdminDashboardHarvestFreshnessTests(TestCase):

@@ -15,6 +15,24 @@
 
     <form method="post" class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         {% csrf_token %}
+        <input type="hidden" name="active_tab" id="active-settings-tab" value="{{ active_settings_tab|default:'tab-general' }}">
+
+        {% if form.errors %}
+        <div class="mx-6 mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            <p class="font-semibold">Platform configuration was not saved.</p>
+            <p class="mt-1 text-red-700">Fix the fields below. The page stays on the tab you were editing.</p>
+            <ul class="mt-3 list-disc space-y-1 pl-5">
+                {% for error in form.non_field_errors %}
+                <li>{{ error }}</li>
+                {% endfor %}
+                {% for field in form %}
+                    {% for error in field.errors %}
+                    <li><span class="font-medium">{{ field.label }}:</span> {{ error }}</li>
+                    {% endfor %}
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
 
         <div class="border-b px-6 pt-4 pb-3 bg-gray-50">
             <nav class="flex space-x-4 text-sm font-medium" aria-label="Tabs">
@@ -60,19 +78,79 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Site Name</label>
                         {{ form.site_name }}
+                        <div class="mt-1 text-sm text-red-600">{{ form.site_name.errors }}</div>
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Tagline</label>
                         {{ form.site_tagline }}
+                        <div class="mt-1 text-sm text-red-600">{{ form.site_tagline.errors }}</div>
                     </div>
-                    <div class="md:col-span-2">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Logo URL</label>
-                        {{ form.logo_url }}
+                    <div class="md:col-span-2 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_280px] gap-4 items-start">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Logo URL</label>
+                            {{ form.logo_url }}
+                            <div class="mt-1 text-sm text-red-600">{{ form.logo_url.errors }}</div>
+                            <p class="mt-1 text-xs text-gray-500">Use a fast HTTPS image. This renders in the global header/sidebar on every page.</p>
+                        </div>
+                        <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Header preview</p>
+                            <div class="mt-3 flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
+                                <div class="flex h-10 w-10 items-center justify-center rounded-lg text-sm font-bold text-white brand-nav-dark">C</div>
+                                <img
+                                    id="logo-preview-image"
+                                    src="{{ logo_preview_url|default:'' }}"
+                                    alt="Logo preview"
+                                    class="{% if not logo_preview_url %}hidden {% endif %}h-10 max-w-[170px] object-contain"
+                                >
+                                <div id="logo-preview-empty" class="{% if logo_preview_url %}hidden {% endif %}text-sm text-slate-500">
+                                    No custom logo set. The built-in wordmark remains active.
+                                </div>
+                            </div>
+                            <p id="logo-preview-status" class="mt-2 text-xs text-slate-500">Broken external logo URLs will degrade the nav on every page.</p>
+                        </div>
                     </div>
                     <div class="md:col-span-2">
                         <label class="block text-sm font-medium text-gray-700 mb-1">Meta Description</label>
                         {{ form.meta_description }}
+                        <div class="mt-1 text-sm text-red-600">{{ form.meta_description.errors }}</div>
                         <p class="text-xs text-gray-500 mt-1">Used for SEO.</p>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Meta Keywords</label>
+                        {{ form.meta_keywords }}
+                        <div class="mt-1 text-sm text-red-600">{{ form.meta_keywords.errors }}</div>
+                        <p class="text-xs text-gray-500 mt-1">Comma-separated keywords for public pages and search metadata.</p>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2 class="text-xl font-bold text-gray-800 border-b pb-2 mb-4">Public Links &amp; Policies</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">LinkedIn URL</label>
+                        {{ form.linkedin_url }}
+                        <div class="mt-1 text-sm text-red-600">{{ form.linkedin_url.errors }}</div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">GitHub URL</label>
+                        {{ form.github_url }}
+                        <div class="mt-1 text-sm text-red-600">{{ form.github_url.errors }}</div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Twitter / X URL</label>
+                        {{ form.twitter_url }}
+                        <div class="mt-1 text-sm text-red-600">{{ form.twitter_url.errors }}</div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Terms of Service URL</label>
+                        {{ form.tos_url }}
+                        <div class="mt-1 text-sm text-red-600">{{ form.tos_url.errors }}</div>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Privacy Policy URL</label>
+                        {{ form.privacy_policy_url }}
+                        <div class="mt-1 text-sm text-red-600">{{ form.privacy_policy_url.errors }}</div>
                     </div>
                 </div>
             </section>
@@ -80,6 +158,9 @@
             <!-- Feature Flags -->
             <section>
                 <h2 class="text-xl font-bold text-gray-800 border-b pb-2 mb-4">Feature Flags</h2>
+                <div class="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    These toggles change public or consultant-visible behavior immediately after save. Disabling signup, applications, or public profiles affects user-facing flows right away.
+                </div>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div class="flex items-start">
                         <div class="flex items-center h-5">
@@ -88,7 +169,7 @@
                         <div class="ml-3 text-sm">
                             <label for="{{ form.enable_consultant_registration.id_for_label }}"
                                 class="font-medium text-gray-700">Consultant Registration</label>
-                            <p class="text-gray-500">Allow new consultants to sign up.</p>
+                            <p class="text-gray-500">Allow new consultants to sign up from public entry points.</p>
                         </div>
                     </div>
                     <div class="flex items-start">
@@ -98,7 +179,7 @@
                         <div class="ml-3 text-sm">
                             <label for="{{ form.enable_job_applications.id_for_label }}"
                                 class="font-medium text-gray-700">Job Applications</label>
-                            <p class="text-gray-500">Allow consultants to apply.</p>
+                            <p class="text-gray-500">Allow consultants to apply and submit through consultant-facing job flows.</p>
                         </div>
                     </div>
                     <div class="flex items-start">
@@ -108,7 +189,17 @@
                         <div class="ml-3 text-sm">
                             <label for="{{ form.enable_public_consultant_view.id_for_label }}"
                                 class="font-medium text-gray-700">Public Profiles</label>
-                            <p class="text-gray-500">Guests can view consultants.</p>
+                            <p class="text-gray-500">Guests can view consultant public profile pages.</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start">
+                        <div class="flex items-center h-5">
+                            {{ form.match_jd_title_default }}
+                        </div>
+                        <div class="ml-3 text-sm">
+                            <label for="{{ form.match_jd_title_default.id_for_label }}"
+                                class="font-medium text-gray-700">Match resume title to JD by default</label>
+                            <p class="text-gray-500">Preselect the JD title during resume generation unless a consultant-level override exists.</p>
                         </div>
                     </div>
                     <div class="flex items-start md:col-span-3">
@@ -136,12 +227,13 @@
                             <div class="ml-3 text-sm">
                                 <label for="{{ form.maintenance_mode.id_for_label }}"
                                     class="font-bold text-red-700">Maintenance Mode</label>
-                                <p class="text-red-500">Puts the site into read-only mode for non-admins.</p>
+                                <p class="text-red-500">Blocks non-admin POST, PUT, PATCH, and DELETE requests. Browsing remains available.</p>
                             </div>
                         </div>
                         <div class="mt-2">
                             <label class="block text-sm font-medium text-gray-700 mb-1">Maintenance Message</label>
                             {{ form.maintenance_message }}
+                            <div class="mt-1 text-sm text-red-600">{{ form.maintenance_message.errors }}</div>
                         </div>
                     </div>
                     <div class="space-y-4">
@@ -149,10 +241,14 @@
                             <label class="block text-sm font-medium text-gray-700 mb-1">Session Timeout
                                 (Minutes)</label>
                             {{ form.session_timeout_minutes }}
+                            <div class="mt-1 text-sm text-red-600">{{ form.session_timeout_minutes.errors }}</div>
+                            <p class="mt-1 text-xs text-gray-500">Applied at runtime to authenticated sessions. Allowed range: 5 to 1440 minutes.</p>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Max Upload Size (MB)</label>
                             {{ form.max_upload_size_mb }}
+                            <div class="mt-1 text-sm text-red-600">{{ form.max_upload_size_mb.errors }}</div>
+                            <p class="mt-1 text-xs text-gray-500">Used by submission proof uploads and self-apply uploads. Allowed range: 1 to 100 MB.</p>
                         </div>
                     </div>
                 </div>
@@ -165,14 +261,17 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Support Email</label>
                         {{ form.contact_email }}
+                        <div class="mt-1 text-sm text-red-600">{{ form.contact_email.errors }}</div>
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Support Phone</label>
                         {{ form.support_phone }}
+                        <div class="mt-1 text-sm text-red-600">{{ form.support_phone.errors }}</div>
                     </div>
                     <div class="md:col-span-2">
                         <label class="block text-sm font-medium text-gray-700 mb-1">Address</label>
                         {{ form.address }}
+                        <div class="mt-1 text-sm text-red-600">{{ form.address.errors }}</div>
                         </div>
                     </div>
                 </section>
@@ -563,7 +662,7 @@
                     <p class="text-sm text-gray-500 mb-2">One primary color drives the entire UI: nav, buttons, hero gradients, active states, and focus rings.</p>
                     <p class="text-sm text-gray-500 mb-5">The India-inspired palettes keep strong contrast while bringing in saffron, chakra navy, ivory, and deep green more intentionally.</p>
 
-                    {% with ct=PLATFORM_CONFIG.color_theme|default:"indigo" %}
+                    {% with ct=selected_theme_preview.slug|default:"indigo" %}
                     <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1.7fr)_minmax(360px,1fr)] gap-6">
                         <div class="space-y-5">
                             {% for group in theme_groups %}
@@ -717,9 +816,9 @@
                 <!-- Nav layout toggle -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <label class="relative flex flex-col gap-3 p-5 bg-white border-2 rounded-xl cursor-pointer transition
-                                  {% if PLATFORM_CONFIG.nav_layout == 'top' or not PLATFORM_CONFIG.nav_layout %}border-indigo-500 ring-2 ring-indigo-100{% else %}border-gray-200 hover:border-gray-300{% endif %}">
+                                  {% if selected_nav_layout == 'top' or not selected_nav_layout %}border-indigo-500 ring-2 ring-indigo-100{% else %}border-gray-200 hover:border-gray-300{% endif %}">
                         <input type="radio" name="nav_layout" value="top"
-                               {% if PLATFORM_CONFIG.nav_layout == 'top' or not PLATFORM_CONFIG.nav_layout %}checked{% endif %}
+                               {% if selected_nav_layout == 'top' or not selected_nav_layout %}checked{% endif %}
                                class="sr-only peer">
                         <div class="flex items-center gap-3">
                             <div class="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
@@ -743,9 +842,9 @@
                     </label>
 
                     <label class="relative flex flex-col gap-3 p-5 bg-white border-2 rounded-xl cursor-pointer transition
-                                  {% if PLATFORM_CONFIG.nav_layout == 'left' %}border-indigo-500 ring-2 ring-indigo-100{% else %}border-gray-200 hover:border-gray-300{% endif %}">
+                                  {% if selected_nav_layout == 'left' %}border-indigo-500 ring-2 ring-indigo-100{% else %}border-gray-200 hover:border-gray-300{% endif %}">
                         <input type="radio" name="nav_layout" value="left"
-                               {% if PLATFORM_CONFIG.nav_layout == 'left' %}checked{% endif %}
+                               {% if selected_nav_layout == 'left' %}checked{% endif %}
                                class="sr-only peer">
                         <div class="flex items-center gap-3">
                             <div class="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
@@ -802,10 +901,16 @@
         (function () {
             const tabs = document.querySelectorAll('.platform-tab');
             const panels = ['#tab-general', '#tab-email', '#tab-data-pipeline', '#tab-job-pool', '#tab-layout'].map(id => document.querySelector(id));
+            const activeTabInput = document.getElementById('active-settings-tab');
             const themeCatalogElement = document.getElementById('theme-catalog-data');
             const themeCatalog = themeCatalogElement ? JSON.parse(themeCatalogElement.textContent) : {};
             const themeInputs = document.querySelectorAll('.js-theme-radio');
             const navInputs = document.querySelectorAll('input[name="nav_layout"]');
+            const settingsForm = document.querySelector('form[method="post"]');
+            const logoInput = document.getElementById('{{ form.logo_url.id_for_label }}');
+            const logoPreviewImage = document.getElementById('logo-preview-image');
+            const logoPreviewEmpty = document.getElementById('logo-preview-empty');
+            const logoPreviewStatus = document.getElementById('logo-preview-status');
             const themePreviewName = document.getElementById('theme-preview-name');
             const themePreviewTagline = document.getElementById('theme-preview-tagline');
             const themePreviewFamily = document.getElementById('theme-preview-family');
@@ -826,11 +931,23 @@
             const themePreviewContrastButton = document.getElementById('theme-preview-contrast-button');
             const themePreviewContrastLink = document.getElementById('theme-preview-contrast-link');
             const defaultThemeSlug = "{{ selected_theme_preview.slug|escapejs }}";
+            const defaultTabId = (activeTabInput && activeTabInput.value) || 'tab-general';
+            const initialToggleState = {
+                maintenance_mode: {{ PLATFORM_CONFIG.maintenance_mode|yesno:"true,false" }},
+                enable_consultant_registration: {{ PLATFORM_CONFIG.enable_consultant_registration|yesno:"true,false" }},
+                enable_job_applications: {{ PLATFORM_CONFIG.enable_job_applications|yesno:"true,false" }},
+                enable_public_consultant_view: {{ PLATFORM_CONFIG.enable_public_consultant_view|yesno:"true,false" }},
+            };
+
+            function normalizeTabId(targetId) {
+                return String(targetId || 'tab-general').replace(/^#/, '');
+            }
 
             function activate(targetId) {
+                const normalizedTarget = normalizeTabId(targetId);
                 panels.forEach(panel => {
                     if (!panel) return;
-                    if ('#' + panel.id === targetId) {
+                    if (panel.id === normalizedTarget) {
                         panel.classList.remove('hidden');
                     } else {
                         panel.classList.add('hidden');
@@ -838,7 +955,7 @@
                 });
 
                 tabs.forEach(tab => {
-                    if (tab.dataset.target === targetId) {
+                    if (normalizeTabId(tab.dataset.target) === normalizedTarget) {
                         tab.classList.add('bg-white', 'text-blue-700', 'shadow-sm', 'border', 'border-blue-100');
                         tab.classList.remove('text-gray-600');
                     } else {
@@ -846,6 +963,11 @@
                         tab.classList.add('text-gray-600');
                     }
                 });
+
+                if (activeTabInput) activeTabInput.value = normalizedTarget;
+                if (window.location.hash !== `#${normalizedTarget}`) {
+                    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${normalizedTarget}`);
+                }
             }
 
             function selectedValue(name, fallback) {
@@ -917,6 +1039,27 @@
                 }
             }
 
+            function updateLogoPreview() {
+                if (!logoInput || !logoPreviewImage || !logoPreviewEmpty || !logoPreviewStatus) return;
+                const src = (logoInput.value || '').trim();
+                if (!src) {
+                    logoPreviewImage.classList.add('hidden');
+                    logoPreviewImage.removeAttribute('src');
+                    logoPreviewEmpty.classList.remove('hidden');
+                    logoPreviewStatus.textContent = 'No custom logo set. The built-in wordmark remains active.';
+                    return;
+                }
+                logoPreviewImage.src = src;
+                logoPreviewImage.classList.remove('hidden');
+                logoPreviewEmpty.classList.add('hidden');
+                logoPreviewStatus.textContent = 'Previewing the external logo URL used in the global nav.';
+            }
+
+            function checkboxChecked(name) {
+                const input = document.querySelector(`input[name="${name}"]`);
+                return Boolean(input && input.checked);
+            }
+
             tabs.forEach(tab => {
                 tab.addEventListener('click', () => {
                     activate(tab.dataset.target);
@@ -931,10 +1074,45 @@
                 input.addEventListener('change', () => updateLayoutPreview(input.value));
             });
 
-            // Default to General tab on load
-            activate('#tab-general');
+            if (logoInput) {
+                logoInput.addEventListener('input', updateLogoPreview);
+            }
+
+            if (logoPreviewImage) {
+                logoPreviewImage.addEventListener('error', () => {
+                    logoPreviewImage.classList.add('hidden');
+                    logoPreviewEmpty.classList.remove('hidden');
+                    if (logoPreviewStatus) {
+                        logoPreviewStatus.textContent = 'This logo URL could not be loaded. The header will fall back to the wordmark.';
+                    }
+                });
+            }
+
+            if (settingsForm) {
+                settingsForm.addEventListener('submit', (event) => {
+                    const warnings = [];
+                    if (!initialToggleState.maintenance_mode && checkboxChecked('maintenance_mode')) {
+                        warnings.push('Maintenance mode will block non-admin save actions across the platform.');
+                    }
+                    if (initialToggleState.enable_consultant_registration && !checkboxChecked('enable_consultant_registration')) {
+                        warnings.push('Consultant signup will stop immediately on public entry points.');
+                    }
+                    if (initialToggleState.enable_job_applications && !checkboxChecked('enable_job_applications')) {
+                        warnings.push('Consultant-facing application flows will stop immediately.');
+                    }
+                    if (initialToggleState.enable_public_consultant_view && !checkboxChecked('enable_public_consultant_view')) {
+                        warnings.push('Guest access to public consultant profiles will stop immediately.');
+                    }
+                    if (warnings.length && !window.confirm(`Review these immediate changes before saving:\n\n- ${warnings.join('\n- ')}`)) {
+                        event.preventDefault();
+                    }
+                });
+            }
+
+            activate(window.location.hash || defaultTabId);
             updateThemePreview(selectedValue('color_theme', defaultThemeSlug));
             updateLayoutPreview(selectedValue('nav_layout', 'top'));
+            updateLogoPreview();
         })();
     </script>
 </div>

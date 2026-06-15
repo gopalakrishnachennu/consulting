@@ -3,6 +3,9 @@ import uuid
 import traceback as tb_module
 
 from django.conf import settings
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import render
+from django.urls import resolve, Resolver404
 
 from .audit_utils import (
     get_client_ip,
@@ -13,6 +16,7 @@ from .audit_utils import (
     truncate_user_agent,
 )
 from .models import AuditLog
+from .runtime_settings import get_session_timeout_seconds
 
 # Do not log mutating requests to these path prefixes (noise, static, health).
 _AUDIT_SKIP_PATH_PREFIXES = (
@@ -22,6 +26,27 @@ _AUDIT_SKIP_PATH_PREFIXES = (
     "/favicon.ico",
     "/__reload__/",  # django-browser-reload (dev); avoids noisy duplicate audits
 )
+
+_READ_ONLY_ALLOWED_PREFIXES = (
+    "/static/",
+    "/media/",
+    "/favicon.ico",
+    "/__reload__/",
+    "/core/health/",
+    "/kaithhealthcheck",
+    "/kaithheathcheck",
+    "/accounts/",
+    "/admin/",
+)
+_READ_ONLY_ALLOWED_URL_NAMES = {
+    "health-json",
+    "login",
+    "logout",
+    "password_reset",
+    "password_reset_done",
+    "password_reset_confirm",
+    "password_reset_complete",
+}
 
 
 def _path_is_skipped(path: str) -> bool:
@@ -39,6 +64,72 @@ def _path_is_skipped(path: str) -> bool:
         if prefix and p.startswith(str(prefix)):
             return True
     return False
+
+
+def _is_admin_actor(request) -> bool:
+    actor = getattr(request, "real_user", None) if getattr(request, "is_impersonating", False) else getattr(request, "user", None)
+    if not actor or not getattr(actor, "is_authenticated", False):
+        return False
+    return bool(getattr(actor, "is_superuser", False) or getattr(actor, "is_staff", False) or getattr(actor, "role", "") == "ADMIN")
+
+
+def _is_read_only_exempt(request) -> bool:
+    path = getattr(request, "path", "") or ""
+    if any(path.startswith(prefix) for prefix in _READ_ONLY_ALLOWED_PREFIXES):
+        return True
+
+    match = getattr(request, "resolver_match", None)
+    if match is None:
+        try:
+            match = resolve(getattr(request, "path_info", path))
+        except Resolver404:
+            match = None
+    if match is None:
+        return False
+    return (match.url_name or "") in _READ_ONLY_ALLOWED_URL_NAMES
+
+
+class PlatformSessionTimeoutMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        user = getattr(request, "user", None)
+        if getattr(user, "is_authenticated", False) and hasattr(request, "session"):
+            request.session.set_expiry(get_session_timeout_seconds())
+        return self.get_response(request)
+
+
+class MaintenanceModeMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        from .models import PlatformConfig
+
+        config = PlatformConfig.load()
+        if (
+            not getattr(config, "maintenance_mode", False)
+            or request.method not in {"POST", "PUT", "PATCH", "DELETE"}
+            or _is_admin_actor(request)
+            or _is_read_only_exempt(request)
+        ):
+            return self.get_response(request)
+
+        message = (
+            (getattr(config, "maintenance_message", "") or "").strip()
+            or "The platform is temporarily in read-only maintenance mode for non-admin users."
+        )
+        if request.headers.get("HX-Request") == "true":
+            return HttpResponse(message, status=503)
+        if "application/json" in (request.headers.get("Accept", "") or ""):
+            return JsonResponse({"detail": message}, status=503)
+        return render(
+            request,
+            "settings/maintenance_read_only.html",
+            {"maintenance_message": message},
+            status=503,
+        )
 
 
 def _resolver_audit_meta(request):
