@@ -1,5 +1,12 @@
 from django.contrib import admin
-from .models import ResumeDraft, MasterPrompt, SectionPrompt, PipelineRun
+from .models import ResumeDraft, MasterPrompt, SectionPrompt, PipelineRun, JDExtractorPrompt
+
+
+@admin.register(JDExtractorPrompt)
+class JDExtractorPromptAdmin(admin.ModelAdmin):
+    list_display = ('name', 'is_active', 'created_by', 'updated_at')
+    list_filter = ('is_active',)
+    search_fields = ('name', 'prompt_text')
 
 
 @admin.register(ResumeDraft)

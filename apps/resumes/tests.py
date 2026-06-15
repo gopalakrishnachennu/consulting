@@ -366,3 +366,50 @@ class JDParserDiffTests(TestCase):
         self.assertIn("spark", d["new_skills_found_by_llm"])
         self.assertEqual(d["llm_primary_role_family"], "data_engineer")
         self.assertTrue(d["llm_has_alternative_groups"])
+
+
+class JDExtractorPromptEditableTests(TestCase):
+    def setUp(self):
+        self.emp = User.objects.create_user(username="jdp_emp", password="p", role=User.Role.EMPLOYEE)
+        self.job = Job.objects.create(
+            title="Data Engineer", company="Acme", posted_by=self.emp,
+            description="Build pipelines with Spark.", original_link="https://x/dp1")
+
+    def _fake(self, capture):
+        fake = _FakeLLM()
+        def _call(system, user, **kw):
+            capture["system"] = system
+            return _json.dumps(_valid_parsed_jd()), 100, None
+        fake.call = _call
+        return fake
+
+    def test_db_prompt_overrides_code_default(self):
+        from resumes.models import JDExtractorPrompt
+        from resumes.pipeline.jd_extractor import extract_jd
+        JDExtractorPrompt.objects.create(name="custom v1", prompt_text="CUSTOM EXTRACTION PROMPT", is_active=True)
+        cap = {}
+        with patch("resumes.pipeline.llm_client.PipelineLLMClient", return_value=self._fake(cap)):
+            extract_jd(self.job)
+        self.assertEqual(cap["system"], "CUSTOM EXTRACTION PROMPT")  # DB prompt used, not the code constant
+        self.job.refresh_from_db()
+        self.assertTrue(self.job.parsed_jd_prompt_version.startswith("db-"))
+
+    def test_editing_prompt_invalidates_cache(self):
+        from resumes.models import JDExtractorPrompt
+        from resumes.pipeline.jd_extractor import extract_jd
+        p = JDExtractorPrompt.objects.create(name="v1", prompt_text="PROMPT A", is_active=True)
+        cap = {"n": 0}
+        fake = _FakeLLM()
+        def _call(system, user, **kw):
+            cap["n"] += 1
+            return _json.dumps(_valid_parsed_jd()), 100, None
+        fake.call = _call
+        with patch("resumes.pipeline.llm_client.PipelineLLMClient", return_value=fake):
+            extract_jd(self.job)              # call 1
+            extract_jd(self.job)              # cached → no call
+            self.assertEqual(cap["n"], 1)
+            # edit the prompt → new version token → cache miss → re-parse
+            import time as _t; _t.sleep(1.1)  # ensure updated_at timestamp advances
+            p.prompt_text = "PROMPT B (edited)"; p.save()
+            extract_jd(self.job)              # call 2
+        self.assertEqual(cap["n"], 2)

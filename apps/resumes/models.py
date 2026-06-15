@@ -65,6 +65,56 @@ class MasterPrompt(models.Model):
         return cached
 
 
+class JDExtractorPrompt(models.Model):
+    """UI-editable prompt for the JD Extraction Engine. One active at a time.
+
+    Lets you tune extraction wording with zero code changes. Editing bumps the
+    effective prompt version (derived from updated_at), which invalidates the
+    cached parsed_jd so jobs re-parse with the new prompt automatically.
+    """
+    name = models.CharField(max_length=200, help_text="Version label, e.g. 'v2 — stricter evidence'")
+    prompt_text = models.TextField(help_text="The full system prompt sent to the JD extractor LLM.")
+    notes = models.TextField(blank=True)
+    is_active = models.BooleanField(default=False, help_text="Only one active at a time.")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"{self.name} {'(active)' if self.is_active else ''}"
+
+    def save(self, *args, **kwargs):
+        if self.is_active:
+            JDExtractorPrompt.objects.exclude(pk=self.pk).update(is_active=False)
+        super().save(*args, **kwargs)
+        cache.delete('active_jd_extractor_prompt')
+
+    @classmethod
+    def get_active(cls):
+        cached = cache.get('active_jd_extractor_prompt')
+        if cached is None:
+            cached = cls.objects.filter(is_active=True).first()
+            if cached:
+                cache.set('active_jd_extractor_prompt', cached, timeout=300)
+        return cached
+
+    @classmethod
+    def active_text_and_version(cls):
+        """Return (prompt_text, version_token). Falls back to the code default
+        when no active DB prompt exists, so the engine works out of the box."""
+        obj = cls.get_active()
+        if obj and (obj.prompt_text or "").strip():
+            ts = int(obj.updated_at.timestamp()) if obj.updated_at else 0
+            return obj.prompt_text, f"db-{obj.pk}-{ts}"
+        from .pipeline.jd_extractor_schemas import EXTRACTOR_SYSTEM_PROMPT, PROMPT_VERSION
+        return EXTRACTOR_SYSTEM_PROMPT, PROMPT_VERSION
+
+
 class ResumeDraft(models.Model):
     class Status(models.TextChoices):
         PROCESSING = 'PROCESSING', 'Processing'

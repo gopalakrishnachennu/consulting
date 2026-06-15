@@ -1400,3 +1400,45 @@ class InterviewPrepView(LoginRequiredMixin, UserPassesTestMixin, BaseView):
             'prep_content': prep_data,
             'focus': focus,
         })
+
+
+class JDExtractorPromptEditView(AdminOrEmployeeMixin, View):
+    """UI editor for the JD Extraction Engine prompt — edit as text, save a new
+    version, activate. Editing auto-invalidates the parsed_jd cache (new version
+    token), so jobs re-parse with the new wording. No code change, no deploy."""
+    template_name = "resumes/jd_extractor_prompt.html"
+
+    def get(self, request):
+        from .models import JDExtractorPrompt
+        from .pipeline.jd_extractor_schemas import EXTRACTOR_SYSTEM_PROMPT, SCHEMA_VERSION
+        active = JDExtractorPrompt.get_active()
+        return render(request, self.template_name, {
+            "active": active,
+            "prompt_text": (active.prompt_text if active else EXTRACTOR_SYSTEM_PROMPT),
+            "using_default": active is None,
+            "versions": list(JDExtractorPrompt.objects.all()[:30]),
+            "schema_version": SCHEMA_VERSION,
+        })
+
+    def post(self, request):
+        from .models import JDExtractorPrompt
+        action = (request.POST.get("action") or "save").strip()
+        if action == "activate":
+            obj = JDExtractorPrompt.objects.filter(pk=request.POST.get("pk")).first()
+            if obj:
+                obj.is_active = True
+                obj.save()
+                messages.success(request, f'Activated "{obj.name}". New jobs re-parse with it.')
+        else:
+            text = (request.POST.get("prompt_text") or "").strip()
+            name = (request.POST.get("name") or "").strip() or f"v{JDExtractorPrompt.objects.count() + 1}"
+            if not text:
+                messages.error(request, "Prompt text is empty — nothing saved.")
+            else:
+                JDExtractorPrompt.objects.create(
+                    name=name, prompt_text=text, notes=(request.POST.get("notes") or "").strip(),
+                    is_active=True,
+                    created_by=request.user if request.user.is_authenticated else None,
+                )
+                messages.success(request, f'Saved & activated "{name}". New jobs will re-parse with this prompt.')
+        return redirect("jd-extractor-prompt")

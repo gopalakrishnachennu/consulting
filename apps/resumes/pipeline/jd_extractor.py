@@ -40,6 +40,17 @@ def v4_enabled() -> bool:
     return _flag("resume_engine_v4", False)
 
 
+def _active_prompt() -> tuple[str, str]:
+    """(prompt_text, version_token) — from the UI-editable JDExtractorPrompt when
+    set, else the code default. Editing the prompt changes the token → cache miss
+    → jobs re-parse with the new wording. Never raises."""
+    try:
+        from resumes.models import JDExtractorPrompt
+        return JDExtractorPrompt.active_text_and_version()
+    except Exception:
+        return S.EXTRACTOR_SYSTEM_PROMPT, S.PROMPT_VERSION
+
+
 # ── normalization + hashing ──────────────────────────────────────────────────
 def normalize_jd_text(text: str) -> str:
     """Stable normalization for hashing — preserves meaning, only tidies whitespace."""
@@ -55,7 +66,7 @@ def jd_hash(text: str) -> str:
 
 
 # ── cache ────────────────────────────────────────────────────────────────────
-def _cache_valid(job, current_hash: str, model: str) -> bool:
+def _cache_valid(job, current_hash: str, prompt_version: str) -> bool:
     if (job.parsed_jd_status or "") not in (
         S.STATUS_OK_LLM, S.STATUS_OK_LLM_WARN, S.STATUS_NEEDS_REVIEW,
     ):
@@ -64,7 +75,7 @@ def _cache_valid(job, current_hash: str, model: str) -> bool:
         return False
     if (getattr(job, "parsed_jd_schema_version", "") or "") != S.SCHEMA_VERSION:
         return False
-    if (getattr(job, "parsed_jd_prompt_version", "") or "") != S.PROMPT_VERSION:
+    if (getattr(job, "parsed_jd_prompt_version", "") or "") != prompt_version:
         return False
     # model is allowed to differ (a re-run on a cheaper model is fine), so not checked
     return bool(job.parsed_jd)
@@ -92,7 +103,7 @@ def _parse_json(text: str):
         return None
 
 
-def _call_llm(llm, jd_text: str, repair_feedback: str | None = None):
+def _call_llm(llm, jd_text: str, prompt_text: str, repair_feedback: str | None = None):
     """One LLM extraction call. Returns (data_or_None, model, error)."""
     user = f"JOB DESCRIPTION:\n{jd_text[:12000]}"
     if repair_feedback:
@@ -104,7 +115,7 @@ def _call_llm(llm, jd_text: str, repair_feedback: str | None = None):
     # Prefer the cheap validation model (DeepSeek/etc.) for extraction.
     model = (getattr(llm.config, "validation_model", "") or "").strip() or llm.default_model
     content, _tokens, error = llm.call(
-        S.EXTRACTOR_SYSTEM_PROMPT, user,
+        prompt_text, user,
         request_type="jd_extract_v4", model=model, temperature=0.1, max_tokens=4000,
     )
     if error:
@@ -122,9 +133,10 @@ def extract_jd(job, *, force: bool = False, save: bool = True) -> dict:
     rule parser on failure. Never raises."""
     jd_text = (job.description or "").strip()
     current_hash = jd_hash(jd_text)
+    prompt_text, prompt_version = _active_prompt()
 
     # 1. cache
-    if not force and _cache_valid(job, current_hash, ""):
+    if not force and _cache_valid(job, current_hash, prompt_version):
         return job.parsed_jd
 
     if not jd_text:
@@ -142,7 +154,7 @@ def extract_jd(job, *, force: bool = False, save: bool = True) -> dict:
         return _fallback(job, current_hash, reason="llm_unavailable", save=save)
 
     # 3. extract + validate (+ one repair retry)
-    data, model, error = _call_llm(llm, jd_text)
+    data, model, error = _call_llm(llm, jd_text, prompt_text)
     status = S.STATUS_OK_LLM
     warnings: list[str] = []
 
@@ -150,7 +162,7 @@ def extract_jd(job, *, force: bool = False, save: bool = True) -> dict:
         v = S.validate_parsed_jd(data)
         if not v["ok"] and v["needs_retry"]:
             feedback = "; ".join(v["errors"])[:1000]
-            data2, model, error = _call_llm(llm, jd_text, repair_feedback=feedback)
+            data2, model, error = _call_llm(llm, jd_text, prompt_text, repair_feedback=feedback)
             if data2 is not None:
                 data = data2
                 v = S.validate_parsed_jd(data)
@@ -173,7 +185,7 @@ def extract_jd(job, *, force: bool = False, save: bool = True) -> dict:
     # 4. attach metadata (VAL_010) + persist
     data["parser_metadata"] = {
         "extractor_model": model,
-        "extractor_prompt_version": S.PROMPT_VERSION,
+        "extractor_prompt_version": prompt_version,
         "extractor_schema_version": S.SCHEMA_VERSION,
         "jd_text_hash": current_hash,
         "created_at": timezone.now().isoformat(),
@@ -181,7 +193,7 @@ def extract_jd(job, *, force: bool = False, save: bool = True) -> dict:
         "warnings": warnings,
     }
     if save:
-        _store(job, data, status, current_hash, model)
+        _store(job, data, status, current_hash, model, prompt_version)
     return data
 
 
@@ -208,11 +220,11 @@ def _fallback(job, current_hash: str, *, reason: str, save: bool) -> dict:
         "fallback_reason": reason,
     }
     if save:
-        _store(job, data, status, current_hash, "rule_parse_jd")
+        _store(job, data, status, current_hash, "rule_parse_jd", "legacy")
     return data
 
 
-def _store(job, data: dict, status: str, current_hash: str, model: str) -> None:
+def _store(job, data: dict, status: str, current_hash: str, model: str, prompt_version: str) -> None:
     job.parsed_jd = data
     job.parsed_jd_status = status[:20]
     job.parsed_jd_error = "" if status not in (S.STATUS_FAILED,) else "extraction_failed"
@@ -222,7 +234,7 @@ def _store(job, data: dict, status: str, current_hash: str, model: str) -> None:
     for attr, val in (
         ("parsed_jd_hash", current_hash),
         ("parsed_jd_model", (model or "")[:100]),
-        ("parsed_jd_prompt_version", S.PROMPT_VERSION),
+        ("parsed_jd_prompt_version", (prompt_version or "")[:40]),
         ("parsed_jd_schema_version", S.SCHEMA_VERSION),
     ):
         if hasattr(job, attr):

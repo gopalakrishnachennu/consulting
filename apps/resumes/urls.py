@@ -15,9 +15,12 @@ from .views import (
     CoverLetterGenerateView, CoverLetterDetailView, CoverLetterDownloadView,
     # Interview prep
     InterviewPrepView,
+    # JD extractor prompt editor
+    JDExtractorPromptEditView,
 )
 
 urlpatterns = [
+    path('jd-extractor-prompt/', JDExtractorPromptEditView.as_view(), name='jd-extractor-prompt'),
     path('generate/', ResumeGeneratePageView.as_view(), name='resume-generate'),
     path('generate/run/', ResumeGenerateActionView.as_view(), name='resume-generate-run'),
     path('generate/preflight/', PreflightCheckView.as_view(), name='resume-preflight'),
