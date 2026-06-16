@@ -407,3 +407,216 @@ class PipelineEvent(models.Model):
             duration_ms=duration_ms,
             meta=meta or {},
         )
+
+
+class RawJobClassifierRun(models.Model):
+    """Immutable execution record for one classifier provider against one RawJob."""
+
+    class Provider(models.TextChoices):
+        BACKEND_RULES = "backend_rules", _("Backend Rules")
+        CODEX = "codex", _("Codex")
+        CLAUDE = "claude", _("Claude")
+        SECONDARY_STUB = "secondary_stub", _("Secondary Stub")
+
+    class ProviderRole(models.TextChoices):
+        PRIMARY = "PRIMARY", _("Primary")
+        SECONDARY = "SECONDARY", _("Secondary")
+
+    class Status(models.TextChoices):
+        QUEUED = "QUEUED", _("Queued")
+        RUNNING = "RUNNING", _("Running")
+        COMPLETED = "COMPLETED", _("Completed")
+        FAILED = "FAILED", _("Failed")
+        SKIPPED = "SKIPPED", _("Skipped")
+
+    raw_job = models.ForeignKey(
+        "harvest.RawJob",
+        on_delete=models.CASCADE,
+        related_name="classifier_runs",
+    )
+    provider = models.CharField(max_length=32, choices=Provider.choices, db_index=True)
+    provider_role = models.CharField(
+        max_length=12,
+        choices=ProviderRole.choices,
+        default=ProviderRole.PRIMARY,
+        db_index=True,
+    )
+    input_hash = models.CharField(max_length=64, db_index=True)
+    prompt_version = models.CharField(max_length=40, blank=True)
+    provider_version = models.CharField(max_length=40, blank=True)
+    status = models.CharField(
+        max_length=12,
+        choices=Status.choices,
+        default=Status.QUEUED,
+        db_index=True,
+    )
+    confidence = models.FloatField(null=True, blank=True)
+    raw_output = models.JSONField(default=dict, blank=True)
+    normalized_output = models.JSONField(default=dict, blank=True)
+    warnings = models.JSONField(default=list, blank=True)
+    error_message = models.TextField(blank=True)
+    started_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    completed_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["raw_job", "provider", "-created_at"]),
+            models.Index(fields=["raw_job", "provider_role", "-created_at"]),
+            models.Index(fields=["status", "-created_at"]),
+            models.Index(fields=["input_hash", "provider", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"RawJob {self.raw_job_id} · {self.provider} · {self.status}"
+
+
+class RawJobClassificationSnapshot(models.Model):
+    """Current merged classification state for a RawJob in shadow mode."""
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", _("Pending")
+        PARTIAL = "PARTIAL", _("Partial")
+        MERGED = "MERGED", _("Merged")
+        NEEDS_REVIEW = "NEEDS_REVIEW", _("Needs Review")
+        FAILED = "FAILED", _("Failed")
+
+    class ApprovalState(models.TextChoices):
+        UNREVIEWED = "UNREVIEWED", _("Unreviewed")
+        APPROVED = "APPROVED", _("Approved")
+        OVERRIDDEN = "OVERRIDDEN", _("Overridden")
+
+    raw_job = models.OneToOneField(
+        "harvest.RawJob",
+        on_delete=models.CASCADE,
+        related_name="classification_snapshot",
+    )
+    current_input_hash = models.CharField(max_length=64, blank=True, db_index=True)
+    backend_run = models.ForeignKey(
+        RawJobClassifierRun,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    secondary_run = models.ForeignKey(
+        RawJobClassifierRun,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+    )
+    merged_output = models.JSONField(default=dict, blank=True)
+    verifier_summary = models.JSONField(default=dict, blank=True)
+    final_confidence = models.FloatField(default=0.0)
+    needs_review = models.BooleanField(default=False, db_index=True)
+    review_reason = models.CharField(max_length=120, blank=True)
+    approval_state = models.CharField(
+        max_length=16,
+        choices=ApprovalState.choices,
+        default=ApprovalState.UNREVIEWED,
+        db_index=True,
+    )
+    approved_output = models.JSONField(default=dict, blank=True)
+    approved_source = models.CharField(max_length=16, blank=True)
+    approval_note = models.TextField(blank=True)
+    approved_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="approved_rawjob_classifications",
+    )
+    pushed_job = models.ForeignKey(
+        "Job",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="rawjob_classification_pushes",
+    )
+    pushed_to_vetting_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    pushed_to_vetting_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="pushed_rawjob_classifications",
+    )
+    pushed_to_vetting_note = models.TextField(blank=True)
+    pushed_to_vetting_with_warnings = models.BooleanField(default=False)
+    pushed_warning_codes = models.JSONField(default=list, blank=True)
+    ready_for_vetting = models.BooleanField(default=False, db_index=True)
+    last_merged_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+
+    def __str__(self):
+        return f"RawJob {self.raw_job_id} merged classification"
+
+
+class RawJobClassificationConflict(models.Model):
+    """Field-level disagreement record between backend and secondary classifiers."""
+
+    class Resolution(models.TextChoices):
+        AGREED = "AGREED", _("Agreed")
+        BACKEND = "BACKEND", _("Backend Wins")
+        SECONDARY = "SECONDARY", _("Secondary Wins")
+        MANUAL = "MANUAL", _("Manual Override")
+        REVIEW = "REVIEW", _("Needs Review")
+
+    class Severity(models.TextChoices):
+        INFO = "INFO", _("Info")
+        WARN = "WARN", _("Warn")
+        CRITICAL = "CRITICAL", _("Critical")
+
+    raw_job = models.ForeignKey(
+        "harvest.RawJob",
+        on_delete=models.CASCADE,
+        related_name="classification_conflicts",
+    )
+    snapshot = models.ForeignKey(
+        RawJobClassificationSnapshot,
+        on_delete=models.CASCADE,
+        related_name="field_conflicts",
+    )
+    field_path = models.CharField(max_length=120, db_index=True)
+    backend_value = models.JSONField(null=True, blank=True)
+    secondary_value = models.JSONField(null=True, blank=True)
+    resolved_value = models.JSONField(null=True, blank=True)
+    resolution = models.CharField(
+        max_length=16,
+        choices=Resolution.choices,
+        default=Resolution.REVIEW,
+        db_index=True,
+    )
+    severity = models.CharField(
+        max_length=12,
+        choices=Severity.choices,
+        default=Severity.WARN,
+        db_index=True,
+    )
+    note = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["field_path", "id"]
+        unique_together = [("snapshot", "field_path")]
+        indexes = [
+            models.Index(fields=["raw_job", "field_path"]),
+            models.Index(fields=["resolution", "severity"]),
+        ]
+
+    def __str__(self):
+        return f"RawJob {self.raw_job_id} conflict {self.field_path}"

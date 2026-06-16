@@ -126,6 +126,107 @@ def refresh_consultant_embeddings_task():
     return {"updated": updated}
 
 
+@shared_task(name="jobs.run_rawjob_dual_classification_shadow")
+def run_rawjob_dual_classification_shadow_task(raw_job_id: int, force: bool = False):
+    """
+    Shadow-mode dual classification for RawJobs.
+
+    This records backend classification output plus merge/verifier metadata
+    without changing existing harvest, sync, or vetting decisions.
+    """
+    from .dual_classification.orchestrator import run_shadow_classification_for_raw_job
+
+    return run_shadow_classification_for_raw_job(raw_job_id, force=force)
+
+
+@shared_task(bind=True, name="jobs.backfill_rawjob_dual_classification")
+def backfill_rawjob_dual_classification_task(
+    self,
+    *,
+    batch_size: int | None = None,
+    force: bool = False,
+    only_missing: bool = False,
+):
+    """
+    Backfill historical RawJobs into the shadow dual-classification pipeline.
+
+    Only touches rows with real JD text. By default it prioritizes rows with no
+    snapshot or stale input hashes and leaves already-current snapshots alone.
+    """
+    from harvest.models import RawJob
+
+    from .dual_classification.config import backfill_batch_size
+    from .dual_classification.policy import raw_job_requires_dual_classification
+    from .dual_classification.schema import build_raw_job_input, compute_input_hash
+    from .dual_classification.orchestrator import run_shadow_classification_for_raw_job
+
+    limit = max(1, min(int(batch_size or backfill_batch_size()), 5000))
+    base_qs = (
+        RawJob.objects.select_related("company", "job_platform")
+        .prefetch_related("classification_snapshot")
+        .order_by("-fetched_at", "-id")
+    )
+
+    eligible_ids: list[int] = []
+    for raw_job in base_qs.iterator(chunk_size=200):
+        if not raw_job_requires_dual_classification(raw_job):
+            continue
+        snapshot = getattr(raw_job, "classification_snapshot", None)
+        if only_missing and snapshot:
+            continue
+        if not force and snapshot:
+            try:
+                input_hash = compute_input_hash(build_raw_job_input(raw_job))
+            except Exception:
+                input_hash = ""
+            if snapshot.current_input_hash and snapshot.current_input_hash == input_hash:
+                continue
+        eligible_ids.append(raw_job.pk)
+        if len(eligible_ids) >= limit:
+            break
+
+    total = len(eligible_ids)
+    processed = 0
+    created_or_updated = 0
+    cached = 0
+    failed = 0
+
+    for raw_job_id in eligible_ids:
+        processed += 1
+        if getattr(getattr(self, "request", None), "id", None):
+            update_task_progress(
+                self,
+                current=processed,
+                total=total,
+                message=f"Shadow-classifying RawJobs ({processed}/{total})",
+                detail={
+                    "created_or_updated": created_or_updated,
+                    "cached": cached,
+                    "failed": failed,
+                },
+            )
+        try:
+            result = run_shadow_classification_for_raw_job(raw_job_id, force=force)
+            if result.get("status") == "cached":
+                cached += 1
+            else:
+                created_or_updated += 1
+        except Exception:
+            logger.exception("Historical dual-classification backfill failed for raw_job=%s", raw_job_id)
+            failed += 1
+
+    return {
+        "batch_size": limit,
+        "selected": total,
+        "processed": processed,
+        "created_or_updated": created_or_updated,
+        "cached": cached,
+        "failed": failed,
+        "force": bool(force),
+        "only_missing": bool(only_missing),
+    }
+
+
 def _normalize_url(url: str) -> str:
     if not url:
         return ""
@@ -168,6 +269,9 @@ def run_job_validation(job_id: int):
     job.refresh_from_db()
 
     result = validate_job_quality(job)
+    existing_dual = dict((job.validation_result or {}).get("dual_classification") or {})
+    if existing_dual:
+        result["dual_classification"] = existing_dual
     job.validation_score = result["score"]
     job.validation_result = result
     job.validation_run_at = timezone.now()

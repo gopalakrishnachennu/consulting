@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Iterable
 
+from .dual_classification.effective import effective_raw_job_classification
 from users.models import MarketingRole
 
 logger = logging.getLogger(__name__)
@@ -227,13 +228,14 @@ def infer_marketing_role_slugs(
 
 def infer_marketing_role_slugs_from_raw_job(raw_job, *, max_roles: int = _MAX_AUTO_ROLE_SLUGS) -> list[str]:
     from harvest.services.job_descriptions import job_description_for_sync
+    effective = effective_raw_job_classification(raw_job)
 
     return infer_marketing_role_slugs(
-        title=raw_job.title or "",
+        title=effective["title"] or "",
         description=job_description_for_sync(raw_job),
-        job_category=raw_job.job_category or "",
-        department_normalized=raw_job.department_normalized or "",
-        primary_domain=raw_job.job_domain or "",
+        job_category=effective["job_category"] or "",
+        department_normalized=effective["department_normalized"] or "",
+        primary_domain=effective["job_domain"] or "",
         max_roles=max_roles,
     )
 

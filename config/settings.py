@@ -135,6 +135,7 @@ TEMPLATES = [
                 'core.context_processors.pending_pool_count',  # Job pool badge in nav
                 'core.context_processors.dup_pending_count',      # Duplicate engine badge in subnav
                 'core.context_processors.unknown_country_count',  # Unknown-country review badge in subnav
+                'core.context_processors.dual_review_queue_count',  # Dual classification review badge in subnav
                 'core.context_processors.user_feature_flags',
                 'core.context_processors.deployment_info',
             ],

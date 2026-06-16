@@ -643,6 +643,96 @@
                             </div>
                         </div>
                     </div>
+
+                    <div class="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+                        <div class="flex items-start justify-between gap-4">
+                            <div>
+                                <h3 class="text-base font-semibold text-gray-900">Dual Classification Controls</h3>
+                                <p class="mt-1 text-sm text-gray-500">
+                                    Controls for RawJob shadow classification, approval-gated sync, warning overrides, and historical backfill.
+                                </p>
+                            </div>
+                            <a href="{% url 'harvest-rawjob-review-queue' %}" class="text-sm text-blue-600 hover:underline font-medium">
+                                Review Queue →
+                            </a>
+                        </div>
+
+                        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                            <div class="flex items-start rounded-lg border border-gray-200 bg-gray-50 p-4">
+                                <div class="flex items-center h-5">
+                                    {{ form.dual_classification_shadow_enabled }}
+                                </div>
+                                <div class="ml-3 text-sm">
+                                    <label for="{{ form.dual_classification_shadow_enabled.id_for_label }}" class="font-medium text-gray-900">Auto-run shadow classification</label>
+                                    <p class="text-gray-500">Queues backend dual-classification automatically for new RawJobs with usable JD text.</p>
+                                </div>
+                            </div>
+
+                            <div class="flex items-start rounded-lg border border-gray-200 bg-gray-50 p-4">
+                                <div class="flex items-center h-5">
+                                    {{ form.dual_classification_require_approval_for_sync }}
+                                </div>
+                                <div class="ml-3 text-sm">
+                                    <label for="{{ form.dual_classification_require_approval_for_sync.id_for_label }}" class="font-medium text-gray-900">Require approved classification before sync</label>
+                                    <p class="text-gray-500">Blocks vetting sync for real JD rows until a reviewer approves backend, secondary, merged, or manual output.</p>
+                                </div>
+                            </div>
+
+                            <div class="flex items-start rounded-lg border border-gray-200 bg-gray-50 p-4">
+                                <div class="flex items-center h-5">
+                                    {{ form.dual_classification_allow_push_with_warnings }}
+                                </div>
+                                <div class="ml-3 text-sm">
+                                    <label for="{{ form.dual_classification_allow_push_with_warnings.id_for_label }}" class="font-medium text-gray-900">Allow push with warnings</label>
+                                    <p class="text-gray-500">Lets reviewers override verifier warnings during push-to-vetting. Every override is recorded on the RawJob and synced Job.</p>
+                                </div>
+                            </div>
+
+                            <div class="flex items-start rounded-lg border border-gray-200 bg-gray-50 p-4">
+                                <div class="flex items-center h-5">
+                                    {{ form.dual_classification_secondary_runtime_enabled }}
+                                </div>
+                                <div class="ml-3 text-sm">
+                                    <label for="{{ form.dual_classification_secondary_runtime_enabled.id_for_label }}" class="font-medium text-gray-900">Auto-run secondary runtime</label>
+                                    <p class="text-gray-500">Calls the configured Codex/Claude secondary classifier through the central LLM runtime during shadow runs. Requires a valid LLMConfig setup.</p>
+                                </div>
+                            </div>
+
+                            <div class="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Historical backfill batch size</label>
+                                {{ form.dual_classification_backfill_batch_size }}
+                                <div class="mt-1 text-sm text-red-600">{{ form.dual_classification_backfill_batch_size.errors }}</div>
+                                <p class="mt-1 text-xs text-gray-500">Default batch size when running backfill from the review queue.</p>
+                            </div>
+
+                            <div class="rounded-lg border border-gray-200 bg-gray-50 p-4 md:col-span-2">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Default secondary provider label</label>
+                                {{ form.dual_classification_secondary_provider_default }}
+                                <div class="mt-1 text-sm text-red-600">{{ form.dual_classification_secondary_provider_default.errors }}</div>
+                                <p class="mt-1 text-xs text-gray-500">Used for manual ingestion defaults and for automatic runtime audit labeling. Set this to <code>codex</code> or <code>claude</code> when the runtime is enabled.</p>
+                            </div>
+
+                            <div class="rounded-lg border border-gray-200 bg-gray-50 p-4 md:col-span-2">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Secondary prompt version</label>
+                                {{ form.dual_classification_secondary_prompt_version }}
+                                <div class="mt-1 text-sm text-red-600">{{ form.dual_classification_secondary_prompt_version.errors }}</div>
+                                <p class="mt-1 text-xs text-gray-500">Stored on automatic secondary runs so prompt changes remain auditable without changing provider labels.</p>
+                            </div>
+                        </div>
+
+                        <div class="rounded-xl border border-indigo-100 bg-indigo-50 p-4">
+                            <div class="flex flex-wrap gap-6 text-sm">
+                                <div>
+                                    <span class="text-gray-500">Needs review:</span>
+                                    <span class="ml-1 font-bold text-indigo-700">{{ dual_classification_review_count|default:"0" }}</span>
+                                </div>
+                                <div>
+                                    <span class="text-gray-500">Approved, not pushed:</span>
+                                    <span class="ml-1 font-bold text-indigo-700">{{ dual_classification_approved_not_pushed_count|default:"0" }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </section>
             </div>
 

@@ -132,6 +132,20 @@ class PlatformConfigForm(forms.ModelForm):
             raise forms.ValidationError("Maintenance mode requires a visible message for non-admin users.")
         return value
 
+    def clean_dual_classification_backfill_batch_size(self):
+        value = self.cleaned_data.get("dual_classification_backfill_batch_size")
+        if value is None or value < 1 or value > 5000:
+            raise forms.ValidationError("Dual-classification backfill batch size must be between 1 and 5000.")
+        return value
+
+    def clean_dual_classification_secondary_prompt_version(self):
+        value = (self.cleaned_data.get("dual_classification_secondary_prompt_version") or "").strip()
+        if not value:
+            return "runtime_v1"
+        if len(value) > 40:
+            raise forms.ValidationError("Secondary prompt version must be 40 characters or fewer.")
+        return value
+
 
 class BroadcastForm(forms.ModelForm):
     """Admin broadcast: title, body, optional link, audience, optional org scope."""

@@ -1,6 +1,8 @@
 import csv
 import hashlib
 import io
+import json
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import TestCase, Client, SimpleTestCase
@@ -8,6 +10,7 @@ from django.urls import resolve, reverse
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 
+from core.models import PlatformConfig
 from users.models import User
 from users.models import MarketingRole
 from users.models import ConsultantProfile
@@ -16,6 +19,7 @@ from harvest.models import RawJob
 from harvest.models import RawJobPayloadSnapshot
 from harvest.enrichments import detect_job_category
 from .models import Job
+from .models import RawJobClassificationSnapshot, RawJobClassifierRun
 from .marketing_role_routing import (
     assign_marketing_roles_to_job,
     clear_marketing_role_cache,
@@ -24,6 +28,7 @@ from .marketing_role_routing import (
 from .services import match_jobs_for_consultant
 from .tasks import _department_sync_value, classify_jobs_task
 from .tasks import validate_job_urls_task, auto_close_jobs_task
+from .tasks import backfill_rawjob_dual_classification_task, run_rawjob_dual_classification_shadow_task
 
 
 class JobsPipelineRouteOwnershipTests(SimpleTestCase):
@@ -150,6 +155,700 @@ class MatchScoreStringTests(TestCase):
         self.assertIn("Job 11", rendered)
         self.assertIn("Consultant 22", rendered)
         self.assertIn("0.875", rendered)
+
+
+class RawJobDualClassificationShadowTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.company = Company.objects.create(name="Dual Shadow Co")
+        self.admin = User.objects.create_superuser(
+            username="dual_shadow_admin",
+            email="dual_shadow_admin@example.com",
+            password="testpass123",
+        )
+        config = PlatformConfig.load()
+        config.dual_classification_shadow_enabled = True
+        config.dual_classification_require_approval_for_sync = False
+        config.dual_classification_allow_push_with_warnings = True
+        config.dual_classification_backfill_batch_size = 200
+        config.dual_classification_secondary_provider_default = ""
+        config.dual_classification_secondary_runtime_enabled = False
+        config.dual_classification_secondary_prompt_version = "runtime_v1"
+        config.save()
+
+    def tearDown(self):
+        config = PlatformConfig.load()
+        config.dual_classification_shadow_enabled = True
+        config.dual_classification_require_approval_for_sync = False
+        config.dual_classification_allow_push_with_warnings = True
+        config.dual_classification_backfill_batch_size = 200
+        config.dual_classification_secondary_provider_default = ""
+        config.dual_classification_secondary_runtime_enabled = False
+        config.dual_classification_secondary_prompt_version = "runtime_v1"
+        config.save()
+        super().tearDown()
+
+    def _raw_job(self, suffix: str = "1", *, description: str | None = None) -> RawJob:
+        desc = description or (
+            "Senior DevOps Engineer role responsible for AWS platform engineering, "
+            "Terraform, Kubernetes, CI/CD, observability, and cloud security. "
+            "Requires 5+ years of experience, bachelor's degree, US work authorization, "
+            "and strong infrastructure automation skills."
+        )
+        url = f"https://example.com/jobs/{suffix}"
+        return RawJob.objects.create(
+            company=self.company,
+            company_name=self.company.name,
+            title="Senior DevOps Engineer",
+            url_hash=hashlib.sha256(url.encode()).hexdigest(),
+            original_url=url,
+            description=desc,
+            description_clean=desc,
+            location_raw="Remote - United States",
+            location_type=RawJob.LocationType.REMOTE,
+            is_remote=True,
+            sync_status=RawJob.SyncStatus.PENDING,
+            is_active=True,
+            platform_slug="greenhouse",
+        )
+
+    def test_shadow_task_creates_backend_run_and_snapshot(self):
+        raw = self._raw_job()
+
+        result = run_rawjob_dual_classification_shadow_task(raw.pk)
+
+        self.assertEqual(result["raw_job_id"], raw.pk)
+        snapshot = RawJobClassificationSnapshot.objects.get(raw_job=raw)
+        self.assertEqual(snapshot.status, RawJobClassificationSnapshot.Status.PARTIAL)
+        self.assertFalse(snapshot.needs_review)
+        self.assertTrue(snapshot.current_input_hash)
+        self.assertIn("classification", snapshot.merged_output)
+        self.assertEqual(snapshot.backend_run.provider, RawJobClassifierRun.Provider.BACKEND_RULES)
+        self.assertEqual(snapshot.backend_run.status, RawJobClassifierRun.Status.COMPLETED)
+        self.assertEqual(snapshot.secondary_run.provider, RawJobClassifierRun.Provider.SECONDARY_STUB)
+        self.assertEqual(snapshot.secondary_run.status, RawJobClassifierRun.Status.SKIPPED)
+        self.assertEqual(raw.classifier_runs.count(), 2)
+
+    def test_shadow_task_reuses_cached_result_for_same_input(self):
+        raw = self._raw_job("2")
+
+        first = run_rawjob_dual_classification_shadow_task(raw.pk)
+        second = run_rawjob_dual_classification_shadow_task(raw.pk)
+
+        self.assertEqual(first["status"], RawJobClassificationSnapshot.Status.PARTIAL)
+        self.assertEqual(second["status"], "cached")
+        self.assertEqual(raw.classifier_runs.count(), 2)
+
+    @patch("jobs.signals.cache.add", return_value=True)
+    @patch("jobs.signals._queue_rawjob_shadow_classification")
+    def test_rawjob_signal_queues_shadow_task_only_for_real_jd(self, queue_mock, _cache_add):
+        with self.captureOnCommitCallbacks(execute=True):
+            self._raw_job("3")
+        queue_mock.assert_called_once()
+
+        queue_mock.reset_mock()
+        short_desc = "Short JD"
+        with self.captureOnCommitCallbacks(execute=True):
+            self._raw_job("4", description=short_desc)
+        queue_mock.assert_not_called()
+
+    @patch("jobs.signals.cache.add", return_value=True)
+    @patch("jobs.signals._queue_rawjob_shadow_classification")
+    def test_rawjob_signal_respects_platform_toggle(self, queue_mock, _cache_add):
+        config = PlatformConfig.load()
+        config.dual_classification_shadow_enabled = False
+        config.save()
+        with self.captureOnCommitCallbacks(execute=True):
+            self._raw_job("4b")
+        queue_mock.assert_not_called()
+
+    @patch("jobs.dual_classification.providers.PipelineLLMClient")
+    def test_shadow_task_runs_real_secondary_runtime_when_enabled(self, mock_client_cls):
+        config = PlatformConfig.load()
+        config.dual_classification_secondary_runtime_enabled = True
+        config.dual_classification_secondary_provider_default = RawJobClassifierRun.Provider.CODEX
+        config.dual_classification_secondary_prompt_version = "runtime_v2"
+        config.save()
+
+        client = mock_client_cls.return_value
+        client.is_available.return_value = (True, None)
+        client.check_token_cap.return_value = (True, None)
+        client.validation_model = "gpt-5-codex"
+        client.config = SimpleNamespace(max_output_tokens=1800)
+        client.call.return_value = (
+            json.dumps(
+                {
+                    "identity": {
+                        "title": "Senior DevOps Engineer",
+                        "company_name": self.company.name,
+                    },
+                    "classification": {
+                        "job_category": "Engineering",
+                        "job_domain": "devops-cloud",
+                        "department_normalized": "engineering",
+                        "role_category": "devops",
+                    },
+                    "skills": {
+                        "skills": ["AWS", "Terraform", "Kubernetes"],
+                        "tech_stack": ["AWS", "Terraform", "Kubernetes"],
+                    },
+                    "requirements": {
+                        "years_required": 5,
+                        "years_required_max": None,
+                        "education_required": "BS",
+                        "visa_sponsorship": False,
+                        "work_authorization": "US work authorization",
+                        "clearance_required": False,
+                        "clearance_level": "",
+                    },
+                    "location": {
+                        "country": "United States",
+                        "country_codes": ["US"],
+                        "location_type": "REMOTE",
+                        "is_remote": True,
+                    },
+                    "confidence": 0.93,
+                }
+            ),
+            321,
+            None,
+        )
+
+        raw = self._raw_job("4c")
+        result = run_rawjob_dual_classification_shadow_task(raw.pk, force=True)
+
+        snapshot = RawJobClassificationSnapshot.objects.get(raw_job=raw)
+        self.assertEqual(result["status"], RawJobClassificationSnapshot.Status.MERGED)
+        self.assertEqual(snapshot.status, RawJobClassificationSnapshot.Status.MERGED)
+        self.assertFalse(snapshot.needs_review)
+        self.assertEqual(snapshot.secondary_run.provider, RawJobClassifierRun.Provider.CODEX)
+        self.assertEqual(snapshot.secondary_run.status, RawJobClassifierRun.Status.COMPLETED)
+        self.assertEqual(snapshot.secondary_run.prompt_version, "runtime_v2")
+        self.assertEqual(snapshot.secondary_run.provider_version, "gpt-5-codex")
+        self.assertEqual(snapshot.secondary_run.normalized_output["classification"]["job_domain"], "devops-cloud")
+
+    @patch("jobs.dual_classification.providers.PipelineLLMClient")
+    def test_shadow_task_marks_review_when_secondary_runtime_fails(self, mock_client_cls):
+        config = PlatformConfig.load()
+        config.dual_classification_secondary_runtime_enabled = True
+        config.dual_classification_secondary_provider_default = RawJobClassifierRun.Provider.CLAUDE
+        config.save()
+
+        client = mock_client_cls.return_value
+        client.is_available.return_value = (True, None)
+        client.check_token_cap.return_value = (True, None)
+        client.validation_model = "claude-3.7-sonnet"
+        client.config = SimpleNamespace(max_output_tokens=1800)
+        client.call.return_value = (None, 0, "provider timeout")
+
+        raw = self._raw_job("4d")
+        result = run_rawjob_dual_classification_shadow_task(raw.pk, force=True)
+
+        snapshot = RawJobClassificationSnapshot.objects.get(raw_job=raw)
+        self.assertEqual(result["status"], RawJobClassificationSnapshot.Status.NEEDS_REVIEW)
+        self.assertEqual(snapshot.status, RawJobClassificationSnapshot.Status.NEEDS_REVIEW)
+        self.assertTrue(snapshot.needs_review)
+        self.assertEqual(snapshot.review_reason, "secondary_provider_failed")
+        self.assertEqual(snapshot.secondary_run.provider, RawJobClassifierRun.Provider.CLAUDE)
+        self.assertEqual(snapshot.secondary_run.status, RawJobClassifierRun.Status.FAILED)
+
+    def test_secondary_ingest_creates_secondary_run_and_merged_snapshot(self):
+        raw = self._raw_job("5")
+        run_rawjob_dual_classification_shadow_task(raw.pk)
+        self.client.force_login(self.admin)
+
+        payload = {
+            "identity": {
+                "raw_job_id": raw.pk,
+                "title": raw.title,
+                "company_name": raw.company_name,
+            },
+            "classification": {
+                "job_category": "Engineering",
+                "job_domain": "platform-engineer",
+                "department_normalized": "engineering",
+                "role_category": "cloud",
+            },
+            "skills": {
+                "skills": ["AWS", "Terraform", "Kubernetes"],
+                "tech_stack": ["AWS", "Terraform", "Kubernetes"],
+            },
+            "requirements": {
+                "years_required": 5,
+                "years_required_max": None,
+                "education_required": "BS",
+                "visa_sponsorship": False,
+                "work_authorization": "US work authorization",
+                "clearance_required": False,
+                "clearance_level": "",
+            },
+            "location": {
+                "country": "United States",
+                "country_codes": ["US"],
+                "location_type": "REMOTE",
+                "is_remote": True,
+            },
+        }
+
+        response = self.client.post(
+            reverse("harvest-rawjob-secondary-ingest", args=[raw.pk]),
+            {
+                "provider": RawJobClassifierRun.Provider.CODEX,
+                "prompt_version": "v1",
+                "confidence": "0.87",
+                "normalized_output_json": json.dumps(payload),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        snapshot = RawJobClassificationSnapshot.objects.get(raw_job=raw)
+        self.assertEqual(snapshot.status, RawJobClassificationSnapshot.Status.MERGED)
+        self.assertFalse(snapshot.needs_review)
+        self.assertIsNotNone(snapshot.secondary_run)
+        self.assertEqual(snapshot.secondary_run.provider, RawJobClassifierRun.Provider.CODEX)
+        self.assertEqual(snapshot.secondary_run.prompt_version, "v1")
+        self.assertEqual(raw.classifier_runs.count(), 3)
+
+    def test_rawjob_detail_renders_dual_classification_panel(self):
+        raw = self._raw_job("6")
+        run_rawjob_dual_classification_shadow_task(raw.pk)
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("harvest-rawjob-detail", args=[raw.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Dual Classification")
+        self.assertContains(response, "Store Manual Secondary Classification")
+        self.assertContains(response, "Backend canonical output")
+
+    def test_review_action_accepts_secondary_output(self):
+        raw = self._raw_job("7")
+        run_rawjob_dual_classification_shadow_task(raw.pk)
+        self.client.force_login(self.admin)
+        payload = {
+            "identity": {
+                "raw_job_id": raw.pk,
+                "title": raw.title,
+                "company_name": raw.company_name,
+            },
+            "classification": {
+                "job_category": "Engineering",
+                "job_domain": "platform-engineer",
+                "department_normalized": "engineering",
+                "role_category": "cloud",
+            },
+            "skills": {"skills": ["AWS"], "tech_stack": ["AWS"]},
+            "requirements": {
+                "years_required": 5,
+                "years_required_max": None,
+                "education_required": "BS",
+                "visa_sponsorship": False,
+                "work_authorization": "US work authorization",
+                "clearance_required": False,
+                "clearance_level": "",
+            },
+            "location": {
+                "country": "United States",
+                "country_codes": ["US"],
+                "location_type": "REMOTE",
+                "is_remote": True,
+            },
+        }
+        self.client.post(
+            reverse("harvest-rawjob-secondary-ingest", args=[raw.pk]),
+            {
+                "provider": RawJobClassifierRun.Provider.CLAUDE,
+                "prompt_version": "v2",
+                "confidence": "0.91",
+                "normalized_output_json": json.dumps(payload),
+            },
+        )
+
+        response = self.client.post(
+            reverse("harvest-rawjob-classification-review", args=[raw.pk]),
+            {
+                "source": "secondary",
+                "approval_note": "Secondary extraction is cleaner.",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        snapshot = RawJobClassificationSnapshot.objects.get(raw_job=raw)
+        self.assertEqual(snapshot.approval_state, RawJobClassificationSnapshot.ApprovalState.APPROVED)
+        self.assertEqual(snapshot.approved_source, "secondary")
+        self.assertEqual(snapshot.approved_by, self.admin)
+        self.assertEqual(snapshot.approved_output["classification"]["job_domain"], "platform-engineer")
+
+    def test_review_action_saves_manual_override(self):
+        raw = self._raw_job("8")
+        run_rawjob_dual_classification_shadow_task(raw.pk)
+        self.client.force_login(self.admin)
+        manual_payload = {
+            "identity": {
+                "raw_job_id": raw.pk,
+                "title": raw.title,
+                "company_name": raw.company_name,
+            },
+            "classification": {
+                "job_category": "Engineering",
+                "job_domain": "devops-cloud",
+                "department_normalized": "engineering",
+                "role_category": "platform",
+            },
+            "skills": {"skills": ["AWS", "Terraform"], "tech_stack": ["AWS", "Terraform"]},
+            "requirements": {
+                "years_required": 5,
+                "years_required_max": None,
+                "education_required": "BS",
+                "visa_sponsorship": False,
+                "work_authorization": "US work authorization",
+                "clearance_required": False,
+                "clearance_level": "",
+            },
+            "location": {
+                "country": "United States",
+                "country_codes": ["US"],
+                "location_type": "REMOTE",
+                "is_remote": True,
+            },
+        }
+
+        response = self.client.post(
+            reverse("harvest-rawjob-classification-review", args=[raw.pk]),
+            {
+                "source": "manual",
+                "approval_note": "Manual normalization for vetting.",
+                "manual_output_json": json.dumps(manual_payload),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        snapshot = RawJobClassificationSnapshot.objects.get(raw_job=raw)
+        self.assertEqual(snapshot.approval_state, RawJobClassificationSnapshot.ApprovalState.OVERRIDDEN)
+        self.assertEqual(snapshot.approved_source, "manual")
+        self.assertEqual(snapshot.approved_output["classification"]["job_domain"], "devops-cloud")
+
+    def test_review_action_saves_field_level_override(self):
+        raw = self._raw_job("8b")
+        run_rawjob_dual_classification_shadow_task(raw.pk)
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse("harvest-rawjob-classification-review", args=[raw.pk]),
+            {
+                "source": "manual_fields",
+                "approval_note": "Tighten only the core routing fields.",
+                "job_category": "Engineering",
+                "job_domain": "platform-engineer",
+                "department_normalized": "engineering",
+                "role_category": "cloud",
+                "country": "United States",
+                "country_codes": "US",
+                "location_type": "REMOTE",
+                "years_required": "7",
+                "education_required": "BS",
+                "skills": "AWS, Terraform, Kubernetes",
+                "tech_stack": "AWS, Terraform, Kubernetes",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        snapshot = RawJobClassificationSnapshot.objects.get(raw_job=raw)
+        self.assertEqual(snapshot.approved_source, "manual")
+        self.assertEqual(snapshot.approval_state, RawJobClassificationSnapshot.ApprovalState.OVERRIDDEN)
+        self.assertEqual(snapshot.approved_output["classification"]["job_domain"], "platform-engineer")
+        self.assertEqual(snapshot.approved_output["location"]["country_codes"], ["US"])
+        self.assertEqual(snapshot.approved_output["requirements"]["years_required"], 7)
+
+    @patch("jobs.gating.apply_gate_result_to_job")
+    @patch("jobs.gating.evaluate_raw_job_gate")
+    @patch("harvest.url_health.check_job_posting_live")
+    def test_push_to_vetting_records_audit_for_ready_approved_snapshot(
+        self,
+        mock_live,
+        mock_gate,
+        _mock_apply,
+    ):
+        raw = self._raw_job("9")
+        run_rawjob_dual_classification_shadow_task(raw.pk)
+        self.client.force_login(self.admin)
+
+        payload = {
+            "identity": {
+                "raw_job_id": raw.pk,
+                "title": raw.title,
+                "company_name": raw.company_name,
+            },
+            "classification": {
+                "job_category": "Engineering",
+                "job_domain": "platform-engineer",
+                "department_normalized": "engineering",
+                "role_category": "cloud",
+            },
+            "skills": {
+                "skills": ["AWS", "Terraform", "Kubernetes"],
+                "tech_stack": ["AWS", "Terraform", "Kubernetes"],
+            },
+            "requirements": {
+                "years_required": 5,
+                "years_required_max": None,
+                "education_required": "BS",
+                "visa_sponsorship": False,
+                "work_authorization": "US work authorization",
+                "clearance_required": False,
+                "clearance_level": "",
+            },
+            "location": {
+                "country": "United States",
+                "country_codes": ["US"],
+                "location_type": "REMOTE",
+                "is_remote": True,
+            },
+        }
+        self.client.post(
+            reverse("harvest-rawjob-secondary-ingest", args=[raw.pk]),
+            {
+                "provider": RawJobClassifierRun.Provider.CLAUDE,
+                "prompt_version": "v2",
+                "confidence": "0.91",
+                "normalized_output_json": json.dumps(payload),
+            },
+        )
+        self.client.post(
+            reverse("harvest-rawjob-classification-review", args=[raw.pk]),
+            {"source": "secondary", "approval_note": "Ready for vetting."},
+        )
+
+        mock_gate.return_value = SimpleNamespace(
+            passed=True,
+            lane="READY",
+            status="eligible",
+            reason_code="",
+            reasons=[],
+            checks={},
+            data_quality_score=0.9,
+            trust_score=0.9,
+            candidate_fit_score=0.9,
+            vet_priority_score=0.9,
+        )
+        mock_live.return_value = SimpleNamespace(
+            is_live=True,
+            reason="",
+            status_code=200,
+            final_url=raw.original_url,
+        )
+
+        response = self.client.post(
+            reverse("harvest-rawjob-push-vetting", args=[raw.pk]),
+            {"push_note": "Reviewed and ready."},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        snapshot = RawJobClassificationSnapshot.objects.get(raw_job=raw)
+        self.assertIsNotNone(snapshot.pushed_to_vetting_at)
+        self.assertEqual(snapshot.pushed_to_vetting_by, self.admin)
+        self.assertEqual(snapshot.pushed_to_vetting_note, "Reviewed and ready.")
+        self.assertFalse(snapshot.pushed_to_vetting_with_warnings)
+        self.assertEqual(snapshot.pushed_warning_codes, [])
+        self.assertIsNotNone(snapshot.pushed_job)
+        self.assertEqual(snapshot.pushed_job.source_raw_job, raw)
+        self.assertEqual(snapshot.pushed_job.validation_result["dual_classification"]["approved_source"], "secondary")
+        self.assertFalse(snapshot.pushed_job.validation_result["dual_classification"]["pushed_to_vetting_with_warnings"])
+
+    @patch("jobs.gating.apply_gate_result_to_job")
+    @patch("jobs.gating.evaluate_raw_job_gate")
+    @patch("harvest.url_health.check_job_posting_live")
+    def test_push_to_vetting_with_warnings_requires_note_and_records_warning_codes(
+        self,
+        mock_live,
+        mock_gate,
+        _mock_apply,
+    ):
+        raw = self._raw_job(
+            "10",
+            description=(
+                "Platform operations role covering delivery coordination, governance, "
+                "documentation, stakeholder alignment, and change control across "
+                "enterprise systems without explicit technology or experience ranges."
+            ),
+        )
+        run_rawjob_dual_classification_shadow_task(raw.pk)
+        self.client.force_login(self.admin)
+
+        manual_payload = {
+            "identity": {
+                "raw_job_id": raw.pk,
+                "title": raw.title,
+                "company_name": raw.company_name,
+            },
+            "classification": {
+                "job_category": "",
+                "job_domain": "",
+                "department_normalized": "",
+                "role_category": "",
+            },
+            "skills": {"skills": ["ImaginaryPlatform"], "tech_stack": ["ImaginaryPlatform"]},
+            "requirements": {
+                "years_required": 12,
+                "years_required_max": None,
+                "education_required": "",
+                "visa_sponsorship": None,
+                "work_authorization": "",
+                "clearance_required": False,
+                "clearance_level": "",
+            },
+            "location": {
+                "country": "",
+                "country_codes": [],
+                "location_type": "",
+                "is_remote": False,
+            },
+        }
+        self.client.post(
+            reverse("harvest-rawjob-classification-review", args=[raw.pk]),
+            {
+                "source": "manual",
+                "approval_note": "Force this sparse payload.",
+                "manual_output_json": json.dumps(manual_payload),
+            },
+        )
+
+        response = self.client.post(
+            reverse("harvest-rawjob-push-vetting", args=[raw.pk]),
+            {},
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        snapshot = RawJobClassificationSnapshot.objects.get(raw_job=raw)
+        self.assertIsNone(snapshot.pushed_to_vetting_at)
+
+        mock_gate.return_value = SimpleNamespace(
+            passed=True,
+            lane="READY",
+            status="eligible",
+            reason_code="",
+            reasons=[],
+            checks={},
+            data_quality_score=0.9,
+            trust_score=0.9,
+            candidate_fit_score=0.9,
+            vet_priority_score=0.9,
+        )
+        mock_live.return_value = SimpleNamespace(
+            is_live=True,
+            reason="",
+            status_code=200,
+            final_url=raw.original_url,
+        )
+
+        response = self.client.post(
+            reverse("harvest-rawjob-push-vetting", args=[raw.pk]),
+            {
+                "allow_warnings": "1",
+                "push_note": "Human reviewed sparse JD; still useful.",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        snapshot.refresh_from_db()
+        self.assertTrue(snapshot.pushed_to_vetting_with_warnings)
+        self.assertIn("missing_job_category", snapshot.pushed_warning_codes)
+        self.assertIn("missing_job_domain", snapshot.pushed_warning_codes)
+        self.assertEqual(snapshot.pushed_to_vetting_note, "Human reviewed sparse JD; still useful.")
+
+    @patch("jobs.gating.apply_gate_result_to_job")
+    @patch("jobs.gating.evaluate_raw_job_gate")
+    @patch("harvest.url_health.check_job_posting_live")
+    def test_push_with_warnings_can_be_disabled_in_platform_config(
+        self,
+        mock_live,
+        mock_gate,
+        _mock_apply,
+    ):
+        config = PlatformConfig.load()
+        config.dual_classification_allow_push_with_warnings = False
+        config.save()
+        raw = self._raw_job(
+            "10b",
+            description="Sparse operations role without explicit technology, years, or category markers.",
+        )
+        run_rawjob_dual_classification_shadow_task(raw.pk)
+        self.client.force_login(self.admin)
+        self.client.post(
+            reverse("harvest-rawjob-classification-review", args=[raw.pk]),
+            {
+                "source": "manual",
+                "approval_note": "Sparse override.",
+                "manual_output_json": json.dumps(
+                    {
+                        "identity": {"raw_job_id": raw.pk, "title": raw.title, "company_name": raw.company_name},
+                        "classification": {"job_category": "", "job_domain": "", "department_normalized": "", "role_category": ""},
+                        "skills": {"skills": ["ImaginaryPlatform"], "tech_stack": ["ImaginaryPlatform"]},
+                        "requirements": {"years_required": 9, "years_required_max": None, "education_required": "", "visa_sponsorship": None, "work_authorization": "", "clearance_required": False, "clearance_level": ""},
+                        "location": {"country": "", "country_codes": [], "location_type": "", "is_remote": False},
+                    }
+                ),
+            },
+        )
+        mock_gate.return_value = SimpleNamespace(
+            passed=True, lane="READY", status="eligible", reason_code="", reasons=[], checks={},
+            data_quality_score=0.9, trust_score=0.9, candidate_fit_score=0.9, vet_priority_score=0.9,
+        )
+        mock_live.return_value = SimpleNamespace(is_live=True, reason="", status_code=200, final_url=raw.original_url)
+
+        response = self.client.post(
+            reverse("harvest-rawjob-push-vetting", args=[raw.pk]),
+            {"allow_warnings": "1", "push_note": "Should be blocked by config."},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        snapshot = RawJobClassificationSnapshot.objects.get(raw_job=raw)
+        self.assertIsNone(snapshot.pushed_to_vetting_at)
+
+    @patch("harvest.url_health.check_job_posting_live")
+    @patch("jobs.gating.evaluate_raw_job_gate")
+    def test_sync_selected_respects_require_approval_for_sync(self, mock_gate, mock_live):
+        config = PlatformConfig.load()
+        config.dual_classification_require_approval_for_sync = True
+        config.save()
+        raw = self._raw_job("10c")
+        self.client.force_login(self.admin)
+        mock_gate.return_value = SimpleNamespace(
+            passed=True, lane="READY", status="eligible", reason_code="", reasons=[], checks={},
+            data_quality_score=0.9, trust_score=0.9, candidate_fit_score=0.9, vet_priority_score=0.9,
+        )
+        mock_live.return_value = SimpleNamespace(is_live=True, reason="", status_code=200, final_url=raw.original_url)
+
+        response = self.client.post(
+            reverse("jobs-pipeline-run-sync-selected"),
+            {"raw_job_ids": str(raw.pk)},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        raw.refresh_from_db()
+        self.assertEqual(raw.sync_status, RawJob.SyncStatus.PENDING)
+        self.assertFalse(Job.objects.filter(source_raw_job=raw).exists())
+
+    def test_backfill_task_processes_historical_raw_jobs(self):
+        raw_one = self._raw_job("11")
+        raw_two = self._raw_job("12")
+
+        result = backfill_rawjob_dual_classification_task.run(batch_size=10, only_missing=True)
+
+        self.assertEqual(result["processed"], 2)
+        self.assertEqual(result["created_or_updated"], 2)
+        self.assertEqual(RawJobClassificationSnapshot.objects.filter(raw_job__in=[raw_one, raw_two]).count(), 2)
+
+    def test_review_queue_page_renders_snapshot_rows(self):
+        raw = self._raw_job("13")
+        run_rawjob_dual_classification_shadow_task(raw.pk)
+        self.client.force_login(self.admin)
+
+        response = self.client.get(f"{reverse('harvest-rawjob-review-queue')}?queue=all")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "RawJob Classification Review Queue")
+        self.assertContains(response, raw.title)
 
 
 class MarketingRoleRoutingTests(TestCase):

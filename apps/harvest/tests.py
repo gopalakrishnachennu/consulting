@@ -1820,6 +1820,80 @@ class SyncRawJobsToPoolTests(TestCase):
             list(job.marketing_roles.values_list("slug", flat=True)),
         )
 
+    @patch("jobs.gating.apply_gate_result_to_job")
+    @patch("jobs.gating.evaluate_raw_job_gate")
+    def test_pool_sync_prefers_approved_classification_for_country_department_and_role(self, mock_gate, _mock_apply):
+        import hashlib
+        from harvest.models import RawJob
+        from harvest.tasks import sync_harvested_to_pool_task
+        from jobs.models import Job, RawJobClassificationSnapshot
+        from jobs.marketing_role_routing import clear_marketing_role_cache
+
+        clear_marketing_role_cache()
+        mock_gate.return_value = SimpleNamespace(
+            passed=True,
+            lane="READY",
+            status="eligible",
+            reason_code="",
+            reasons=[],
+            checks={},
+            data_quality_score=0.9,
+            trust_score=0.9,
+            candidate_fit_score=0.9,
+            vet_priority_score=0.9,
+        )
+
+        url = "https://example.com/careers/sync-approved-classification"
+        h = hashlib.sha256(url.strip().encode()).hexdigest()
+        raw = RawJob.objects.create(
+            company=self.company,
+            title="Platform Specialist",
+            url_hash=h,
+            original_url=url,
+            description="Strong enterprise platform delivery and workflow ownership.",
+            job_domain="",
+            department_normalized="",
+            country="",
+            country_codes=[],
+            sync_status="PENDING",
+            is_priority=True,
+            scope_status=RawJob.ScopeStatus.PRIORITY_TARGET,
+            country_code="US",
+        )
+        RawJobClassificationSnapshot.objects.create(
+            raw_job=raw,
+            status=RawJobClassificationSnapshot.Status.MERGED,
+            approval_state=RawJobClassificationSnapshot.ApprovalState.APPROVED,
+            approved_source="SECONDARY",
+            approved_output={
+                "identity": {"title": "Platform Specialist"},
+                "classification": {
+                    "job_domain": "servicenow-developer",
+                    "department_normalized": "Information Technology",
+                },
+                "location": {
+                    "country": "Canada",
+                    "country_codes": ["CA"],
+                },
+            },
+        )
+
+        sync_harvested_to_pool_task.apply(kwargs={"max_jobs": 10}).get()
+        raw.refresh_from_db()
+        job = Job.objects.get(url_hash=h)
+
+        self.assertEqual(raw.sync_status, "SYNCED")
+        self.assertEqual(job.country, "Canada")
+        self.assertEqual(job.department, Job.Department.IT_MANAGEMENT)
+        self.assertIn(
+            "servicenow-developer",
+            list(job.marketing_roles.values_list("slug", flat=True)),
+        )
+        self.assertEqual(
+            (raw.raw_payload or {}).get("vet_gate", {}).get("classification_source"),
+            "SECONDARY",
+        )
+
 
 class ManualRawJobSyncRoleTests(TestCase):
     def setUp(self):
@@ -1950,6 +2024,88 @@ class ManualRawJobSyncRoleTests(TestCase):
         self.assertTrue(created)
         self.assertEqual(job.description, clean_text)
         self.assertNotIn("<p>", job.description)
+
+    @patch("jobs.gating.apply_gate_result_to_job")
+    @patch("jobs.gating.evaluate_raw_job_gate")
+    @patch("harvest.url_health.is_definitive_inactive", return_value=False)
+    @patch("harvest.url_health.check_job_posting_live")
+    def test_manual_sync_prefers_approved_classification_values(
+        self,
+        mock_live,
+        _mock_definitive,
+        mock_gate,
+        _mock_apply,
+    ):
+        import hashlib
+        from harvest.models import RawJob
+        from harvest.views import _sync_rawjob_to_pool
+        from jobs.models import Job, RawJobClassificationSnapshot
+        from jobs.marketing_role_routing import clear_marketing_role_cache
+
+        clear_marketing_role_cache()
+        mock_gate.return_value = SimpleNamespace(
+            passed=True,
+            lane="READY",
+            status="eligible",
+            reason_code="",
+            reasons=[],
+            checks={},
+            data_quality_score=0.9,
+            trust_score=0.9,
+            candidate_fit_score=0.9,
+            vet_priority_score=0.9,
+        )
+        mock_live.return_value = SimpleNamespace(
+            is_live=True,
+            reason="",
+            status_code=200,
+            final_url="https://example.com/jobs/manual-approved-classification",
+        )
+
+        url = "https://example.com/jobs/manual-approved-classification"
+        raw = RawJob.objects.create(
+            company=self.company,
+            title="Platform Specialist",
+            url_hash=hashlib.sha256(url.encode()).hexdigest(),
+            original_url=url,
+            description="Coordinate releases and enterprise platform operations.",
+            job_domain="",
+            department_normalized="",
+            country="",
+            country_codes=[],
+            sync_status="PENDING",
+        )
+        RawJobClassificationSnapshot.objects.create(
+            raw_job=raw,
+            status=RawJobClassificationSnapshot.Status.MERGED,
+            approval_state=RawJobClassificationSnapshot.ApprovalState.APPROVED,
+            approved_source="SECONDARY",
+            approved_output={
+                "classification": {
+                    "job_domain": "servicenow-developer",
+                    "department_normalized": "Information Technology",
+                },
+                "location": {
+                    "country": "Canada",
+                    "country_codes": ["CA"],
+                },
+            },
+        )
+
+        job, created = _sync_rawjob_to_pool(raw, posted_by=self.user)
+
+        self.assertTrue(created)
+        self.assertEqual(job.country, "Canada")
+        self.assertEqual(job.department, Job.Department.IT_MANAGEMENT)
+        self.assertIn(
+            "servicenow-developer",
+            list(job.marketing_roles.values_list("slug", flat=True)),
+        )
+        raw.refresh_from_db()
+        self.assertEqual(
+            (raw.raw_payload or {}).get("vet_gate", {}).get("classification_source"),
+            "SECONDARY",
+        )
 
 
 class RepairSyncedJobDescriptionsCommandTests(TestCase):
@@ -2907,6 +3063,81 @@ class RawJobPipelineUnificationTests(TestCase):
         matching = next(item for item in payload["jobs"] if item["id"] == raw.id)
         self.assertEqual(matching["job_category"], "Engineering")
         self.assertEqual(matching["job_domain"], "software-developer")
+
+    def test_jobs_pipeline_raw_json_prefers_approved_classification(self):
+        from harvest.models import RawJob
+        from jobs.models import RawJobClassificationSnapshot
+
+        raw = RawJob.objects.order_by("-fetched_at").first()
+        raw.job_category = ""
+        raw.job_domain = ""
+        raw.country = ""
+        raw.country_code = ""
+        raw.country_codes = []
+        raw.save(update_fields=["job_category", "job_domain", "country", "country_code", "country_codes"])
+        RawJobClassificationSnapshot.objects.create(
+            raw_job=raw,
+            status=RawJobClassificationSnapshot.Status.MERGED,
+            approval_state=RawJobClassificationSnapshot.ApprovalState.APPROVED,
+            approved_source="SECONDARY",
+            final_confidence=0.88,
+            approved_output={
+                "classification": {
+                    "job_category": "Engineering",
+                    "job_domain": "platform-engineer",
+                    "department_normalized": "Information Technology",
+                },
+                "location": {
+                    "country": "Canada",
+                    "country_codes": ["CA"],
+                },
+            },
+        )
+
+        response = self.client.get(
+            reverse("jobs-pipeline"),
+            {"tab": "raw", "raw_json": "1"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        matching = next(item for item in payload["jobs"] if item["id"] == raw.id)
+        self.assertEqual(matching["job_category"], "Engineering")
+        self.assertEqual(matching["job_domain"], "platform-engineer")
+        self.assertEqual(matching["classification_source"], "SECONDARY")
+        self.assertIn("Canada", matching["country"])
+
+    def test_jobs_pipeline_raw_page_prefers_approved_classification(self):
+        from harvest.models import RawJob
+        from jobs.models import RawJobClassificationSnapshot
+
+        raw = RawJob.objects.order_by("-fetched_at").first()
+        raw.job_category = ""
+        raw.job_domain = ""
+        raw.save(update_fields=["job_category", "job_domain"])
+        RawJobClassificationSnapshot.objects.create(
+            raw_job=raw,
+            status=RawJobClassificationSnapshot.Status.MERGED,
+            approval_state=RawJobClassificationSnapshot.ApprovalState.APPROVED,
+            approved_source="CLAUDE",
+            final_confidence=0.91,
+            approved_output={
+                "classification": {
+                    "job_category": "Engineering",
+                    "job_domain": "platform-engineer",
+                },
+            },
+        )
+
+        response = self.client.get(reverse("jobs-pipeline"), {"tab": "raw"})
+        self.assertEqual(response.status_code, 200)
+        row = next(item for item in response.context["tab_raw"] if item.pk == raw.pk)
+        self.assertEqual(row.pipeline_row["job_category"], "Engineering")
+        self.assertEqual(row.pipeline_row["job_domain"], "platform-engineer")
+        self.assertEqual(row.pipeline_row["classification_source"], "CLAUDE")
+        html = response.content.decode("utf-8")
+        self.assertIn("platform-engineer", html)
+        self.assertIn("claude", html.lower())
 
     def test_jobs_pipeline_raw_stage_links_preserve_current_raw_filters(self):
         response = self.client.get(

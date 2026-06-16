@@ -458,6 +458,27 @@
         </div>
         {% endif %}
 
+        {% with dc=object.validation_result.dual_classification %}
+        {% if dc %}
+        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">Dual classification audit</div>
+          <div class="flex flex-wrap gap-2">
+            <span class="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] rounded-full font-semibold">{{ dc.approved_source|default:"raw_job"|upper }}</span>
+            <span class="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] rounded-full font-semibold">{{ dc.approval_state|default:"UNREVIEWED" }}</span>
+            {% if dc.pushed_to_vetting_with_warnings %}
+            <span class="px-2 py-0.5 bg-amber-100 text-amber-800 text-[10px] rounded-full font-semibold">Pushed with warnings</span>
+            {% endif %}
+          </div>
+          {% if dc.warning_codes %}
+          <p class="mt-2 text-[11px] text-slate-500">Warnings: {{ dc.warning_codes|join:", " }}</p>
+          {% endif %}
+          {% if dc.pushed_to_vetting_note %}
+          <p class="mt-2 text-[11px] text-slate-500">Push note: {{ dc.pushed_to_vetting_note }}</p>
+          {% endif %}
+        </div>
+        {% endif %}
+        {% endwith %}
+
         {% if object.validation_result.passed %}
         <div class="flex flex-wrap gap-1 pt-2 border-t border-gray-100">
           {% for p in object.validation_result.passed %}

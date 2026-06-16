@@ -1,0 +1,230 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'jobs/_pipeline_subnav.html' %}
+
+<div class="space-y-6">
+  <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div>
+        <h1 class="text-2xl font-bold text-slate-900">RawJob Classification Review Queue</h1>
+        <p class="mt-1 text-sm text-slate-500">Review dual-classification disagreements, approve merged results, and push vetted RawJobs into the pool with full audit history.</p>
+      </div>
+      <form method="post" action="{% url 'harvest-run-classification-backfill' %}" class="grid grid-cols-1 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-[140px_auto_auto] sm:items-end">
+        {% csrf_token %}
+        <input type="hidden" name="queue" value="{{ queue_tab }}">
+        <div>
+          <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Backfill batch</label>
+          <input type="number" name="batch_size" min="1" max="5000" value="{{ backfill_batch_size_default }}" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800">
+        </div>
+        <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" name="only_missing" value="1" checked class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+          Missing only
+        </label>
+        <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" name="force" value="1" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+          Force refresh
+        </label>
+        <div class="sm:col-span-3">
+          <button type="submit" class="btn-secondary w-full justify-center sm:w-auto">Run Historical Backfill</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="mt-5 grid gap-3 md:grid-cols-4">
+      <a href="?queue=needs_review" class="rounded-xl border px-4 py-3 {% if queue_tab == 'needs_review' %}border-rose-300 bg-rose-50{% else %}border-slate-200 bg-slate-50{% endif %}">
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Needs Review</div>
+        <div class="mt-1 text-2xl font-bold text-slate-900">{{ queue_counts.needs_review }}</div>
+      </a>
+      <a href="?queue=approved_not_pushed" class="rounded-xl border px-4 py-3 {% if queue_tab == 'approved_not_pushed' %}border-emerald-300 bg-emerald-50{% else %}border-slate-200 bg-slate-50{% endif %}">
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Approved, Not Pushed</div>
+        <div class="mt-1 text-2xl font-bold text-slate-900">{{ queue_counts.approved_not_pushed }}</div>
+      </a>
+      <a href="?queue=pushed_with_warnings" class="rounded-xl border px-4 py-3 {% if queue_tab == 'pushed_with_warnings' %}border-amber-300 bg-amber-50{% else %}border-slate-200 bg-slate-50{% endif %}">
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Pushed With Warnings</div>
+        <div class="mt-1 text-2xl font-bold text-slate-900">{{ queue_counts.pushed_with_warnings }}</div>
+      </a>
+      <a href="?queue=all" class="rounded-xl border px-4 py-3 {% if queue_tab == 'all' %}border-indigo-300 bg-indigo-50{% else %}border-slate-200 bg-slate-50{% endif %}">
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">All Snapshots</div>
+        <div class="mt-1 text-2xl font-bold text-slate-900">{{ queue_counts.all }}</div>
+      </a>
+    </div>
+
+    <div class="mt-5 grid gap-3 xl:grid-cols-5">
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Reviewed</div>
+        <div class="mt-1 text-xl font-bold text-slate-900">{{ queue_metrics.reviewed_count }}/{{ queue_metrics.total_snapshots }}</div>
+      </div>
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Pushed</div>
+        <div class="mt-1 text-xl font-bold text-slate-900">{{ queue_metrics.pushed_count }}</div>
+      </div>
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Secondary Coverage</div>
+        <div class="mt-1 text-xl font-bold text-slate-900">{{ queue_metrics.secondary_completed }}</div>
+      </div>
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Agreement Rate</div>
+        <div class="mt-1 text-xl font-bold text-slate-900">{{ queue_metrics.agreement_rate }}%</div>
+      </div>
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Open Review Conflicts</div>
+        <div class="mt-1 text-xl font-bold text-slate-900">{{ queue_metrics.review_conflicts }}</div>
+      </div>
+    </div>
+    {% if queue_metrics.approved_source_breakdown %}
+    <div class="mt-4 flex flex-wrap gap-2">
+      {% for row in queue_metrics.approved_source_breakdown %}
+      <span class="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+        {{ row.approved_source|upper }} · {{ row.total }}
+      </span>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <form method="get" class="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto] md:items-end">
+      <input type="hidden" name="queue" value="{{ queue_tab }}">
+      <div>
+        <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Search</label>
+        <input type="text" name="q" value="{{ queue_q }}" placeholder="Title, company, or source URL" class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800">
+      </div>
+      <div>
+        <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Secondary Provider</label>
+        <select name="provider" class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800">
+          <option value="">All providers</option>
+          {% for provider_slug in provider_choices %}
+          <option value="{{ provider_slug }}" {% if queue_provider == provider_slug %}selected{% endif %}>{{ provider_slug|upper }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="flex gap-2">
+        <button type="submit" class="btn-primary">Apply Filters</button>
+        <a href="{% url 'harvest-rawjob-review-queue' %}?queue={{ queue_tab }}" class="btn-secondary">Clear</a>
+      </div>
+    </form>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <form method="post" action="{% url 'harvest-rawjob-review-queue-actions' %}">
+      {% csrf_token %}
+      <input type="hidden" name="queue" value="{{ queue_tab }}">
+      <input type="hidden" name="q" value="{{ queue_q }}">
+      <input type="hidden" name="provider" value="{{ queue_provider }}">
+
+      <div class="flex flex-col gap-3 border-b border-slate-200 px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h2 class="text-lg font-semibold text-slate-900">{{ queue_total }} result{{ queue_total|pluralize }}</h2>
+          <p class="text-sm text-slate-500">Batch actions only affect the selected rows on this page.</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button type="submit" name="action" value="approve_merged" class="btn-secondary">Approve Merged</button>
+          <button type="submit" name="action" value="push_ready" class="btn-primary">Push Approved</button>
+          <button type="submit" name="action" value="rerun_shadow" class="btn-secondary">Re-run Shadow</button>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-200 text-sm">
+          <thead class="bg-slate-50">
+            <tr>
+              <th class="px-4 py-3 text-left"><input type="checkbox" onclick="document.querySelectorAll('.snapshot-checkbox').forEach(cb => cb.checked = this.checked)" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"></th>
+              <th class="px-4 py-3 text-left font-semibold text-slate-600">Raw Job</th>
+              <th class="px-4 py-3 text-left font-semibold text-slate-600">Status</th>
+              <th class="px-4 py-3 text-left font-semibold text-slate-600">Providers</th>
+              <th class="px-4 py-3 text-left font-semibold text-slate-600">Conflicts</th>
+              <th class="px-4 py-3 text-left font-semibold text-slate-600">Audit</th>
+              <th class="px-4 py-3 text-right font-semibold text-slate-600">Action</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for snapshot in queue_page_obj %}
+            <tr class="align-top">
+              <td class="px-4 py-4"><input type="checkbox" name="snapshot_ids" value="{{ snapshot.pk }}" class="snapshot-checkbox rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"></td>
+              <td class="px-4 py-4">
+                <div class="font-semibold text-slate-900">{{ snapshot.raw_job.title|default:"Untitled RawJob" }}</div>
+                <div class="text-xs text-slate-500">{{ snapshot.raw_job.company_name|default:"Unknown company" }}</div>
+                <div class="mt-1 text-xs text-slate-400">#{{ snapshot.raw_job_id }} · {{ snapshot.raw_job.platform_slug|default:"unknown" }}</div>
+              </td>
+              <td class="px-4 py-4">
+                <div class="flex flex-wrap gap-2">
+                  <span class="rounded-full px-2 py-0.5 text-xs font-semibold {% if snapshot.needs_review %}bg-rose-100 text-rose-700{% elif snapshot.ready_for_vetting %}bg-emerald-100 text-emerald-700{% else %}bg-amber-100 text-amber-700{% endif %}">
+                    {{ snapshot.status }}
+                  </span>
+                  {% if snapshot.approval_state != 'UNREVIEWED' %}
+                  <span class="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+                    {{ snapshot.approval_state }} · {{ snapshot.approved_source|default:"—" }}
+                  </span>
+                  {% endif %}
+                  {% if snapshot.pushed_to_vetting_with_warnings %}
+                  <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Pushed with warnings</span>
+                  {% endif %}
+                </div>
+                {% if snapshot.review_reason %}
+                <div class="mt-2 text-xs text-rose-600">{{ snapshot.review_reason }}</div>
+                {% endif %}
+              </td>
+              <td class="px-4 py-4">
+                <div class="text-xs text-slate-600">Backend: {{ snapshot.backend_run.status|default:"—" }}</div>
+                <div class="mt-1 text-xs text-slate-600">
+                  Secondary:
+                  {% if snapshot.secondary_run %}
+                    {{ snapshot.secondary_run.provider|upper }} · {{ snapshot.secondary_run.status }}
+                  {% else %}
+                    —
+                  {% endif %}
+                </div>
+                <div class="mt-1 text-xs text-slate-400">Confidence {{ snapshot.final_confidence|floatformat:2 }}</div>
+              </td>
+              <td class="px-4 py-4">
+                <div class="text-sm font-semibold text-slate-900">{{ snapshot.conflict_count }}</div>
+                {% if snapshot.review_reason %}
+                <div class="mt-1 text-xs text-slate-500">{{ snapshot.review_reason }}</div>
+                {% endif %}
+              </td>
+              <td class="px-4 py-4">
+                {% if snapshot.pushed_to_vetting_at %}
+                <div class="text-xs text-slate-700">Job #{{ snapshot.pushed_job_id|default:"—" }}</div>
+                <div class="mt-1 text-xs text-slate-500">{{ snapshot.pushed_to_vetting_at|date:"M j, Y H:i" }}</div>
+                {% elif snapshot.approved_at %}
+                <div class="text-xs text-slate-700">Approved {{ snapshot.approved_at|date:"M j, Y H:i" }}</div>
+                <div class="mt-1 text-xs text-slate-500">{{ snapshot.approved_by.get_full_name|default:snapshot.approved_by.username|default:"System" }}</div>
+                {% else %}
+                <div class="text-xs text-slate-400">No downstream action yet</div>
+                {% endif %}
+              </td>
+              <td class="px-4 py-4 text-right">
+                <a href="{% url 'harvest-rawjob-detail' snapshot.raw_job_id %}" class="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-indigo-300 hover:text-indigo-700">
+                  Open RawJob
+                </a>
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="7" class="px-6 py-10 text-center text-sm text-slate-500">No classification snapshots match the current queue filter.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </form>
+
+    {% if queue_page_obj.paginator.num_pages > 1 %}
+    <div class="flex items-center justify-between border-t border-slate-200 px-6 py-4 text-sm text-slate-500">
+      <div>
+        Page {{ queue_page_obj.number }} of {{ queue_page_obj.paginator.num_pages }}
+      </div>
+      <div class="flex gap-2">
+        {% if queue_page_obj.has_previous %}
+        <a href="?queue={{ queue_tab }}&page={{ queue_page_obj.previous_page_number }}{% if queue_q %}&q={{ queue_q }}{% endif %}{% if queue_provider %}&provider={{ queue_provider }}{% endif %}" class="btn-secondary">Prev</a>
+        {% endif %}
+        {% if queue_page_obj.has_next %}
+        <a href="?queue={{ queue_tab }}&page={{ queue_page_obj.next_page_number }}{% if queue_q %}&q={{ queue_q }}{% endif %}{% if queue_provider %}&provider={{ queue_provider }}{% endif %}" class="btn-secondary">Next</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

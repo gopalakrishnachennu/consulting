@@ -9,6 +9,7 @@ from django.db.models import Q
 
 from harvest.jd_gate import REASON_LOW_CLASSIFICATION, evaluate_raw_job_resume_gate
 
+from .dual_classification.effective import effective_raw_job_classification
 from .models import Job
 
 
@@ -167,10 +168,12 @@ def evaluate_raw_job_gate(raw_job, cfg=None) -> GateResult:
     if cfg.allow_unknown_country:
         passable_scope.add("REVIEW_UNKNOWN_COUNTRY")
 
+    effective = effective_raw_job_classification(raw_job)
+
     # ── Domain blocklist pre-check (fast-path, before any expensive work) ─────
     blocked_domains = cfg.blocked_domains if isinstance(cfg.blocked_domains, list) else []
     if blocked_domains:
-        job_domain = (getattr(raw_job, "job_domain", None) or "").strip().lower()
+        job_domain = (effective.get("job_domain") or "").strip().lower()
         if job_domain and job_domain in [d.strip().lower() for d in blocked_domains]:
             return GateResult(
                 passed=False,
@@ -240,10 +243,10 @@ def evaluate_raw_job_gate(raw_job, cfg=None) -> GateResult:
     jd_quality = _as_float(raw_job.jd_quality_score, 0.0)
     quality = _as_float(raw_job.quality_score, 0.0)
     has_salary = bool(raw_job.salary_min or raw_job.salary_max or (raw_job.salary_raw or "").strip())
-    has_location = bool((raw_job.city or "").strip() or (raw_job.state or "").strip() or (raw_job.country or "").strip() or (raw_job.location_raw or "").strip())
-    has_experience = bool(raw_job.years_required is not None or raw_job.years_required_max is not None or raw_job.experience_level != "UNKNOWN")
-    has_skills = bool(raw_job.tech_stack or raw_job.skills or raw_job.job_keywords)
-    meaningful_title = _is_title_meaningful(raw_job.title)
+    has_location = bool((raw_job.city or "").strip() or (raw_job.state or "").strip() or (effective.get("country") or "").strip() or (raw_job.location_raw or "").strip())
+    has_experience = bool(effective.get("years_required") is not None or effective.get("years_required_max") is not None or raw_job.experience_level != "UNKNOWN")
+    has_skills = bool(effective.get("tech_stack") or effective.get("skills") or effective.get("job_keywords"))
+    meaningful_title = _is_title_meaningful(effective.get("title") or raw_job.title)
 
     completeness_parts = [has_salary, has_location, has_experience, has_skills, meaningful_title]
     completeness = sum(1 for x in completeness_parts if x) / len(completeness_parts)
@@ -270,7 +273,7 @@ def evaluate_raw_job_gate(raw_job, cfg=None) -> GateResult:
     has_commitment = raw_job.employment_type != "UNKNOWN"
     has_benefits = bool(raw_job.benefits_list or (raw_job.benefits or "").strip())
     has_language = bool(raw_job.languages_required)
-    has_department = bool((raw_job.department_normalized or raw_job.department or "").strip())
+    has_department = bool((effective.get("department_normalized") or "").strip())
     fit_parts = [has_salary, has_location, has_experience, has_skills, has_commitment, has_benefits, has_language, has_department]
     fit = _clamp01(sum(1 for x in fit_parts if x) / len(fit_parts))
 

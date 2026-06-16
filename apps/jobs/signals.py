@@ -6,6 +6,8 @@ cutting over the actual tasks to stage-driven flow (Phase 3).
 """
 import logging
 
+from django.core.cache import cache
+from django.db import transaction
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 
@@ -88,6 +90,35 @@ def _rawjob_post_save_record_event(sender, instance, created: bool, **kwargs):
     )
 
 
+def _rawjob_has_enough_jd_text(instance) -> bool:
+    title = (getattr(instance, "title", "") or "").strip()
+    description = (
+        getattr(instance, "description_clean", "")
+        or getattr(instance, "description", "")
+        or ""
+    ).strip()
+    return bool(title) and len(description) >= 80
+
+
+def _queue_rawjob_shadow_classification(raw_job_id: int) -> None:
+    from .tasks import run_rawjob_dual_classification_shadow_task
+
+    run_rawjob_dual_classification_shadow_task.delay(raw_job_id)
+
+
+def _rawjob_post_save_queue_dual_classification(sender, instance, created: bool, **kwargs):
+    from .dual_classification.config import shadow_enabled
+
+    if not shadow_enabled():
+        return
+    if not _rawjob_has_enough_jd_text(instance):
+        return
+    cache_key = f"jobs:rawjob_dual_shadow:queued:{instance.pk}"
+    if not cache.add(cache_key, "1", timeout=45):
+        return
+    transaction.on_commit(lambda: _queue_rawjob_shadow_classification(instance.pk))
+
+
 def wire_rawjob_signal():
     """Called from JobsConfig.ready() — avoids import cycle at module load."""
     try:
@@ -96,3 +127,4 @@ def wire_rawjob_signal():
         log.exception("Could not import harvest.RawJob; skipping shadow signal")
         return
     post_save.connect(_rawjob_post_save_record_event, sender=RawJob, dispatch_uid='jobs.shadow.rawjob_created')
+    post_save.connect(_rawjob_post_save_queue_dual_classification, sender=RawJob, dispatch_uid='jobs.shadow.rawjob_dual_classification')

@@ -126,6 +126,21 @@ def unknown_country_count(request):
     return {'unknown_country_count': count}
 
 
+def dual_review_queue_count(request):
+    """Inject pending dual-classification review queue count for the subnav badge."""
+    if not request.user.is_authenticated:
+        return {'dual_review_queue_count': 0}
+    if not (request.user.is_superuser or getattr(request.user, 'role', None) in ('ADMIN', 'EMPLOYEE')):
+        return {'dual_review_queue_count': 0}
+    try:
+        from jobs.models import RawJobClassificationSnapshot
+
+        count = RawJobClassificationSnapshot.objects.filter(needs_review=True).count()
+    except Exception:
+        count = 0
+    return {'dual_review_queue_count': count}
+
+
 def user_feature_flags(request):
     """
     Inject USER_FEATURE_FLAGS: dict key -> bool for the current user (for nav / dashboards).

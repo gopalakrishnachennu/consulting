@@ -17,6 +17,7 @@ import logging
 from urllib.parse import urlencode
 
 from .models import Job, PipelineEvent
+from .dual_classification.effective import effective_raw_job_classification
 from config.pagination import PAGE_SIZE_OPTIONS, get_page_size, build_pagination_window
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,9 @@ from submissions.models import ApplicationSubmission
 
 
 def _rawjob_effective_confidence(raw_job) -> float | None:
+    snapshot = getattr(raw_job, "classification_snapshot", None)
+    if snapshot and getattr(snapshot, "final_confidence", None):
+        return float(snapshot.final_confidence)
     value = (
         raw_job.category_confidence
         if raw_job.category_confidence is not None
@@ -68,15 +72,21 @@ def _rawjob_salary_label(raw_job) -> str:
     return f"Up to {raw_job.salary_max:,.0f} {currency}{period}".strip()
 
 
-def _rawjob_scope_label(raw_job) -> str:
+def _rawjob_scope_label(raw_job, *, effective: dict | None = None) -> str:
     from harvest.location_resolver import COUNTRY_CODE_TO_NAME, _code_for_country
 
-    code = (raw_job.country_code or "").upper()
-    country_code_from_name = _code_for_country(raw_job.country or "")
+    effective = effective or effective_raw_job_classification(raw_job)
+    country_codes = effective.get("country_codes") or []
+    code = (
+        (raw_job.country_code or "").upper()
+        or (str(country_codes[0]).upper() if country_codes else "")
+    )
+    country_name = effective.get("country") or ""
+    country_code_from_name = _code_for_country(country_name or "")
     if code:
-        base = COUNTRY_CODE_TO_NAME.get(code, code)
+        base = COUNTRY_CODE_TO_NAME.get(code, country_name or code)
     elif country_code_from_name:
-        base = COUNTRY_CODE_TO_NAME.get(country_code_from_name, raw_job.country)
+        base = COUNTRY_CODE_TO_NAME.get(country_code_from_name, country_name)
     else:
         base = "Unknown"
     scope = raw_job.scope_status or "UNSCOPED"
@@ -136,26 +146,42 @@ def build_rawjob_pipeline_row(raw_job, *, gate=None, country_label: str = "") ->
         except Exception:
             gate = None
 
+    effective = effective_raw_job_classification(raw_job)
     confidence = _rawjob_effective_confidence(raw_job)
     from harvest.runtime_config import get_ready_stage_min_confidence
 
     ready_min_conf = get_ready_stage_min_confidence()
     confidence_pct = round(confidence * 100) if confidence is not None else None
-    scope_label = country_label or _rawjob_scope_label(raw_job)
+    scope_label = country_label or _rawjob_scope_label(raw_job, effective=effective)
     blocker = _rawjob_blocker_label(raw_job, gate)
     jd_status = _rawjob_jd_label(raw_job)
     filter_decision = raw_job.filter_decision or ("TEST" if getattr(raw_job, "is_test_run", False) else "")
 
-    if raw_job.location_type and raw_job.location_type != "UNKNOWN":
-        work_mode = raw_job.location_type.title().replace("_", " ")
-    elif raw_job.is_remote:
+    location_type = effective.get("location_type") or raw_job.location_type
+    is_remote = bool(effective.get("is_remote"))
+    if location_type and location_type != "UNKNOWN":
+        work_mode = str(location_type).title().replace("_", " ")
+    elif is_remote:
         work_mode = "Remote"
     else:
         work_mode = "Unknown"
 
+    snapshot = getattr(raw_job, "classification_snapshot", None)
+    classification_source = (
+        getattr(snapshot, "approved_source", "")
+        if snapshot and getattr(snapshot, "approved_output", None)
+        else ""
+    ) or "raw_job"
+
     return {
         "company": raw_job.company_name or "",
         "platform": raw_job.platform_slug or (raw_job.job_platform.name if raw_job.job_platform else ""),
+        "job_category": effective.get("job_category") or "",
+        "job_domain": effective.get("job_domain") or "",
+        "department_normalized": effective.get("department_normalized") or "",
+        "country": effective.get("country") or "",
+        "country_codes": effective.get("country_codes") or [],
+        "classification_source": classification_source,
         "confidence_pct": confidence_pct,
         "confidence_label": f"{confidence_pct}%" if confidence_pct is not None else "Unknown",
         "confidence_level": (
@@ -994,6 +1020,9 @@ class JobPoolRevalidateView(LoginRequiredMixin, EmployeeRequiredMixin, View):
             # Fallback: run inline
             from .services import validate_job_quality
             result = validate_job_quality(job)
+            existing_dual = dict((job.validation_result or {}).get("dual_classification") or {})
+            if existing_dual:
+                result["dual_classification"] = existing_dual
             job.validation_score = result['score']
             job.validation_result = result
             job.validation_run_at = timezone.now()
@@ -1237,7 +1266,7 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         from harvest.jd_gate import evaluate_raw_job_resume_gate
         from harvest.services.rawjob_query import apply_rawjob_filters
         # Keep JSON loader query lightweight and avoid select_related+defer conflicts.
-        qs = RawJob.objects.order_by('-fetched_at')
+        qs = RawJob.objects.prefetch_related("classification_snapshot").order_by('-fetched_at')
         qs = apply_rawjob_filters(qs, request.GET)
         qs = qs.only(
             "id", "company_name", "platform_slug", "title", "original_url",
@@ -1269,10 +1298,11 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         jobs_data = []
         for job in page_obj.object_list:
             jd_gate = evaluate_raw_job_resume_gate(job)
+            effective = effective_raw_job_classification(job)
             detected_country = infer_country_from_location(
                 location_raw=job.location_raw or "",
                 state=job.state or "",
-                country=job.country or "",
+                country=effective.get("country") or "",
             )
             row = build_rawjob_pipeline_row(job, gate=jd_gate, country_label=detected_country or "")
             jobs_data.append({
@@ -1280,8 +1310,9 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
                 "company_name": (job.company_name or "")[:48],
                 "platform_slug": row["platform"],
                 "title": (job.title or "")[:60],
-                "job_category": job.job_category or "",
-                "job_domain": job.job_domain or "",
+                "job_category": row["job_category"],
+                "job_domain": row["job_domain"],
+                "classification_source": row["classification_source"],
                 "filter_decision": row["filter_decision"],
                 "filter_reason": row["filter_reason"][:90],
                 "is_test_run": row["is_test_run"],
@@ -1291,7 +1322,7 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
                 "stage": job.pipeline_stage_label(),
                 "resume_jd_usable": jd_gate.usable,
                 "resume_jd_reason_code": jd_gate.reason_code,
-                "country": (detected_country or "")[:48],
+                "country": (detected_country or row["country"] or "")[:48],
                 "confidence_label": row["confidence_label"],
                 "confidence_level": row["confidence_level"],
                 "jd_status": row["jd_status"],
@@ -1435,7 +1466,7 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
             return urlencode(pairs)
 
         if tab == 'raw':
-            qs = RawJob.objects.select_related('company', 'job_platform').order_by('-fetched_at')
+            qs = RawJob.objects.select_related('company', 'job_platform').prefetch_related('classification_snapshot').order_by('-fetched_at')
             qs = apply_rawjob_filters(qs, request.GET)
             for key in FILTER_STATE_KEYS:
                 if key == "q":

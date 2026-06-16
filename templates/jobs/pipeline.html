@@ -474,6 +474,7 @@
   </div>
   <div class="flex gap-2 flex-wrap items-center">
     <a href="{% url 'jobs-pipeline' %}?tab=raw#raw-jobs-table" class="btn-secondary btn-sm">Raw Table</a>
+    <a href="{% url 'harvest-rawjob-review-queue' %}" class="btn-secondary btn-sm">Review Queue</a>
     <a href="{% url 'ops-center' %}#pipelines" class="btn-secondary btn-sm">Run Monitor</a>
     <a href="{% url 'harvest-batch-activity' %}" class="btn-secondary btn-sm" title="Centralized metrics for Quick / Full fetch">Pipeline Activity</a>
     <form method="post" action="{% url 'jobs-pipeline-run-sync' %}" onsubmit="return confirm('Sync only production READY rows to Vet Queue. Test/smoke, filtered-out, missing-JD, inactive, weak-domain, and low-confidence rows stay blocked. Continue?')">{% csrf_token %}
@@ -1223,8 +1224,11 @@
           {% else %}<span class="text-gray-300 text-xs">—</span>{% endif %}
         </td>
         <td class="tbl-td">
-          {% if raw.job_domain %}
-            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-violet-100 text-violet-700 border border-violet-200">{{ raw.job_domain }}</span>
+          {% if raw.pipeline_row.job_domain %}
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-violet-100 text-violet-700 border border-violet-200">{{ raw.pipeline_row.job_domain }}</span>
+            {% if raw.pipeline_row.classification_source != 'raw_job' %}
+              <div class="mt-1 text-[11px] text-violet-500">{{ raw.pipeline_row.classification_source|lower }}</div>
+            {% endif %}
           {% else %}
             <span class="text-gray-300 text-xs">—</span>
           {% endif %}
@@ -1280,7 +1284,7 @@
           {{ raw.pipeline_row.external_id|default:"—" }}
         </td>
         <td class="tbl-td min-w-[150px]" data-raw-col="category">
-          {% if raw.job_category %}<span class="text-xs text-indigo-500">{{ raw.job_category }}</span>{% else %}<span class="text-gray-300 text-xs">—</span>{% endif %}
+          {% if raw.pipeline_row.job_category %}<span class="text-xs text-indigo-500">{{ raw.pipeline_row.job_category }}</span>{% else %}<span class="text-gray-300 text-xs">—</span>{% endif %}
         </td>
         <td class="tbl-td-right sticky right-0 z-10 bg-white shadow-[-1px_0_0_#e2e8f0]">
           <a href="{% url 'harvest-rawjob-detail' raw.pk %}" class="btn-ghost btn-xs">View</a>
@@ -1542,6 +1546,9 @@
   const rowHtml = (job) => {
     const platform = job.platform_slug ? `<span class="badge-blue">${esc(job.platform_slug)}</span>` : `<span class="text-gray-300 text-xs">—</span>`;
     const domain = job.job_domain ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-violet-100 text-violet-700 border border-violet-200">${esc(job.job_domain)}</span>` : `<span class="text-gray-300 text-xs">—</span>`;
+    const domainMeta = job.classification_source && job.classification_source !== "raw_job"
+      ? `<div class="mt-1 text-[11px] text-violet-500">${esc(String(job.classification_source).toLowerCase())}</div>`
+      : "";
     const decision = job.is_test_run ? "TEST" : String(job.filter_decision || "");
     const filterClass = decision === "STRONG" ? "badge-green" : decision === "POSSIBLE" ? "badge-blue" : decision === "TEST" || decision === "UNKNOWN" ? "badge-yellow" : decision ? "badge-gray" : "";
     const filterCell = decision
@@ -1560,7 +1567,7 @@
         </td>
         <td class="tbl-td min-w-[190px]"><div class="font-medium text-slate-800">${esc(job.company_name || "—")}</div></td>
         <td class="tbl-td">${platform}</td>
-        <td class="tbl-td">${domain}</td>
+        <td class="tbl-td">${domain}${domainMeta}</td>
         <td class="tbl-td min-w-[150px]">${filterCell}</td>
         <td class="tbl-td"><span class="${confidenceClass}">${esc(job.confidence_label || "Unknown")}</span></td>
         <td class="tbl-td"><span class="${toBadgeClass(job.stage)}">${esc(job.stage || "—")}</span></td>

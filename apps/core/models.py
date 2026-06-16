@@ -155,6 +155,60 @@ class PlatformConfig(models.Model):
             "Example: admin@company.com, recruiter@company.com"
         ),
     )
+    dual_classification_shadow_enabled = models.BooleanField(
+        default=True,
+        help_text=(
+            "When enabled, RawJobs with usable JD text automatically queue the shadow "
+            "dual-classification workflow in the background."
+        ),
+    )
+    dual_classification_require_approval_for_sync = models.BooleanField(
+        default=False,
+        help_text=(
+            "When enabled, RawJobs with real JD text must have an approved dual-classification "
+            "result before they can sync into the vetting queue."
+        ),
+    )
+    dual_classification_allow_push_with_warnings = models.BooleanField(
+        default=True,
+        help_text=(
+            "Allow reviewers to push approved RawJobs into vetting even when verifier warnings "
+            "still exist. Every override is audited."
+        ),
+    )
+    dual_classification_backfill_batch_size = models.PositiveIntegerField(
+        default=200,
+        help_text=(
+            "Default batch size for historical RawJob dual-classification backfills. "
+            "Used by the review queue and admin-triggered backfill runs."
+        ),
+    )
+    dual_classification_secondary_provider_default = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        help_text=(
+            "Optional default secondary provider label for review tooling, for example "
+            "'codex' or 'claude'."
+        ),
+    )
+    dual_classification_secondary_runtime_enabled = models.BooleanField(
+        default=False,
+        help_text=(
+            "When enabled, the shadow dual-classification task will call the configured "
+            "secondary provider through the central LLM runtime instead of waiting for "
+            "manual JSON paste."
+        ),
+    )
+    dual_classification_secondary_prompt_version = models.CharField(
+        max_length=40,
+        blank=True,
+        default="runtime_v1",
+        help_text=(
+            "Prompt version tag stored on automatic secondary classifier runs. "
+            "Useful for audits and controlled prompt upgrades."
+        ),
+    )
 
     # Navigation & Appearance
     class NavLayout(models.TextChoices):

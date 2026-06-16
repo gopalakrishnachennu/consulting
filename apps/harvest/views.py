@@ -223,6 +223,9 @@ def _sync_rawjob_to_pool(raw_job, *, posted_by):
     from jobs.models import Job
     from jobs.quality import compute_quality_score
     from jobs.gating import apply_gate_result_to_job, evaluate_raw_job_gate
+    from jobs.tasks import _department_sync_value
+    from jobs.dual_classification.effective import effective_raw_job_classification
+    from jobs.dual_classification.policy import sync_block_reason as dual_classification_sync_block_reason
     from .url_health import build_link_health_payload, check_job_posting_live, link_health_state
 
     existing = _find_existing_live_job_for_rawjob(raw_job)
@@ -258,10 +261,16 @@ def _sync_rawjob_to_pool(raw_job, *, posted_by):
             f"Cannot promote to vet queue: blocked by gate ({gate.reason_code}). "
             f"Reasons: {', '.join(gate.reasons[:3])}"
         )
+    dual_classification_block = dual_classification_sync_block_reason(raw_job)
+    if dual_classification_block:
+        raise ValueError(f"Cannot promote to vet queue: {dual_classification_block}")
 
     platform_slug = raw_job.platform_slug or (raw_job.job_platform.slug if raw_job.job_platform else "")
+    effective = effective_raw_job_classification(raw_job)
+    snapshot = getattr(raw_job, "classification_snapshot", None)
     job_location = " | ".join(raw_job.location_candidates or []) or raw_job.location_raw or ""
-    job_country = raw_job.country or ((raw_job.country_codes or [""])[0] if raw_job.country_codes else "")
+    job_country = effective["country"] or ""
+    mapped_department = _department_sync_value(effective["department_normalized"] or "")
     with transaction.atomic():
         job = Job.objects.create(
             title=raw_job.title,
@@ -281,7 +290,7 @@ def _sync_rawjob_to_pool(raw_job, *, posted_by):
             source_raw_job=raw_job,
             queue_entered_at=_tz.now(),
             country=job_country,
-            department=raw_job.department_normalized or "",
+            department=mapped_department,
         )
         apply_link_health_payload_to_job(
             job,
@@ -302,6 +311,13 @@ def _sync_rawjob_to_pool(raw_job, *, posted_by):
                 "trust": gate.trust_score,
                 "candidate_fit": gate.candidate_fit_score,
                 "vet_priority": gate.vet_priority_score,
+            },
+            "dual_classification": {
+                "approved_source": getattr(snapshot, "approved_source", "") or "raw_job",
+                "approval_state": getattr(snapshot, "approval_state", "UNREVIEWED"),
+                "ready_for_vetting": bool(getattr(snapshot, "ready_for_vetting", False)),
+                "pushed_to_vetting_with_warnings": False,
+                "warning_codes": list(((getattr(snapshot, "verifier_summary", {}) or {}).get("warnings") or [])),
             },
         }
         job.validation_run_at = _tz.now()
@@ -331,6 +347,9 @@ def _sync_rawjob_to_pool(raw_job, *, posted_by):
             },
             "job_id": job.pk,
             "checked_at": _tz.now().isoformat(),
+            "classification_source": (
+                getattr(getattr(raw_job, "classification_snapshot", None), "approved_source", "") or "raw_job"
+            ),
         }
         from jobs.marketing_role_routing import assign_marketing_roles_to_job
 
@@ -1182,12 +1201,590 @@ class RawJobDetailView(SuperuserRequiredMixin, DetailView):
         return RawJob.objects.select_related("company", "job_platform", "platform_label")
 
     def get_context_data(self, **kwargs):
+        import json as _json
+        from core.models import LLMConfig
+        from jobs.models import RawJobClassifierRun
+        from jobs.dual_classification.config import (
+            allow_push_with_warnings,
+            default_secondary_provider,
+            secondary_prompt_version,
+            secondary_runtime_enabled,
+        )
+        from jobs.dual_classification.schema import build_raw_job_input
+
         ctx = super().get_context_data(**kwargs)
         ctx["resume_jd_gate"] = evaluate_raw_job_resume_gate(self.object)
         ctx["payload_snapshots"] = self.object.payload_snapshots.all()[:8]
         ctx["payload_snapshot_count"] = self.object.payload_snapshots.count()
         ctx["ops_timeline"] = _build_rawjob_ops_timeline(self.object)
+        snapshot = getattr(self.object, "classification_snapshot", None)
+        ctx["classification_snapshot"] = snapshot
+        if snapshot:
+            conflicts = list(snapshot.field_conflicts.all())
+            ctx["classification_conflicts"] = conflicts
+            ctx["backend_run"] = snapshot.backend_run
+            ctx["secondary_run"] = snapshot.secondary_run
+            ctx["backend_run_json"] = _json.dumps((snapshot.backend_run.normalized_output if snapshot.backend_run else {}), indent=2, sort_keys=True, default=str)
+            ctx["secondary_run_json"] = _json.dumps((snapshot.secondary_run.normalized_output if snapshot.secondary_run else {}), indent=2, sort_keys=True, default=str)
+            ctx["merged_output_json"] = _json.dumps(snapshot.merged_output or {}, indent=2, sort_keys=True, default=str)
+            ctx["verifier_summary_json"] = _json.dumps(snapshot.verifier_summary or {}, indent=2, sort_keys=True, default=str)
+            ctx["approved_output_json"] = _json.dumps(snapshot.approved_output or {}, indent=2, sort_keys=True, default=str)
+        else:
+            ctx["classification_conflicts"] = []
+            ctx["backend_run"] = None
+            ctx["secondary_run"] = None
+            ctx["backend_run_json"] = ""
+            ctx["secondary_run_json"] = ""
+            ctx["merged_output_json"] = ""
+            ctx["verifier_summary_json"] = ""
+            ctx["approved_output_json"] = ""
+        ctx["secondary_provider_choices"] = [
+            RawJobClassifierRun.Provider.CODEX,
+            RawJobClassifierRun.Provider.CLAUDE,
+        ]
+        ctx["secondary_provider_default"] = default_secondary_provider()
+        ctx["secondary_runtime_enabled"] = secondary_runtime_enabled()
+        ctx["secondary_prompt_version"] = secondary_prompt_version()
+        llm_config = LLMConfig.load()
+        ctx["secondary_runtime_model"] = (llm_config.validation_model or llm_config.active_model or "").strip()
+        ctx["secondary_runtime_ready"] = bool(
+            ctx["secondary_runtime_enabled"]
+            and ctx["secondary_provider_default"] in ctx["secondary_provider_choices"]
+            and ctx["secondary_runtime_model"]
+        )
+        ctx["allow_push_with_warnings_enabled"] = allow_push_with_warnings()
+        ctx["secondary_prompt_context_json"] = _json.dumps(
+            {
+                "raw_job_input": build_raw_job_input(self.object),
+                "instructions": {
+                    "return_schema": "canonical_dual_classification_v1",
+                    "notes": [
+                        "Return strict JSON only.",
+                        "Do not invent unsupported skills or requirements.",
+                        "Use JD evidence over title assumptions when they conflict.",
+                    ],
+                },
+            },
+            indent=2,
+            sort_keys=True,
+            default=str,
+        )
+        effective_seed = {}
+        if snapshot and snapshot.approved_output:
+            effective_seed = snapshot.approved_output
+        elif snapshot and snapshot.merged_output:
+            effective_seed = snapshot.merged_output
+        elif snapshot and snapshot.backend_run:
+            effective_seed = snapshot.backend_run.normalized_output or {}
+        ctx["manual_field_seed"] = {
+            "job_category": (((effective_seed.get("classification") or {}).get("job_category")) or self.object.job_category or ""),
+            "job_domain": (((effective_seed.get("classification") or {}).get("job_domain")) or self.object.job_domain or ""),
+            "department_normalized": (((effective_seed.get("classification") or {}).get("department_normalized")) or self.object.department_normalized or self.object.department or ""),
+            "role_category": (((effective_seed.get("classification") or {}).get("role_category")) or self.object.role_category or ""),
+            "country": (((effective_seed.get("location") or {}).get("country")) or self.object.country or ""),
+            "country_codes": ", ".join(((effective_seed.get("location") or {}).get("country_codes")) or self.object.country_codes or []),
+            "location_type": (((effective_seed.get("location") or {}).get("location_type")) or self.object.location_type or ""),
+            "years_required": (((effective_seed.get("requirements") or {}).get("years_required")) if (effective_seed.get("requirements") or {}).get("years_required") is not None else (self.object.years_required if self.object.years_required is not None else "")),
+            "education_required": (((effective_seed.get("requirements") or {}).get("education_required")) or self.object.education_required or ""),
+            "skills": ", ".join(((effective_seed.get("skills") or {}).get("skills")) or self.object.skills or []),
+            "tech_stack": ", ".join(((effective_seed.get("skills") or {}).get("tech_stack")) or self.object.tech_stack or []),
+        }
+        ctx["secondary_payload_seed"] = _json.dumps(
+            {
+                "identity": {
+                    "raw_job_id": self.object.pk,
+                    "title": self.object.title or "",
+                    "company_name": self.object.company_name or "",
+                },
+                "classification": {
+                    "job_category": "",
+                    "job_domain": "",
+                    "department_normalized": "",
+                    "role_category": "",
+                },
+                "skills": {
+                    "skills": [],
+                    "tech_stack": [],
+                },
+                "requirements": {
+                    "years_required": None,
+                    "years_required_max": None,
+                    "education_required": "",
+                    "visa_sponsorship": None,
+                    "work_authorization": "",
+                    "clearance_required": False,
+                    "clearance_level": "",
+                },
+                "location": {
+                    "country": self.object.country or "",
+                    "country_codes": self.object.country_codes or [],
+                    "location_type": self.object.location_type or "",
+                    "is_remote": bool(self.object.is_remote),
+                },
+            },
+            indent=2,
+            sort_keys=True,
+            default=str,
+        )
         return ctx
+
+
+class RawJobSecondaryClassificationIngestView(SuperuserRequiredMixin, View):
+    """POST — ingest a manual Codex/Claude classification JSON for compare/merge."""
+
+    def post(self, request, pk):
+        import json as _json
+
+        from jobs.dual_classification.orchestrator import ingest_secondary_result_for_raw_job
+        from jobs.dual_classification.schema import validate_canonical_output
+
+        raw_job = get_object_or_404(RawJob, pk=pk)
+        provider = (request.POST.get("provider") or "").strip()
+        prompt_version = (request.POST.get("prompt_version") or "").strip()
+        confidence_raw = (request.POST.get("confidence") or "").strip()
+        payload_raw = (request.POST.get("normalized_output_json") or "").strip()
+
+        if not payload_raw:
+            messages.error(request, "Secondary classification JSON is required.")
+            return redirect("harvest-rawjob-detail", pk=pk)
+
+        try:
+            normalized_output = _json.loads(payload_raw)
+        except Exception as exc:
+            messages.error(request, f"Invalid JSON: {exc}")
+            return redirect("harvest-rawjob-detail", pk=pk)
+
+        schema_errors = validate_canonical_output(normalized_output)
+        if schema_errors:
+            messages.error(request, " ; ".join(schema_errors[:4]))
+            return redirect("harvest-rawjob-detail", pk=pk)
+
+        confidence = None
+        if confidence_raw:
+            try:
+                confidence = float(confidence_raw)
+            except ValueError:
+                messages.error(request, "Confidence must be a number between 0 and 1.")
+                return redirect("harvest-rawjob-detail", pk=pk)
+            if not (0.0 <= confidence <= 1.0):
+                messages.error(request, "Confidence must be between 0 and 1.")
+                return redirect("harvest-rawjob-detail", pk=pk)
+
+        try:
+            result = ingest_secondary_result_for_raw_job(
+                raw_job_id=raw_job.pk,
+                provider=provider,
+                prompt_version=prompt_version,
+                confidence=confidence,
+                normalized_output=normalized_output,
+                raw_output=normalized_output,
+            )
+        except Exception as exc:
+            logger.exception("Secondary classification ingest failed for raw_job=%s", raw_job.pk)
+            messages.error(request, f"Secondary classification ingest failed: {exc}")
+            return redirect("harvest-rawjob-detail", pk=pk)
+
+        if result["needs_review"]:
+            messages.warning(
+                request,
+                f"Secondary classification stored. Merge needs review ({result['status']}, confidence {result['final_confidence']:.2f}).",
+            )
+        else:
+            messages.success(
+                request,
+                f"Secondary classification stored. Merge ready ({result['status']}, confidence {result['final_confidence']:.2f}).",
+            )
+        return redirect("harvest-rawjob-detail", pk=pk)
+
+
+class RawJobSecondaryClassificationRunView(SuperuserRequiredMixin, View):
+    """POST — queue the configured automatic secondary runtime for one RawJob."""
+
+    def post(self, request, pk):
+        from jobs.dual_classification.config import default_secondary_provider, secondary_runtime_enabled
+        from jobs.tasks import run_rawjob_dual_classification_shadow_task
+
+        if not secondary_runtime_enabled():
+            messages.error(request, "Secondary runtime is disabled in platform settings.")
+            return redirect("harvest-rawjob-detail", pk=pk)
+
+        provider = default_secondary_provider().strip().lower()
+        if provider not in {"codex", "claude"}:
+            messages.error(request, "Set the default secondary provider to Codex or Claude before running the secondary runtime.")
+            return redirect("harvest-rawjob-detail", pk=pk)
+
+        task = run_rawjob_dual_classification_shadow_task.delay(pk, True)
+        return redirect_with_task_progress(
+            "harvest-rawjob-detail",
+            task.id,
+            f"{provider.upper()} secondary classification",
+            kwargs={"pk": pk},
+        )
+
+
+class RawJobClassificationReviewActionView(SuperuserRequiredMixin, View):
+    """POST — approve backend/secondary/merged or save a manual override."""
+
+    def post(self, request, pk):
+        import json as _json
+
+        from jobs.dual_classification.orchestrator import approve_snapshot_for_raw_job
+
+        raw_job = get_object_or_404(RawJob, pk=pk)
+        source = (request.POST.get("source") or "").strip()
+        note = (request.POST.get("approval_note") or "").strip()
+        manual_output_raw = (request.POST.get("manual_output_json") or "").strip()
+        manual_output = None
+
+        if source == "manual":
+            if not manual_output_raw:
+                messages.error(request, "Manual override JSON is required.")
+                return redirect("harvest-rawjob-detail", pk=pk)
+            try:
+                manual_output = _json.loads(manual_output_raw)
+            except Exception as exc:
+                messages.error(request, f"Invalid manual override JSON: {exc}")
+                return redirect("harvest-rawjob-detail", pk=pk)
+        elif source == "manual_fields":
+            snapshot = getattr(raw_job, "classification_snapshot", None)
+            manual_output = (
+                (snapshot.approved_output if snapshot and snapshot.approved_output else None)
+                or (snapshot.merged_output if snapshot and snapshot.merged_output else None)
+                or {
+                    "identity": {
+                        "raw_job_id": raw_job.pk,
+                        "title": raw_job.title or "",
+                        "company_name": raw_job.company_name or "",
+                    },
+                    "classification": {},
+                    "skills": {},
+                    "requirements": {},
+                    "location": {},
+                }
+            )
+            if not isinstance(manual_output, dict):
+                manual_output = {}
+            manual_output = json.loads(json.dumps(manual_output, default=str))
+
+            classification = manual_output.setdefault("classification", {})
+            skills = manual_output.setdefault("skills", {})
+            requirements = manual_output.setdefault("requirements", {})
+            location = manual_output.setdefault("location", {})
+
+            def _csv_values(name: str) -> list[str]:
+                raw_value = (request.POST.get(name) or "").strip()
+                if not raw_value:
+                    return []
+                return [item.strip() for item in raw_value.split(",") if item.strip()]
+
+            classification["job_category"] = (request.POST.get("job_category") or "").strip()
+            classification["job_domain"] = (request.POST.get("job_domain") or "").strip()
+            classification["department_normalized"] = (request.POST.get("department_normalized") or "").strip()
+            classification["role_category"] = (request.POST.get("role_category") or "").strip()
+            location["country"] = (request.POST.get("country") or "").strip()
+            location["country_codes"] = _csv_values("country_codes")
+            location["location_type"] = (request.POST.get("location_type") or "").strip()
+            years_required = (request.POST.get("years_required") or "").strip()
+            requirements["years_required"] = int(years_required) if years_required.isdigit() else None
+            requirements["education_required"] = (request.POST.get("education_required") or "").strip()
+            skills["skills"] = _csv_values("skills")
+            skills["tech_stack"] = _csv_values("tech_stack")
+            source = "manual"
+
+        try:
+            result = approve_snapshot_for_raw_job(
+                raw_job_id=raw_job.pk,
+                source=source,
+                actor=request.user,
+                note=note,
+                manual_output=manual_output,
+            )
+        except Exception as exc:
+            logger.exception("Classification review action failed for raw_job=%s", raw_job.pk)
+            messages.error(request, f"Review action failed: {exc}")
+            return redirect("harvest-rawjob-detail", pk=pk)
+
+        tone = messages.success if result["ready_for_vetting"] else messages.warning
+        tone(
+            request,
+            f"Approved {result['approved_source']} classification ({result['approval_state']}, confidence {result['confidence']:.2f}).",
+        )
+        return redirect("harvest-rawjob-detail", pk=pk)
+
+
+class RawJobPushToVettingView(SuperuserRequiredMixin, View):
+    """POST — promote an approved RawJob classification into the vetting queue."""
+
+    def post(self, request, pk):
+        from jobs.dual_classification.orchestrator import record_vetting_push_for_raw_job
+        from jobs.dual_classification.config import allow_push_with_warnings
+        from jobs.models import RawJobClassificationSnapshot
+
+        raw_job = get_object_or_404(RawJob, pk=pk)
+        snapshot = getattr(raw_job, "classification_snapshot", None)
+        if not snapshot or not snapshot.approved_output:
+            messages.error(request, "Approve a classification result before pushing to vetting.")
+            return redirect("harvest-rawjob-detail", pk=pk)
+
+        allow_warnings = (request.POST.get("allow_warnings") or "").strip() == "1"
+        push_note = (request.POST.get("push_note") or "").strip()
+        verifier_warnings = list((snapshot.verifier_summary or {}).get("warnings") or [])
+
+        if allow_warnings and not allow_push_with_warnings():
+            messages.error(request, "Push-with-warnings is disabled in platform settings.")
+            return redirect("harvest-rawjob-detail", pk=pk)
+        if not snapshot.ready_for_vetting and not allow_warnings:
+            messages.error(
+                request,
+                "Approved classification still has verifier warnings. Use 'Push with warnings' only after review.",
+            )
+            return redirect("harvest-rawjob-detail", pk=pk)
+        if not snapshot.ready_for_vetting and allow_warnings and not push_note:
+            messages.error(request, "Add a push note when overriding verifier warnings.")
+            return redirect("harvest-rawjob-detail", pk=pk)
+
+        try:
+            job, created = _sync_rawjob_to_pool(raw_job, posted_by=request.user)
+            push_result = record_vetting_push_for_raw_job(
+                raw_job_id=raw_job.pk,
+                actor=request.user,
+                job=job,
+                note=push_note,
+                pushed_with_warnings=(not snapshot.ready_for_vetting and allow_warnings),
+            )
+        except ValueError as exc:
+            messages.error(request, str(exc))
+            return redirect("harvest-rawjob-detail", pk=pk)
+        except Exception as exc:
+            logger.exception("Push to vetting failed for raw_job=%s", raw_job.pk)
+            messages.error(request, f"Push to vetting failed: {exc}")
+            return redirect("harvest-rawjob-detail", pk=pk)
+
+        warning_text = ""
+        if push_result["warning_count"]:
+            warning_text = f" ({push_result['warning_count']} verifier warning(s) captured)"
+        if created:
+            messages.success(
+                request,
+                f"Pushed RawJob #{raw_job.pk} to vetting as Job #{job.pk}{warning_text}.",
+            )
+        else:
+            messages.warning(
+                request,
+                f"RawJob #{raw_job.pk} was already mapped to Job #{job.pk}; push audit recorded{warning_text}.",
+            )
+        return redirect("harvest-rawjob-detail", pk=pk)
+
+
+def _classification_queue_tab(request) -> str:
+    tab = (request.GET.get("queue") or request.POST.get("queue") or "needs_review").strip().lower()
+    allowed = {"needs_review", "approved_not_pushed", "pushed_with_warnings", "all"}
+    return tab if tab in allowed else "needs_review"
+
+
+class RawJobClassificationQueueView(SuperuserRequiredMixin, TemplateView):
+    template_name = "harvest/rawjob_review_queue.html"
+
+    def get_context_data(self, **kwargs):
+        from jobs.dual_classification.config import backfill_batch_size, default_secondary_provider
+        from jobs.models import RawJobClassificationConflict, RawJobClassificationSnapshot, RawJobClassifierRun
+
+        ctx = super().get_context_data(**kwargs)
+        queue_tab = _classification_queue_tab(self.request)
+        q = (self.request.GET.get("q") or "").strip()
+        provider = (self.request.GET.get("provider") or "").strip()
+
+        base_qs = (
+            RawJobClassificationSnapshot.objects.select_related(
+                "raw_job",
+                "approved_by",
+                "pushed_to_vetting_by",
+                "pushed_job",
+                "backend_run",
+                "secondary_run",
+            )
+            .annotate(conflict_count=Count("field_conflicts"))
+            .order_by("-updated_at")
+        )
+        if q:
+            base_qs = base_qs.filter(
+                Q(raw_job__title__icontains=q)
+                | Q(raw_job__company_name__icontains=q)
+                | Q(raw_job__original_url__icontains=q)
+            )
+        if provider:
+            base_qs = base_qs.filter(secondary_run__provider=provider)
+
+        counts = {
+            "needs_review": RawJobClassificationSnapshot.objects.filter(needs_review=True).count(),
+            "approved_not_pushed": RawJobClassificationSnapshot.objects.exclude(approved_output={}).filter(pushed_to_vetting_at__isnull=True).count(),
+            "pushed_with_warnings": RawJobClassificationSnapshot.objects.filter(pushed_to_vetting_with_warnings=True).count(),
+            "all": RawJobClassificationSnapshot.objects.count(),
+        }
+        if queue_tab == "needs_review":
+            queue_qs = base_qs.filter(needs_review=True)
+        elif queue_tab == "approved_not_pushed":
+            queue_qs = base_qs.exclude(approved_output={}).filter(pushed_to_vetting_at__isnull=True)
+        elif queue_tab == "pushed_with_warnings":
+            queue_qs = base_qs.filter(pushed_to_vetting_with_warnings=True)
+        else:
+            queue_qs = base_qs
+
+        paginator = Paginator(queue_qs, 50)
+        page_obj = paginator.get_page(self.request.GET.get("page") or 1)
+
+        total_snapshots = RawJobClassificationSnapshot.objects.count()
+        reviewed_count = RawJobClassificationSnapshot.objects.exclude(approval_state=RawJobClassificationSnapshot.ApprovalState.UNREVIEWED).count()
+        pushed_count = RawJobClassificationSnapshot.objects.filter(pushed_to_vetting_at__isnull=False).count()
+        secondary_completed = RawJobClassificationSnapshot.objects.filter(
+            secondary_run__status=RawJobClassifierRun.Status.COMPLETED
+        ).count()
+        review_conflicts = RawJobClassificationConflict.objects.filter(resolution=RawJobClassificationConflict.Resolution.REVIEW).count()
+        approved_source_breakdown = list(
+            RawJobClassificationSnapshot.objects.exclude(approved_source="")
+            .values("approved_source")
+            .annotate(total=Count("id"))
+            .order_by("-total", "approved_source")
+        )
+
+        agreement_rate = 0
+        if secondary_completed:
+            agreement_rate = round(
+                100
+                * RawJobClassificationSnapshot.objects.filter(
+                    secondary_run__status=RawJobClassifierRun.Status.COMPLETED,
+                    needs_review=False,
+                ).count()
+                / secondary_completed,
+                1,
+            )
+
+        ctx.update(
+            {
+                "queue_tab": queue_tab,
+                "queue_q": q,
+                "queue_provider": provider,
+                "queue_page_obj": page_obj,
+                "queue_counts": counts,
+                "queue_total": queue_qs.count(),
+                "backfill_batch_size_default": backfill_batch_size(),
+                "secondary_provider_default": default_secondary_provider(),
+                "provider_choices": [
+                    RawJobClassifierRun.Provider.CODEX,
+                    RawJobClassifierRun.Provider.CLAUDE,
+                ],
+                "queue_metrics": {
+                    "total_snapshots": total_snapshots,
+                    "reviewed_count": reviewed_count,
+                    "pushed_count": pushed_count,
+                    "secondary_completed": secondary_completed,
+                    "review_conflicts": review_conflicts,
+                    "agreement_rate": agreement_rate,
+                    "approved_source_breakdown": approved_source_breakdown,
+                },
+            }
+        )
+        return ctx
+
+
+class RawJobClassificationQueueActionView(SuperuserRequiredMixin, View):
+    """POST — batch approval / push actions from the dual-classification review queue."""
+
+    def post(self, request):
+        from jobs.dual_classification.orchestrator import approve_snapshot_for_raw_job, record_vetting_push_for_raw_job
+        from jobs.models import RawJobClassificationSnapshot
+
+        action = (request.POST.get("action") or "").strip()
+        selected_ids = [int(v) for v in request.POST.getlist("snapshot_ids") if str(v).isdigit()]
+        queue_tab = _classification_queue_tab(request)
+        q = (request.POST.get("q") or "").strip()
+        provider = (request.POST.get("provider") or "").strip()
+
+        if not selected_ids:
+            messages.error(request, "Select at least one row from the review queue.")
+            return redirect(
+                f"{reverse('harvest-rawjob-review-queue')}?{urlencode({'queue': queue_tab, 'q': q, 'provider': provider})}"
+            )
+
+        snapshots = list(
+            RawJobClassificationSnapshot.objects.select_related("raw_job").filter(pk__in=selected_ids)
+        )
+        approved = pushed = skipped = failed = 0
+
+        for snapshot in snapshots:
+            raw_job = snapshot.raw_job
+            try:
+                if action == "approve_merged":
+                    approve_snapshot_for_raw_job(
+                        raw_job_id=raw_job.pk,
+                        source="merged",
+                        actor=request.user,
+                        note="Batch-approved from review queue.",
+                    )
+                    approved += 1
+                elif action == "push_ready":
+                    if not snapshot.approved_output or not snapshot.ready_for_vetting:
+                        skipped += 1
+                        continue
+                    job, _created = _sync_rawjob_to_pool(raw_job, posted_by=request.user)
+                    record_vetting_push_for_raw_job(
+                        raw_job_id=raw_job.pk,
+                        actor=request.user,
+                        job=job,
+                        note="Batch push from review queue.",
+                        pushed_with_warnings=False,
+                    )
+                    pushed += 1
+                elif action == "rerun_shadow":
+                    from jobs.tasks import run_rawjob_dual_classification_shadow_task
+
+                    run_rawjob_dual_classification_shadow_task.delay(raw_job.pk, True)
+                    approved += 1
+                else:
+                    messages.error(request, "Unknown queue action.")
+                    return redirect("harvest-rawjob-review-queue")
+            except Exception:
+                logger.exception("Classification review queue action failed: action=%s raw_job=%s", action, raw_job.pk)
+                failed += 1
+
+        if action == "approve_merged":
+            messages.success(request, f"Batch approve complete — {approved} approved, {failed} failed.")
+        elif action == "push_ready":
+            messages.success(request, f"Batch push complete — {pushed} pushed, {skipped} skipped, {failed} failed.")
+        elif action == "rerun_shadow":
+            messages.success(request, f"Queued shadow re-run for {approved} RawJobs ({failed} failed to queue).")
+
+        query = {"queue": queue_tab}
+        if q:
+            query["q"] = q
+        if provider:
+            query["provider"] = provider
+        return redirect(f"{reverse('harvest-rawjob-review-queue')}?{urlencode(query)}")
+
+
+class RunRawJobClassificationBackfillView(SuperuserRequiredMixin, View):
+    """POST — queue historical RawJob dual-classification backfill."""
+
+    def post(self, request):
+        from jobs.tasks import backfill_rawjob_dual_classification_task
+
+        try:
+            batch_size = int((request.POST.get("batch_size") or "").strip() or 0)
+        except ValueError:
+            batch_size = 0
+        force = (request.POST.get("force") or "").strip() == "1"
+        only_missing = (request.POST.get("only_missing") or "").strip() != "0"
+        task = backfill_rawjob_dual_classification_task.delay(
+            batch_size=batch_size or None,
+            force=force,
+            only_missing=only_missing,
+        )
+        return redirect_with_task_progress(
+            "harvest-rawjob-review-queue",
+            task.id,
+            "RawJob classification backfill",
+            extra_query={"queue": _classification_queue_tab(request)},
+        )
 
 
 class RawJobCheckLiveStatusView(SuperuserRequiredMixin, View):

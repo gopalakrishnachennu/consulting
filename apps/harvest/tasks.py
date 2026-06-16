@@ -2935,10 +2935,13 @@ def sync_harvested_to_pool_task(
     from .models import HarvestOpsRun, RawJob
     from .ops_audit import begin_ops_run, finish_ops_run
     from jobs.models import Job, PipelineEvent
+    from jobs.dual_classification.policy import sync_block_reason as dual_classification_sync_block_reason
+    from jobs.dual_classification.effective import effective_raw_job_classification
     from jobs.link_health import JOB_LINK_HEALTH_UPDATE_FIELDS, apply_link_health_payload_to_job
     from jobs.dedup import find_existing_job_by_url
     from jobs.quality import compute_quality_score
     from jobs.gating import apply_gate_result_to_job, evaluate_raw_job_gate
+    from jobs.tasks import _department_sync_value
     from django.contrib.auth import get_user_model
     from django.utils import timezone as _tz
     from .services.job_descriptions import job_description_for_sync
@@ -3181,11 +3184,46 @@ def sync_harvested_to_pool_task(
                             message=f"Sync {processed:,}/{total_target:,}",
                         )
                     continue
-    
+
+                dual_classification_block = dual_classification_sync_block_reason(rj)
+                if dual_classification_block:
+                    payload = dict(rj.raw_payload or {})
+                    payload["vet_gate"] = {
+                        "status": "blocked",
+                        "reason_code": "DUAL_CLASSIFICATION_REQUIRED",
+                        "detail": dual_classification_block,
+                        "checks": gate.checks,
+                        "checked_at": _tz.now().isoformat(),
+                    }
+                    rj.sync_status = "SKIPPED"
+                    rj.sync_skip_reason = f"DUAL_CLASSIFICATION_REQUIRED: {dual_classification_block}"[:255]
+                    rj.raw_payload = payload
+                    try:
+                        rj.save(update_fields=["sync_status", "sync_skip_reason", "raw_payload", "updated_at"])
+                    except Exception as _save_exc:
+                        logger.warning("Could not save dual-classification skip status for RawJob %s: %s", rj.pk, _save_exc)
+                    skipped_reasons["DUAL_CLASSIFICATION_REQUIRED"] = skipped_reasons.get("DUAL_CLASSIFICATION_REQUIRED", 0) + 1
+                    skipped += 1
+                    if total_target:
+                        update_task_progress(
+                            self,
+                            current=processed,
+                            total=total_target,
+                            message=(
+                                f"Qualified sync {processed:,}/{total_target:,}"
+                                if qualified_only
+                                else f"Sync {processed:,}/{total_target:,}"
+                            ),
+                        )
+                    continue
+
                 try:
                     platform_slug = rj.platform_slug or (rj.job_platform.slug if rj.job_platform else "")
+                    effective = effective_raw_job_classification(rj)
+                    snapshot = getattr(rj, "classification_snapshot", None)
                     job_location = " | ".join(rj.location_candidates or []) or rj.location_raw or ""
-                    job_country = rj.country or ((rj.country_codes or [""])[0] if rj.country_codes else "")
+                    job_country = effective["country"] or ""
+                    mapped_department = _department_sync_value(effective["department_normalized"] or "")
                     with transaction.atomic():
                         job = Job.objects.create(
                             title=(rj.title or "")[:200],  # Job.title max_length=200; RawJob.title up to 512
@@ -3206,7 +3244,7 @@ def sync_harvested_to_pool_task(
                             queue_entered_at=_tz.now(),
                             # Propagate classification from RawJob if available
                             country=job_country[:100],                    # Job.country max_length=100
-                            department=(rj.department_normalized or "")[:20],  # Job.department max_length=20
+                            department=mapped_department[:20],  # Job.department max_length=20
                         )
                         apply_link_health_payload_to_job(
                             job,
@@ -3227,6 +3265,13 @@ def sync_harvested_to_pool_task(
                                 "trust": gate.trust_score,
                                 "candidate_fit": gate.candidate_fit_score,
                                 "vet_priority": gate.vet_priority_score,
+                            },
+                            "dual_classification": {
+                                "approved_source": getattr(snapshot, "approved_source", "") or "raw_job",
+                                "approval_state": getattr(snapshot, "approval_state", "UNREVIEWED"),
+                                "ready_for_vetting": bool(getattr(snapshot, "ready_for_vetting", False)),
+                                "pushed_to_vetting_with_warnings": False,
+                                "warning_codes": list(((getattr(snapshot, "verifier_summary", {}) or {}).get("warnings") or [])),
                             },
                         }
                         job.validation_run_at = _tz.now()
@@ -3256,6 +3301,9 @@ def sync_harvested_to_pool_task(
                             },
                             "job_id": job.pk,
                             "checked_at": _tz.now().isoformat(),
+                            "classification_source": (
+                                getattr(getattr(rj, "classification_snapshot", None), "approved_source", "") or "raw_job"
+                            ),
                         }
                         try:
                             from jobs.marketing_role_routing import assign_marketing_roles_to_job

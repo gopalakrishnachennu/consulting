@@ -263,6 +263,20 @@
                         {% else %}
                         <span class="badge-gray">Pending…</span>
                         {% endif %}
+                        {% with dc=job.validation_result.dual_classification %}
+                        {% if dc %}
+                        <div class="mt-1 flex flex-wrap gap-1">
+                            <span class="badge-blue text-[11px]" title="RawJob dual-classification source used at sync">
+                                {{ dc.approved_source|default:"raw_job"|upper }}
+                            </span>
+                            {% if dc.pushed_to_vetting_with_warnings %}
+                            <span class="badge-yellow text-[11px]" title="{% if dc.warning_codes %}Warnings: {{ dc.warning_codes|join:', ' }}{% else %}Pushed with verifier warnings{% endif %}">
+                                Warnings
+                            </span>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                        {% endwith %}
                     </td>
 
                     <!-- Posting availability -->

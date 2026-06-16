@@ -219,6 +219,16 @@ class PlatformConfigView(AdminRequiredMixin, UpdateView):
             context["pool_job_count"] = Job.objects.filter(status=Job.Status.POOL, is_archived=False).count()
         except Exception:
             context["pool_job_count"] = 0
+        try:
+            from jobs.models import RawJobClassificationSnapshot
+
+            context["dual_classification_review_count"] = RawJobClassificationSnapshot.objects.filter(needs_review=True).count()
+            context["dual_classification_approved_not_pushed_count"] = (
+                RawJobClassificationSnapshot.objects.exclude(approved_output={}).filter(pushed_to_vetting_at__isnull=True).count()
+            )
+        except Exception:
+            context["dual_classification_review_count"] = 0
+            context["dual_classification_approved_not_pushed_count"] = 0
         return context
 
     def get_success_url(self):
