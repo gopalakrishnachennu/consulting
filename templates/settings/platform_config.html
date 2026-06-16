@@ -1193,8 +1193,18 @@
                     if (initialToggleState.enable_public_consultant_view && !checkboxChecked('enable_public_consultant_view')) {
                         warnings.push('Guest access to public consultant profiles will stop immediately.');
                     }
-                    if (warnings.length && !window.confirm(`Review these immediate changes before saving:\n\n- ${warnings.join('\n- ')}`)) {
+                    if (warnings.length) {
                         event.preventDefault();
+                        window.gcConfirm({
+                            title: 'Review platform changes',
+                            message: 'Review these immediate changes before saving:\n\n- ' + warnings.join('\n- '),
+                            confirmText: 'Save anyway',
+                            variant: 'warning',
+                        }).then(function (ok) {
+                            if (!ok) return;
+                            form.dataset.gcConfirmBypass = '1';
+                            form.requestSubmit();
+                        });
                     }
                 });
             }

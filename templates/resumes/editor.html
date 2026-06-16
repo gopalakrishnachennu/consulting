@@ -822,7 +822,13 @@ function resumeEditor() {
 
     // Rebuild structured sections from the originally generated resume text.
     async resync() {
-      if (!confirm('Rebuild the editor from the originally generated resume?\n\nThis re-reads the resume and fixes structure (e.g. split roles). Any manual edits in the editor will be replaced.')) return;
+      const ok = await window.gcConfirm({
+        title: 'Rebuild from generated resume?',
+        message: 'Rebuild the editor from the originally generated resume?\n\nThis re-reads the resume and fixes structure (e.g. split roles). Any manual edits in the editor will be replaced.',
+        confirmText: 'Rebuild',
+        variant: 'warning',
+      });
+      if (!ok) return;
       this.resyncing = true;
       try {
         const resp = await fetch('{% url "resume-editor-resync" draft.pk %}', {

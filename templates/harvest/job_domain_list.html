@@ -14,10 +14,13 @@
       </p>
     </div>
     <div class="flex items-center gap-2">
-      <form method="post" action="{% url 'harvest-job-domain-apply' %}">
+      <form method="post" action="{% url 'harvest-job-domain-apply' %}"
+            data-gc-confirm-message="Apply current routing rules to active RawJobs and synced Jobs? This runs in the background and preserves manually-added job roles."
+            data-gc-confirm-title="Apply routing rules"
+            data-gc-confirm-text="Apply"
+            data-gc-confirm-variant="warning">
         {% csrf_token %}
-        <button type="submit" class="btn-secondary"
-                onclick="return confirm('Apply current routing rules to active RawJobs and synced Jobs? This runs in the background and preserves manually-added job roles.');">
+        <button type="submit" class="btn-secondary">
           Apply Existing Jobs
         </button>
       </form>

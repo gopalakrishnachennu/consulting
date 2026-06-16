@@ -520,7 +520,11 @@
                   <form method="post" action="{% url 'draft-promote' draft.pk %}" class="inline">{% csrf_token %}<button type="submit" class="text-purple-600 hover:text-purple-800 text-[10px] font-bold">Promote</button></form>
                   {% endif %}
                   {% if is_admin %}
-                  <form method="post" action="{% url 'draft-delete' draft.pk %}" class="inline">{% csrf_token %}<button type="submit" class="text-red-400 hover:text-red-600 text-[10px] font-bold" onclick="return confirm('Delete this draft?')">Del</button></form>
+                  <form method="post" action="{% url 'draft-delete' draft.pk %}" class="inline"
+                    data-gc-confirm-message="Delete this draft?"
+                    data-gc-confirm-title="Delete draft"
+                    data-gc-confirm-text="Delete"
+                    data-gc-confirm-variant="danger">{% csrf_token %}<button type="submit" class="text-red-400 hover:text-red-600 text-[10px] font-bold">Del</button></form>
                   {% endif %}
                 </div>
               </td>

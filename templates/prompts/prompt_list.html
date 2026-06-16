@@ -39,9 +39,13 @@
         <div class="flex flex-wrap gap-2">
           <a href="{% url 'prompt-detail' prompt.pk %}" class="btn-ghost">View</a>
           <a href="{% url 'prompt-edit' prompt.pk %}" class="btn-ghost">Edit</a>
-          <form method="post" action="{% url 'prompt-delete' prompt.pk %}" class="inline">
+          <form method="post" action="{% url 'prompt-delete' prompt.pk %}" class="inline"
+            data-gc-confirm-message="Delete this prompt?"
+            data-gc-confirm-title="Delete prompt"
+            data-gc-confirm-text="Delete"
+            data-gc-confirm-variant="danger">
             {% csrf_token %}
-            <button class="btn-danger" onclick="return confirm('Delete this prompt?')">Delete</button>
+            <button type="submit" class="btn-danger">Delete</button>
           </form>
         </div>
       </article>

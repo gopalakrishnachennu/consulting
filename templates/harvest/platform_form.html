@@ -300,7 +300,10 @@
       </form>
       {% if is_edit %}
       <form id="delete-platform-form" method="post" action="{% url 'harvest-platform-delete' object.pk %}"
-        onsubmit="return confirm('Delete {{ object.name }} only if it has no labels or raw jobs? Disable is safer for active platforms.');">
+        data-gc-confirm-message="Delete {{ object.name }} only if it has no labels or raw jobs? Disable is safer for active platforms."
+        data-gc-confirm-title="Delete platform"
+        data-gc-confirm-text="Delete"
+        data-gc-confirm-variant="danger">
         {% csrf_token %}
       </form>
       {% endif %}

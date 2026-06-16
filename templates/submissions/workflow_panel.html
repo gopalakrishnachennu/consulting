@@ -35,10 +35,13 @@
               {{ lock.time_remaining_seconds }} seconds remaining
             </span>
           </span>
-          <form method="post" action="{{ release_url }}">
+          <form method="post" action="{{ release_url }}"
+            data-gc-confirm-message="Release your lock on {{ consultant.user.get_full_name }}? Another employee can claim them."
+            data-gc-confirm-title="Release lock"
+            data-gc-confirm-text="Release"
+            data-gc-confirm-variant="warning">
             {% csrf_token %}
             <button type="submit"
-                    onclick="return confirm('Release your lock on {{ consultant.user.get_full_name }}? Another employee can claim them.')"
                     class="text-sm bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 px-3 py-1.5 rounded transition">
               Release Lock
             </button>

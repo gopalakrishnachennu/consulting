@@ -35,10 +35,14 @@
         <input type="hidden" name="next" value="{{ request.path }}">
         <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-lg transition shadow-sm">✓ Approve</button>
       </form>
-      <form method="post" action="{% url 'job-reject' object.pk %}" class="inline">
+      <form method="post" action="{% url 'job-reject' object.pk %}" class="inline"
+        data-gc-confirm-message="Reject this job from the pool?"
+        data-gc-confirm-title="Reject job"
+        data-gc-confirm-text="Reject"
+        data-gc-confirm-variant="danger">
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ request.path }}">
-        <button type="submit" class="px-4 py-2 bg-white hover:bg-red-50 text-red-600 text-sm font-bold rounded-lg border border-red-200 transition" onclick="return confirm('Reject this job from the pool?')">✗ Reject</button>
+        <button type="submit" class="px-4 py-2 bg-white hover:bg-red-50 text-red-600 text-sm font-bold rounded-lg border border-red-200 transition">✗ Reject</button>
       </form>
       <a href="{% url 'job-pool' %}" class="px-4 py-2 bg-amber-100 hover:bg-amber-200 text-amber-800 text-sm font-semibold rounded-lg transition">View Pool</a>
     </div>
@@ -100,7 +104,11 @@
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
             <span id="copy-jd-text">Copy JD</span>
           </button>
-          <a href="{% url 'job-delete' object.pk %}" class="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition" title="Delete" onclick="return confirm('Delete this job permanently?')">
+          <a href="{% url 'job-delete' object.pk %}" class="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition" title="Delete"
+            data-gc-confirm-message="Delete this job permanently?"
+            data-gc-confirm-title="Delete job"
+            data-gc-confirm-text="Delete"
+            data-gc-confirm-variant="danger">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
           </a>
         </div>

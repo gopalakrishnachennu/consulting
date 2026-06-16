@@ -477,7 +477,11 @@
     <a href="{% url 'harvest-rawjob-review-queue' %}" class="btn-secondary btn-sm">Review Queue</a>
     <a href="{% url 'ops-center' %}#pipelines" class="btn-secondary btn-sm">Run Monitor</a>
     <a href="{% url 'harvest-batch-activity' %}" class="btn-secondary btn-sm" title="Centralized metrics for Quick / Full fetch">Pipeline Activity</a>
-    <form method="post" action="{% url 'jobs-pipeline-run-sync' %}" onsubmit="return confirm('Sync only production READY rows to Vet Queue. Test/smoke, filtered-out, missing-JD, inactive, weak-domain, and low-confidence rows stay blocked. Continue?')">{% csrf_token %}
+    <form method="post" action="{% url 'jobs-pipeline-run-sync' %}"
+      data-gc-confirm-message="Sync only production READY rows to Vet Queue. Test/smoke, filtered-out, missing-JD, inactive, weak-domain, and low-confidence rows stay blocked. Continue?"
+      data-gc-confirm-title="Sync qualified to Vet Queue"
+      data-gc-confirm-text="Continue sync"
+      data-gc-confirm-variant="warning">{% csrf_token %}
       <input type="hidden" name="qualified_only" value="1">
       <input type="hidden" name="max_jobs" value="0">
       <input type="hidden" name="chunk_size" value="500">
@@ -515,7 +519,11 @@
   </div>
   <div class="flex flex-wrap gap-2">
     {# ── Full Fetch Jobs — configurable cooldown enforced server-side ────── #}
-    <form method="post" action="{% url 'jobs-pipeline-run-fetch-batch' %}" onsubmit="return confirm('Full Fetch can create a large production crawl. Use Quick Fetch for normal refresh. Continue Full Fetch?')">
+    <form method="post" action="{% url 'jobs-pipeline-run-fetch-batch' %}"
+      data-gc-confirm-message="Full Fetch can create a large production crawl. Use Quick Fetch for normal refresh. Continue Full Fetch?"
+      data-gc-confirm-title="Full Fetch"
+      data-gc-confirm-text="Continue Full Fetch"
+      data-gc-confirm-variant="warning">
       {% csrf_token %}
       <input type="hidden" name="fetch_mode" value="full">
       <input type="hidden" name="return_to" value="jobs-pipeline">
@@ -573,7 +581,11 @@
     </form>
 
     {# ── Sync Qualified — qualified_only + unlimited from config ────────── #}
-    <form method="post" action="{% url 'jobs-pipeline-run-sync' %}" onsubmit="return confirm('Sync only production READY rows to Vet Queue. Test/smoke and filtered rows remain blocked. Continue?')">
+    <form method="post" action="{% url 'jobs-pipeline-run-sync' %}"
+      data-gc-confirm-message="Sync only production READY rows to Vet Queue. Test/smoke and filtered rows remain blocked. Continue?"
+      data-gc-confirm-title="Sync to Vet Queue"
+      data-gc-confirm-text="Continue sync"
+      data-gc-confirm-variant="warning">
       {% csrf_token %}
       <input type="hidden" name="qualified_only" value="1">
       <input type="hidden" name="max_jobs" value="0">

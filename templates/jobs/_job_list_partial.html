@@ -14,7 +14,24 @@
             <button type="submit" name="bulk_action" value="close" class="px-3 py-1.5 text-xs font-semibold bg-white/20 hover:bg-white/30 rounded-lg transition">Close</button>
             <button type="submit" name="bulk_action" value="open" class="px-3 py-1.5 text-xs font-semibold bg-white/20 hover:bg-white/30 rounded-lg transition">Reopen</button>
             <button type="submit" name="bulk_action" value="draft" class="px-3 py-1.5 text-xs font-semibold bg-white/20 hover:bg-white/30 rounded-lg transition">Draft</button>
-            <button type="submit" name="bulk_action" value="archive" class="px-3 py-1.5 text-xs font-semibold bg-red-400/40 hover:bg-red-400/60 rounded-lg transition" onclick="return confirm('Archive ' + this.form.selected_ids.value.split(',').length + ' job(s)?')">Archive</button>
+            <button type="button" class="px-3 py-1.5 text-xs font-semibold bg-red-400/40 hover:bg-red-400/60 rounded-lg transition"
+              @click="$dispatch('confirm-modal', {
+                title: 'Archive jobs?',
+                message: 'Archive ' + selected.length + ' job(s)?',
+                confirmText: 'Archive',
+                variant: 'danger',
+                onConfirm: () => {
+                  const form = $el.closest('form');
+                  const btn = document.createElement('button');
+                  btn.type = 'submit';
+                  btn.name = 'bulk_action';
+                  btn.value = 'archive';
+                  btn.hidden = true;
+                  form.appendChild(btn);
+                  form.requestSubmit(btn);
+                  btn.remove();
+                }
+              })">Archive</button>
             <button type="submit" name="bulk_action" value="export" class="px-3 py-1.5 text-xs font-semibold bg-emerald-400/30 hover:bg-emerald-400/50 rounded-lg transition">Export CSV</button>
         </form>
     </div>

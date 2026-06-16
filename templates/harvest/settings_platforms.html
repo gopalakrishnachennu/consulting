@@ -212,7 +212,11 @@
           <td class="tbl-td-right">
             <div class="flex items-center justify-end gap-2">
               <a href="{% url 'harvest-platform-edit' platform.pk %}" class="link-action text-xs px-3 py-1 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200">Edit</a>
-              <form method="post" action="{% url 'harvest-platform-delete' platform.pk %}" class="inline" onsubmit="return confirm('Delete {{ platform.name }} only if it has no labels or raw jobs? Disable is safer for active platforms.');">
+              <form method="post" action="{% url 'harvest-platform-delete' platform.pk %}" class="inline"
+                data-gc-confirm-message="Delete {{ platform.name }} only if it has no labels or raw jobs? Disable is safer for active platforms."
+                data-gc-confirm-title="Delete platform"
+                data-gc-confirm-text="Delete"
+                data-gc-confirm-variant="danger">
                 {% csrf_token %}
                 <button type="submit" class="btn-danger-soft text-xs px-3 py-1">Delete</button>
               </form>

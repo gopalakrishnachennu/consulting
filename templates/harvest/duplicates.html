@@ -234,7 +234,11 @@
                 <div class="flex items-center justify-end gap-1.5">
                   {# Merge #}
                   <form method="post" action="{% url 'harvest-duplicate-resolve' pair.pk %}"
-                        class="inline" onsubmit="return confirm('Merge — deactivate duplicate and backfill primary?')">
+                        class="inline"
+                        data-gc-confirm-message="Merge — deactivate duplicate and backfill primary?"
+                        data-gc-confirm-title="Merge duplicates"
+                        data-gc-confirm-text="Merge"
+                        data-gc-confirm-variant="danger">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="merge">
                     <input type="hidden" name="next" value="{{ request.get_full_path }}">

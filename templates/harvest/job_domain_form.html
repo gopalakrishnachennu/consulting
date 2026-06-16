@@ -257,9 +257,9 @@
                   class="btn-primary inline-flex items-center justify-center rounded-lg px-4 py-2.5 text-sm font-semibold text-white">
             {% if object %}Save Changes{% else %}Create Rule{% endif %}
           </button>
-          <button type="submit" name="apply_downstream" value="1"
+          <button type="button"
                   class="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                  onclick="return confirm('Save this rule and apply current routing rules to active existing jobs? This runs in the background.');">
+                  onclick="window.gcConfirm({ title: 'Save and apply', message: 'Save this rule and apply current routing rules to active existing jobs? This runs in the background.', confirmText: 'Save and apply', variant: 'warning' }).then(function(ok) { if (!ok) return; var f = this.closest('form'); var i = document.createElement('input'); i.type = 'hidden'; i.name = 'apply_downstream'; i.value = '1'; f.appendChild(i); f.submit(); }.bind(this));">
             Save and Apply Existing
           </button>
           <a href="{% url 'harvest-job-domains' %}"

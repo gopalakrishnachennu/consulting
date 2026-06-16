@@ -115,20 +115,32 @@
                         <h2 class="text-sm font-bold text-slate-900">Engine operations</h2>
                         {% if request.user.is_superuser %}
                         <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-3">
-                            <form method="post" action="{% url 'harvest-run-fetch-batch' %}" onsubmit="return confirmEngineAction('Fetch ready companies now? This queues background harvest tasks.');">{% csrf_token %}
+                            <form method="post" action="{% url 'harvest-run-fetch-batch' %}"
+                              data-gc-confirm-message="Fetch ready companies now? This queues background harvest tasks."
+                              data-gc-confirm-title="Fetch ready companies"
+                              data-gc-confirm-text="Start fetch"
+                              data-gc-confirm-variant="warning">{% csrf_token %}
                                 <input type="hidden" name="fetch_mode" value="quick">
                                 <button type="submit" {% if running_batches %}disabled{% endif %} class="w-full rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-left hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed">
                                     <span class="block text-sm font-bold text-emerald-900">Fetch ready companies</span>
                                     <span class="block text-xs text-emerald-700 mt-0.5">{% if running_batches %}A batch is already running. Wait for it to finish.{% else %}Incremental harvest using platform + tenant labels.{% endif %}</span>
                                 </button>
                             </form>
-                            <form method="post" action="{% url 'harvest-run-detect' %}" onsubmit="return confirmEngineAction('Run ATS detection across companies?');">{% csrf_token %}
+                            <form method="post" action="{% url 'harvest-run-detect' %}"
+                              data-gc-confirm-message="Run ATS detection across companies?"
+                              data-gc-confirm-title="Run detection"
+                              data-gc-confirm-text="Run detection"
+                              data-gc-confirm-variant="warning">{% csrf_token %}
                                 <button type="submit" class="w-full rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-left hover:bg-blue-100">
                                     <span class="block text-sm font-bold text-blue-900">Run detection</span>
                                     <span class="block text-xs text-blue-700 mt-0.5">Scan company career sites and detect ATS platforms.</span>
                                 </button>
                             </form>
-                            <form method="post" action="{% url 'harvest-run-verify-portals' %}" onsubmit="return confirmEngineAction('Verify portal live/down status now?');">{% csrf_token %}
+                            <form method="post" action="{% url 'harvest-run-verify-portals' %}"
+                              data-gc-confirm-message="Verify portal live/down status now?"
+                              data-gc-confirm-title="Verify portals"
+                              data-gc-confirm-text="Verify"
+                              data-gc-confirm-variant="warning">{% csrf_token %}
                                 <button type="submit" class="w-full rounded-lg border border-violet-200 bg-violet-50 px-4 py-3 text-left hover:bg-violet-100">
                                     <span class="block text-sm font-bold text-violet-900">Verify portals</span>
                                     <span class="block text-xs text-violet-700 mt-0.5">Refresh live/down status before fetches.</span>
@@ -141,7 +153,11 @@
                                 <span class="block text-xs text-orange-700 mt-0.5">New companies found by scraper — review &amp; verify to add to harvest.</span>
                             </a>
                             {% endif %}
-                            <form method="post" action="{% url 'harvest-run-backfill' %}" onsubmit="return confirmEngineAction('Backfill missing ATS labels from existing job URLs?');">{% csrf_token %}
+                            <form method="post" action="{% url 'harvest-run-backfill' %}"
+                              data-gc-confirm-message="Backfill missing ATS labels from existing job URLs?"
+                              data-gc-confirm-title="Backfill labels"
+                              data-gc-confirm-text="Backfill"
+                              data-gc-confirm-variant="warning">{% csrf_token %}
                                 <button type="submit" class="w-full rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-left hover:bg-amber-100">
                                     <span class="block text-sm font-bold text-amber-900">Backfill labels</span>
                                     <span class="block text-xs text-amber-700 mt-0.5">Use existing job URLs to fill missing labels.</span>
@@ -672,10 +688,6 @@ function openCompanyIntel(pk) {
 
 function companyEscHtml(s) {
     return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-function confirmEngineAction(message) {
-    return window.confirm(message || 'Run this engine action now?');
 }
 
 (function setupEngineInsightTabs() {

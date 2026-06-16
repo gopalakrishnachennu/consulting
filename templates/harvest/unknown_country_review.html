@@ -379,22 +379,51 @@ function markLargeConfirmed(form, count) {
 function confirmBulk(button, count, label) {
   const form = button.form;
   const country = form.querySelector('select[name="country_code"]');
-  if (button.value === 'assign_country' && country && !country.value) { alert('Pick a country before assigning.'); return false; }
+  if (button.value === 'assign_country' && country && !country.value) {
+    window.gcAlert('Pick a country before assigning.');
+    return false;
+  }
   const large = count > BULK_CONFIRM_THRESHOLD ? `\n\nThis is a large update (${count} rows).` : '';
-  const ok = confirm(`Confirm: ${label} for ${count} row(s)?${large}`);
-  if (ok) markLargeConfirmed(form, count);
-  return ok;
+  window.gcConfirm({
+    title: 'Confirm bulk action',
+    message: `Confirm: ${label} for ${count} row(s)?${large}`,
+    confirmText: 'Confirm',
+    variant: 'warning',
+  }).then(function (ok) {
+    if (!ok) return;
+    markLargeConfirmed(form, count);
+    form.dataset.gcConfirmBypass = '1';
+    if (typeof form.requestSubmit === 'function') form.requestSubmit(button);
+    else form.submit();
+  });
+  return false;
 }
 function confirmSelected(button, label) {
   const count = selectedRows().length;
-  if (!count) { alert('Select at least one row first.'); return false; }
+  if (!count) {
+    window.gcAlert('Select at least one row first.');
+    return false;
+  }
   const form = button.form;
   const country = form.querySelector('select[name="country_code"]');
-  if (button.value === 'assign_country' && country && !country.value) { alert('Pick a country before assigning.'); return false; }
+  if (button.value === 'assign_country' && country && !country.value) {
+    window.gcAlert('Pick a country before assigning.');
+    return false;
+  }
   const large = count > BULK_CONFIRM_THRESHOLD ? `\n\nThis is a large update (${count} rows).` : '';
-  const ok = confirm(`Confirm: ${label} for ${count} selected row(s)?${large}`);
-  if (ok) markLargeConfirmed(form, count);
-  return ok;
+  window.gcConfirm({
+    title: 'Confirm selection',
+    message: `Confirm: ${label} for ${count} selected row(s)?${large}`,
+    confirmText: 'Confirm',
+    variant: 'warning',
+  }).then(function (ok) {
+    if (!ok) return;
+    markLargeConfirmed(form, count);
+    form.dataset.gcConfirmBypass = '1';
+    if (typeof form.requestSubmit === 'function') form.requestSubmit(button);
+    else form.submit();
+  });
+  return false;
 }
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.row-check').forEach(cb => cb.addEventListener('change', updateSelectedCount));

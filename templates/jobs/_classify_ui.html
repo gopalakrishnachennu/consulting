@@ -187,7 +187,13 @@ function triggerResume(taskId) {
 
 // ── Force-unlock classify (clears ghost lock after worker crash) ───────────
 function forceUnlockClassify() {
-    if (!confirm('Clear the stuck classify lock? Only do this if the worker has crashed and the lock is stale.')) return;
+    window.gcConfirm({
+        title: 'Clear classify lock?',
+        message: 'Clear the stuck classify lock? Only do this if the worker has crashed and the lock is stale.',
+        confirmText: 'Clear lock',
+        variant: 'warning',
+    }).then(function (ok) {
+        if (!ok) return;
     fetch(CLASSIFY_URL, {
         method: 'POST',
         headers: { 'X-CSRFToken': '{{ csrf_token }}', 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -197,17 +203,18 @@ function forceUnlockClassify() {
     .then(data => {
         const unlockBtn = document.getElementById('classify-unlock-btn');
         if (data.status === 'unlocked') {
-            alert('✅ Classify lock cleared. You can now start a new classify run.');
+            window.gcAlert('Classify lock cleared. You can now start a new classify run.', 'Lock cleared');
             if (unlockBtn) unlockBtn.classList.add('hidden');
             document.querySelectorAll('.classify-trigger-btn').forEach(b => { b.disabled = false; b.classList.remove('opacity-50'); });
             sessionStorage.removeItem(CLASSIFY_TASK_STORAGE_KEY);
         } else if (data.status === 'forbidden') {
-            alert('⛔ Only superusers can force-unlock the classify lock.');
+            window.gcAlert('Only superusers can force-unlock the classify lock.', 'Not allowed');
         } else {
-            alert('Unexpected response: ' + JSON.stringify(data));
+            window.gcAlert('Unexpected response: ' + JSON.stringify(data), 'Error');
         }
     })
-    .catch(err => alert('Error clearing lock: ' + err));
+    .catch(err => window.gcAlert('Error clearing lock: ' + err, 'Error'));
+    });
 }
 
 // Show/hide unlock button based on live lock state

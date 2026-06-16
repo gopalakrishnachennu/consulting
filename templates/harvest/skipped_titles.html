@@ -40,7 +40,11 @@
             <td class="tbl-td text-xs text-gray-500">{{ row.skipped_at|timesince }} ago</td>
             <td class="tbl-td-right">
               {% if row.raw_job_id %}
-              <form method="post" action="{% url 'harvest-skipped-title-recover' row.pk %}" onsubmit="return confirm('Recover this RawJob and queue one JD fetch?');">{% csrf_token %}<button class="btn-secondary btn-sm">Recover</button></form>
+              <form method="post" action="{% url 'harvest-skipped-title-recover' row.pk %}"
+                data-gc-confirm-message="Recover this RawJob and queue one JD fetch?"
+                data-gc-confirm-title="Recover skipped title"
+                data-gc-confirm-text="Recover"
+                data-gc-confirm-variant="warning">{% csrf_token %}<button class="btn-secondary btn-sm">Recover</button></form>
               {% else %}<span class="text-xs text-gray-400">No RawJob</span>{% endif %}
             </td>
           </tr>

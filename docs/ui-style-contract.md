@@ -128,11 +128,18 @@ Gate at the view (`UserPassesTestMixin`) AND hide the trigger in template (`{% i
 
 Delete / cleanup / force-reclassify / bulk / archive / purge MUST:
 1. Use a danger-styled button (red)
-2. Confirm via Alpine modal (preferred) or `onclick="return confirm(...)"`
+2. Confirm via the **global Alpine modal** — never `window.confirm`
 3. State the impact clearly ("permanently delete X and all submissions, drafts...")
 4. Be POST, never GET
 
-Reuse the delete-modal pattern from `templates/users/employee_edit.html` (`x-data="{ showDeleteModal: false }"`).
+**Preferred patterns** (see `templates/base.html`):
+
+- **Forms:** `data-gc-confirm-message="..."` plus optional `data-gc-confirm-title`, `data-gc-confirm-text`, `data-gc-confirm-variant` (`danger` | `warning` | `info`)
+- **Links:** same `data-gc-confirm-*` attributes on `<a href="...">`
+- **JS:** `await window.gcConfirm({ title, message, confirmText, variant })` or `$dispatch('confirm-modal', { ... })`
+- **Notices:** `window.gcAlert(message, title)` instead of `window.alert`
+
+Reuse the delete-modal pattern from `templates/users/employee_edit.html` (`x-data="{ showDeleteModal: false }"`) only when a bespoke multi-step modal is needed.
 
 ---
 

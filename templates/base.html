@@ -565,13 +565,13 @@
         <template x-if="visible">
             <div class="fixed inset-0 z-[200] flex items-center justify-center p-4">
                 <!-- Backdrop -->
-                <div class="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" @click="cancel()"></div>
+                <div class="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" @click="!alertOnly && cancel()"></div>
                 <!-- Modal Card -->
                 <div class="relative bg-white rounded-xl shadow-2xl max-w-md w-full p-6 animate-fade-in-up">
                     <div class="flex items-start gap-3 mb-4">
                         <div class="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center"
-                             :class="variant === 'danger' ? 'bg-red-100' : 'bg-amber-100'">
-                            <svg class="w-5 h-5" :class="variant === 'danger' ? 'text-red-600' : 'text-amber-600'"
+                             :class="variant === 'danger' ? 'bg-red-100' : (variant === 'info' ? 'bg-blue-100' : 'bg-amber-100')">
+                            <svg class="w-5 h-5" :class="variant === 'danger' ? 'text-red-600' : (variant === 'info' ? 'text-blue-600' : 'text-amber-600')"
                                  fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                       d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a1 1 0 00.86 1.5h18.64a1 1 0 00.86-1.5L13.71 3.86a1 1 0 00-1.72 0z" />
@@ -579,17 +579,17 @@
                         </div>
                         <div>
                             <h3 class="text-lg font-semibold text-gray-900" x-text="title"></h3>
-                            <p class="text-sm text-gray-500 mt-1" x-text="message"></p>
+                            <p class="text-sm text-gray-500 mt-1 whitespace-pre-line" x-text="message"></p>
                         </div>
                     </div>
                     <div class="flex items-center justify-end gap-3 mt-6">
-                        <button @click="cancel()"
+                        <button x-show="!alertOnly" @click="cancel()"
                             class="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition">
                             Cancel
                         </button>
                         <button @click="confirm()"
                             class="px-4 py-2 rounded-lg text-sm font-medium text-white transition"
-                            :class="variant === 'danger' ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-600 hover:bg-amber-700'"
+                            :class="variant === 'danger' ? 'bg-red-600 hover:bg-red-700' : (variant === 'info' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-amber-600 hover:bg-amber-700')"
                             x-text="confirmText">
                         </button>
                     </div>
@@ -607,25 +607,117 @@
             message: '',
             confirmText: 'Confirm',
             variant: 'danger',
+            alertOnly: false,
             formEl: null,
+            onConfirm: null,
+            onCancel: null,
             open(detail) {
                 this.title = detail.title || 'Are you sure?';
                 this.message = detail.message || 'This action cannot be undone.';
                 this.confirmText = detail.confirmText || 'Confirm';
                 this.variant = detail.variant || 'danger';
+                this.alertOnly = Boolean(detail.alertOnly);
                 this.formEl = detail.form || null;
+                this.onConfirm = detail.onConfirm || null;
+                this.onCancel = detail.onCancel || null;
                 this.visible = true;
             },
             confirm() {
                 this.visible = false;
-                if (this.formEl) this.formEl.submit();
+                const cb = this.onConfirm;
+                const form = this.formEl;
+                this.onConfirm = null;
+                this.onCancel = null;
+                this.formEl = null;
+                this.alertOnly = false;
+                if (cb) {
+                    cb();
+                } else if (form) {
+                    form.submit();
+                }
             },
             cancel() {
+                if (this.alertOnly) return;
                 this.visible = false;
+                const cb = this.onCancel;
+                this.onConfirm = null;
+                this.onCancel = null;
                 this.formEl = null;
+                this.alertOnly = false;
+                if (cb) cb();
             }
         }));
     });
+
+    /** In-app confirm (replaces window.confirm). Returns Promise<boolean>. */
+    window.gcConfirm = function (opts) {
+        opts = opts || {};
+        return new Promise(function (resolve) {
+            window.dispatchEvent(new CustomEvent('confirm-modal', {
+                bubbles: true,
+                detail: Object.assign({}, opts, {
+                    onConfirm: function () { resolve(true); },
+                    onCancel: function () { resolve(false); },
+                }),
+            }));
+        });
+    };
+
+    /** In-app alert (replaces window.alert for short notices). */
+    window.gcAlert = function (message, title) {
+        return window.gcConfirm({
+            title: title || 'Notice',
+            message: message || '',
+            confirmText: 'OK',
+            variant: 'info',
+            alertOnly: true,
+        });
+    };
+
+    /** Forms: data-gc-confirm-message="..." (+ optional title, text, variant). */
+    document.addEventListener('submit', function (e) {
+        var form = e.target;
+        if (!form || !form.getAttribute) return;
+        var msg = form.getAttribute('data-gc-confirm-message');
+        if (!msg) return;
+        if (form.dataset.gcConfirmBypass === '1') {
+            delete form.dataset.gcConfirmBypass;
+            return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        window.gcConfirm({
+            title: form.getAttribute('data-gc-confirm-title') || 'Are you sure?',
+            message: msg,
+            confirmText: form.getAttribute('data-gc-confirm-text') || 'Confirm',
+            variant: form.getAttribute('data-gc-confirm-variant') || 'danger',
+        }).then(function (ok) {
+            if (!ok) return;
+            form.dataset.gcConfirmBypass = '1';
+            if (typeof form.requestSubmit === 'function') {
+                form.requestSubmit();
+            } else {
+                form.submit();
+            }
+        });
+    }, true);
+
+    /** Links: data-gc-confirm-message on &lt;a href="..."&gt; */
+    document.addEventListener('click', function (e) {
+        var link = e.target.closest('a[data-gc-confirm-message]');
+        if (!link || link.dataset.gcConfirmBypass === '1') return;
+        e.preventDefault();
+        window.gcConfirm({
+            title: link.getAttribute('data-gc-confirm-title') || 'Are you sure?',
+            message: link.getAttribute('data-gc-confirm-message') || '',
+            confirmText: link.getAttribute('data-gc-confirm-text') || 'Confirm',
+            variant: link.getAttribute('data-gc-confirm-variant') || 'danger',
+        }).then(function (ok) {
+            if (!ok) return;
+            var href = link.getAttribute('href');
+            if (href) window.location.href = href;
+        });
+    }, true);
 
     // Auto-dismiss toast messages with a subtle fade/slide
     (function () {
