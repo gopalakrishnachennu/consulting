@@ -1442,3 +1442,50 @@ class JDExtractorPromptEditView(AdminOrEmployeeMixin, View):
                 )
                 messages.success(request, f'Saved & activated "{name}". New jobs will re-parse with this prompt.')
         return redirect("jd-extractor-prompt")
+
+
+class JDExtractionTestView(AdminOrEmployeeMixin, View):
+    """Run the CURRENT (UI-editable) prompt on a real JD and show the JSON output —
+    the prompt-tuning loop: edit prompt → test on a JD → see result → refine.
+    Test only: results are NOT saved to the Job."""
+    template_name = "resumes/jd_extraction_test.html"
+
+    def _recent(self):
+        return list(
+            Job.objects.exclude(description="")
+            .order_by("-created_at")
+            .only("id", "title", "company")[:30]
+        )
+
+    def get(self, request):
+        return render(request, self.template_name, {"recent": self._recent(), "result": None})
+
+    def post(self, request):
+        import json as _json
+        from .pipeline.jd_extractor import extract_jd
+        from .pipeline.parser_diff import diff_parsers
+        from jobs.services import rule_parse_jd
+
+        job = Job.objects.filter(pk=(request.POST.get("job_id") or "").strip()).first()
+        if not job:
+            messages.error(request, "Pick a job first (or paste a valid job id).")
+            return redirect("jd-extraction-test")
+
+        data = extract_jd(job, force=True, save=False)  # test — do not persist
+        meta = data.get("parser_metadata", {}) or {}
+        legacy = {}
+        try:
+            legacy = rule_parse_jd(job.description or "") or {}
+        except Exception:
+            legacy = {}
+        diff = diff_parsers(legacy, data)
+        return render(request, self.template_name, {
+            "recent": self._recent(),
+            "selected_job_id": str(job.pk),
+            "result": {
+                "job": job,
+                "json": _json.dumps(data, indent=2, default=str),
+                "meta": meta,
+                "diff": diff,
+            },
+        })

@@ -17,10 +17,12 @@ from .views import (
     InterviewPrepView,
     # JD extractor prompt editor
     JDExtractorPromptEditView,
+    JDExtractionTestView,
 )
 
 urlpatterns = [
     path('jd-extractor-prompt/', JDExtractorPromptEditView.as_view(), name='jd-extractor-prompt'),
+    path('jd-extraction-test/', JDExtractionTestView.as_view(), name='jd-extraction-test'),
     path('generate/', ResumeGeneratePageView.as_view(), name='resume-generate'),
     path('generate/run/', ResumeGenerateActionView.as_view(), name='resume-generate-run'),
     path('generate/preflight/', PreflightCheckView.as_view(), name='resume-preflight'),
