@@ -78,6 +78,40 @@ class CompanyViewTests(TestCase):
         resp = self.client.get(url)
         self.assertEqual(resp.status_code, 302)
 
+    def test_company_list_engine_surfaces_saved_views_and_row_warnings(self):
+        self.client.login(username="emp1", password="testpass")
+        company = Company.objects.create(
+            name="Engine Warning Co",
+            domain="engine-warning.example",
+            website="https://engine-warning.example",
+            website_is_valid=False,
+        )
+        platform, _ = JobBoardPlatform.objects.get_or_create(
+            slug="greenhouse",
+            defaults={"name": "Greenhouse"},
+        )
+        CompanyPlatformLabel.objects.create(
+            company=company,
+            platform=platform,
+            tenant_id="",
+            confidence=CompanyPlatformLabel.Confidence.LOW,
+            detection_method=CompanyPlatformLabel.DetectionMethod.URL_PATTERN,
+            portal_alive=False,
+            portal_last_verified=timezone.now() - timedelta(days=9),
+            is_verified=False,
+        )
+
+        resp = self.client.get(reverse("company-list"), {"view": "engine"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Primary filters")
+        self.assertContains(resp, "Advanced filters")
+        self.assertContains(resp, "Needs tenant")
+        self.assertContains(resp, "Portal down")
+        self.assertContains(resp, "Low confidence")
+        self.assertContains(resp, "Saved view", count=0)
+        self.assertContains(resp, "View all platforms")
+        self.assertContains(resp, "More")
+
     def test_company_detail_surfaces_harvest_operations_context(self):
         self.client.login(username="emp1", password="testpass")
         company = Company.objects.create(

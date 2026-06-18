@@ -5,10 +5,20 @@
 {% include 'jobs/_pipeline_subnav.html' %}
 
 <div class="container mx-auto px-4">
-    <div class="flat-page-header">
-        <div>
+    <div class="flat-page-header gap-4">
+        <div class="space-y-3">
             <h1 class="page-title">Company Engine</h1>
             <p class="page-subtitle">Operate companies, ATS detection, portal health, raw jobs, and submission history from one command center.</p>
+            {% if ats_enabled %}
+            <div class="flex flex-wrap gap-2">
+                {% for queue in saved_company_views %}
+                <a href="{{ queue.url }}" class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition {% if selected_smart == queue.key %}border-[var(--brand-300)] bg-[var(--brand-50)] text-[var(--brand-700)]{% elif queue.tone == 'amber' %}border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100{% elif queue.tone == 'emerald' %}border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100{% elif queue.tone == 'rose' %}border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100{% elif queue.tone == 'yellow' %}border-yellow-200 bg-yellow-50 text-yellow-800 hover:bg-yellow-100{% elif queue.tone == 'blue' %}border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100{% elif queue.tone == 'indigo' %}border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100{% elif queue.tone == 'orange' %}border-orange-200 bg-orange-50 text-orange-800 hover:bg-orange-100{% else %}border-slate-200 bg-white text-slate-700 hover:bg-slate-50{% endif %}">
+                    <span>{{ queue.label }}</span>
+                    <span class="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px]">{{ queue.count }}</span>
+                </a>
+                {% endfor %}
+            </div>
+            {% endif %}
         </div>
         <div class="flex items-center gap-2 flex-wrap justify-end">
             {% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}
@@ -29,38 +39,38 @@
             <div class="flex flex-col gap-3 border-b border-gray-100 bg-gray-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
                 <div>
                     <h2 class="text-sm font-bold text-gray-900">Company engine workspace</h2>
-                    <p class="mt-0.5 text-xs text-gray-500">Open any tab below. Click the active tab again to collapse the section.</p>
+                    <p class="mt-0.5 text-xs text-gray-500">Global engine health and queues. Current table filters remain separate below.</p>
                 </div>
                 <div class="flex flex-wrap gap-2" role="tablist" aria-label="Company engine insights">
-                    <button type="button" id="engine-tab-overview" class="engine-insight-tab inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition" data-panel="overview" role="tab" aria-selected="true" aria-expanded="true" aria-controls="engine-panel-overview">
+                    <button type="button" id="engine-tab-overview" class="engine-insight-tab inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition" data-panel="overview" role="tab" aria-selected="true" aria-expanded="true" aria-controls="engine-panel-overview">
                         <span>Overview</span>
                         <span class="rounded-full bg-white px-2 py-0.5 text-xs text-gray-500 border border-gray-200">{{ stat_total_companies }}</span>
                         <svg class="engine-insight-chevron h-4 w-4 transition-transform rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                         </svg>
                     </button>
-                    <button type="button" id="engine-tab-queues" class="engine-insight-tab inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition" data-panel="queues" role="tab" aria-selected="false" aria-expanded="false" aria-controls="engine-panel-queues">
+                    <button type="button" id="engine-tab-queues" class="engine-insight-tab inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition" data-panel="queues" role="tab" aria-selected="false" aria-expanded="false" aria-controls="engine-panel-queues">
                         <span>Work Queues</span>
                         <span class="rounded-full bg-white px-2 py-0.5 text-xs text-gray-500 border border-gray-200">{{ stat_attention }}</span>
                         <svg class="engine-insight-chevron h-4 w-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                         </svg>
                     </button>
-                    <button type="button" id="engine-tab-platforms" class="engine-insight-tab inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition" data-panel="platforms" role="tab" aria-selected="false" aria-expanded="false" aria-controls="engine-panel-platforms">
+                    <button type="button" id="engine-tab-platforms" class="engine-insight-tab inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition" data-panel="platforms" role="tab" aria-selected="false" aria-expanded="false" aria-controls="engine-panel-platforms">
                         <span>Platform Distribution</span>
                         <span class="rounded-full bg-white px-2 py-0.5 text-xs text-gray-500 border border-gray-200">{{ stat_labeled }}</span>
                         <svg class="engine-insight-chevron h-4 w-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                         </svg>
                     </button>
-                    <button type="button" id="engine-tab-health" class="engine-insight-tab inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition" data-panel="health" role="tab" aria-selected="false" aria-expanded="false" aria-controls="engine-panel-health">
+                    <button type="button" id="engine-tab-health" class="engine-insight-tab inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition" data-panel="health" role="tab" aria-selected="false" aria-expanded="false" aria-controls="engine-panel-health">
                         <span>Engine Health</span>
                         <span class="rounded-full bg-white px-2 py-0.5 text-xs text-gray-500 border border-gray-200">{% if portal_health_pct is not None %}{{ portal_health_pct }}%{% else %}—{% endif %}</span>
                         <svg class="engine-insight-chevron h-4 w-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                         </svg>
                     </button>
-                    <button type="button" id="engine-tab-operations" class="engine-insight-tab inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition" data-panel="operations" role="tab" aria-selected="false" aria-expanded="false" aria-controls="engine-panel-operations">
+                    <button type="button" id="engine-tab-operations" class="engine-insight-tab inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition" data-panel="operations" role="tab" aria-selected="false" aria-expanded="false" aria-controls="engine-panel-operations">
                         <span>Recent Operations</span>
                         <svg class="engine-insight-chevron h-4 w-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
@@ -187,15 +197,17 @@
             </div>
 
             <div id="engine-panel-platforms" class="engine-insight-panel hidden p-4 md:p-5" role="tabpanel" aria-labelledby="engine-tab-platforms">
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-                    {% for platform in platforms_chart|slice:":4" %}
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
+                    {% for platform in platforms_chart|slice:":5" %}
                     <a href="{% url 'company-list' %}?view=engine&platform={{ platform.slug }}" class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 hover:bg-gray-100">
                         <span class="block truncate text-xs font-semibold text-gray-600">{{ platform.name }}</span>
                         <span class="mt-1 block text-lg font-bold" style="color:{{ platform.color_hex }};">{{ platform.company_count }}</span>
                     </a>
                     {% endfor %}
                 </div>
-                <div class="mt-4 max-h-80 overflow-y-auto border-t border-gray-100 pt-3 pr-1 space-y-2">
+                <details class="mt-4 border-t border-gray-100 pt-3" {% if selected_platform %}open{% endif %}>
+                    <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wider text-gray-500">View all platforms</summary>
+                    <div class="mt-3 max-h-64 overflow-y-auto pr-1 space-y-1.5">
                     {% for platform in platforms_chart %}
                     <a href="{% url 'company-list' %}?view=engine&platform={{ platform.slug }}" class="grid grid-cols-[150px_minmax(0,1fr)_48px] items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-gray-50">
                         <span class="truncate text-sm font-medium text-gray-700">{{ platform.name }}</span>
@@ -207,7 +219,8 @@
                     {% empty %}
                     <p class="text-sm text-gray-500">No platform labels yet. Run detection or backfill labels.</p>
                     {% endfor %}
-                </div>
+                    </div>
+                </details>
             </div>
 
             <div id="engine-panel-health" class="engine-insight-panel hidden p-4 md:p-5" role="tabpanel" aria-labelledby="engine-tab-health">
@@ -263,36 +276,22 @@
 
     <!-- Search & Filters -->
     <form method="get" class="mb-4 space-y-3">
-        <div class="flex flex-wrap items-end gap-3">
+        <div class="rounded-xl border border-gray-200 bg-white shadow-sm p-4 space-y-4">
+        <div class="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+                <h2 class="text-sm font-bold text-gray-900">Primary filters</h2>
+                <p class="mt-0.5 text-xs text-gray-500">Search the grid quickly. Use advanced filters only when narrowing edge cases.</p>
+            </div>
+            <div class="flex items-center gap-2 text-xs text-gray-500">
+                <span>{{ results_total|default:stat_total_companies }} in current view</span>
+                <span class="text-gray-300">•</span>
+                <span>top summary counts are global</span>
+            </div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
             <div class="flex-1 min-w-[180px]">
                 <label class="form-label">Search</label>
                 <input type="text" name="q" value="{{ request.GET.q }}" class="form-input" placeholder="Name or alias">
-            </div>
-            <div class="w-40">
-                <label class="form-label">Relationship status</label>
-                <select name="status" class="form-select">
-                    <option value="">All</option>
-                    {% for s in relationship_statuses %}
-                    <option value="{{ s }}" {% if selected_status == s %}selected{% endif %}>{{ s }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="w-32">
-                <label class="form-label">Blacklisted</label>
-                <select name="blacklisted" class="form-select">
-                    <option value="">All</option>
-                    <option value="1" {% if selected_blacklisted == '1' %}selected{% endif %}>Yes</option>
-                    <option value="0" {% if selected_blacklisted == '0' %}selected{% endif %}>No</option>
-                </select>
-            </div>
-            <div class="w-44">
-                <label class="form-label">Industry</label>
-                <select name="industry" class="form-select">
-                    <option value="">All industries</option>
-                    {% for ind in industries %}
-                    <option value="{{ ind }}" {% if selected_industry == ind %}selected{% endif %}>{{ ind }}</option>
-                    {% endfor %}
-                </select>
             </div>
             <div class="w-40">
                 <label class="form-label">Website valid</label>
@@ -325,32 +324,6 @@
                     <option value="unlabeled" {% if selected_ats_status == 'unlabeled' %}selected{% endif %}>Unlabeled</option>
                 </select>
             </div>
-            <div class="w-36">
-                <label class="form-label">Confidence</label>
-                <select name="confidence" class="form-select">
-                    <option value="">All</option>
-                    {% for val, label in confidence_choices %}
-                    <option value="{{ val }}" {% if selected_confidence == val %}selected{% endif %}>{{ label }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="w-36">
-                <label class="form-label">Verified</label>
-                <select name="verified" class="form-select">
-                    <option value="">All</option>
-                    <option value="yes" {% if selected_verified == 'yes' %}selected{% endif %}>Verified</option>
-                    <option value="no" {% if selected_verified == 'no' %}selected{% endif %}>Unverified</option>
-                </select>
-            </div>
-            <div class="w-44">
-                <label class="form-label">Detection method</label>
-                <select name="method" class="form-select">
-                    <option value="">All methods</option>
-                    {% for val, label in method_choices %}
-                    <option value="{{ val }}" {% if selected_method == val %}selected{% endif %}>{{ label }}</option>
-                    {% endfor %}
-                </select>
-            </div>
             {% endif %}
             <div class="w-36">
                 <label class="form-label">Records</label>
@@ -360,11 +333,88 @@
                     {% endfor %}
                 </select>
             </div>
-            <button type="submit" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700">Search</button>
         </div>
+        <div class="flex items-center gap-2 flex-wrap">
+            <button type="submit" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700">Search</button>
+            {% if has_active_filters %}
+            <a href="{% url 'company-list' %}?view=engine" class="px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">Clear filters</a>
+            {% endif %}
+            <details class="ml-auto" {% if advanced_filters_active %}open{% endif %}>
+                <summary class="list-none cursor-pointer rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                    Advanced filters{% if advanced_filters_active %} ({{ advanced_filters_active }}){% endif %}
+                </summary>
+                <div class="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
+                    <div>
+                        <label class="form-label">Relationship status</label>
+                        <select name="status" class="form-select">
+                            <option value="">All</option>
+                            {% for s in relationship_statuses %}
+                            <option value="{{ s }}" {% if selected_status == s %}selected{% endif %}>{{ s }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Blacklisted</label>
+                        <select name="blacklisted" class="form-select">
+                            <option value="">All</option>
+                            <option value="1" {% if selected_blacklisted == '1' %}selected{% endif %}>Yes</option>
+                            <option value="0" {% if selected_blacklisted == '0' %}selected{% endif %}>No</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Industry</label>
+                        <select name="industry" class="form-select">
+                            <option value="">All industries</option>
+                            {% for ind in industries %}
+                            <option value="{{ ind }}" {% if selected_industry == ind %}selected{% endif %}>{{ ind }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% if is_ats_view %}
+                    <div>
+                        <label class="form-label">Confidence</label>
+                        <select name="confidence" class="form-select">
+                            <option value="">All</option>
+                            {% for val, label in confidence_choices %}
+                            <option value="{{ val }}" {% if selected_confidence == val %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Verified</label>
+                        <select name="verified" class="form-select">
+                            <option value="">All</option>
+                            <option value="yes" {% if selected_verified == 'yes' %}selected{% endif %}>Verified</option>
+                            <option value="no" {% if selected_verified == 'no' %}selected{% endif %}>Unverified</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Detection method</label>
+                        <select name="method" class="form-select">
+                            <option value="">All methods</option>
+                            {% for val, label in method_choices %}
+                            <option value="{{ val }}" {% if selected_method == val %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+                </div>
+            </details>
+        </div>
+        {% if active_filter_chips %}
+        <div class="flex flex-wrap gap-2">
+            {% for chip in active_filter_chips %}
+            <span class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
+                <span class="text-slate-500">{{ chip.label }}</span>
+                <span class="font-semibold text-slate-900">{{ chip.value }}</span>
+            </span>
+            {% endfor %}
+        </div>
+        {% endif %}
         <input type="hidden" name="sort" value="{{ selected_sort }}">
         {% if is_ats_view %}<input type="hidden" name="view" value="engine">{% endif %}
         {% if selected_smart %}<input type="hidden" name="smart" value="{{ selected_smart }}">{% endif %}
+        </div>
     </form>
 
     <!-- Results summary -->
@@ -460,6 +510,25 @@
                         <div class="mt-1 flex items-center gap-2">
                             <button type="button" class="company-preview-trigger text-xs text-gray-500 hover:text-blue-600" data-company-name="{{ company.name }}" data-company-industry="{{ company.industry|default:'—' }}" data-company-website="{{ company.website|default:'—' }}" data-company-status="{{ company.relationship_status|default:'—' }}" data-company-contact="{{ company.primary_contact_name|default:'—' }}" title="Quick preview">Preview</button>
                         </div>
+                        {% if company.engine_row_state.warnings %}
+                        <div class="mt-2 flex flex-wrap gap-1.5">
+                            {% for warning in company.engine_row_state.warnings %}
+                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold
+                                {% if warning.tone == 'rose' %}bg-rose-50 text-rose-700
+                                {% elif warning.tone == 'amber' %}bg-amber-50 text-amber-700
+                                {% elif warning.tone == 'blue' %}bg-blue-50 text-blue-700
+                                {% elif warning.tone == 'yellow' %}bg-yellow-50 text-yellow-800
+                                {% elif warning.tone == 'indigo' %}bg-indigo-50 text-indigo-700
+                                {% elif warning.tone == 'orange' %}bg-orange-50 text-orange-700
+                                {% else %}bg-slate-100 text-slate-700{% endif %}">
+                                {{ warning.label }}
+                            </span>
+                            {% endfor %}
+                            {% if company.engine_row_state.extra_warning_count %}
+                            <span class="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">+{{ company.engine_row_state.extra_warning_count }}</span>
+                            {% endif %}
+                        </div>
+                        {% endif %}
                     </td>
                     <td class="px-4 py-3 {% if not is_ats_view %}hidden md:table-cell{% endif %} text-gray-600">{{ company.industry|default:"—" }}</td>
                     <td class="px-4 py-3 {% if not is_ats_view %}hidden lg:table-cell{% endif %}">
@@ -532,6 +601,9 @@
                             <span class="text-xs text-gray-400">—</span>
                             {% endif %}
                             {% endwith %}
+                            {% if company.engine_row_state.health_age %}
+                            <div class="mt-1 text-[10px] text-gray-400">{{ company.engine_row_state.health_age }}</div>
+                            {% endif %}
                         {% else %}
                         <span class="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">Unlabeled</span>
                         {% endif %}
@@ -601,24 +673,45 @@
                         {% endif %}
                     </td>
                     <td class="px-4 py-3 text-right {% if is_ats_view %}sticky right-0 z-10 bg-white shadow-[-1px_0_0_#f1f5f9] group-hover:bg-gray-50{% endif %}">
-                        <div class="flex items-center justify-end gap-3">
-                            <button type="button" onclick="openCompanyIntel({{ company.pk }})" class="text-slate-700 hover:text-slate-950 text-xs font-semibold">Intel</button>
-                            {% if is_ats_view and company.platform_label and request.user.is_superuser %}
-                            <button type="button" onclick="openSetPlatform({{ company.platform_label.pk }}, {{ company.platform_label.platform.pk|default:'null' }})" class="text-indigo-600 hover:text-indigo-800 text-xs font-medium">Set ATS</button>
-                            {% endif %}
+                        <div class="flex items-center justify-end gap-2">
+                            <span class="hidden xl:inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">Ready {{ company.engine_row_state.readiness_score }}%</span>
                             {% if request.user.is_superuser or request.user.role == 'ADMIN' %}
-                            <a href="{% url 'company-edit' pk=company.pk %}" class="text-blue-600 hover:text-blue-800 text-xs font-medium">Edit</a>
+                            <a href="{% url 'company-edit' pk=company.pk %}" class="inline-flex items-center rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">Edit</a>
+                            {% else %}
+                            <a href="{% url 'company-detail' company.pk %}" class="inline-flex items-center rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">Open</a>
                             {% endif %}
-                            {% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}
-                            <a href="{% url 'job-create' %}?company_id={{ company.pk }}" class="text-blue-600 hover:text-blue-800 text-xs font-medium">Create job</a>
-                            {% endif %}
+                            <details class="relative">
+                                <summary class="list-none inline-flex cursor-pointer items-center rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">More</summary>
+                                <div class="absolute right-0 z-30 mt-2 w-44 rounded-xl border border-gray-200 bg-white p-1.5 shadow-xl">
+                                    <button type="button" onclick="openCompanyIntel({{ company.pk }})" class="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50">
+                                        <span>Open Intel</span><span>→</span>
+                                    </button>
+                                    {% if is_ats_view and company.platform_label and request.user.is_superuser and company.engine_row_state.show_set_ats %}
+                                    <button type="button" onclick="openSetPlatform({{ company.platform_label.pk }}, {{ company.platform_label.platform.pk|default:'null' }})" class="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs text-indigo-700 hover:bg-indigo-50">
+                                        <span>Set ATS</span><span>↗</span>
+                                    </button>
+                                    {% endif %}
+                                    {% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}
+                                    <a href="{% url 'job-create' %}?company_id={{ company.pk }}" class="flex items-center justify-between rounded-lg px-3 py-2 text-xs text-slate-700 hover:bg-slate-50">
+                                        <span>Create job</span><span>+</span>
+                                    </a>
+                                    {% endif %}
+                                    <a href="{% url 'company-detail' company.pk %}" class="flex items-center justify-between rounded-lg px-3 py-2 text-xs text-slate-700 hover:bg-slate-50">
+                                        <span>Open detail</span><span>→</span>
+                                    </a>
+                                </div>
+                            </details>
                         </div>
                     </td>
                 </tr>
                 {% empty %}
                 <tr>
                     <td colspan="{% if is_ats_view %}18{% else %}16{% endif %}" class="px-4 py-6 text-center text-sm text-gray-500">
+                        {% if has_active_filters %}
+                        No companies match the current filters. Clear filters or switch to a broader saved view.
+                        {% else %}
                         No companies yet. <a href="{% url 'company-create' %}" class="text-blue-600 hover:underline">Add a company</a> or post jobs to create them.
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}

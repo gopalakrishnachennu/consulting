@@ -393,6 +393,101 @@ def _company_ats_context(request):
     }
 
 
+def _build_company_engine_row_state(company):
+    label = getattr(company, "platform_label", None)
+    warnings = []
+    now = timezone.now()
+
+    if not label:
+        warnings.append({"label": "Unlabeled", "tone": "amber"})
+    else:
+        if label.detection_method == label.DetectionMethod.UNDETECTED:
+            warnings.append({"label": "No ATS", "tone": "slate"})
+        if label.platform and not label.tenant_id:
+            warnings.append({"label": "Needs tenant", "tone": "amber"})
+        if label.portal_alive is False:
+            warnings.append({"label": "Portal down", "tone": "rose"})
+        elif label.portal_last_verified and (now - label.portal_last_verified) > timedelta(days=7):
+            warnings.append({"label": "Portal stale", "tone": "blue"})
+        elif label.platform and label.portal_last_verified is None:
+            warnings.append({"label": "Unchecked", "tone": "blue"})
+        if label.confidence in (label.Confidence.LOW, label.Confidence.UNKNOWN):
+            warnings.append({"label": "Low confidence", "tone": "yellow"})
+        if label.detection_method == label.DetectionMethod.URL_PATTERN and not label.is_verified:
+            warnings.append({"label": "Scraper inbox", "tone": "orange"})
+
+    if company.is_blacklisted:
+        warnings.append({"label": "Blocked", "tone": "rose"})
+    if company.website and company.website_is_valid is False:
+        warnings.append({"label": "Website issue", "tone": "yellow"})
+    if getattr(company, "pending_raw_job_count", 0):
+        warnings.append({"label": "Raw pending", "tone": "indigo"})
+
+    score_parts = [
+        bool(label and label.platform),
+        bool(label and label.tenant_id),
+        bool(label and label.portal_alive is not False),
+        bool(company.website and company.website_is_valid is not False),
+        bool(getattr(company, "job_count", 0) or getattr(company, "raw_job_count", 0)),
+    ]
+    readiness_score = round((sum(1 for ok in score_parts if ok) / len(score_parts)) * 100)
+
+    health_age = None
+    if label and label.portal_last_verified:
+        delta = now - label.portal_last_verified
+        if delta.days >= 1:
+            health_age = f"checked {delta.days}d ago"
+        else:
+            hours = max(1, int(delta.total_seconds() // 3600) or 1)
+            health_age = f"checked {hours}h ago"
+
+    return {
+        "warnings": warnings[:4],
+        "warning_count": len(warnings),
+        "extra_warning_count": max(0, len(warnings) - 4),
+        "readiness_score": readiness_score,
+        "health_age": health_age,
+        "show_set_ats": not label or label.detection_method == "UNDETECTED" or not label.tenant_id,
+        "show_create_job": getattr(company, "job_count", 0) == 0,
+    }
+
+
+def _build_company_engine_filter_state(request, context):
+    chips = []
+
+    def add(label, value, key):
+        if value in (None, "", "All", "All industries", "All methods", "All platforms"):
+            return
+        chips.append({"label": label, "value": str(value), "key": key})
+
+    add("Search", request.GET.get("q", "").strip(), "q")
+    add("Relationship", context.get("selected_status"), "status")
+    add("Blacklisted", "Yes" if context.get("selected_blacklisted") == "1" else "No" if context.get("selected_blacklisted") == "0" else "", "blacklisted")
+    add("Industry", context.get("selected_industry"), "industry")
+    add("Website", "Valid" if context.get("selected_website_valid") == "1" else "Invalid" if context.get("selected_website_valid") == "0" else "", "website_valid")
+    add("Platform", context.get("selected_platform"), "platform")
+    add("ATS health", context.get("selected_ats_status"), "ats_status")
+    add("Confidence", context.get("selected_confidence"), "confidence")
+    add("Verified", context.get("selected_verified"), "verified")
+    add("Method", context.get("selected_method"), "method")
+    add("Saved view", context.get("selected_smart"), "smart")
+
+    advanced_keys = {
+        "status",
+        "blacklisted",
+        "industry",
+        "confidence",
+        "verified",
+        "method",
+    }
+    advanced_count = sum(1 for chip in chips if chip["key"] in advanced_keys)
+    return {
+        "active_filter_chips": chips,
+        "advanced_filters_active": advanced_count,
+        "has_active_filters": bool(chips),
+    }
+
+
 def labels_query_to_companies_url(query_dict):
     qd = query_dict.copy()
     qd["view"] = "ats"
@@ -454,6 +549,18 @@ class CompanyListView(AdminOrEmployeeRequiredMixin, ListView):
             context["results_end"] = context["page_obj"].end_index()
         else:
             context["results_total"] = context["results_start"] = context["results_end"] = 0
+        for company in context.get("companies", []):
+            company.engine_row_state = _build_company_engine_row_state(company)
+        context.update(_build_company_engine_filter_state(self.request, context))
+        context["saved_company_views"] = [
+            queue for queue in context.get("engine_queues", [])
+            if queue["key"] in {"attention", "ready", "portal_down", "unlabeled", "no_tenant", "no_ats", "scraper_inbox", "high_value"}
+        ]
+        context["primary_filter_count"] = sum(
+            1
+            for key in ("q", "platform", "ats_status", "website_valid", "smart")
+            if self.request.GET.get(key, "").strip()
+        )
         return context
 
 
