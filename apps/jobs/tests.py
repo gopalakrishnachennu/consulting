@@ -9,6 +9,7 @@ from django.test import TestCase, Client, SimpleTestCase
 from django.urls import resolve, reverse
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
+from django_celery_results.models import TaskResult
 
 from core.models import PlatformConfig
 from users.models import User
@@ -93,6 +94,110 @@ class JobManualRawBridgeTests(TestCase):
         self.assertEqual(raw.country_code, "US")
         self.assertEqual(raw.scope_status, RawJob.ScopeStatus.PRIORITY_TARGET)
         self.assertTrue(RawJobPayloadSnapshot.objects.filter(raw_job=raw).exists())
+
+
+class JobDownstreamDualClassificationAuditTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.employee = User.objects.create_user(
+            username="downstream_audit_emp", password="testpass", role=User.Role.EMPLOYEE
+        )
+        from core.models import FeatureFlag
+
+        FeatureFlag.objects.update_or_create(
+            key="employee_job_pool",
+            defaults={
+                "label": "Job Pool",
+                "category": "EMPLOYEE",
+                "applies_to": "EMPLOYEE",
+                "is_enabled": True,
+                "enabled_for_employees": True,
+                "enabled_for_consultants": False,
+            },
+        )
+        company = Company.objects.create(name="Downstream Audit Co")
+        self.raw = RawJob.objects.create(
+            company=company,
+            company_name=company.name,
+            title="Platform Engineer",
+            url_hash=hashlib.sha256(b"https://example.com/downstream-audit").hexdigest(),
+            original_url="https://example.com/downstream-audit",
+            description="AWS platform engineering and Terraform automation",
+            description_clean="AWS platform engineering and Terraform automation",
+            country="United States",
+            location_type=RawJob.LocationType.REMOTE,
+            is_remote=True,
+            job_category="Engineering",
+            job_domain="devops-cloud",
+            department_normalized="Information Technology",
+            years_required=5,
+            skills=["AWS", "Terraform", "Python"],
+            classification_source="secondary",
+            classification_provenance={"provider": "claude", "prompt_version": "runtime_v5"},
+            field_provenance={
+                "job_domain": "secondary",
+                "job_category": "secondary",
+                "department_normalized": "backend_rules",
+                "country": "backend_rules",
+                "location_type": "secondary",
+                "years_required": "backend_rules",
+                "skills": "secondary",
+            },
+            sync_status=RawJob.SyncStatus.SYNCED,
+            is_active=True,
+            has_description=True,
+        )
+        self.job = Job.objects.create(
+            title="Platform Engineer",
+            company=company.name,
+            company_obj=company,
+            location="Remote",
+            description=self.raw.description,
+            posted_by=self.employee,
+            status=Job.Status.POOL,
+            source_raw_job=self.raw,
+            validation_result={
+                "dual_classification": {
+                    "approved_source": "secondary",
+                    "approval_state": "APPROVED",
+                    "classification_provenance": {"provider": "claude", "prompt_version": "runtime_v5"},
+                    "field_provenance": self.raw.field_provenance,
+                    "approved_values": {
+                        "job_domain": "devops-cloud",
+                        "job_category": "Engineering",
+                        "department_normalized": "Information Technology",
+                        "country": "United States",
+                        "location_type": "REMOTE",
+                        "years_required": 5,
+                        "skills": ["AWS", "Terraform", "Python"],
+                    },
+                }
+            },
+            validation_score=88,
+        )
+
+    def test_job_detail_renders_downstream_dual_classification_rows(self):
+        self.client.login(username="downstream_audit_emp", password="testpass")
+        response = self.client.get(reverse("job-detail", args=[self.job.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Dual classification audit")
+        self.assertContains(response, "devops-cloud")
+        self.assertContains(response, "SECONDARY")
+        self.assertContains(response, "Classification provenance")
+
+    def test_job_pool_renders_compact_downstream_provenance(self):
+        self.client.login(username="downstream_audit_emp", password="testpass")
+        response = self.client.get(reverse("job-pool"))
+
+        self.assertEqual(response.status_code, 200)
+        jobs = list(response.context["jobs"])
+        self.assertTrue(jobs)
+        audit = getattr(jobs[0], "dual_classification_audit", {})
+        self.assertTrue(audit.get("present"))
+        rows = {row["key"]: row for row in audit.get("rows", [])}
+        self.assertEqual(rows["job_domain"]["value"], "devops-cloud")
+        self.assertEqual(rows["job_domain"]["source"], "secondary")
 
 
 class JobListUrlHealthFilterTests(TestCase):
@@ -1678,6 +1783,19 @@ class ClassificationMetricsV2ViewTests(TestCase):
             severity=RawJobClassificationConflict.Severity.CRITICAL,
             note="Secondary provider failed before a usable domain was returned.",
         )
+        TaskResult.objects.create(
+            task_id="dual-backfill-1",
+            task_name="jobs.backfill_rawjob_dual_classification",
+            status="SUCCESS",
+            result=json.dumps(
+                {
+                    "processed": 12,
+                    "created_or_updated": 9,
+                    "cached": 2,
+                    "failed": 1,
+                }
+            ),
+        )
 
     def test_metrics_requires_rollout_flag(self):
         from core.models import FeatureFlag
@@ -1700,6 +1818,9 @@ class ClassificationMetricsV2ViewTests(TestCase):
         self.assertContains(response, "Provider Health")
         self.assertContains(response, "Runtime & Backfill Health")
         self.assertContains(response, "Recent Failed Runs")
+        self.assertContains(response, "Timeout")
+        self.assertContains(response, "Dual-Classification Backfill Runs")
+        self.assertContains(response, "Processed:")
         self.assertContains(response, "Metrics Data Engineer")
         self.assertContains(response, "runtime_v5")
         self.assertContains(response, "provider timeout")

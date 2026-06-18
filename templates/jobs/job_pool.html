@@ -263,8 +263,8 @@
                         {% else %}
                         <span class="badge-gray">Pending…</span>
                         {% endif %}
-                        {% with dc=job.validation_result.dual_classification %}
-                        {% if dc %}
+                        {% with dc=job.validation_result.dual_classification audit=job.dual_classification_audit %}
+                        {% if dc or audit.present %}
                         <div class="mt-1 flex flex-wrap gap-1">
                             <span class="badge-blue text-[11px]" title="RawJob dual-classification source used at sync">
                                 {{ dc.approved_source|default:"raw_job"|upper }}
@@ -275,6 +275,17 @@
                             </span>
                             {% endif %}
                         </div>
+                        {% if audit.rows %}
+                        <div class="mt-2 space-y-1 text-[11px] text-slate-500">
+                            {% for row in audit.rows|slice:":3" %}
+                            <div class="flex items-center gap-2">
+                                <span class="font-medium text-slate-700">{{ row.label }}:</span>
+                                <span class="truncate">{{ row.value }}</span>
+                                <span class="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">{{ row.source|default:"raw_job"|upper }}</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
                         {% endif %}
                         {% endwith %}
                     </td>

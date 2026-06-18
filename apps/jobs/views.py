@@ -17,6 +17,7 @@ import logging
 from urllib.parse import urlencode
 
 from .models import Job, PipelineEvent
+from .dual_classification.audit import build_job_dual_classification_audit
 from .dual_classification.effective import effective_raw_job_classification
 from config.pagination import PAGE_SIZE_OPTIONS, get_page_size, build_pagination_window
 from .classification_workspace import (
@@ -215,6 +216,12 @@ def build_rawjob_pipeline_row(raw_job, *, gate=None, country_label: str = "") ->
     }
 
 
+def attach_job_dual_classification_audit(job):
+    audit = build_job_dual_classification_audit(job)
+    setattr(job, "dual_classification_audit", audit)
+    return audit
+
+
 def apply_job_list_filters(qs, request):
     """
     Shared filters for job list, HTMX partial, CSV export, and summary counts.
@@ -334,6 +341,8 @@ class JobListView(LoginRequiredMixin, ListView):
         context['pagination_query'] = qd.urlencode()
         context['page_size'] = get_page_size(self.request, default=100)
         context['page_size_options'] = PAGE_SIZE_OPTIONS
+        for job in context.get("jobs", []):
+            attach_job_dual_classification_audit(job)
         if context.get('is_paginated'):
             context['pagination_pages'] = build_pagination_window(context['page_obj'])
         return context
@@ -417,6 +426,8 @@ class JobDetailView(LoginRequiredMixin, DetailView):
             context['parsed_jd_json'] = json.dumps(job.parsed_jd, indent=2)
         else:
             context['parsed_jd_json'] = ""
+        if job:
+            context["dual_classification_audit"] = attach_job_dual_classification_audit(job)
 
         # Consultant ↔ job match scores (ranked, with % and raw score)
         if job:
@@ -1009,6 +1020,8 @@ class JobPoolView(LoginRequiredMixin, EmployeeRequiredMixin, ListView):
         context['job_type_choices'] = Job.JobType.choices
         context['page_size'] = get_page_size(self.request, default=100)
         context['page_size_options'] = PAGE_SIZE_OPTIONS
+        for job in context.get('jobs', []):
+            attach_job_dual_classification_audit(job)
         if context.get('is_paginated'):
             context['pagination_pages'] = build_pagination_window(context['page_obj'])
         return context

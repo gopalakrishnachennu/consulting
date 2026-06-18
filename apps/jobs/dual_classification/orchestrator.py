@@ -11,6 +11,7 @@ from jobs.models import (
     RawJobClassifierRun,
 )
 
+from .audit import build_job_dual_classification_meta
 from .merger import merge_outputs
 from .providers import (
     BackendRulesProvider,
@@ -523,15 +524,14 @@ def record_vetting_push_for_raw_job(
         validation_result = dict(getattr(locked_job, "validation_result", {}) or {})
         dual_classification_meta = dict(validation_result.get("dual_classification") or {})
         dual_classification_meta.update(
-            {
-                "approved_source": snapshot.approved_source or "",
-                "approval_state": snapshot.approval_state,
-                "pushed_to_vetting_at": pushed_at.isoformat(),
-                "pushed_to_vetting_by": getattr(actor, "username", "") or "",
-                "pushed_to_vetting_note": note or "",
-                "pushed_to_vetting_with_warnings": bool(pushed_with_warnings),
-                "warning_codes": warning_codes,
-            }
+            build_job_dual_classification_meta(
+                raw_job,
+                snapshot,
+                pushed_with_warnings=bool(pushed_with_warnings),
+                pushed_at=pushed_at,
+                actor=actor,
+                note=note or "",
+            )
         )
         validation_result["dual_classification"] = dual_classification_meta
         locked_job.validation_result = validation_result

@@ -22,4 +22,30 @@
     <div class="text-sm text-slate-500">No related ops runs recorded yet.</div>
     {% endfor %}
   </div>
+
+  <div class="mt-6 border-t border-slate-200 pt-4">
+    <div class="text-sm font-bold text-slate-900">Dual-Classification Backfill Runs</div>
+    <div class="mt-2 text-sm text-slate-600">Recent historical backfill task runs on the isolated background queue.</div>
+    <div class="mt-4 space-y-3">
+      {% for task in dual_backfill_runs %}
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="font-semibold text-slate-900">{{ task.status }}</div>
+          <div class="text-xs text-slate-500">{{ task.date_done|date:"M j, Y H:i" }}</div>
+        </div>
+        <div class="mt-1 text-xs text-slate-500">Task ID {{ task.task_id|truncatechars:16 }}</div>
+        {% if task.result_payload %}
+        <div class="mt-2 grid gap-2 sm:grid-cols-2 text-xs text-slate-600">
+          <div>Processed: <span class="font-semibold text-slate-900">{{ task.result_payload.processed|default:"—" }}</span></div>
+          <div>Updated: <span class="font-semibold text-slate-900">{{ task.result_payload.created_or_updated|default:"—" }}</span></div>
+          <div>Cached: <span class="font-semibold text-slate-900">{{ task.result_payload.cached|default:"—" }}</span></div>
+          <div>Failed: <span class="font-semibold text-slate-900">{{ task.result_payload.failed|default:"—" }}</span></div>
+        </div>
+        {% endif %}
+      </div>
+      {% empty %}
+      <div class="text-sm text-slate-500">No dual-classification backfill runs recorded yet.</div>
+      {% endfor %}
+    </div>
+  </div>
 </div>

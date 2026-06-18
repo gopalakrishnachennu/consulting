@@ -2935,6 +2935,7 @@ def sync_harvested_to_pool_task(
     from .models import HarvestOpsRun, RawJob
     from .ops_audit import begin_ops_run, finish_ops_run
     from jobs.models import Job, PipelineEvent
+    from jobs.dual_classification.audit import build_job_dual_classification_meta
     from jobs.dual_classification.policy import sync_block_reason as dual_classification_sync_block_reason
     from jobs.dual_classification.effective import effective_raw_job_classification
     from jobs.link_health import JOB_LINK_HEALTH_UPDATE_FIELDS, apply_link_health_payload_to_job
@@ -3266,13 +3267,7 @@ def sync_harvested_to_pool_task(
                                 "candidate_fit": gate.candidate_fit_score,
                                 "vet_priority": gate.vet_priority_score,
                             },
-                            "dual_classification": {
-                                "approved_source": getattr(snapshot, "approved_source", "") or "raw_job",
-                                "approval_state": getattr(snapshot, "approval_state", "UNREVIEWED"),
-                                "ready_for_vetting": bool(getattr(snapshot, "ready_for_vetting", False)),
-                                "pushed_to_vetting_with_warnings": False,
-                                "warning_codes": list(((getattr(snapshot, "verifier_summary", {}) or {}).get("warnings") or [])),
-                            },
+                            "dual_classification": build_job_dual_classification_meta(rj, snapshot),
                         }
                         job.validation_run_at = _tz.now()
                         job.gate_checked_at = _tz.now()

@@ -1,6 +1,15 @@
 <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
   <div class="text-sm font-bold text-slate-900">Recent Failed Runs</div>
   <div class="mt-2 text-sm text-slate-600">Latest provider failures to help spot auth, prompt, or runtime regressions quickly.</div>
+  {% if failure_taxonomy %}
+  <div class="mt-4 flex flex-wrap gap-2">
+    {% for row in failure_taxonomy %}
+    <span class="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700">
+      {{ row.label }} · {{ row.total }}
+    </span>
+    {% endfor %}
+  </div>
+  {% endif %}
   <div class="mt-4 space-y-3">
     {% for run in recent_failures %}
     <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -10,6 +19,11 @@
       </div>
       <div class="mt-1 text-sm text-slate-700">{{ run.raw_job.title }}</div>
       <div class="mt-1 text-xs text-slate-500">{{ run.prompt_version|default:"(no prompt version)" }}</div>
+      <div class="mt-2">
+        <span class="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+          {{ run.failure_taxonomy_label }}
+        </span>
+      </div>
       <div class="mt-2 text-xs text-rose-700 break-words">{{ run.error_message|default:"No error message recorded." }}</div>
     </div>
     {% empty %}

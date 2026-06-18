@@ -97,6 +97,50 @@ def _classification_compare_rows(snapshot):
     return rows
 
 
+def _failure_taxonomy_code(error_message: str) -> str:
+    msg = (error_message or "").strip().lower()
+    if not msg:
+        return "unknown"
+    if "timeout" in msg:
+        return "timeout"
+    if "json" in msg or "parse" in msg:
+        return "malformed_json"
+    if "schema" in msg or "validation" in msg or "required field" in msg or "enum" in msg:
+        return "schema_validation"
+    if "auth" in msg or "api key" in msg or "401" in msg or "403" in msg or "forbidden" in msg:
+        return "auth_or_access"
+    if "merge" in msg:
+        return "merge_failure"
+    if "unavailable" in msg or "connection" in msg or "502" in msg or "503" in msg:
+        return "runtime_unavailable"
+    return "other"
+
+
+def _failure_taxonomy_label(code: str) -> str:
+    return {
+        "timeout": "Timeout",
+        "malformed_json": "Malformed JSON",
+        "schema_validation": "Schema validation",
+        "auth_or_access": "Auth / access",
+        "merge_failure": "Merge failure",
+        "runtime_unavailable": "Runtime unavailable",
+        "unknown": "Unknown",
+        "other": "Other",
+    }.get(code, code.replace("_", " ").title())
+
+
+def _parse_task_result_payload(task_result):
+    payload = task_result.result
+    if isinstance(payload, dict):
+        return payload
+    if not payload:
+        return {}
+    try:
+        return json.loads(payload)
+    except Exception:
+        return {}
+
+
 class ClassificationWorkspaceRequiredMixin(UserPassesTestMixin):
     raise_exception = True
 
@@ -484,6 +528,7 @@ class ClassificationMetricsV2View(LoginRequiredMixin, ClassificationMetricsRequi
 
     def get_context_data(self, **kwargs):
         from core.models import LLMConfig, PlatformConfig
+        from django_celery_results.models import TaskResult
         from harvest.models import HarvestOpsRun, RawJob
 
         context = super().get_context_data(**kwargs)
@@ -533,6 +578,17 @@ class ClassificationMetricsV2View(LoginRequiredMixin, ClassificationMetricsRequi
             .select_related("raw_job")
             .order_by("-updated_at")[:12]
         )
+        for run in recent_failures:
+            run.failure_taxonomy_code = _failure_taxonomy_code(run.error_message)
+            run.failure_taxonomy_label = _failure_taxonomy_label(run.failure_taxonomy_code)
+        failure_taxonomy = {}
+        for error_message in runs.filter(status=RawJobClassifierRun.Status.FAILED).values_list("error_message", flat=True):
+            code = _failure_taxonomy_code(error_message)
+            failure_taxonomy[code] = failure_taxonomy.get(code, 0) + 1
+        failure_taxonomy_rows = [
+            {"code": code, "label": _failure_taxonomy_label(code), "total": total}
+            for code, total in sorted(failure_taxonomy.items(), key=lambda item: (-item[1], item[0]))
+        ]
         recent_ops = list(
             HarvestOpsRun.objects.filter(
                 operation__in=[
@@ -543,6 +599,12 @@ class ClassificationMetricsV2View(LoginRequiredMixin, ClassificationMetricsRequi
             )
             .order_by("-created_at")[:8]
         )
+        dual_backfill_runs = list(
+            TaskResult.objects.filter(task_name="jobs.backfill_rawjob_dual_classification")
+            .order_by("-date_done", "-date_created")[:8]
+        )
+        for task_result in dual_backfill_runs:
+            task_result.result_payload = _parse_task_result_payload(task_result)
 
         queue_counts = {
             "needs_review": snapshots.filter(needs_review=True).count(),
@@ -644,9 +706,11 @@ class ClassificationMetricsV2View(LoginRequiredMixin, ClassificationMetricsRequi
                     ),
                 },
                 "provider_stats": provider_stats,
+                "failure_taxonomy": failure_taxonomy_rows,
                 "prompt_breakdown": prompt_breakdown,
                 "recent_failures": recent_failures,
                 "recent_ops": recent_ops,
+                "dual_backfill_runs": dual_backfill_runs,
                 "runtime_health": {
                     "shadow_enabled": platform_config.dual_classification_shadow_enabled,
                     "secondary_runtime_enabled": platform_config.dual_classification_secondary_runtime_enabled,
@@ -659,6 +723,10 @@ class ClassificationMetricsV2View(LoginRequiredMixin, ClassificationMetricsRequi
                     "llm_base_url": llm_config.effective_base_url() or "OpenAI default",
                     "llm_model": (llm_config.validation_model or llm_config.active_model or "").strip() or "Not configured",
                     "llm_ready": bool((llm_config.validation_model or llm_config.active_model or "").strip()),
+                    "review_queue_url": reverse("harvest-rawjob-review-queue"),
+                    "classification_settings_url": reverse("jobs-classification-settings"),
+                    "llm_config_url": reverse("llm-config"),
+                    "run_backfill_url": reverse("harvest-run-classification-backfill"),
                 },
             }
         )

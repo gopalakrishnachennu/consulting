@@ -1629,6 +1629,7 @@ class SyncRawJobsToPoolTests(TestCase):
 
     def setUp(self):
         from companies.models import Company
+        from core.models import PlatformConfig
         from harvest.models import JobBoardPlatform
         from users.models import User
 
@@ -1643,6 +1644,9 @@ class SyncRawJobsToPoolTests(TestCase):
             name="Sync Mirror Plat",
             slug="sync-mirror-plat",
         )
+        config = PlatformConfig.load()
+        config.dual_classification_require_approval_for_sync = False
+        config.save()
 
     def test_pool_sync_creates_job_from_raw_job(self):
         import hashlib
@@ -1893,6 +1897,11 @@ class SyncRawJobsToPoolTests(TestCase):
             (raw.raw_payload or {}).get("vet_gate", {}).get("classification_source"),
             "SECONDARY",
         )
+        dual_meta = (job.validation_result or {}).get("dual_classification") or {}
+        self.assertEqual(dual_meta.get("approved_source"), "SECONDARY")
+        self.assertEqual(dual_meta.get("approved_values", {}).get("job_domain"), "servicenow-developer")
+        self.assertEqual(dual_meta.get("approved_values", {}).get("country"), "Canada")
+        self.assertIn("field_provenance", dual_meta)
 
 
 class ManualRawJobSyncRoleTests(TestCase):
