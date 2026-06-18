@@ -273,6 +273,12 @@ class ClassificationDetailV2View(LoginRequiredMixin, ClassificationWorkspaceRequ
         location = effective.get("location") or {}
         requirements = effective.get("requirements") or {}
         skills = effective.get("skills") or {}
+        if isinstance(skills, dict):
+            skill_values = skills.get("skills") or raw_job.skills or []
+        elif isinstance(skills, (list, tuple)):
+            skill_values = list(skills) or raw_job.skills or []
+        else:
+            skill_values = raw_job.skills or []
         return [
             ("Domain", classification.get("job_domain") or raw_job.job_domain or "—"),
             ("Category", classification.get("job_category") or raw_job.job_category or "—"),
@@ -291,7 +297,7 @@ class ClassificationDetailV2View(LoginRequiredMixin, ClassificationWorkspaceRequ
                 if requirements.get("years_required") is not None
                 else (raw_job.years_required if raw_job.years_required is not None else "—"),
             ),
-            ("Skills", ", ".join((skills.get("skills") or raw_job.skills or [])[:6]) or "—"),
+            ("Skills", ", ".join(skill_values[:6]) or "—"),
         ]
 
     def get_context_data(self, **kwargs):

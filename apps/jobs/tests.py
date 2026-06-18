@@ -1430,6 +1430,16 @@ class ClassificationQueueV2ViewTests(TestCase):
         self.assertContains(response, "rule_regex_v2")
         self.assertContains(response, "Open legacy RawJob review")
 
+    def test_detail_handles_list_shaped_skills_without_500(self):
+        self.raw.skills = ["AWS", "Terraform", "Python"]
+        self.raw.save(update_fields=["skills", "updated_at"])
+        self.client.login(username="classification_v2_employee", password="testpass")
+
+        response = self.client.get(reverse("jobs-classification-detail", args=[self.snapshot.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "AWS, Terraform, Python")
+
     def test_stale_approved_snapshot_moves_to_review_queue_and_shows_badge(self):
         self.snapshot.approved_output = {"classification": {"job_domain": "platform-engineer"}}
         self.snapshot.approved_source = "merged"
