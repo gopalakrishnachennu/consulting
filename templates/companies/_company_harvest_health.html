@@ -71,12 +71,17 @@
 
       <div>
         <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mb-2">7-Day Trend</p>
-        <div class="grid grid-cols-7 gap-2">
+        <div class="rounded-xl border border-gray-200 bg-gray-50 divide-y divide-gray-100">
           {% for day in harvest_health.trend_7d %}
-          <div class="rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-center">
-            <div class="text-[10px] text-gray-400">{{ day.label }}</div>
-            <div class="mt-1 text-sm font-bold text-gray-900">{{ day.total }}</div>
-            <div class="mt-1 text-[10px] text-gray-500">{{ day.ok }} ok · {{ day.bad }} bad</div>
+          <div class="flex items-center gap-3 px-3 py-2">
+            <div class="w-16 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-gray-400">{{ day.label }}</div>
+            <div class="flex-1 h-2 rounded-full bg-white border border-gray-200 overflow-hidden">
+              {% if day.total %}
+              <div class="h-full bg-emerald-500" style="width: {% if day.bad %}55{% elif day.empty %}35{% else %}100{% endif %}%"></div>
+              {% endif %}
+            </div>
+            <div class="w-20 shrink-0 text-right text-xs font-semibold text-gray-800">{{ day.total }} run{{ day.total|pluralize }}</div>
+            <div class="w-24 shrink-0 text-right text-[10px] text-gray-500">{{ day.ok }} ok · {{ day.bad }} bad</div>
           </div>
           {% endfor %}
         </div>

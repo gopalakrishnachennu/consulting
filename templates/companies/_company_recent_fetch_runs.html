@@ -12,6 +12,7 @@
         <tr>
           <th class="px-6 py-3 font-semibold">Started</th>
           <th class="px-4 py-3 font-semibold">Platform</th>
+          <th class="px-4 py-3 font-semibold">Batch</th>
           <th class="px-4 py-3 font-semibold">Status</th>
           <th class="px-4 py-3 font-semibold">Scraped</th>
           <th class="px-4 py-3 font-semibold">New</th>
@@ -22,22 +23,49 @@
       <tbody class="divide-y divide-gray-100">
         {% for run in recent_fetch_runs %}
         <tr class="hover:bg-gray-50/70">
-          <td class="px-6 py-3 text-gray-700">{{ run.started_at|date:"M d, Y H:i" }}</td>
-          <td class="px-4 py-3 text-gray-700">{{ run.label.platform.name|default:"—" }}</td>
+          <td class="px-6 py-3 text-gray-700">
+            <div class="font-medium">{{ run.started_at|date:"M d, Y H:i" }}</div>
+            <div class="mt-1 text-[10px] text-gray-400">trigger: {{ run.triggered_by|default:"MANUAL" }}</div>
+          </td>
+          <td class="px-4 py-3 text-gray-700">
+            <div class="font-medium">{{ run.label.platform.name|default:"—" }}</div>
+            {% if run.label.tenant_id %}
+            <div class="mt-1 font-mono text-[10px] text-gray-400">{{ run.label.tenant_id|truncatechars:26 }}</div>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-gray-700">
+            {% if run.batch_id %}
+            <a href="{% url 'harvest-batch-detail' run.batch_id %}" class="text-blue-600 hover:underline font-medium">Batch #{{ run.batch_id }}</a>
+            {% else %}
+            <span class="text-gray-400">—</span>
+            {% endif %}
+          </td>
           <td class="px-4 py-3">
-            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold
                 {% if run.status == 'SUCCESS' %}bg-emerald-100 text-emerald-700
                 {% elif run.status == 'PARTIAL' %}bg-amber-100 text-amber-700
                 {% elif run.status == 'EMPTY' %}bg-slate-100 text-slate-600
                 {% elif run.status == 'FAILED' or run.status == 'SKIPPED' %}bg-red-100 text-red-700
                 {% else %}bg-gray-100 text-gray-600{% endif %}">
+              <span class="h-1.5 w-1.5 rounded-full
+                  {% if run.status == 'SUCCESS' %}bg-emerald-500
+                  {% elif run.status == 'PARTIAL' %}bg-amber-500
+                  {% elif run.status == 'EMPTY' %}bg-slate-400
+                  {% elif run.status == 'FAILED' or run.status == 'SKIPPED' %}bg-red-500
+                  {% else %}bg-gray-400{% endif %}"></span>
               {{ run.get_status_display }}
             </span>
           </td>
           <td class="px-4 py-3 text-gray-700">{{ run.jobs_found }}</td>
           <td class="px-4 py-3 text-gray-700">{{ run.jobs_new }}</td>
-          <td class="px-4 py-3 text-gray-700">{% if run.duration_seconds %}{{ run.duration_seconds }}s{% else %}—{% endif %}</td>
-          <td class="px-4 py-3 text-xs text-gray-500">{{ run.error_message|default:run.issue_code|default:"—"|truncatechars:80 }}</td>
+          <td class="px-4 py-3 text-gray-700">{% if run.duration_seconds %}<span class="font-medium">{{ run.duration_seconds }}s</span>{% else %}—{% endif %}</td>
+          <td class="px-4 py-3 text-xs text-gray-500">
+            {% if run.error_message or run.issue_code %}
+            <span class="text-red-600">{{ run.error_message|default:run.issue_code|truncatechars:80 }}</span>
+            {% else %}
+            —
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

@@ -1,0 +1,142 @@
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+  <div class="px-5 py-4 border-b border-gray-100">
+    <div class="flex items-center justify-between gap-3">
+      <div>
+        <h3 class="text-sm font-bold text-gray-900">Operations Snapshot</h3>
+        <p class="mt-1 text-xs text-gray-500">Pipeline volume, record quality, link state, and next actions for this company.</p>
+      </div>
+      <span class="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+        {{ pipeline_snapshot.raw_total }} raw · {{ pipeline_snapshot.job_total }} downstream
+      </span>
+    </div>
+  </div>
+
+  <div class="divide-y divide-gray-100">
+    <section class="px-5 py-4">
+      <div class="grid grid-cols-2 gap-3 text-center">
+        <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <div class="text-[10px] uppercase tracking-wider text-gray-500">Raw Jobs</div>
+          <div class="mt-1 text-xl font-bold text-gray-900">{{ pipeline_snapshot.raw_total }}</div>
+        </div>
+        <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <div class="text-[10px] uppercase tracking-wider text-gray-500">Classified</div>
+          <div class="mt-1 text-xl font-bold text-indigo-600">{{ pipeline_snapshot.classified }}</div>
+        </div>
+        <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <div class="text-[10px] uppercase tracking-wider text-gray-500">Needs Review</div>
+          <div class="mt-1 text-xl font-bold text-amber-600">{{ pipeline_snapshot.needs_review }}</div>
+        </div>
+        <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <div class="text-[10px] uppercase tracking-wider text-gray-500">In Pool</div>
+          <div class="mt-1 text-xl font-bold text-sky-600">{{ pipeline_snapshot.job_pool }}</div>
+        </div>
+        <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <div class="text-[10px] uppercase tracking-wider text-gray-500">Open / Live</div>
+          <div class="mt-1 text-xl font-bold text-emerald-600">{{ pipeline_snapshot.job_open }}</div>
+        </div>
+        <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <div class="text-[10px] uppercase tracking-wider text-gray-500">Dead / Expired</div>
+          <div class="mt-1 text-xl font-bold text-red-500">{{ pipeline_snapshot.raw_inactive }}</div>
+        </div>
+      </div>
+      <div class="mt-3 grid grid-cols-2 gap-3 text-xs text-gray-500">
+        <div>New this week: <span class="font-semibold text-gray-800">{{ pipeline_snapshot.new_this_week }}</span></div>
+        <div>Freshness: <span class="font-semibold text-gray-800">{% if pipeline_snapshot.freshness_days is not None %}{{ pipeline_snapshot.freshness_days }}d{% else %}—{% endif %}</span></div>
+      </div>
+    </section>
+
+    <section class="px-5 py-4">
+      <div class="flex items-end justify-between gap-3">
+        <div>
+          <h4 class="text-xs font-bold uppercase tracking-wider text-gray-800">Data Quality</h4>
+          <div class="mt-2 flex items-baseline gap-2">
+            <span class="text-2xl font-extrabold text-gray-900">{{ company_data_completeness.score_pct }}%</span>
+            <span class="text-xs text-gray-500">{{ company_data_completeness.present }}/{{ company_data_completeness.total }} signals present</span>
+          </div>
+        </div>
+        <div class="text-right text-xs text-gray-500">
+          <div>Interview rate: <span class="font-semibold text-gray-800">{% if company_pipeline_performance.interview_rate_pct is not None %}{{ company_pipeline_performance.interview_rate_pct }}%{% else %}—{% endif %}</span></div>
+          <div class="mt-1">Offer rate: <span class="font-semibold text-gray-800">{% if company_pipeline_performance.fill_rate_pct is not None %}{{ company_pipeline_performance.fill_rate_pct }}%{% else %}—{% endif %}</span></div>
+        </div>
+      </div>
+      <div class="mt-4 space-y-2">
+        {% for check in company_data_completeness.checks %}
+        <div class="flex items-center justify-between text-sm">
+          <span class="text-gray-600">{{ check.label }}</span>
+          {% if check.ok %}
+          <span class="text-emerald-600 font-semibold">Present</span>
+          {% else %}
+          <span class="text-amber-600 font-semibold">Missing</span>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="px-5 py-4">
+      <h4 class="text-xs font-bold uppercase tracking-wider text-gray-800">Link Health</h4>
+      <div class="mt-3 space-y-3">
+        {% for item in link_health_summary.items %}
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <div class="text-xs text-gray-500">{{ item.name }}</div>
+            {% if item.url %}
+            <a href="{{ item.url }}" target="_blank" rel="noopener" class="mt-1 block text-xs text-blue-600 hover:underline break-all">{{ item.url|truncatechars:64 }}</a>
+            {% endif %}
+            {% if item.checked_at %}
+            <div class="mt-1 text-[10px] text-gray-400">Checked {{ item.checked_at|timesince }} ago</div>
+            {% endif %}
+          </div>
+          <div class="shrink-0 text-right">
+            <span class="inline-flex items-center gap-1 text-xs font-semibold
+                {% if item.state == 'live' %}text-emerald-700
+                {% elif item.state == 'down' %}text-red-600
+                {% elif item.state == 'unchecked' %}text-amber-600
+                {% elif item.state == 'configured' %}text-blue-600
+                {% else %}text-gray-400{% endif %}">
+              <span class="w-2 h-2 rounded-full
+                  {% if item.state == 'live' %}bg-emerald-500
+                  {% elif item.state == 'down' %}bg-red-500
+                  {% elif item.state == 'unchecked' %}bg-amber-500
+                  {% elif item.state == 'configured' %}bg-blue-500
+                  {% else %}bg-gray-300{% endif %}"></span>
+              {{ item.state|title }}
+            </span>
+            {% if item.detail %}
+            <div class="mt-1 text-[10px] text-gray-400">{{ item.detail }}</div>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="px-5 py-4">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h4 class="text-xs font-bold uppercase tracking-wider text-gray-800">Actions</h4>
+          <p class="mt-1 text-xs text-gray-500">Use the mapped pipeline and harvest controls without leaving this page.</p>
+        </div>
+        {% if request.user.is_superuser and company_actions.can_fetch_now and company_actions.fetch_label_pk %}
+        <button type="button" class="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700" onclick="fetchCompanyJobsFromProfile({{ company_actions.fetch_label_pk }}, this)">
+          <span>Run harvest now</span><span>↻</span>
+        </button>
+        {% endif %}
+      </div>
+      <div class="mt-4 grid grid-cols-1 gap-2">
+        <a href="{{ company_actions.pipeline_url }}" class="inline-flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+          <span>Open raw jobs in pipeline</span><span>→</span>
+        </a>
+        <a href="{{ company_actions.raw_jobs_url }}" class="inline-flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+          <span>Open harvested jobs</span><span>→</span>
+        </a>
+        <a href="{{ company_actions.jobs_url }}" class="inline-flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+          <span>Open downstream jobs</span><span>→</span>
+        </a>
+        <a href="{{ company_actions.mapping_url }}" class="inline-flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+          <span>Check board mapping</span><span>→</span>
+        </a>
+      </div>
+    </section>
+  </div>
+</div>
