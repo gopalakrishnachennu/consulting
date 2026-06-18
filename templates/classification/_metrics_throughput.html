@@ -1,0 +1,67 @@
+<div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  <div class="mb-4">
+    <h2 class="text-sm font-bold text-slate-900">Throughput & Queue Aging</h2>
+    <p class="mt-1 text-xs text-slate-500">Short-window activity plus stale review and stale push visibility.</p>
+  </div>
+  <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Shadow Runs (24h)</div>
+      <div class="mt-1 text-xl font-bold text-slate-900">{{ throughput_metrics.shadow_runs_24h }}</div>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Secondary Completed (24h)</div>
+      <div class="mt-1 text-xl font-bold text-slate-900">{{ throughput_metrics.secondary_completed_24h }}</div>
+    </div>
+    <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-rose-700">Secondary Failed (24h)</div>
+      <div class="mt-1 text-xl font-bold text-rose-900">{{ throughput_metrics.secondary_failed_24h }}</div>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Approved (24h / 7d)</div>
+      <div class="mt-1 text-xl font-bold text-slate-900">{{ throughput_metrics.approved_24h }} / {{ throughput_metrics.approved_7d }}</div>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Pushed (24h / 7d)</div>
+      <div class="mt-1 text-xl font-bold text-slate-900">{{ throughput_metrics.pushed_24h }} / {{ throughput_metrics.pushed_7d }}</div>
+    </div>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Stale Reviews (&gt;48h)</div>
+      <div class="mt-1 text-xl font-bold text-amber-900">{{ queue_health.stale_reviews }}</div>
+    </div>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Stale Approved Not Pushed (&gt;24h)</div>
+      <div class="mt-1 text-xl font-bold text-amber-900">{{ queue_health.stale_approved_not_pushed }}</div>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Failed / Partial Snapshots</div>
+      <div class="mt-1 text-xl font-bold text-slate-900">{{ queue_health.failed }} / {{ queue_health.partial }}</div>
+    </div>
+  </div>
+
+  <div class="mt-5 grid gap-4 md:grid-cols-2">
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Oldest Review Item</div>
+      {% if queue_health.oldest_review %}
+      <div class="mt-2 text-sm font-semibold text-slate-900">{{ queue_health.oldest_review.raw_job.title }}</div>
+      <div class="mt-1 text-xs text-slate-500">Updated {{ queue_health.oldest_review.updated_at|date:"M j, Y H:i" }}</div>
+      {% else %}
+      <div class="mt-2 text-sm text-slate-500">No rows currently need review.</div>
+      {% endif %}
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Oldest Approved Not Pushed</div>
+      {% if queue_health.oldest_approved_not_pushed %}
+      <div class="mt-2 text-sm font-semibold text-slate-900">{{ queue_health.oldest_approved_not_pushed.raw_job.title }}</div>
+      <div class="mt-1 text-xs text-slate-500">
+        {% if queue_health.oldest_approved_not_pushed.approved_at %}
+        Approved {{ queue_health.oldest_approved_not_pushed.approved_at|date:"M j, Y H:i" }}
+        {% else %}
+        Updated {{ queue_health.oldest_approved_not_pushed.updated_at|date:"M j, Y H:i" }}
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="mt-2 text-sm text-slate-500">No approved rows are waiting on push.</div>
+      {% endif %}
+    </div>
+  </div>
+</div>

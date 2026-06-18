@@ -19,7 +19,7 @@ from harvest.models import RawJob
 from harvest.models import RawJobPayloadSnapshot
 from harvest.enrichments import detect_job_category
 from .models import Job
-from .models import RawJobClassificationSnapshot, RawJobClassifierRun
+from .models import RawJobClassificationSnapshot, RawJobClassifierRun, RawJobClassificationConflict
 from .marketing_role_routing import (
     assign_marketing_roles_to_job,
     clear_marketing_role_cache,
@@ -418,8 +418,23 @@ class RawJobDualClassificationShadowTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Dual Classification")
+        self.assertContains(response, "Open Classification V2")
+        self.assertNotContains(response, "Store Manual Secondary Classification")
+        self.assertNotContains(response, "Backend canonical output")
+
+    def test_v2_detail_renders_full_classification_workstation(self):
+        raw = self._raw_job("6b")
+        run_rawjob_dual_classification_shadow_task(raw.pk)
+        snapshot = RawJobClassificationSnapshot.objects.get(raw_job=raw)
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("jobs-classification-detail", args=[snapshot.pk]))
+
+        self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Store Manual Secondary Classification")
-        self.assertContains(response, "Backend canonical output")
+        self.assertContains(response, "Save Manual Override")
+        self.assertContains(response, "Save Field-Level Override")
+        self.assertContains(response, "Copy provider prompt context")
 
     def test_review_action_accepts_secondary_output(self):
         raw = self._raw_job("7")
@@ -478,6 +493,23 @@ class RawJobDualClassificationShadowTests(TestCase):
         self.assertEqual(snapshot.approved_source, "secondary")
         self.assertEqual(snapshot.approved_by, self.admin)
         self.assertEqual(snapshot.approved_output["classification"]["job_domain"], "platform-engineer")
+
+    def test_review_action_can_return_to_v2_detail(self):
+        raw = self._raw_job("7b")
+        run_rawjob_dual_classification_shadow_task(raw.pk)
+        snapshot = RawJobClassificationSnapshot.objects.get(raw_job=raw)
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse("harvest-rawjob-classification-review", args=[raw.pk]),
+            {
+                "source": "merged",
+                "next": reverse("jobs-classification-detail", args=[snapshot.pk]),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], reverse("jobs-classification-detail", args=[snapshot.pk]))
 
     def test_review_action_saves_manual_override(self):
         raw = self._raw_job("8")
@@ -658,6 +690,93 @@ class RawJobDualClassificationShadowTests(TestCase):
     @patch("jobs.gating.apply_gate_result_to_job")
     @patch("jobs.gating.evaluate_raw_job_gate")
     @patch("harvest.url_health.check_job_posting_live")
+    def test_push_to_vetting_can_return_to_v2_detail(
+        self,
+        mock_live,
+        mock_gate,
+        _mock_apply,
+    ):
+        raw = self._raw_job("9b")
+        run_rawjob_dual_classification_shadow_task(raw.pk)
+        self.client.force_login(self.admin)
+
+        payload = {
+            "identity": {
+                "raw_job_id": raw.pk,
+                "title": raw.title,
+                "company_name": raw.company_name,
+            },
+            "classification": {
+                "job_category": "Engineering",
+                "job_domain": "platform-engineer",
+                "department_normalized": "engineering",
+                "role_category": "cloud",
+            },
+            "skills": {"skills": ["AWS"], "tech_stack": ["AWS"]},
+            "requirements": {
+                "years_required": 5,
+                "years_required_max": None,
+                "education_required": "BS",
+                "visa_sponsorship": False,
+                "work_authorization": "US work authorization",
+                "clearance_required": False,
+                "clearance_level": "",
+            },
+            "location": {
+                "country": "United States",
+                "country_codes": ["US"],
+                "location_type": "REMOTE",
+                "is_remote": True,
+            },
+        }
+        self.client.post(
+            reverse("harvest-rawjob-secondary-ingest", args=[raw.pk]),
+            {
+                "provider": RawJobClassifierRun.Provider.CLAUDE,
+                "prompt_version": "v2",
+                "confidence": "0.91",
+                "normalized_output_json": json.dumps(payload),
+            },
+        )
+        self.client.post(
+            reverse("harvest-rawjob-classification-review", args=[raw.pk]),
+            {"source": "secondary"},
+        )
+        snapshot = RawJobClassificationSnapshot.objects.get(raw_job=raw)
+
+        mock_gate.return_value = SimpleNamespace(
+            passed=True,
+            lane="READY",
+            status="eligible",
+            reason_code="",
+            reasons=[],
+            checks={},
+            data_quality_score=0.9,
+            trust_score=0.9,
+            candidate_fit_score=0.9,
+            vet_priority_score=0.9,
+        )
+        mock_live.return_value = SimpleNamespace(
+            is_live=True,
+            reason="",
+            status_code=200,
+            final_url=raw.original_url,
+        )
+
+        response = self.client.post(
+            reverse("harvest-rawjob-push-vetting", args=[raw.pk]),
+            {
+                "push_note": "Ready from V2",
+                "next": reverse("jobs-classification-detail", args=[snapshot.pk]),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], reverse("jobs-classification-detail", args=[snapshot.pk]))
+
+    @patch("jobs.gating.apply_gate_result_to_job")
+    @patch("jobs.gating.evaluate_raw_job_gate")
+    @patch("harvest.url_health.check_job_posting_live")
     def test_push_to_vetting_with_warnings_requires_note_and_records_warning_codes(
         self,
         mock_live,
@@ -805,6 +924,180 @@ class RawJobDualClassificationShadowTests(TestCase):
         snapshot = RawJobClassificationSnapshot.objects.get(raw_job=raw)
         self.assertIsNone(snapshot.pushed_to_vetting_at)
 
+    @patch("jobs.gating.apply_gate_result_to_job")
+    @patch("jobs.gating.evaluate_raw_job_gate")
+    @patch("harvest.url_health.check_job_posting_live")
+    def test_push_to_vetting_is_idempotent_for_repeated_posts(
+        self,
+        mock_live,
+        mock_gate,
+        _mock_apply,
+    ):
+        raw = self._raw_job("10c-repush")
+        run_rawjob_dual_classification_shadow_task(raw.pk)
+        self.client.force_login(self.admin)
+        payload = {
+            "identity": {"raw_job_id": raw.pk, "title": raw.title, "company_name": raw.company_name},
+            "classification": {
+                "job_category": "Engineering",
+                "job_domain": "platform-engineer",
+                "department_normalized": "engineering",
+                "role_category": "cloud",
+            },
+            "skills": {"skills": ["AWS"], "tech_stack": ["AWS"]},
+            "requirements": {
+                "years_required": 5,
+                "years_required_max": None,
+                "education_required": "BS",
+                "visa_sponsorship": False,
+                "work_authorization": "US work authorization",
+                "clearance_required": False,
+                "clearance_level": "",
+            },
+            "location": {
+                "country": "United States",
+                "country_codes": ["US"],
+                "location_type": "REMOTE",
+                "is_remote": True,
+            },
+        }
+        self.client.post(
+            reverse("harvest-rawjob-secondary-ingest", args=[raw.pk]),
+            {
+                "provider": RawJobClassifierRun.Provider.CLAUDE,
+                "prompt_version": "v2",
+                "confidence": "0.91",
+                "normalized_output_json": json.dumps(payload),
+            },
+        )
+        self.client.post(
+            reverse("harvest-rawjob-classification-review", args=[raw.pk]),
+            {"source": "secondary", "approval_note": "Ready for vetting."},
+        )
+        mock_gate.return_value = SimpleNamespace(
+            passed=True,
+            lane="READY",
+            status="eligible",
+            reason_code="",
+            reasons=[],
+            checks={},
+            data_quality_score=0.9,
+            trust_score=0.9,
+            candidate_fit_score=0.9,
+            vet_priority_score=0.9,
+        )
+        mock_live.return_value = SimpleNamespace(is_live=True, reason="", status_code=200, final_url=raw.original_url)
+
+        first = self.client.post(
+            reverse("harvest-rawjob-push-vetting", args=[raw.pk]),
+            {"push_note": "First push note."},
+        )
+        second = self.client.post(
+            reverse("harvest-rawjob-push-vetting", args=[raw.pk]),
+            {"push_note": "Second push note should be ignored."},
+            follow=True,
+        )
+
+        self.assertEqual(first.status_code, 302)
+        self.assertEqual(second.status_code, 200)
+        snapshot = RawJobClassificationSnapshot.objects.get(raw_job=raw)
+        self.assertEqual(Job.objects.filter(source_raw_job=raw).count(), 1)
+        self.assertEqual(snapshot.pushed_to_vetting_note, "First push note.")
+        self.assertContains(second, f"RawJob #{raw.pk} was already pushed to vetting as Job #{snapshot.pushed_job_id}")
+        self.assertEqual(
+            snapshot.pushed_job.validation_result["dual_classification"]["pushed_to_vetting_note"],
+            "First push note.",
+        )
+
+    @patch("jobs.gating.apply_gate_result_to_job")
+    @patch("jobs.gating.evaluate_raw_job_gate")
+    @patch("harvest.url_health.check_job_posting_live")
+    def test_record_vetting_push_is_idempotent_after_first_success(
+        self,
+        mock_live,
+        mock_gate,
+        _mock_apply,
+    ):
+        from jobs.dual_classification.orchestrator import record_vetting_push_for_raw_job
+
+        raw = self._raw_job("10c-orchestrator")
+        run_rawjob_dual_classification_shadow_task(raw.pk)
+        self.client.force_login(self.admin)
+        self.client.post(
+            reverse("harvest-rawjob-classification-review", args=[raw.pk]),
+            {
+                "source": "manual",
+                "approval_note": "Manual approval.",
+                "manual_output_json": json.dumps(
+                    {
+                        "identity": {"raw_job_id": raw.pk, "title": raw.title, "company_name": raw.company_name},
+                        "classification": {
+                            "job_category": "Engineering",
+                            "job_domain": "platform-engineer",
+                            "department_normalized": "engineering",
+                            "role_category": "cloud",
+                        },
+                        "skills": {"skills": ["AWS"], "tech_stack": ["AWS"]},
+                        "requirements": {
+                            "years_required": 5,
+                            "years_required_max": None,
+                            "education_required": "BS",
+                            "visa_sponsorship": False,
+                            "work_authorization": "US work authorization",
+                            "clearance_required": False,
+                            "clearance_level": "",
+                        },
+                        "location": {
+                            "country": "United States",
+                            "country_codes": ["US"],
+                            "location_type": "REMOTE",
+                            "is_remote": True,
+                        },
+                    }
+                ),
+            },
+        )
+        mock_gate.return_value = SimpleNamespace(
+            passed=True,
+            lane="READY",
+            status="eligible",
+            reason_code="",
+            reasons=[],
+            checks={},
+            data_quality_score=0.9,
+            trust_score=0.9,
+            candidate_fit_score=0.9,
+            vet_priority_score=0.9,
+        )
+        mock_live.return_value = SimpleNamespace(is_live=True, reason="", status_code=200, final_url=raw.original_url)
+        self.client.post(
+            reverse("harvest-rawjob-push-vetting", args=[raw.pk]),
+            {"push_note": "Initial audit note."},
+        )
+
+        snapshot = RawJobClassificationSnapshot.objects.select_related("pushed_job").get(raw_job=raw)
+        result = record_vetting_push_for_raw_job(
+            raw_job_id=raw.pk,
+            actor=self.admin,
+            job=snapshot.pushed_job,
+            note="Overwrite attempt should be ignored.",
+            pushed_with_warnings=True,
+        )
+
+        snapshot.refresh_from_db()
+        pushed_job = Job.objects.get(pk=snapshot.pushed_job_id)
+        self.assertTrue(result["already_pushed"])
+        self.assertEqual(result["job_id"], snapshot.pushed_job_id)
+        self.assertEqual(snapshot.pushed_to_vetting_note, "Initial audit note.")
+        self.assertFalse(snapshot.pushed_to_vetting_with_warnings)
+        self.assertEqual(
+            pushed_job.validation_result["dual_classification"]["pushed_to_vetting_note"],
+            "Initial audit note.",
+        )
+        self.assertFalse(
+            pushed_job.validation_result["dual_classification"]["pushed_to_vetting_with_warnings"]
+        )
+
     @patch("harvest.url_health.check_job_posting_live")
     @patch("jobs.gating.evaluate_raw_job_gate")
     def test_sync_selected_respects_require_approval_for_sync(self, mock_gate, mock_live):
@@ -849,6 +1142,379 @@ class RawJobDualClassificationShadowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "RawJob Classification Review Queue")
         self.assertContains(response, raw.title)
+
+
+class ClassificationQueueV2ViewTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.employee = User.objects.create_user(
+            username="classification_v2_employee",
+            password="testpass",
+            role=User.Role.EMPLOYEE,
+        )
+        from core.models import FeatureFlag
+
+        FeatureFlag.objects.update_or_create(
+            key="employee_classification_workspace_v2",
+            defaults={
+                "label": "Classification Workspace V2",
+                "category": "EMPLOYEE",
+                "applies_to": "EMPLOYEE",
+                "is_enabled": True,
+                "enabled_for_employees": True,
+                "enabled_for_consultants": False,
+            },
+        )
+
+        self.company = Company.objects.create(name="Queue V2 Co")
+        self.raw = RawJob.objects.create(
+            company=self.company,
+            company_name=self.company.name,
+            title="Cloud Platform Engineer",
+            url_hash=hashlib.sha256(b"https://example.com/jobs/queue-v2").hexdigest(),
+            original_url="https://example.com/jobs/queue-v2",
+            description="AWS platform engineering, Kubernetes, Terraform, Python, monitoring, and secure cloud automation.",
+            description_clean="AWS platform engineering, Kubernetes, Terraform, Python, monitoring, and secure cloud automation.",
+            location_raw="Remote - United States",
+            location_type=RawJob.LocationType.REMOTE,
+            is_remote=True,
+            sync_status=RawJob.SyncStatus.PENDING,
+            is_active=True,
+            platform_slug="greenhouse",
+            classification_source="rules",
+            classification_provenance={"engine": "rule_regex_v2", "signals_count": 5},
+            field_provenance={"job_domain": "rule_regex_v2", "skills": "rule_regex_v2"},
+        )
+        RawJobClassificationSnapshot.objects.create(
+            raw_job=self.raw,
+            status=RawJobClassificationSnapshot.Status.NEEDS_REVIEW,
+            needs_review=True,
+            review_reason="secondary_provider_failed",
+            final_confidence=0.61,
+        )
+        self.snapshot = RawJobClassificationSnapshot.objects.get(raw_job=self.raw)
+        self.backend_run = RawJobClassifierRun.objects.create(
+            raw_job=self.raw,
+            provider=RawJobClassifierRun.Provider.BACKEND_RULES,
+            provider_role=RawJobClassifierRun.ProviderRole.PRIMARY,
+            input_hash="queue-v2-hash",
+            status=RawJobClassifierRun.Status.COMPLETED,
+            confidence=0.73,
+            normalized_output={"classification": {"job_domain": "devops-cloud"}},
+        )
+        self.secondary_run = RawJobClassifierRun.objects.create(
+            raw_job=self.raw,
+            provider=RawJobClassifierRun.Provider.CODEX,
+            provider_role=RawJobClassifierRun.ProviderRole.SECONDARY,
+            input_hash="queue-v2-hash",
+            status=RawJobClassifierRun.Status.FAILED,
+            error_message="provider timeout",
+            normalized_output={},
+        )
+        self.snapshot.backend_run = self.backend_run
+        self.snapshot.secondary_run = self.secondary_run
+        self.snapshot.merged_output = {
+            "classification": {"job_domain": "devops-cloud", "job_category": "Engineering"},
+            "location": {"country": "United States", "location_type": "REMOTE"},
+            "skills": {"skills": ["AWS", "Terraform", "Python"]},
+        }
+        self.snapshot.verifier_summary = {"warnings": ["secondary_provider_failed"], "errors": []}
+        self.snapshot.save(
+            update_fields=["backend_run", "secondary_run", "merged_output", "verifier_summary"]
+        )
+        RawJobClassificationConflict.objects.create(
+            raw_job=self.raw,
+            snapshot=self.snapshot,
+            field_path="classification.job_domain",
+            backend_value="devops-cloud",
+            secondary_value="",
+            resolved_value="devops-cloud",
+            resolution=RawJobClassificationConflict.Resolution.BACKEND,
+            severity=RawJobClassificationConflict.Severity.WARN,
+            note="Secondary provider failed before a usable domain was returned.",
+        )
+
+    def test_queue_requires_rollout_flag(self):
+        from core.models import FeatureFlag
+
+        flag = FeatureFlag.objects.get(key="employee_classification_workspace_v2")
+        flag.is_enabled = False
+        flag.save(update_fields=["is_enabled"])
+
+        self.client.login(username="classification_v2_employee", password="testpass")
+        response = self.client.get(reverse("jobs-classification-queue"))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_queue_renders_snapshot_when_flag_enabled(self):
+        self.client.login(username="classification_v2_employee", password="testpass")
+        response = self.client.get(reverse("jobs-classification-queue"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Classification Queue V2")
+        self.assertContains(response, "Cloud Platform Engineer")
+        self.assertContains(response, "secondary_provider_failed")
+
+    def test_detail_requires_rollout_flag(self):
+        from core.models import FeatureFlag
+
+        flag = FeatureFlag.objects.get(key="employee_classification_workspace_v2")
+        flag.is_enabled = False
+        flag.save(update_fields=["is_enabled"])
+
+        self.client.login(username="classification_v2_employee", password="testpass")
+        response = self.client.get(reverse("jobs-classification-detail", args=[self.snapshot.pk]))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_detail_renders_snapshot_when_flag_enabled(self):
+        self.client.login(username="classification_v2_employee", password="testpass")
+        response = self.client.get(reverse("jobs-classification-detail", args=[self.snapshot.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Classification Detail V2")
+        self.assertContains(response, "Cloud Platform Engineer")
+        self.assertContains(response, "secondary_provider_failed")
+        self.assertContains(response, "Field Compare")
+        self.assertContains(response, "classification.job_domain")
+        self.assertContains(response, "rule_regex_v2")
+        self.assertContains(response, "Open legacy RawJob review")
+
+
+class ClassificationSettingsV2ViewTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.admin = User.objects.create_superuser(
+            username="classification_settings_admin",
+            email="classification-settings@example.com",
+            password="testpass123",
+        )
+        from core.models import FeatureFlag
+
+        FeatureFlag.objects.update_or_create(
+            key="employee_classification_settings_v2",
+            defaults={
+                "label": "Classification Settings V2",
+                "category": "EMPLOYEE",
+                "applies_to": "EMPLOYEE",
+                "is_enabled": True,
+                "enabled_for_employees": True,
+                "enabled_for_consultants": False,
+            },
+        )
+
+    def test_settings_page_renders(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("jobs-classification-settings"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Classification Settings V2")
+        self.assertContains(response, "Auto-run shadow classification")
+
+    def test_settings_post_updates_platform_config(self):
+        self.client.force_login(self.admin)
+        config = PlatformConfig.load()
+
+        response = self.client.post(
+            reverse("jobs-classification-settings"),
+            {
+                "dual_classification_require_approval_for_sync": "on",
+                "dual_classification_secondary_runtime_enabled": "on",
+                "dual_classification_backfill_batch_size": "333",
+                "dual_classification_secondary_provider_default": "codex",
+                "dual_classification_secondary_prompt_version": "runtime_v3",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        config.refresh_from_db()
+        self.assertFalse(config.dual_classification_shadow_enabled)
+        self.assertTrue(config.dual_classification_require_approval_for_sync)
+        self.assertFalse(config.dual_classification_allow_push_with_warnings)
+        self.assertTrue(config.dual_classification_secondary_runtime_enabled)
+        self.assertEqual(config.dual_classification_backfill_batch_size, 333)
+        self.assertEqual(config.dual_classification_secondary_provider_default, "codex")
+        self.assertEqual(config.dual_classification_secondary_prompt_version, "runtime_v3")
+
+
+class ClassificationMetricsV2ViewTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.company = Company.objects.create(name="Metrics Co")
+        self.employee = User.objects.create_user(
+            username="classification_metrics_employee",
+            password="testpass",
+            role=User.Role.EMPLOYEE,
+        )
+        from core.models import FeatureFlag, LLMConfig
+
+        FeatureFlag.objects.update_or_create(
+            key="employee_job_pool",
+            defaults={
+                "label": "Job Pool",
+                "category": "EMPLOYEE",
+                "applies_to": "EMPLOYEE",
+                "is_enabled": True,
+                "enabled_for_employees": True,
+                "enabled_for_consultants": False,
+            },
+        )
+        FeatureFlag.objects.update_or_create(
+            key="employee_classification_metrics_v2",
+            defaults={
+                "label": "Classification Metrics V2",
+                "category": "EMPLOYEE",
+                "applies_to": "EMPLOYEE",
+                "is_enabled": True,
+                "enabled_for_employees": True,
+                "enabled_for_consultants": False,
+            },
+        )
+
+        llm = LLMConfig.load()
+        llm.provider = LLMConfig.Provider.OPENROUTER
+        llm.base_url = "https://openrouter.ai/api/v1"
+        llm.active_model = "gpt-4o-mini"
+        llm.validation_model = "claude-3.5-sonnet"
+        llm.save()
+
+        config = PlatformConfig.load()
+        config.dual_classification_shadow_enabled = True
+        config.dual_classification_secondary_runtime_enabled = True
+        config.dual_classification_secondary_provider_default = RawJobClassifierRun.Provider.CODEX
+        config.dual_classification_secondary_prompt_version = "runtime_v5"
+        config.dual_classification_backfill_batch_size = 250
+        config.dual_classification_require_approval_for_sync = True
+        config.dual_classification_allow_push_with_warnings = True
+        config.save()
+
+        now = timezone.now()
+        raw_one = RawJob.objects.create(
+            company=self.company,
+            company_name=self.company.name,
+            title="Metrics DevOps Engineer",
+            url_hash=hashlib.sha256(b"https://example.com/jobs/metrics-1").hexdigest(),
+            original_url="https://example.com/jobs/metrics-1",
+            description="AWS Terraform Kubernetes platform engineering and Python automation",
+            description_clean="AWS Terraform Kubernetes platform engineering and Python automation",
+            has_description=True,
+            is_active=True,
+            platform_slug="greenhouse",
+        )
+        raw_two = RawJob.objects.create(
+            company=self.company,
+            company_name=self.company.name,
+            title="Metrics Data Engineer",
+            url_hash=hashlib.sha256(b"https://example.com/jobs/metrics-2").hexdigest(),
+            original_url="https://example.com/jobs/metrics-2",
+            description="SQL Python Airflow data pipelines and cloud warehousing",
+            description_clean="SQL Python Airflow data pipelines and cloud warehousing",
+            has_description=True,
+            is_active=True,
+            platform_slug="ashby",
+        )
+
+        backend_one = RawJobClassifierRun.objects.create(
+            raw_job=raw_one,
+            provider=RawJobClassifierRun.Provider.BACKEND_RULES,
+            provider_role=RawJobClassifierRun.ProviderRole.PRIMARY,
+            input_hash="metrics-1",
+            prompt_version="rules_v1",
+            status=RawJobClassifierRun.Status.COMPLETED,
+            confidence=0.81,
+            completed_at=now,
+        )
+        secondary_one = RawJobClassifierRun.objects.create(
+            raw_job=raw_one,
+            provider=RawJobClassifierRun.Provider.CODEX,
+            provider_role=RawJobClassifierRun.ProviderRole.SECONDARY,
+            input_hash="metrics-1",
+            prompt_version="runtime_v5",
+            status=RawJobClassifierRun.Status.COMPLETED,
+            confidence=0.88,
+            completed_at=now,
+        )
+        backend_two = RawJobClassifierRun.objects.create(
+            raw_job=raw_two,
+            provider=RawJobClassifierRun.Provider.BACKEND_RULES,
+            provider_role=RawJobClassifierRun.ProviderRole.PRIMARY,
+            input_hash="metrics-2",
+            prompt_version="rules_v1",
+            status=RawJobClassifierRun.Status.COMPLETED,
+            confidence=0.74,
+            completed_at=now,
+        )
+        secondary_two = RawJobClassifierRun.objects.create(
+            raw_job=raw_two,
+            provider=RawJobClassifierRun.Provider.CLAUDE,
+            provider_role=RawJobClassifierRun.ProviderRole.SECONDARY,
+            input_hash="metrics-2",
+            prompt_version="runtime_v5",
+            status=RawJobClassifierRun.Status.FAILED,
+            error_message="provider timeout",
+            updated_at=now,
+        )
+
+        snapshot_one = RawJobClassificationSnapshot.objects.create(
+            raw_job=raw_one,
+            backend_run=backend_one,
+            secondary_run=secondary_one,
+            status=RawJobClassificationSnapshot.Status.MERGED,
+            needs_review=False,
+            final_confidence=0.87,
+            approval_state=RawJobClassificationSnapshot.ApprovalState.APPROVED,
+            approved_output={"classification": {"job_domain": "devops-cloud"}},
+            approved_source="merged",
+            approved_at=now,
+            pushed_to_vetting_at=now,
+            ready_for_vetting=True,
+        )
+        snapshot_two = RawJobClassificationSnapshot.objects.create(
+            raw_job=raw_two,
+            backend_run=backend_two,
+            secondary_run=secondary_two,
+            status=RawJobClassificationSnapshot.Status.NEEDS_REVIEW,
+            needs_review=True,
+            review_reason="secondary_provider_failed",
+            final_confidence=0.64,
+            verifier_summary={"warnings": ["secondary_provider_failed"], "errors": []},
+        )
+        RawJobClassificationConflict.objects.create(
+            raw_job=raw_two,
+            snapshot=snapshot_two,
+            field_path="classification.job_domain",
+            backend_value="data-engineering",
+            secondary_value="",
+            resolved_value="data-engineering",
+            resolution=RawJobClassificationConflict.Resolution.REVIEW,
+            severity=RawJobClassificationConflict.Severity.CRITICAL,
+            note="Secondary provider failed before a usable domain was returned.",
+        )
+
+    def test_metrics_requires_rollout_flag(self):
+        from core.models import FeatureFlag
+
+        flag = FeatureFlag.objects.get(key="employee_classification_metrics_v2")
+        flag.is_enabled = False
+        flag.save(update_fields=["is_enabled"])
+
+        self.client.login(username="classification_metrics_employee", password="testpass")
+        response = self.client.get(reverse("jobs-classification-metrics"))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_metrics_renders_health_surface(self):
+        self.client.login(username="classification_metrics_employee", password="testpass")
+        response = self.client.get(reverse("jobs-classification-metrics"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Classification Metrics V2")
+        self.assertContains(response, "Provider Health")
+        self.assertContains(response, "Runtime & Backfill Health")
+        self.assertContains(response, "Recent Failed Runs")
+        self.assertContains(response, "Metrics Data Engineer")
+        self.assertContains(response, "runtime_v5")
+        self.assertContains(response, "provider timeout")
 
 
 class MarketingRoleRoutingTests(TestCase):

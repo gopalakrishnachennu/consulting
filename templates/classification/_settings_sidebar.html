@@ -1,0 +1,28 @@
+<aside class="space-y-6">
+  <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div class="text-sm font-bold text-slate-900">Runtime Status</div>
+    <dl class="mt-4 space-y-3 text-sm text-slate-700">
+      <div>
+        <dt class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Central model</dt>
+        <dd class="mt-1">{{ secondary_runtime_model|default:"Not configured" }}</dd>
+      </div>
+      <div>
+        <dt class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Legacy LLM Setup</dt>
+        <dd class="mt-1"><a class="text-blue-700 hover:text-blue-900" href="{% url 'llm-config' %}">Open /core/llm/</a></dd>
+      </div>
+    </dl>
+  </div>
+
+  <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div class="text-sm font-bold text-slate-900">Historical Backfill</div>
+    <div class="mt-2 text-sm text-slate-600">
+      Trigger the existing backfill task with the current default batch size. This still uses the legacy action path underneath.
+    </div>
+    <form method="post" action="{% url 'harvest-run-classification-backfill' %}" class="mt-4 space-y-3">
+      {% csrf_token %}
+      <input type="hidden" name="batch_size" value="{{ form.instance.dual_classification_backfill_batch_size }}">
+      <input type="hidden" name="only_missing" value="1">
+      <button type="submit" class="btn-secondary w-full justify-center">Run Historical Backfill</button>
+    </form>
+  </div>
+</aside>

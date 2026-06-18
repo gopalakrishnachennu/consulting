@@ -28,3 +28,20 @@ def redirect_with_task_progress(
         query.update(extra_query)
     q = urlencode(query)
     return redirect(f"{path}?{q}")
+
+
+def redirect_url_with_task_progress(
+    url: str,
+    task_id: str,
+    label: str,
+    *,
+    extra_query: dict | None = None,
+):
+    """
+    Redirect to an already-built URL with ``?tp=<celery task id>&tpl=<label>``.
+    """
+    query = {"tp": task_id, "tpl": label}
+    if extra_query:
+        query.update(extra_query)
+    separator = "&" if "?" in url else "?"
+    return redirect(f"{url}{separator}{urlencode(query)}")

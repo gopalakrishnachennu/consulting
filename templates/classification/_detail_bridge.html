@@ -1,0 +1,10 @@
+<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+  <div class="text-sm font-bold text-slate-900">Bridge</div>
+  <div class="mt-2 text-sm text-slate-600">
+    Use the legacy RawJob detail for intake/source debugging. Classification review lives here now.
+  </div>
+  <div class="mt-4 flex flex-wrap gap-2">
+    <a href="{% url 'harvest-rawjob-detail' raw_job.pk %}" class="btn-primary">Open legacy RawJob detail</a>
+    <a href="{% url 'harvest-rawjob-review-queue' %}?q={{ raw_job.title|urlencode }}" class="btn-secondary">Search legacy queue</a>
+  </div>
+</div>

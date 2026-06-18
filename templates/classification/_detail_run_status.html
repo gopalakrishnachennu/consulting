@@ -1,0 +1,33 @@
+<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+  <div class="text-sm font-bold text-slate-900">Run Status</div>
+  <div class="mt-4 space-y-3 text-sm text-slate-700">
+    <div>
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Backend</div>
+      <div class="mt-1">
+        {% if snapshot.backend_run %}
+          {{ snapshot.backend_run.provider|upper }} · {{ snapshot.backend_run.status }}
+        {% else %}
+          —
+        {% endif %}
+      </div>
+    </div>
+    <div>
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Secondary</div>
+      <div class="mt-1">
+        {% if snapshot.secondary_run %}
+          {{ snapshot.secondary_run.provider|upper }} · {{ snapshot.secondary_run.status }}
+        {% else %}
+          —
+        {% endif %}
+      </div>
+    </div>
+    <div>
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Review Reason</div>
+      <div class="mt-1">{{ snapshot.review_reason|default:"—" }}</div>
+    </div>
+    <div>
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Last Updated</div>
+      <div class="mt-1">{{ snapshot.updated_at|date:"M j, Y H:i" }}</div>
+    </div>
+  </div>
+</div>

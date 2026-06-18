@@ -1,0 +1,42 @@
+<div class="rounded-2xl border border-slate-200 bg-white shadow-sm">
+  <div class="border-b border-slate-200 px-6 py-4">
+    <h2 class="text-sm font-bold text-slate-900">Field Compare</h2>
+    <p class="mt-1 text-xs text-slate-500">Read-only comparison across backend, secondary, merged, and approved outputs, plus the current persisted source on the RawJob.</p>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="bg-slate-50 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">
+          <th class="px-4 py-3">Field</th>
+          <th class="px-4 py-3">Backend</th>
+          <th class="px-4 py-3">Secondary</th>
+          <th class="px-4 py-3">Merged</th>
+          <th class="px-4 py-3">Approved</th>
+          <th class="px-4 py-3">Current Source</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for row in compare_rows %}
+        <tr>
+          <td class="px-4 py-4 align-top">
+            <div class="font-semibold text-slate-900">{{ row.label }}</div>
+            <div class="mt-1 font-mono text-[11px] text-slate-400">{{ row.field_path }}</div>
+            {% if row.severity %}
+            <div class="mt-2 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold {% if row.severity == 'CRITICAL' %}bg-rose-100 text-rose-700{% elif row.severity == 'WARN' %}bg-amber-100 text-amber-800{% else %}bg-slate-100 text-slate-600{% endif %}">
+              {{ row.severity }}{% if row.resolution %} · {{ row.resolution }}{% endif %}
+            </div>
+            {% endif %}
+          </td>
+          <td class="px-4 py-4 align-top text-slate-700">{{ row.backend }}</td>
+          <td class="px-4 py-4 align-top text-slate-700">{{ row.secondary }}</td>
+          <td class="px-4 py-4 align-top text-slate-700">{{ row.merged }}</td>
+          <td class="px-4 py-4 align-top text-slate-700">{{ row.approved }}</td>
+          <td class="px-4 py-4 align-top">
+            <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">{{ row.current_source }}</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>

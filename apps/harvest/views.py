@@ -17,11 +17,12 @@ from django.urls import reverse, reverse_lazy
 from datetime import timedelta
 
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import never_cache
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView, View
 
-from core.http import redirect_with_task_progress
+from core.http import redirect_url_with_task_progress, redirect_with_task_progress
 from users.models import User
 
 from .forms import HarvestRoleCategoryForm, JobBoardPlatformForm, JobDomainForm
@@ -59,6 +60,14 @@ from .services.rawjob_query import (
     ready_stage_q as _svc_ready_stage_q,
     rawjob_filter_state as _svc_rawjob_filter_state,
 )
+
+
+def _safe_return_url(request, fallback_viewname: str, *, pk: int | None = None) -> str:
+    target = (request.POST.get("next") or request.GET.get("next") or "").strip()
+    if target and url_has_allowed_host_and_scheme(target, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        return target
+    kwargs = {"pk": pk} if pk is not None else None
+    return reverse(fallback_viewname, kwargs=kwargs)
 from .services.job_descriptions import job_description_for_sync
 
 logger = logging.getLogger(__name__)
@@ -1338,6 +1347,7 @@ class RawJobSecondaryClassificationIngestView(SuperuserRequiredMixin, View):
         from jobs.dual_classification.orchestrator import ingest_secondary_result_for_raw_job
         from jobs.dual_classification.schema import validate_canonical_output
 
+        return_url = _safe_return_url(request, "harvest-rawjob-detail", pk=pk)
         raw_job = get_object_or_404(RawJob, pk=pk)
         provider = (request.POST.get("provider") or "").strip()
         prompt_version = (request.POST.get("prompt_version") or "").strip()
@@ -1346,18 +1356,18 @@ class RawJobSecondaryClassificationIngestView(SuperuserRequiredMixin, View):
 
         if not payload_raw:
             messages.error(request, "Secondary classification JSON is required.")
-            return redirect("harvest-rawjob-detail", pk=pk)
+            return redirect(return_url)
 
         try:
             normalized_output = _json.loads(payload_raw)
         except Exception as exc:
             messages.error(request, f"Invalid JSON: {exc}")
-            return redirect("harvest-rawjob-detail", pk=pk)
+            return redirect(return_url)
 
         schema_errors = validate_canonical_output(normalized_output)
         if schema_errors:
             messages.error(request, " ; ".join(schema_errors[:4]))
-            return redirect("harvest-rawjob-detail", pk=pk)
+            return redirect(return_url)
 
         confidence = None
         if confidence_raw:
@@ -1365,10 +1375,10 @@ class RawJobSecondaryClassificationIngestView(SuperuserRequiredMixin, View):
                 confidence = float(confidence_raw)
             except ValueError:
                 messages.error(request, "Confidence must be a number between 0 and 1.")
-                return redirect("harvest-rawjob-detail", pk=pk)
+                return redirect(return_url)
             if not (0.0 <= confidence <= 1.0):
                 messages.error(request, "Confidence must be between 0 and 1.")
-                return redirect("harvest-rawjob-detail", pk=pk)
+                return redirect(return_url)
 
         try:
             result = ingest_secondary_result_for_raw_job(
@@ -1382,7 +1392,7 @@ class RawJobSecondaryClassificationIngestView(SuperuserRequiredMixin, View):
         except Exception as exc:
             logger.exception("Secondary classification ingest failed for raw_job=%s", raw_job.pk)
             messages.error(request, f"Secondary classification ingest failed: {exc}")
-            return redirect("harvest-rawjob-detail", pk=pk)
+            return redirect(return_url)
 
         if result["needs_review"]:
             messages.warning(
@@ -1394,7 +1404,7 @@ class RawJobSecondaryClassificationIngestView(SuperuserRequiredMixin, View):
                 request,
                 f"Secondary classification stored. Merge ready ({result['status']}, confidence {result['final_confidence']:.2f}).",
             )
-        return redirect("harvest-rawjob-detail", pk=pk)
+        return redirect(return_url)
 
 
 class RawJobSecondaryClassificationRunView(SuperuserRequiredMixin, View):
@@ -1404,22 +1414,18 @@ class RawJobSecondaryClassificationRunView(SuperuserRequiredMixin, View):
         from jobs.dual_classification.config import default_secondary_provider, secondary_runtime_enabled
         from jobs.tasks import run_rawjob_dual_classification_shadow_task
 
+        return_url = _safe_return_url(request, "harvest-rawjob-detail", pk=pk)
         if not secondary_runtime_enabled():
             messages.error(request, "Secondary runtime is disabled in platform settings.")
-            return redirect("harvest-rawjob-detail", pk=pk)
+            return redirect(return_url)
 
         provider = default_secondary_provider().strip().lower()
         if provider not in {"codex", "claude"}:
             messages.error(request, "Set the default secondary provider to Codex or Claude before running the secondary runtime.")
-            return redirect("harvest-rawjob-detail", pk=pk)
+            return redirect(return_url)
 
         task = run_rawjob_dual_classification_shadow_task.delay(pk, True)
-        return redirect_with_task_progress(
-            "harvest-rawjob-detail",
-            task.id,
-            f"{provider.upper()} secondary classification",
-            kwargs={"pk": pk},
-        )
+        return redirect_url_with_task_progress(return_url, task.id, f"{provider.upper()} secondary classification")
 
 
 class RawJobClassificationReviewActionView(SuperuserRequiredMixin, View):
@@ -1430,6 +1436,7 @@ class RawJobClassificationReviewActionView(SuperuserRequiredMixin, View):
 
         from jobs.dual_classification.orchestrator import approve_snapshot_for_raw_job
 
+        return_url = _safe_return_url(request, "harvest-rawjob-detail", pk=pk)
         raw_job = get_object_or_404(RawJob, pk=pk)
         source = (request.POST.get("source") or "").strip()
         note = (request.POST.get("approval_note") or "").strip()
@@ -1439,12 +1446,12 @@ class RawJobClassificationReviewActionView(SuperuserRequiredMixin, View):
         if source == "manual":
             if not manual_output_raw:
                 messages.error(request, "Manual override JSON is required.")
-                return redirect("harvest-rawjob-detail", pk=pk)
+                return redirect(return_url)
             try:
                 manual_output = _json.loads(manual_output_raw)
             except Exception as exc:
                 messages.error(request, f"Invalid manual override JSON: {exc}")
-                return redirect("harvest-rawjob-detail", pk=pk)
+                return redirect(return_url)
         elif source == "manual_fields":
             snapshot = getattr(raw_job, "classification_snapshot", None)
             manual_output = (
@@ -1502,14 +1509,14 @@ class RawJobClassificationReviewActionView(SuperuserRequiredMixin, View):
         except Exception as exc:
             logger.exception("Classification review action failed for raw_job=%s", raw_job.pk)
             messages.error(request, f"Review action failed: {exc}")
-            return redirect("harvest-rawjob-detail", pk=pk)
+            return redirect(return_url)
 
         tone = messages.success if result["ready_for_vetting"] else messages.warning
         tone(
             request,
             f"Approved {result['approved_source']} classification ({result['approval_state']}, confidence {result['confidence']:.2f}).",
         )
-        return redirect("harvest-rawjob-detail", pk=pk)
+        return redirect(return_url)
 
 
 class RawJobPushToVettingView(SuperuserRequiredMixin, View):
@@ -1520,49 +1527,71 @@ class RawJobPushToVettingView(SuperuserRequiredMixin, View):
         from jobs.dual_classification.config import allow_push_with_warnings
         from jobs.models import RawJobClassificationSnapshot
 
-        raw_job = get_object_or_404(RawJob, pk=pk)
-        snapshot = getattr(raw_job, "classification_snapshot", None)
-        if not snapshot or not snapshot.approved_output:
-            messages.error(request, "Approve a classification result before pushing to vetting.")
-            return redirect("harvest-rawjob-detail", pk=pk)
-
-        allow_warnings = (request.POST.get("allow_warnings") or "").strip() == "1"
-        push_note = (request.POST.get("push_note") or "").strip()
-        verifier_warnings = list((snapshot.verifier_summary or {}).get("warnings") or [])
-
-        if allow_warnings and not allow_push_with_warnings():
-            messages.error(request, "Push-with-warnings is disabled in platform settings.")
-            return redirect("harvest-rawjob-detail", pk=pk)
-        if not snapshot.ready_for_vetting and not allow_warnings:
-            messages.error(
-                request,
-                "Approved classification still has verifier warnings. Use 'Push with warnings' only after review.",
-            )
-            return redirect("harvest-rawjob-detail", pk=pk)
-        if not snapshot.ready_for_vetting and allow_warnings and not push_note:
-            messages.error(request, "Add a push note when overriding verifier warnings.")
-            return redirect("harvest-rawjob-detail", pk=pk)
-
+        return_url = _safe_return_url(request, "harvest-rawjob-detail", pk=pk)
         try:
-            job, created = _sync_rawjob_to_pool(raw_job, posted_by=request.user)
-            push_result = record_vetting_push_for_raw_job(
-                raw_job_id=raw_job.pk,
-                actor=request.user,
-                job=job,
-                note=push_note,
-                pushed_with_warnings=(not snapshot.ready_for_vetting and allow_warnings),
-            )
+            with transaction.atomic():
+                raw_job = RawJob.objects.select_for_update().get(pk=pk)
+                snapshot = (
+                    RawJobClassificationSnapshot.objects.select_for_update()
+                    .select_related("pushed_job")
+                    .filter(raw_job=raw_job)
+                    .first()
+                )
+                if not snapshot or not snapshot.approved_output:
+                    messages.error(request, "Approve a classification result before pushing to vetting.")
+                    return redirect(return_url)
+
+                if snapshot.pushed_job_id and snapshot.pushed_to_vetting_at:
+                    warning_text = ""
+                    if snapshot.pushed_warning_codes:
+                        warning_text = f" ({len(snapshot.pushed_warning_codes)} verifier warning(s) captured)"
+                    messages.warning(
+                        request,
+                        f"RawJob #{raw_job.pk} was already pushed to vetting as Job #{snapshot.pushed_job_id}{warning_text}.",
+                    )
+                    return redirect(return_url)
+
+                allow_warnings = (request.POST.get("allow_warnings") or "").strip() == "1"
+                push_note = (request.POST.get("push_note") or "").strip()
+
+                if allow_warnings and not allow_push_with_warnings():
+                    messages.error(request, "Push-with-warnings is disabled in platform settings.")
+                    return redirect(return_url)
+                if not snapshot.ready_for_vetting and not allow_warnings:
+                    messages.error(
+                        request,
+                        "Approved classification still has verifier warnings. Use 'Push with warnings' only after review.",
+                    )
+                    return redirect(return_url)
+                if not snapshot.ready_for_vetting and allow_warnings and not push_note:
+                    messages.error(request, "Add a push note when overriding verifier warnings.")
+                    return redirect(return_url)
+
+                job, created = _sync_rawjob_to_pool(raw_job, posted_by=request.user)
+                push_result = record_vetting_push_for_raw_job(
+                    raw_job_id=raw_job.pk,
+                    actor=request.user,
+                    job=job,
+                    note=push_note,
+                    pushed_with_warnings=(not snapshot.ready_for_vetting and allow_warnings),
+                )
         except ValueError as exc:
             messages.error(request, str(exc))
-            return redirect("harvest-rawjob-detail", pk=pk)
+            return redirect(return_url)
         except Exception as exc:
-            logger.exception("Push to vetting failed for raw_job=%s", raw_job.pk)
+            logger.exception("Push to vetting failed for raw_job=%s", pk)
             messages.error(request, f"Push to vetting failed: {exc}")
-            return redirect("harvest-rawjob-detail", pk=pk)
+            return redirect(return_url)
 
         warning_text = ""
         if push_result["warning_count"]:
             warning_text = f" ({push_result['warning_count']} verifier warning(s) captured)"
+        if push_result.get("already_pushed"):
+            messages.warning(
+                request,
+                f"RawJob #{raw_job.pk} was already pushed to vetting as Job #{push_result['job_id']}{warning_text}.",
+            )
+            return redirect(return_url)
         if created:
             messages.success(
                 request,
@@ -1573,7 +1602,7 @@ class RawJobPushToVettingView(SuperuserRequiredMixin, View):
                 request,
                 f"RawJob #{raw_job.pk} was already mapped to Job #{job.pk}; push audit recorded{warning_text}.",
             )
-        return redirect("harvest-rawjob-detail", pk=pk)
+        return redirect(return_url)
 
 
 def _classification_queue_tab(request) -> str:

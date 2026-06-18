@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'jobs/_pipeline_subnav.html' %}
+
+<div class="space-y-6">
+  {% include 'classification/_detail_header.html' %}
+
+  <section class="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+    <div class="space-y-6">
+      {% include 'classification/_detail_compare.html' %}
+      {% include 'classification/_detail_conflicts.html' %}
+      {% include 'classification/_detail_outputs.html' %}
+    </div>
+
+    {% include 'classification/_detail_sidebar_secondary.html' %}
+  </section>
+</div>
+{% endblock %}

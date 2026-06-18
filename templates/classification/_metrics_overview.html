@@ -1,0 +1,55 @@
+<div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  <div class="mb-4">
+    <h2 class="text-sm font-bold text-slate-900">Overview</h2>
+    <p class="mt-1 text-xs text-slate-500">Current queue size, review coverage, and push coverage across all stored classification snapshots.</p>
+  </div>
+  <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Total Snapshots</div>
+      <div class="mt-1 text-2xl font-bold text-slate-900">{{ metrics_overview.total_snapshots }}</div>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Reviewed</div>
+      <div class="mt-1 text-2xl font-bold text-slate-900">{{ metrics_overview.reviewed_count }}</div>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Approved</div>
+      <div class="mt-1 text-2xl font-bold text-slate-900">{{ metrics_overview.approved_count }}</div>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Pushed</div>
+      <div class="mt-1 text-2xl font-bold text-slate-900">{{ metrics_overview.pushed_count }}</div>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Secondary Completed</div>
+      <div class="mt-1 text-2xl font-bold text-slate-900">{{ metrics_overview.secondary_completed }}</div>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Agreement Rate</div>
+      <div class="mt-1 text-2xl font-bold text-slate-900">{{ metrics_overview.agreement_rate }}%</div>
+    </div>
+  </div>
+
+  <div class="mt-5 grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+    <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-rose-700">Needs Review</div>
+      <div class="mt-1 text-xl font-bold text-rose-900">{{ queue_health.needs_review }}</div>
+    </div>
+    <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Approved, Not Pushed</div>
+      <div class="mt-1 text-xl font-bold text-emerald-900">{{ queue_health.approved_not_pushed }}</div>
+    </div>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Pushed With Warnings</div>
+      <div class="mt-1 text-xl font-bold text-amber-900">{{ queue_health.pushed_with_warnings }}</div>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Ready For Vetting</div>
+      <div class="mt-1 text-xl font-bold text-slate-900">{{ queue_health.ready_for_vetting }}</div>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Raw Backlog Without Snapshot</div>
+      <div class="mt-1 text-xl font-bold text-slate-900">{{ queue_health.raw_backlog_without_snapshot }}</div>
+    </div>
+  </div>
+</div>

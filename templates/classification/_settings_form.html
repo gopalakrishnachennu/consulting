@@ -1,0 +1,70 @@
+<form method="post" class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  {% csrf_token %}
+  <div class="space-y-6">
+    <div>
+      <h2 class="text-sm font-bold text-slate-900">Automation</h2>
+      <div class="mt-4 space-y-4">
+        <label class="flex items-start gap-3">
+          {{ form.dual_classification_shadow_enabled }}
+          <span>
+            <span class="block text-sm font-medium text-slate-900">Auto-run shadow classification</span>
+            <span class="block text-sm text-slate-500">Queue the backend-first dual-classification workflow automatically for usable RawJobs.</span>
+          </span>
+        </label>
+        <label class="flex items-start gap-3">
+          {{ form.dual_classification_secondary_runtime_enabled }}
+          <span>
+            <span class="block text-sm font-medium text-slate-900">Auto-run secondary runtime</span>
+            <span class="block text-sm text-slate-500">Use the central LLM runtime for the second classifier instead of waiting for manual JSON paste.</span>
+          </span>
+        </label>
+      </div>
+    </div>
+
+    <div>
+      <h2 class="text-sm font-bold text-slate-900">Review Policy</h2>
+      <div class="mt-4 space-y-4">
+        <label class="flex items-start gap-3">
+          {{ form.dual_classification_require_approval_for_sync }}
+          <span>
+            <span class="block text-sm font-medium text-slate-900">Require approved classification before sync</span>
+            <span class="block text-sm text-slate-500">Block promotion into vetting until a reviewed classification exists.</span>
+          </span>
+        </label>
+        <label class="flex items-start gap-3">
+          {{ form.dual_classification_allow_push_with_warnings }}
+          <span>
+            <span class="block text-sm font-medium text-slate-900">Allow push with warnings</span>
+            <span class="block text-sm text-slate-500">Permit reviewed jobs with verifier warnings to enter vetting, with explicit audit notes.</span>
+          </span>
+        </label>
+      </div>
+    </div>
+
+    <div>
+      <h2 class="text-sm font-bold text-slate-900">Runtime Defaults</h2>
+      <div class="mt-4 grid gap-4 md:grid-cols-2">
+        <div>
+          <label for="{{ form.dual_classification_secondary_provider_default.id_for_label }}" class="mb-1 block text-sm font-medium text-slate-700">Default secondary provider</label>
+          {{ form.dual_classification_secondary_provider_default }}
+          <div class="mt-1 text-sm text-red-600">{{ form.dual_classification_secondary_provider_default.errors }}</div>
+        </div>
+        <div>
+          <label for="{{ form.dual_classification_secondary_prompt_version.id_for_label }}" class="mb-1 block text-sm font-medium text-slate-700">Prompt version</label>
+          {{ form.dual_classification_secondary_prompt_version }}
+          <div class="mt-1 text-sm text-red-600">{{ form.dual_classification_secondary_prompt_version.errors }}</div>
+        </div>
+        <div>
+          <label for="{{ form.dual_classification_backfill_batch_size.id_for_label }}" class="mb-1 block text-sm font-medium text-slate-700">Historical backfill batch size</label>
+          {{ form.dual_classification_backfill_batch_size }}
+          <div class="mt-1 text-sm text-red-600">{{ form.dual_classification_backfill_batch_size.errors }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-3">
+      <button type="submit" class="btn-primary">Save Classification Settings</button>
+      <a href="{% url 'platform-config' %}#tab-job-pool" class="btn-secondary">Legacy setup</a>
+    </div>
+  </div>
+</form>

@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load feature_flags %}
 
 {% block content %}
 {% include 'jobs/_pipeline_subnav.html' %}
@@ -10,7 +11,16 @@
         <h1 class="text-2xl font-bold text-slate-900">RawJob Classification Review Queue</h1>
         <p class="mt-1 text-sm text-slate-500">Review dual-classification disagreements, approve merged results, and push vetted RawJobs into the pool with full audit history.</p>
       </div>
-      <form method="post" action="{% url 'harvest-run-classification-backfill' %}" class="grid grid-cols-1 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-[140px_auto_auto] sm:items-end">
+      <div class="flex flex-col gap-3 lg:items-end">
+        {% feature_enabled 'employee_classification_workspace_v2' as classification_workspace_v2 %}
+        {% feature_enabled 'employee_classification_metrics_v2' as classification_metrics_v2 %}
+        {% if classification_workspace_v2 %}
+        <a href="{% url 'jobs-classification-queue' %}" class="btn-secondary">Open Classification Queue V2</a>
+        {% endif %}
+        {% if classification_metrics_v2 %}
+        <a href="{% url 'jobs-classification-metrics' %}" class="btn-secondary">Open Classification Metrics V2</a>
+        {% endif %}
+        <form method="post" action="{% url 'harvest-run-classification-backfill' %}" class="grid grid-cols-1 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-[140px_auto_auto] sm:items-end">
         {% csrf_token %}
         <input type="hidden" name="queue" value="{{ queue_tab }}">
         <div>
@@ -28,7 +38,8 @@
         <div class="sm:col-span-3">
           <button type="submit" class="btn-secondary w-full justify-center sm:w-auto">Run Historical Backfill</button>
         </div>
-      </form>
+        </form>
+      </div>
     </div>
 
     <div class="mt-5 grid gap-3 md:grid-cols-4">

@@ -1,0 +1,37 @@
+<section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+    <div>
+      <div class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Classification Workspace</div>
+      <h1 class="mt-1 text-2xl font-bold text-slate-900">Classification Settings V2</h1>
+      <p class="mt-2 max-w-3xl text-sm text-slate-600">
+        Split settings surface for dual-classification behavior. This writes to the existing platform config model and keeps the legacy setup page compatible.
+      </p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <a href="{% url 'jobs-classification-queue' %}" class="btn-secondary">Back to queue</a>
+      {% if classification_metrics_v2 %}
+      <a href="{% url 'jobs-classification-metrics' %}" class="btn-secondary">Classification metrics</a>
+      {% endif %}
+      <a href="{% url 'platform-config' %}#tab-job-pool" class="btn-secondary">Open legacy setup tab</a>
+    </div>
+  </div>
+
+  <div class="mt-5 grid gap-3 md:grid-cols-4">
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Needs Review</div>
+      <div class="mt-1 text-2xl font-bold text-slate-900">{{ settings_metrics.needs_review }}</div>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Approved, Not Pushed</div>
+      <div class="mt-1 text-2xl font-bold text-slate-900">{{ settings_metrics.approved_not_pushed }}</div>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Pushed With Warnings</div>
+      <div class="mt-1 text-2xl font-bold text-slate-900">{{ settings_metrics.pushed_with_warnings }}</div>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Total Snapshots</div>
+      <div class="mt-1 text-2xl font-bold text-slate-900">{{ settings_metrics.total_snapshots }}</div>
+    </div>
+  </div>
+</section>

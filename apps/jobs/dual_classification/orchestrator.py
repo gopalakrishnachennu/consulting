@@ -404,49 +404,61 @@ def record_vetting_push_for_raw_job(
     note: str = "",
     pushed_with_warnings: bool = False,
 ) -> dict:
-    raw_job = RawJob.objects.get(pk=raw_job_id)
-    snapshot = RawJobClassificationSnapshot.objects.get(raw_job=raw_job)
-    if not snapshot.approved_output:
-        raise ValueError("Approved classification is required before pushing to vetting.")
+    with transaction.atomic():
+        raw_job = RawJob.objects.select_for_update().get(pk=raw_job_id)
+        snapshot = RawJobClassificationSnapshot.objects.select_for_update().get(raw_job=raw_job)
+        if not snapshot.approved_output:
+            raise ValueError("Approved classification is required before pushing to vetting.")
 
-    warning_codes = list((snapshot.verifier_summary or {}).get("warnings") or [])
-    pushed_at = timezone.now()
-    snapshot.pushed_job = job
-    snapshot.pushed_to_vetting_at = pushed_at
-    snapshot.pushed_to_vetting_by = actor
-    snapshot.pushed_to_vetting_note = note or ""
-    snapshot.pushed_to_vetting_with_warnings = bool(pushed_with_warnings)
-    snapshot.pushed_warning_codes = warning_codes
-    snapshot.save(
-        update_fields=[
-            "pushed_job",
-            "pushed_to_vetting_at",
-            "pushed_to_vetting_by",
-            "pushed_to_vetting_note",
-            "pushed_to_vetting_with_warnings",
-            "pushed_warning_codes",
-            "updated_at",
-        ]
-    )
-    validation_result = dict(getattr(job, "validation_result", {}) or {})
-    dual_classification_meta = dict(validation_result.get("dual_classification") or {})
-    dual_classification_meta.update(
-        {
-            "approved_source": snapshot.approved_source or "",
-            "approval_state": snapshot.approval_state,
-            "pushed_to_vetting_at": pushed_at.isoformat(),
-            "pushed_to_vetting_by": getattr(actor, "username", "") or "",
-            "pushed_to_vetting_note": note or "",
-            "pushed_to_vetting_with_warnings": bool(pushed_with_warnings),
-            "warning_codes": warning_codes,
+        if snapshot.pushed_job_id and snapshot.pushed_to_vetting_at:
+            return {
+                "raw_job_id": raw_job_id,
+                "job_id": snapshot.pushed_job_id,
+                "warning_count": len(snapshot.pushed_warning_codes or []),
+                "pushed_with_warnings": bool(snapshot.pushed_to_vetting_with_warnings),
+                "already_pushed": True,
+            }
+
+        locked_job = type(job).objects.select_for_update().get(pk=job.pk)
+        warning_codes = list((snapshot.verifier_summary or {}).get("warnings") or [])
+        pushed_at = timezone.now()
+        snapshot.pushed_job = locked_job
+        snapshot.pushed_to_vetting_at = pushed_at
+        snapshot.pushed_to_vetting_by = actor
+        snapshot.pushed_to_vetting_note = note or ""
+        snapshot.pushed_to_vetting_with_warnings = bool(pushed_with_warnings)
+        snapshot.pushed_warning_codes = warning_codes
+        snapshot.save(
+            update_fields=[
+                "pushed_job",
+                "pushed_to_vetting_at",
+                "pushed_to_vetting_by",
+                "pushed_to_vetting_note",
+                "pushed_to_vetting_with_warnings",
+                "pushed_warning_codes",
+                "updated_at",
+            ]
+        )
+        validation_result = dict(getattr(locked_job, "validation_result", {}) or {})
+        dual_classification_meta = dict(validation_result.get("dual_classification") or {})
+        dual_classification_meta.update(
+            {
+                "approved_source": snapshot.approved_source or "",
+                "approval_state": snapshot.approval_state,
+                "pushed_to_vetting_at": pushed_at.isoformat(),
+                "pushed_to_vetting_by": getattr(actor, "username", "") or "",
+                "pushed_to_vetting_note": note or "",
+                "pushed_to_vetting_with_warnings": bool(pushed_with_warnings),
+                "warning_codes": warning_codes,
+            }
+        )
+        validation_result["dual_classification"] = dual_classification_meta
+        locked_job.validation_result = validation_result
+        locked_job.save(update_fields=["validation_result", "updated_at"])
+        return {
+            "raw_job_id": raw_job_id,
+            "job_id": locked_job.pk,
+            "warning_count": len(warning_codes),
+            "pushed_with_warnings": bool(pushed_with_warnings),
+            "already_pushed": False,
         }
-    )
-    validation_result["dual_classification"] = dual_classification_meta
-    job.validation_result = validation_result
-    job.save(update_fields=["validation_result", "updated_at"])
-    return {
-        "raw_job_id": raw_job_id,
-        "job_id": getattr(job, "pk", None),
-        "warning_count": len(warning_codes),
-        "pushed_with_warnings": bool(pushed_with_warnings),
-    }

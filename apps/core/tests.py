@@ -11,6 +11,7 @@ from django.utils import timezone
 from unittest.mock import patch
 from users.models import User, UserEmailNotificationPreferences, ConsultantProfile
 from .models import PlatformConfig, LLMConfig, AuditLog, Notification, BroadcastMessage
+from .feature_flags import get_feature_flag
 from .forms import PlatformConfigForm
 from .middleware import MaintenanceModeMiddleware, PlatformSessionTimeoutMiddleware
 from .notification_utils import create_notification, sanitize_internal_link
@@ -124,6 +125,44 @@ class PlatformConfigAdminViewTests(TestCase):
         self.assertContains(resp, "Terms of Service URL")
         self.assertContains(resp, "Privacy Policy URL")
         self.assertContains(resp, "Header preview")
+
+
+class ClassificationWorkspaceRolloutTests(TestCase):
+    def setUp(self):
+        self.employee = User.objects.create_user(
+            username="employee_rollout",
+            password="pass",
+            role=User.Role.EMPLOYEE,
+        )
+
+    def test_restructure_feature_flags_seeded_with_safe_defaults(self):
+        workspace = get_feature_flag("employee_classification_workspace_v2")
+        settings_flag = get_feature_flag("employee_classification_settings_v2")
+        metrics = get_feature_flag("employee_classification_metrics_v2")
+        legacy = get_feature_flag("employee_legacy_rawjob_review_bridge")
+
+        self.assertIsNotNone(workspace)
+        self.assertIsNotNone(settings_flag)
+        self.assertIsNotNone(metrics)
+        self.assertIsNotNone(legacy)
+
+        self.assertFalse(workspace.is_enabled)
+        self.assertFalse(settings_flag.is_enabled)
+        self.assertFalse(metrics.is_enabled)
+        self.assertTrue(legacy.is_enabled)
+
+    def test_rollout_helpers_reflect_flag_state(self):
+        from jobs.rollout import (
+            classification_metrics_v2_enabled,
+            classification_settings_v2_enabled,
+            classification_workspace_v2_enabled,
+            legacy_rawjob_review_bridge_enabled,
+        )
+
+        self.assertFalse(classification_workspace_v2_enabled(self.employee))
+        self.assertFalse(classification_settings_v2_enabled(self.employee))
+        self.assertFalse(classification_metrics_v2_enabled(self.employee))
+        self.assertTrue(legacy_rawjob_review_bridge_enabled(self.employee))
 
 
 class DeploymentInfoContextProcessorTests(TestCase):

@@ -1,0 +1,19 @@
+<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+  <div class="text-sm font-bold text-slate-900">Recent Failed Runs</div>
+  <div class="mt-2 text-sm text-slate-600">Latest provider failures to help spot auth, prompt, or runtime regressions quickly.</div>
+  <div class="mt-4 space-y-3">
+    {% for run in recent_failures %}
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="font-semibold text-slate-900">{{ run.get_provider_display }}</div>
+        <div class="text-xs text-slate-500">{{ run.updated_at|date:"M j, Y H:i" }}</div>
+      </div>
+      <div class="mt-1 text-sm text-slate-700">{{ run.raw_job.title }}</div>
+      <div class="mt-1 text-xs text-slate-500">{{ run.prompt_version|default:"(no prompt version)" }}</div>
+      <div class="mt-2 text-xs text-rose-700 break-words">{{ run.error_message|default:"No error message recorded." }}</div>
+    </div>
+    {% empty %}
+    <div class="text-sm text-slate-500">No failed classifier runs recorded.</div>
+    {% endfor %}
+  </div>
+</div>

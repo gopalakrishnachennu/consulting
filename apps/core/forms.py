@@ -3,6 +3,17 @@ from .models import PlatformConfig, LLMConfig, BroadcastMessage
 from .security import encrypt_value, decrypt_value
 
 
+def _apply_standard_widget_classes(fields):
+    for field in fields:
+        widget = fields[field].widget
+        if isinstance(widget, (forms.TextInput, forms.URLInput, forms.EmailInput, forms.NumberInput, forms.Textarea, forms.PasswordInput)):
+            widget.attrs.update({'class': 'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500'})
+        elif isinstance(widget, forms.Select):
+            widget.attrs.update({'class': 'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white'})
+        elif isinstance(widget, forms.CheckboxInput):
+            widget.attrs.update({'class': 'h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded'})
+
+
 class LLMConfigForm(forms.ModelForm):
     # Free-text so any provider's model id works (gpt-4o, deepseek-chat, openai/gpt-4o…)
     active_model = forms.CharField(required=False,
@@ -37,11 +48,7 @@ class LLMConfigForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        for field in self.fields:
-            if isinstance(self.fields[field].widget, (forms.TextInput, forms.URLInput, forms.EmailInput, forms.NumberInput, forms.Textarea, forms.Select)):
-                self.fields[field].widget.attrs.update({'class': 'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500'})
-            elif isinstance(self.fields[field].widget, forms.CheckboxInput):
-                self.fields[field].widget.attrs.update({'class': 'h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded'})
+        _apply_standard_widget_classes(self.fields)
 
     def save(self, commit=True):
         instance = super().save(commit=False)
@@ -74,15 +81,7 @@ class PlatformConfigForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Add basic styling
-        for field in self.fields:
-            widget = self.fields[field].widget
-            if isinstance(widget, (forms.TextInput, forms.URLInput, forms.EmailInput, forms.NumberInput, forms.Textarea, forms.PasswordInput)):
-                widget.attrs.update({'class': 'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500'})
-            elif isinstance(widget, forms.Select):
-                widget.attrs.update({'class': 'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white'})
-            elif isinstance(widget, forms.CheckboxInput):
-                widget.attrs.update({'class': 'h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded'})
+        _apply_standard_widget_classes(self.fields)
 
         instance: PlatformConfig = self.instance
         if getattr(instance, "email_imap_encrypted_password", ""):
@@ -131,6 +130,38 @@ class PlatformConfigForm(forms.ModelForm):
         if self.cleaned_data.get("maintenance_mode") and not value:
             raise forms.ValidationError("Maintenance mode requires a visible message for non-admin users.")
         return value
+
+    def clean_dual_classification_backfill_batch_size(self):
+        value = self.cleaned_data.get("dual_classification_backfill_batch_size")
+        if value is None or value < 1 or value > 5000:
+            raise forms.ValidationError("Dual-classification backfill batch size must be between 1 and 5000.")
+        return value
+
+    def clean_dual_classification_secondary_prompt_version(self):
+        value = (self.cleaned_data.get("dual_classification_secondary_prompt_version") or "").strip()
+        if not value:
+            return "runtime_v1"
+        if len(value) > 40:
+            raise forms.ValidationError("Secondary prompt version must be 40 characters or fewer.")
+        return value
+
+
+class ClassificationSettingsForm(forms.ModelForm):
+    class Meta:
+        model = PlatformConfig
+        fields = [
+            "dual_classification_shadow_enabled",
+            "dual_classification_require_approval_for_sync",
+            "dual_classification_allow_push_with_warnings",
+            "dual_classification_secondary_runtime_enabled",
+            "dual_classification_backfill_batch_size",
+            "dual_classification_secondary_provider_default",
+            "dual_classification_secondary_prompt_version",
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _apply_standard_widget_classes(self.fields)
 
     def clean_dual_classification_backfill_batch_size(self):
         value = self.cleaned_data.get("dual_classification_backfill_batch_size")

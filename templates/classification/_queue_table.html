@@ -1,0 +1,114 @@
+<section class="rounded-2xl border border-slate-200 bg-white shadow-sm">
+  <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+    <div>
+      <h2 class="text-sm font-bold text-slate-900">Queue Items</h2>
+      <p class="mt-1 text-xs text-slate-500">{{ queue_total }} result{{ queue_total|pluralize }} in the current filter.</p>
+    </div>
+    <div class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">V2 is read-only in this rollout</div>
+  </div>
+
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="bg-slate-50 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">
+          <th class="px-4 py-3">Job</th>
+          <th class="px-4 py-3">State</th>
+          <th class="px-4 py-3">Signals</th>
+          <th class="px-4 py-3">Downstream</th>
+          <th class="px-4 py-3 text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for snapshot in queue_page_obj.object_list %}
+        <tr class="hover:bg-slate-50 transition">
+          <td class="px-4 py-4 align-top">
+            <div class="font-semibold text-slate-900">{{ snapshot.raw_job.title }}</div>
+            <div class="mt-1 text-xs text-slate-500">{{ snapshot.raw_job.company_name|default:"Unknown company" }}</div>
+            <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+              {% if snapshot.raw_job.platform_slug %}
+              <span class="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600 uppercase">{{ snapshot.raw_job.platform_slug }}</span>
+              {% endif %}
+              {% if snapshot.review_reason %}
+              <span class="rounded-full bg-rose-50 px-2 py-0.5 font-semibold text-rose-700">{{ snapshot.review_reason }}</span>
+              {% endif %}
+            </div>
+          </td>
+          <td class="px-4 py-4 align-top">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="rounded-full px-2 py-0.5 text-xs font-semibold {% if snapshot.needs_review %}bg-rose-100 text-rose-700{% elif snapshot.ready_for_vetting %}bg-emerald-100 text-emerald-700{% else %}bg-amber-100 text-amber-700{% endif %}">
+                {{ snapshot.status }}
+              </span>
+              {% if snapshot.approval_state != 'UNREVIEWED' %}
+              <span class="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+                {{ snapshot.approval_state }} · {{ snapshot.approved_source|default:"—" }}
+              </span>
+              {% endif %}
+              {% if snapshot.pushed_to_vetting_with_warnings %}
+              <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Pushed with warnings</span>
+              {% endif %}
+            </div>
+            <div class="mt-2 text-xs text-slate-500">
+              Updated {{ snapshot.updated_at|date:"M j, Y H:i" }}
+            </div>
+          </td>
+          <td class="px-4 py-4 align-top">
+            <div class="text-xs text-slate-600">Backend: {{ snapshot.backend_run.status|default:"—" }}</div>
+            <div class="mt-1 text-xs text-slate-600">
+              Secondary:
+              {% if snapshot.secondary_run %}
+                {{ snapshot.secondary_run.provider|upper }} · {{ snapshot.secondary_run.status }}
+              {% else %}
+                —
+              {% endif %}
+            </div>
+            <div class="mt-1 text-xs text-slate-400">Confidence {{ snapshot.final_confidence|floatformat:2 }}</div>
+            <div class="mt-1 text-xs text-slate-400">{{ snapshot.conflict_count }} conflict{{ snapshot.conflict_count|pluralize }}</div>
+          </td>
+          <td class="px-4 py-4 align-top">
+            {% if snapshot.pushed_to_vetting_at %}
+            <div class="text-xs font-semibold text-slate-900">Job #{{ snapshot.pushed_job_id|default:"—" }}</div>
+            <div class="mt-1 text-xs text-slate-500">{{ snapshot.pushed_to_vetting_at|date:"M j, Y H:i" }}</div>
+            {% elif snapshot.approved_at %}
+            <div class="text-xs font-semibold text-slate-900">Approved, not pushed</div>
+            <div class="mt-1 text-xs text-slate-500">{{ snapshot.approved_at|date:"M j, Y H:i" }}</div>
+            {% else %}
+            <div class="text-xs text-slate-400">No downstream action yet</div>
+            {% endif %}
+          </td>
+          <td class="px-4 py-4 text-right align-top">
+            <div class="flex flex-col items-end gap-2">
+              <a href="{% url 'jobs-classification-detail' snapshot.pk %}" class="inline-flex items-center rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:border-indigo-300 hover:bg-indigo-100">
+                Open Classification
+              </a>
+              <a href="{% url 'harvest-rawjob-detail' snapshot.raw_job_id %}" class="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-indigo-300 hover:text-indigo-700">
+                Open RawJob
+              </a>
+              <a href="{% url 'harvest-rawjob-review-queue' %}?q={{ snapshot.raw_job.title|urlencode }}" class="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-slate-300 hover:text-slate-800">
+                Open legacy queue
+              </a>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="5" class="px-6 py-10 text-center text-sm text-slate-500">No classification snapshots match the current filter.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if queue_page_obj.paginator.num_pages > 1 %}
+  <div class="flex items-center justify-between border-t border-slate-200 px-6 py-4 text-sm text-slate-500">
+    <div>Page {{ queue_page_obj.number }} of {{ queue_page_obj.paginator.num_pages }}</div>
+    <div class="flex gap-2">
+      {% if queue_page_obj.has_previous %}
+      <a href="?queue={{ queue_tab }}&page={{ queue_page_obj.previous_page_number }}{% if queue_q %}&q={{ queue_q }}{% endif %}{% if queue_provider %}&provider={{ queue_provider }}{% endif %}" class="btn-secondary">Prev</a>
+      {% endif %}
+      {% if queue_page_obj.has_next %}
+      <a href="?queue={{ queue_tab }}&page={{ queue_page_obj.next_page_number }}{% if queue_q %}&q={{ queue_q }}{% endif %}{% if queue_provider %}&provider={{ queue_provider }}{% endif %}" class="btn-secondary">Next</a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</section>

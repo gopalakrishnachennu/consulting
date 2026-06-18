@@ -1,7 +1,7 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from django.views.generic import ListView, DetailView, CreateView, UpdateView, DeleteView, View
+from django.views.generic import ListView, DetailView, CreateView, UpdateView, DeleteView, TemplateView, View
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.contrib import messages
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -19,6 +19,13 @@ from urllib.parse import urlencode
 from .models import Job, PipelineEvent
 from .dual_classification.effective import effective_raw_job_classification
 from config.pagination import PAGE_SIZE_OPTIONS, get_page_size, build_pagination_window
+from .classification_workspace import (
+    ClassificationDetailV2View,
+    ClassificationQueueV2View,
+    ClassificationSettingsRequiredMixin,
+    ClassificationSettingsV2View,
+    ClassificationWorkspaceRequiredMixin,
+)
 
 logger = logging.getLogger(__name__)
 from .forms import JobForm, JobBulkUploadForm

@@ -1,0 +1,95 @@
+<section class="card-padded">
+  <div class="mb-3 flex flex-wrap items-start justify-between gap-2">
+    <div>
+      <h3 class="text-xs font-bold uppercase tracking-wide text-slate-500">Dual Classification</h3>
+      <p class="mt-1 text-[11px] text-slate-400">Classification review has moved to the dedicated Classification Workspace. Raw Job Detail now keeps only status, source, and debug visibility.</p>
+    </div>
+    {% if classification_snapshot %}
+    <div class="text-right">
+      <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Current status</p>
+      {% if classification_snapshot.status == 'MERGED' %}
+      <span class="badge-green">{{ classification_snapshot.status }}</span>
+      {% elif classification_snapshot.status == 'NEEDS_REVIEW' %}
+      <span class="badge-red">{{ classification_snapshot.status }}</span>
+      {% elif classification_snapshot.status == 'PARTIAL' %}
+      <span class="badge-yellow">{{ classification_snapshot.status }}</span>
+      {% else %}
+      <span class="badge-gray">{{ classification_snapshot.status }}</span>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  {% if classification_snapshot %}
+  <div class="mb-4 grid gap-2 sm:grid-cols-3">
+    <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Backend</p>
+      <p class="mt-1 text-sm font-semibold text-slate-900">{{ backend_run.provider|default:"—" }}</p>
+      <p class="text-xs text-slate-500">{{ backend_run.confidence|default_if_none:"—"|floatformat:2 }}</p>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Secondary</p>
+      <p class="mt-1 text-sm font-semibold text-slate-900">{{ secondary_run.provider|default:"Not submitted" }}</p>
+      <p class="text-xs text-slate-500">
+        {% if secondary_run %}{{ secondary_run.confidence|default_if_none:"—"|floatformat:2 }}{% else %}Paste Codex/Claude output{% endif %}
+      </p>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Merged confidence</p>
+      <p class="mt-1 text-sm font-semibold text-slate-900">{{ classification_snapshot.final_confidence|floatformat:2 }}</p>
+      <p class="text-xs {% if classification_snapshot.needs_review %}text-red-600{% else %}text-slate-500{% endif %}">
+        {% if classification_snapshot.needs_review %}Needs review{% else %}Shadow-only result{% endif %}
+      </p>
+    </div>
+  </div>
+
+  <div class="space-y-3">
+    {% if classification_snapshot.review_reason %}
+    <div class="rounded-lg border {% if classification_snapshot.needs_review %}border-red-200 bg-red-50 text-red-800{% else %}border-slate-200 bg-slate-50 text-slate-700{% endif %} p-3 text-xs">
+      <strong>Review reason:</strong> {{ classification_snapshot.review_reason }}
+    </div>
+    {% endif %}
+
+    {% if classification_snapshot.approval_state != 'UNREVIEWED' %}
+    <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="badge-green">{{ classification_snapshot.approval_state }}</span>
+        <span class="font-semibold text-emerald-800">Source: {{ classification_snapshot.approved_source|default:"—" }}</span>
+        {% if classification_snapshot.approved_at %}
+        <span class="text-emerald-700">{{ classification_snapshot.approved_at|date:"M j, Y H:i" }}</span>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if classification_snapshot.pushed_to_vetting_at %}
+    <div class="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">
+      <strong>Pushed:</strong>
+      {% if classification_snapshot.pushed_job_id %}Job #{{ classification_snapshot.pushed_job_id }} · {% endif %}
+      {{ classification_snapshot.pushed_to_vetting_at|date:"M j, Y H:i" }}
+      {% if classification_snapshot.pushed_to_vetting_with_warnings %}
+      <span class="ml-1 text-amber-800">with warnings</span>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <div class="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">Classification Workspace</div>
+      <p class="mb-3 text-xs text-slate-600">Open the dedicated workspace for compare, approve, manual override, manual secondary JSON paste, and push actions.</p>
+      <div class="flex flex-wrap gap-2">
+        {% if classification_snapshot and classification_workspace_v2 %}
+        <a href="{% url 'jobs-classification-detail' classification_snapshot.pk %}" class="btn-primary">Open Classification V2</a>
+        {% endif %}
+        <a href="{% url 'harvest-rawjob-review-queue' %}?q={{ rawjob.title|urlencode }}" class="btn-secondary">Open Review Queue</a>
+        {% if request.user.is_superuser or request.user.role == 'ADMIN' %}
+        <a href="{% url 'jobs-classification-settings' %}" class="btn-secondary">Classification Settings</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+    No classification snapshot exists yet. Trigger classification from the dedicated Classification Workspace once a usable JD is present.
+  </div>
+  {% endif %}
+</section>

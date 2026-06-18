@@ -1,0 +1,24 @@
+<div class="rounded-2xl border border-slate-200 bg-white shadow-sm">
+  <div class="border-b border-slate-200 px-6 py-4">
+    <h2 class="text-sm font-bold text-slate-900">Outputs</h2>
+    <p class="mt-1 text-xs text-slate-500">Raw JSON stays as debug support. Day-to-day review should start from the field compare and action panels above.</p>
+  </div>
+  <div class="divide-y divide-slate-200">
+    <details class="group" open>
+      <summary class="cursor-pointer list-none px-6 py-4 text-sm font-semibold text-slate-900">Merged Output</summary>
+      <pre class="max-h-96 overflow-auto border-t border-slate-200 bg-slate-50 p-4 text-[11px] leading-5 text-slate-700">{{ merged_output_json }}</pre>
+    </details>
+    <details class="group">
+      <summary class="cursor-pointer list-none px-6 py-4 text-sm font-semibold text-slate-900">Approved Output</summary>
+      <pre class="max-h-96 overflow-auto border-t border-slate-200 bg-slate-50 p-4 text-[11px] leading-5 text-slate-700">{{ approved_output_json }}</pre>
+    </details>
+    <details class="group">
+      <summary class="cursor-pointer list-none px-6 py-4 text-sm font-semibold text-slate-900">Backend Output</summary>
+      <pre class="max-h-96 overflow-auto border-t border-slate-200 bg-slate-50 p-4 text-[11px] leading-5 text-slate-700">{{ backend_run_json }}</pre>
+    </details>
+    <details class="group">
+      <summary class="cursor-pointer list-none px-6 py-4 text-sm font-semibold text-slate-900">Secondary Output</summary>
+      <pre class="max-h-96 overflow-auto border-t border-slate-200 bg-slate-50 p-4 text-[11px] leading-5 text-slate-700">{{ secondary_run_json }}</pre>
+    </details>
+  </div>
+</div>

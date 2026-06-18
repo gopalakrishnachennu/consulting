@@ -1,0 +1,25 @@
+<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+  <div class="text-sm font-bold text-slate-900">Recent Ops</div>
+  <div class="mt-2 text-sm text-slate-600">Latest classify and backfill operations already recorded by the existing ops audit system.</div>
+  <div class="mt-4 space-y-3">
+    {% for op in recent_ops %}
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="font-semibold text-slate-900">{{ op.get_operation_display }}</div>
+        <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold {% if op.status == 'FAILED' %}bg-rose-100 text-rose-700{% elif op.status == 'PARTIAL' %}bg-amber-100 text-amber-800{% elif op.status == 'SUCCESS' %}bg-emerald-100 text-emerald-700{% else %}bg-slate-100 text-slate-700{% endif %}">
+          {{ op.status }}
+        </span>
+      </div>
+      <div class="mt-1 text-xs text-slate-500">{{ op.created_at|date:"M j, Y H:i" }}</div>
+      {% if op.progress_message %}
+      <div class="mt-2 text-sm text-slate-700">{{ op.progress_message }}</div>
+      {% endif %}
+      {% if op.finished_at %}
+      <div class="mt-1 text-xs text-slate-500">Finished {{ op.finished_at|date:"M j, Y H:i" }}</div>
+      {% endif %}
+    </div>
+    {% empty %}
+    <div class="text-sm text-slate-500">No related ops runs recorded yet.</div>
+    {% endfor %}
+  </div>
+</div>

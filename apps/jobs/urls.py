@@ -1,4 +1,10 @@
 from django.urls import path
+from .classification_workspace import (
+    ClassificationDetailV2View,
+    ClassificationMetricsV2View,
+    ClassificationQueueV2View,
+    ClassificationSettingsV2View,
+)
 from .views import (
     JobListView, JobDetailView, JobCreateView, JobUpdateView, JobDeleteView,
     JobBulkUploadView, JobParseJDView, JobExportCSVView, JobDuplicateCheckView,
@@ -30,6 +36,10 @@ from harvest.views import (
 urlpatterns = [
     path('', JobListView.as_view(), name='job-list'),
     path('pipeline/', JobsPipelineView.as_view(), name='jobs-pipeline'),
+    path('classification/queue/', ClassificationQueueV2View.as_view(), name='jobs-classification-queue'),
+    path('classification/settings/', ClassificationSettingsV2View.as_view(), name='jobs-classification-settings'),
+    path('classification/metrics/', ClassificationMetricsV2View.as_view(), name='jobs-classification-metrics'),
+    path('classification/<int:pk>/', ClassificationDetailV2View.as_view(), name='jobs-classification-detail'),
     # Jobs Pipeline owns the user-facing raw job workflow. Legacy /harvest/run/*
     # endpoints remain available for existing links and Harvest Engine settings.
     path('pipeline/run/fetch-batch/', TriggerBatchFetchView.as_view(), name='jobs-pipeline-run-fetch-batch'),
