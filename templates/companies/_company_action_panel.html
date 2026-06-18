@@ -1,0 +1,25 @@
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+  <h3 class="text-xs font-bold text-gray-800 uppercase tracking-wider mb-3">Actions</h3>
+  <div class="grid grid-cols-1 gap-2">
+    <a href="{{ company_actions.pipeline_url }}" class="inline-flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+      <span>Open raw jobs in pipeline</span><span>→</span>
+    </a>
+    <a href="{{ company_actions.raw_jobs_url }}" class="inline-flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+      <span>Open harvested jobs</span><span>→</span>
+    </a>
+    <a href="{{ company_actions.jobs_url }}" class="inline-flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+      <span>Open downstream jobs</span><span>→</span>
+    </a>
+    <a href="{{ company_actions.mapping_url }}" class="inline-flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+      <span>Check board mapping</span><span>→</span>
+    </a>
+    <a href="{{ company_actions.failed_runs_url }}" class="inline-flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+      <span>View failed fetches</span><span>→</span>
+    </a>
+    {% if request.user.is_superuser and company_actions.can_fetch_now and company_actions.fetch_label_pk %}
+    <button type="button" class="inline-flex items-center justify-between rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700" onclick="fetchCompanyJobsFromProfile({{ company_actions.fetch_label_pk }}, this)">
+      <span>Run harvest now</span><span>↻</span>
+    </button>
+    {% endif %}
+  </div>
+</div>

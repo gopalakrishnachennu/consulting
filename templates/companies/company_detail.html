@@ -57,6 +57,16 @@
 
           {# Quick info row #}
           <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
+            {% if company_platform_label and company_platform_label.platform %}
+            <span class="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">
+              {{ company_platform_label.platform.name }}
+            </span>
+            {% endif %}
+            {% if company_platform_label and company_platform_label.tenant_id %}
+            <span class="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 font-mono text-[10px] text-gray-700">
+              {{ company_platform_label.tenant_id|truncatechars:28 }}
+            </span>
+            {% endif %}
             {% if company.website %}
             <a href="{{ company.website }}" target="_blank" rel="noopener" class="text-blue-600 hover:underline flex items-center gap-1">
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
@@ -133,6 +143,8 @@
       <strong>Blacklist reason:</strong> {{ company.blacklist_reason }}
     </div>
     {% endif %}
+
+    {% include "companies/_company_warnings.html" %}
   </div>
 
   {# ━━ STATS ROW ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
@@ -164,6 +176,33 @@
     <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
       <p class="text-sm font-bold text-gray-600">{% if company.last_activity_at %}{{ company.last_activity_at|date:"M d" }}{% else %}—{% endif %}</p>
       <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mt-1">Last Activity</p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+    <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+      <p class="text-2xl font-extrabold text-gray-900">{{ pipeline_snapshot.raw_total }}</p>
+      <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mt-1">Harvested Jobs</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+      <p class="text-2xl font-extrabold text-emerald-600">{{ pipeline_snapshot.new_this_week }}</p>
+      <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mt-1">New This Week</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+      <p class="text-2xl font-extrabold text-sky-600">{{ harvest_health.success_runs_7d|add:harvest_health.partial_runs_7d }}</p>
+      <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mt-1">Successful Harvests</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+      <p class="text-2xl font-extrabold text-red-500">{{ harvest_health.failed_runs_7d }}</p>
+      <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mt-1">Failed Runs 7d</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+      <p class="text-2xl font-extrabold text-indigo-600">{{ pipeline_snapshot.job_open }}</p>
+      <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mt-1">Open / Live Jobs</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+      <p class="text-sm font-bold text-gray-600">{% if harvest_health.last_success and harvest_health.last_success.started_at %}{{ harvest_health.last_success.started_at|date:"M d" }}{% else %}—{% endif %}</p>
+      <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mt-1">Last Successful Harvest</p>
     </div>
   </div>
 
@@ -228,6 +267,9 @@
           </div>
         </div>
       </div>
+
+      {% include "companies/_company_harvest_health.html" %}
+      {% include "companies/_company_platform_mapping.html" %}
 
       {# Contact & Notes #}
       <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden" x-data="{ open: true }">
@@ -323,41 +365,12 @@
     {# RIGHT SIDEBAR #}
     <div class="space-y-5">
 
-      {# Link Health #}
-      <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-        <h3 class="text-xs font-bold text-gray-800 uppercase tracking-wider mb-3">Link Health</h3>
-        <div class="space-y-3">
-          <div class="flex items-center justify-between">
-            <span class="text-xs text-gray-500">Website</span>
-            {% if company.website %}
-              {% if company.website_is_valid %}
-              <span class="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700"><span class="w-2 h-2 rounded-full bg-emerald-500"></span>Live</span>
-              {% else %}
-              <span class="inline-flex items-center gap-1 text-xs font-semibold text-red-600"><span class="w-2 h-2 rounded-full bg-red-500"></span>Down</span>
-              {% endif %}
-            {% else %}<span class="text-xs text-gray-300">N/A</span>{% endif %}
-          </div>
-          <div class="flex items-center justify-between">
-            <span class="text-xs text-gray-500">LinkedIn</span>
-            {% if company.linkedin_url %}
-              {% if company.linkedin_is_valid %}
-              <span class="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700"><span class="w-2 h-2 rounded-full bg-emerald-500"></span>Valid</span>
-              {% else %}
-              <span class="inline-flex items-center gap-1 text-xs font-semibold text-red-600"><span class="w-2 h-2 rounded-full bg-red-500"></span>Invalid</span>
-              {% endif %}
-            {% else %}<span class="text-xs text-gray-300">N/A</span>{% endif %}
-          </div>
-          <div class="flex items-center justify-between">
-            <span class="text-xs text-gray-500">Career Site</span>
-            {% if company.career_site_url %}
-            <span class="inline-flex items-center gap-1 text-xs font-semibold text-blue-600"><span class="w-2 h-2 rounded-full bg-blue-500"></span>Set</span>
-            {% else %}<span class="text-xs text-gray-300">N/A</span>{% endif %}
-          </div>
-          {% if company.website_last_checked_at or company.linkedin_last_checked_at %}
-          <p class="text-[10px] text-gray-400 pt-1 border-t border-gray-100">Checked {{ company.website_last_checked_at|default:company.linkedin_last_checked_at|timesince }} ago</p>
-          {% endif %}
-        </div>
-      </div>
+      {% include "companies/_company_pipeline_snapshot.html" %}
+      {% include "companies/_company_data_completeness.html" %}
+      {% include "companies/_company_link_health.html" %}
+      {% include "companies/_company_action_panel.html" %}
+      {% include "companies/_company_pipeline_performance.html" %}
+      {% include "companies/_company_role_signals.html" %}
 
       {# Top Employees #}
       <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
@@ -481,6 +494,8 @@
   </div>
   {% endif %}
 
+  {% include "companies/_company_recent_fetch_runs.html" %}
+
 </div>
 {% endblock %}
 
@@ -496,5 +511,42 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 });
+
+function getCompanyProfileCsrf() {
+    const tokenInput = document.querySelector('input[name="csrfmiddlewaretoken"]');
+    return tokenInput ? tokenInput.value : '';
+}
+
+async function fetchCompanyJobsFromProfile(labelPk, button) {
+    if (!labelPk || !button) return;
+    const csrf = getCompanyProfileCsrf();
+    if (!csrf) {
+        window.alert('Missing CSRF token.');
+        return;
+    }
+    const original = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<span>Running…</span><span>↻</span>';
+    try {
+        const resp = await fetch('{% url "harvest-run-fetch-company" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'X-CSRFToken': csrf,
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: new URLSearchParams({ label_pk: String(labelPk) }).toString(),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.ok) {
+            throw new Error(data.error || 'Could not trigger harvest.');
+        }
+        button.innerHTML = '<span>Queued</span><span>✓</span>';
+    } catch (err) {
+        window.alert(err.message || 'Could not trigger harvest.');
+        button.disabled = false;
+        button.innerHTML = original;
+    }
+}
 </script>
 {% endblock %}

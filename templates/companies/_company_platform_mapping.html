@@ -1,0 +1,64 @@
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden" x-data="{ open: true }">
+  <button @click="open = !open" class="w-full px-6 py-4 flex items-center justify-between text-left hover:bg-gray-50 transition">
+    <h2 class="text-sm font-bold text-gray-900 flex items-center gap-2">
+      <svg class="w-4 h-4 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h10M7 12h10M7 17h10M4 7h.01M4 12h.01M4 17h.01"/></svg>
+      ATS / Platform Mapping
+    </h2>
+    <svg :class="open ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+  </button>
+  <div x-show="open" x-collapse>
+    <div class="px-6 pb-5">
+      {% with label=company_platform_label %}
+      {% if label %}
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
+        <div>
+          <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mb-0.5">Platform</p>
+          <p class="text-gray-800">{{ label.platform.name|default:"Undetected" }}</p>
+        </div>
+        <div>
+          <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mb-0.5">Confidence</p>
+          <p class="text-gray-800">{{ label.get_confidence_display|default:"—" }}</p>
+        </div>
+        <div>
+          <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mb-0.5">Detection</p>
+          <p class="text-gray-800">{{ label.get_detection_method_display }}</p>
+        </div>
+        <div>
+          <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mb-0.5">Tenant</p>
+          <p class="text-gray-800 font-mono text-xs break-all">{{ label.tenant_id|default:"—" }}</p>
+        </div>
+        <div>
+          <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mb-0.5">Portal Health</p>
+          <p class="text-gray-800">
+            {% if label.portal_alive is True %}Live{% elif label.portal_alive is False %}Down{% elif label.platform_id %}Unchecked{% else %}—{% endif %}
+          </p>
+        </div>
+        <div>
+          <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mb-0.5">Last Checked</p>
+          <p class="text-gray-800">{% if label.portal_last_verified or label.last_checked_at %}{{ label.portal_last_verified|default:label.last_checked_at|date:"M d, Y H:i" }}{% else %}—{% endif %}</p>
+        </div>
+      </div>
+      <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+        <div>
+          <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mb-0.5">Canonical Board URL</p>
+          {% if label.custom_career_url or label.career_page_url %}
+          <a href="{{ label.custom_career_url|default:label.career_page_url }}" target="_blank" rel="noopener" class="text-blue-600 hover:underline break-all">{{ label.custom_career_url|default:label.career_page_url }}</a>
+          {% else %}
+          <p class="text-gray-400">—</p>
+          {% endif %}
+        </div>
+        <div>
+          <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mb-0.5">Verification</p>
+          <p class="text-gray-800">
+            {% if label.is_verified %}Verified{% else %}Needs review{% endif %}
+            {% if label.verified_at %}<span class="text-gray-400"> · {{ label.verified_at|date:"M d, Y" }}</span>{% endif %}
+          </p>
+        </div>
+      </div>
+      {% else %}
+      <p class="text-sm text-gray-400">No platform mapping exists for this company yet.</p>
+      {% endif %}
+      {% endwith %}
+    </div>
+  </div>
+</div>

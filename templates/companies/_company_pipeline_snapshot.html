@@ -1,0 +1,33 @@
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+  <h3 class="text-xs font-bold text-gray-800 uppercase tracking-wider mb-3">Open Jobs Snapshot</h3>
+  <div class="grid grid-cols-2 gap-3 text-center">
+    <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+      <div class="text-[10px] uppercase tracking-wider text-gray-500">Raw Jobs</div>
+      <div class="mt-1 text-xl font-bold text-gray-900">{{ pipeline_snapshot.raw_total }}</div>
+    </div>
+    <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+      <div class="text-[10px] uppercase tracking-wider text-gray-500">Classified</div>
+      <div class="mt-1 text-xl font-bold text-indigo-600">{{ pipeline_snapshot.classified }}</div>
+    </div>
+    <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+      <div class="text-[10px] uppercase tracking-wider text-gray-500">Needs Review</div>
+      <div class="mt-1 text-xl font-bold text-amber-600">{{ pipeline_snapshot.needs_review }}</div>
+    </div>
+    <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+      <div class="text-[10px] uppercase tracking-wider text-gray-500">In Pool</div>
+      <div class="mt-1 text-xl font-bold text-sky-600">{{ pipeline_snapshot.job_pool }}</div>
+    </div>
+    <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+      <div class="text-[10px] uppercase tracking-wider text-gray-500">Open / Live</div>
+      <div class="mt-1 text-xl font-bold text-emerald-600">{{ pipeline_snapshot.job_open }}</div>
+    </div>
+    <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+      <div class="text-[10px] uppercase tracking-wider text-gray-500">Dead / Expired</div>
+      <div class="mt-1 text-xl font-bold text-red-500">{{ pipeline_snapshot.raw_inactive }}</div>
+    </div>
+  </div>
+  <div class="mt-4 text-xs text-gray-500 grid grid-cols-2 gap-2">
+    <div>New this week: <span class="font-semibold text-gray-800">{{ pipeline_snapshot.new_this_week }}</span></div>
+    <div>Last harvest freshness: <span class="font-semibold text-gray-800">{% if pipeline_snapshot.freshness_days is not None %}{{ pipeline_snapshot.freshness_days }}d{% else %}—{% endif %}</span></div>
+  </div>
+</div>

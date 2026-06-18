@@ -1,0 +1,86 @@
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden" x-data="{ open: true }">
+  <button @click="open = !open" class="w-full px-6 py-4 flex items-center justify-between text-left hover:bg-gray-50 transition">
+    <h2 class="text-sm font-bold text-gray-900 flex items-center gap-2">
+      <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 014-4h10a4 4 0 010 8H7a4 4 0 01-4-4zm13-8a4 4 0 00-8 0v1h8V7z"/></svg>
+      Harvest Health
+    </h2>
+    <svg :class="open ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+  </button>
+  <div x-show="open" x-collapse>
+    <div class="px-6 pb-5 space-y-4">
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+        <div>
+          <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mb-0.5">Last Status</p>
+          {% if harvest_health.latest_run %}
+          <p class="text-gray-800 font-semibold">{{ harvest_health.latest_run.get_status_display }}</p>
+          {% else %}
+          <p class="text-gray-400">No runs yet</p>
+          {% endif %}
+        </div>
+        <div>
+          <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mb-0.5">Platform</p>
+          <p class="text-gray-800">{{ harvest_health.platform_name|default:"—" }}</p>
+        </div>
+        <div>
+          <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mb-0.5">Success Rate (7d)</p>
+          <p class="text-gray-800">{% if harvest_health.success_rate_7d is not None %}{{ harvest_health.success_rate_7d }}%{% else %}—{% endif %}</p>
+        </div>
+        <div>
+          <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mb-0.5">Last Success</p>
+          <p class="text-gray-800">{% if harvest_health.last_success and harvest_health.last_success.started_at %}{{ harvest_health.last_success.started_at|date:"M d, Y H:i" }}{% else %}—{% endif %}</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <div class="text-[10px] uppercase tracking-wider font-semibold text-gray-500">Scraped</div>
+          <div class="mt-1 text-xl font-bold text-gray-900">{{ harvest_health.latest_run.jobs_found|default:"0" }}</div>
+        </div>
+        <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <div class="text-[10px] uppercase tracking-wider font-semibold text-gray-500">New</div>
+          <div class="mt-1 text-xl font-bold text-emerald-600">{{ harvest_health.latest_run.jobs_new|default:"0" }}</div>
+        </div>
+        <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <div class="text-[10px] uppercase tracking-wider font-semibold text-gray-500">Failed (7d)</div>
+          <div class="mt-1 text-xl font-bold text-red-500">{{ harvest_health.failed_runs_7d }}</div>
+        </div>
+        <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <div class="text-[10px] uppercase tracking-wider font-semibold text-gray-500">Empty (7d)</div>
+          <div class="mt-1 text-xl font-bold text-amber-500">{{ harvest_health.empty_runs_7d }}</div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+        <div>
+          <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mb-0.5">Board / Tenant</p>
+          <p class="text-gray-800 break-all">{{ harvest_health.board_url|default:"—" }}</p>
+          {% if harvest_health.tenant_id %}
+          <p class="mt-1 text-xs font-mono text-gray-500 break-all">{{ harvest_health.tenant_id }}</p>
+          {% endif %}
+        </div>
+        <div>
+          <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mb-0.5">Last Failure</p>
+          {% if harvest_health.last_failure %}
+          <p class="text-gray-800">{{ harvest_health.last_failure.started_at|date:"M d, Y H:i" }}</p>
+          <p class="mt-1 text-xs text-red-700">{{ harvest_health.last_failure.error_message|default:harvest_health.last_failure.issue_code|default:"No error message recorded."|truncatechars:140 }}</p>
+          {% else %}
+          <p class="text-gray-400">No recent failed runs.</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div>
+        <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mb-2">7-Day Trend</p>
+        <div class="grid grid-cols-7 gap-2">
+          {% for day in harvest_health.trend_7d %}
+          <div class="rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-center">
+            <div class="text-[10px] text-gray-400">{{ day.label }}</div>
+            <div class="mt-1 text-sm font-bold text-gray-900">{{ day.total }}</div>
+            <div class="mt-1 text-[10px] text-gray-500">{{ day.ok }} ok · {{ day.bad }} bad</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

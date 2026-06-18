@@ -1,0 +1,47 @@
+{% if recent_fetch_runs %}
+<div id="recent-fetch-runs" class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mt-6">
+  <div class="px-6 py-4 border-b border-gray-100">
+    <h2 class="text-sm font-bold text-gray-900 flex items-center gap-2">
+      <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10m-11 8h12a2 2 0 002-2V7a2 2 0 00-2-2H6a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+      Recent Fetch Runs
+    </h2>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-sm">
+      <thead class="bg-gray-50 text-left text-[10px] uppercase tracking-wider text-gray-500">
+        <tr>
+          <th class="px-6 py-3 font-semibold">Started</th>
+          <th class="px-4 py-3 font-semibold">Platform</th>
+          <th class="px-4 py-3 font-semibold">Status</th>
+          <th class="px-4 py-3 font-semibold">Scraped</th>
+          <th class="px-4 py-3 font-semibold">New</th>
+          <th class="px-4 py-3 font-semibold">Duration</th>
+          <th class="px-4 py-3 font-semibold">Error</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for run in recent_fetch_runs %}
+        <tr class="hover:bg-gray-50/70">
+          <td class="px-6 py-3 text-gray-700">{{ run.started_at|date:"M d, Y H:i" }}</td>
+          <td class="px-4 py-3 text-gray-700">{{ run.label.platform.name|default:"—" }}</td>
+          <td class="px-4 py-3">
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold
+                {% if run.status == 'SUCCESS' %}bg-emerald-100 text-emerald-700
+                {% elif run.status == 'PARTIAL' %}bg-amber-100 text-amber-700
+                {% elif run.status == 'EMPTY' %}bg-slate-100 text-slate-600
+                {% elif run.status == 'FAILED' or run.status == 'SKIPPED' %}bg-red-100 text-red-700
+                {% else %}bg-gray-100 text-gray-600{% endif %}">
+              {{ run.get_status_display }}
+            </span>
+          </td>
+          <td class="px-4 py-3 text-gray-700">{{ run.jobs_found }}</td>
+          <td class="px-4 py-3 text-gray-700">{{ run.jobs_new }}</td>
+          <td class="px-4 py-3 text-gray-700">{% if run.duration_seconds %}{{ run.duration_seconds }}s{% else %}—{% endif %}</td>
+          <td class="px-4 py-3 text-xs text-gray-500">{{ run.error_message|default:run.issue_code|default:"—"|truncatechars:80 }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}

@@ -1,0 +1,29 @@
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+  <h3 class="text-xs font-bold text-gray-800 uppercase tracking-wider mb-3">Routing / Classification Signals</h3>
+  <div class="space-y-4 text-sm">
+    <div>
+      <p class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Top Job Domains</p>
+      <div class="flex flex-wrap gap-2">
+        {% for row in company_role_signals.top_domains %}
+        <span class="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">{{ row.label }} · {{ row.count }}</span>
+        {% empty %}
+        <span class="text-xs text-gray-400">No strong domain signal yet.</span>
+        {% endfor %}
+      </div>
+    </div>
+    <div>
+      <p class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Top Departments</p>
+      <div class="flex flex-wrap gap-2">
+        {% for row in company_role_signals.top_departments %}
+        <span class="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700">{{ row.label }} · {{ row.count }}</span>
+        {% empty %}
+        <span class="text-xs text-gray-400">No department signal yet.</span>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-3 text-xs text-gray-500">
+      <div>Top locations: {% if company_role_signals.top_countries %}{% for row in company_role_signals.top_countries %}<span class="font-semibold text-gray-700">{{ row.label }}{% if not forloop.last %}, {% endif %}</span>{% endfor %}{% else %}<span class="text-gray-400">—</span>{% endif %}</div>
+      <div>Work modes: {% if company_role_signals.work_modes %}{% for row in company_role_signals.work_modes %}<span class="font-semibold text-gray-700">{{ row.label }}{% if not forloop.last %}, {% endif %}</span>{% endfor %}{% else %}<span class="text-gray-400">—</span>{% endif %}</div>
+    </div>
+  </div>
+</div>

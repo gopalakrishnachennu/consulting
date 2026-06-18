@@ -1,0 +1,21 @@
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+  <h3 class="text-xs font-bold text-gray-800 uppercase tracking-wider mb-3">Pipeline Performance</h3>
+  <div class="space-y-3 text-sm">
+    <div class="flex items-center justify-between">
+      <span class="text-gray-500">Interview rate</span>
+      <span class="font-semibold text-gray-900">{% if company_pipeline_performance.interview_rate_pct is not None %}{{ company_pipeline_performance.interview_rate_pct }}%{% else %}—{% endif %}</span>
+    </div>
+    <div class="flex items-center justify-between">
+      <span class="text-gray-500">Offer rate</span>
+      <span class="font-semibold text-gray-900">{% if company_pipeline_performance.fill_rate_pct is not None %}{{ company_pipeline_performance.fill_rate_pct }}%{% else %}—{% endif %}</span>
+    </div>
+    <div class="flex items-center justify-between">
+      <span class="text-gray-500">Jobs / successful harvest</span>
+      <span class="font-semibold text-gray-900">{% if company_pipeline_performance.avg_jobs_per_successful_harvest is not None %}{{ company_pipeline_performance.avg_jobs_per_successful_harvest }}{% else %}—{% endif %}</span>
+    </div>
+    <div class="flex items-center justify-between">
+      <span class="text-gray-500">Job freshness</span>
+      <span class="font-semibold text-gray-900">{% if company_pipeline_performance.freshness_days is not None %}{{ company_pipeline_performance.freshness_days }} days{% else %}—{% endif %}</span>
+    </div>
+  </div>
+</div>

@@ -17,7 +17,22 @@ from .forms import (
     CompanyDomainImportForm,
     CompanyLinkedInImportForm,
 )
-from .services import find_potential_duplicate_companies, merge_companies, normalize_company_name, normalize_domain
+from .services import (
+    build_company_action_panel,
+    build_company_data_completeness,
+    build_company_harvest_summary,
+    build_company_link_health,
+    build_company_pipeline_performance,
+    build_company_pipeline_snapshot,
+    build_company_recent_fetch_runs,
+    build_company_role_signals,
+    build_company_warnings,
+    company_raw_job_queryset,
+    find_potential_duplicate_companies,
+    merge_companies,
+    normalize_company_name,
+    normalize_domain,
+)
 from .tasks import (
     import_companies_from_csv_task,
     import_companies_from_domains_task,
@@ -558,6 +573,29 @@ class CompanyDetailView(AdminOrEmployeeRequiredMixin, DetailView):
             "offer_rate_pct": pct(offers, total),
             "rejection_rate_pct": pct(rejected, total),
         }
+        harvest_summary = build_company_harvest_summary(company)
+        pipeline_snapshot = build_company_pipeline_snapshot(company)
+        data_completeness = build_company_data_completeness(
+            company,
+            label=harvest_summary.get("label"),
+            harvest_summary=harvest_summary,
+        )
+        company_warnings = build_company_warnings(
+            company,
+            label=harvest_summary.get("label"),
+            harvest_summary=harvest_summary,
+            pipeline_snapshot=pipeline_snapshot,
+            completeness=data_completeness,
+        )
+        link_health = build_company_link_health(company, label=harvest_summary.get("label"))
+        company_actions = build_company_action_panel(company, label=harvest_summary.get("label"))
+        company_role_signals = build_company_role_signals(company)
+        company_pipeline_performance = build_company_pipeline_performance(
+            company,
+            funnel=funnel,
+            harvest_summary=harvest_summary,
+            pipeline_snapshot=pipeline_snapshot,
+        )
 
         # Top employees and consultants for this company
         employee_rows = (
@@ -649,15 +687,20 @@ class CompanyDetailView(AdminOrEmployeeRequiredMixin, DetailView):
         context["company_top_consultants"] = consultant_rows  # resolved lazily in template if needed
         context["company_timeline"] = timeline[:100]
         context["company_jobs"] = company.jobs.all().select_related("posted_by").order_by("-created_at")
+        context["harvest_health"] = harvest_summary
+        context["company_platform_label"] = harvest_summary.get("label")
+        context["recent_fetch_runs"] = build_company_recent_fetch_runs(company)
+        context["pipeline_snapshot"] = pipeline_snapshot
+        context["company_data_completeness"] = data_completeness
+        context["company_warnings"] = company_warnings
+        context["link_health_summary"] = link_health
+        context["company_actions"] = company_actions
+        context["company_role_signals"] = company_role_signals
+        context["company_pipeline_performance"] = company_pipeline_performance
 
         # Raw jobs from harvest engine — check FK first, fall back to name match
         try:
-            from harvest.models import RawJob
-            raw_qs = RawJob.objects.filter(company=company).order_by("-fetched_at")
-            if not raw_qs.exists():
-                raw_qs = RawJob.objects.filter(
-                    company_name__iexact=company.name
-                ).order_by("-fetched_at")
+            raw_qs = company_raw_job_queryset(company).order_by("-fetched_at")
             # No .only() here — pipeline_stage_label is a deep property that
             # chains through jd_gate.py and needs many fields. 20 rows is fine.
             context["harvest_raw_jobs"] = list(raw_qs[:20])

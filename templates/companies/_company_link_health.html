@@ -1,0 +1,35 @@
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+  <h3 class="text-xs font-bold text-gray-800 uppercase tracking-wider mb-3">Link Health</h3>
+  <div class="space-y-3">
+    {% for item in link_health_summary.items %}
+    <div class="border-b border-gray-100 pb-3 last:border-b-0 last:pb-0">
+      <div class="flex items-center justify-between gap-3">
+        <span class="text-xs text-gray-500">{{ item.name }}</span>
+        <span class="inline-flex items-center gap-1 text-xs font-semibold
+            {% if item.state == 'live' %}text-emerald-700
+            {% elif item.state == 'down' %}text-red-600
+            {% elif item.state == 'unchecked' %}text-amber-600
+            {% elif item.state == 'configured' %}text-blue-600
+            {% else %}text-gray-400{% endif %}">
+          <span class="w-2 h-2 rounded-full
+              {% if item.state == 'live' %}bg-emerald-500
+              {% elif item.state == 'down' %}bg-red-500
+              {% elif item.state == 'unchecked' %}bg-amber-500
+              {% elif item.state == 'configured' %}bg-blue-500
+              {% else %}bg-gray-300{% endif %}"></span>
+          {{ item.state|title }}
+        </span>
+      </div>
+      {% if item.url %}
+      <a href="{{ item.url }}" target="_blank" rel="noopener" class="mt-1 block text-xs text-blue-600 hover:underline break-all">{{ item.url|truncatechars:64 }}</a>
+      {% endif %}
+      {% if item.detail %}
+      <p class="mt-1 text-[10px] text-gray-400">{{ item.detail }}</p>
+      {% endif %}
+      {% if item.checked_at %}
+      <p class="mt-1 text-[10px] text-gray-400">Checked {{ item.checked_at|timesince }} ago</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
