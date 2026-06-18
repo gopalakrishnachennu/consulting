@@ -108,7 +108,13 @@ def _queue_rawjob_shadow_classification(raw_job_id: int) -> None:
 
 def _rawjob_post_save_queue_dual_classification(sender, instance, created: bool, **kwargs):
     from .dual_classification.config import shadow_enabled
+    from .dual_classification.orchestrator import invalidate_approved_snapshot_for_raw_job_input_change
 
+    if not created:
+        try:
+            invalidate_approved_snapshot_for_raw_job_input_change(instance)
+        except Exception:
+            log.exception("Could not invalidate stale dual-classification approval for raw_job=%s", instance.pk)
     if not shadow_enabled():
         return
     if not _rawjob_has_enough_jd_text(instance):

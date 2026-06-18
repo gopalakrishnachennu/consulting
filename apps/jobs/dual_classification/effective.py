@@ -3,14 +3,22 @@ from __future__ import annotations
 from typing import Any
 
 
+def approved_snapshot_is_usable(snapshot) -> bool:
+    if not snapshot:
+        return False
+    approved = getattr(snapshot, "approved_output", None) or {}
+    if not isinstance(approved, dict) or not approved:
+        return False
+    if bool(getattr(snapshot, "approval_is_stale", False)):
+        return False
+    return True
+
+
 def _approved_output(raw_job) -> dict[str, Any]:
     snapshot = getattr(raw_job, "classification_snapshot", None)
-    if not snapshot:
+    if not approved_snapshot_is_usable(snapshot):
         return {}
-    approved = getattr(snapshot, "approved_output", None) or {}
-    if not isinstance(approved, dict):
-        return {}
-    return approved
+    return getattr(snapshot, "approved_output", None) or {}
 
 
 def effective_raw_job_classification(raw_job) -> dict[str, Any]:

@@ -37,6 +37,9 @@
               {{ snapshot.approval_state }}{% if snapshot.approved_source %} · {{ snapshot.approved_source }}{% endif %}
             </span>
             {% endif %}
+            {% if snapshot.approval_is_stale %}
+            <span class="rounded-full bg-rose-100 px-2 py-0.5 font-semibold text-rose-700">Stale approval</span>
+            {% endif %}
             {% if snapshot.pushed_to_vetting_with_warnings %}
             <span class="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-800">Pushed with warnings</span>
             {% endif %}

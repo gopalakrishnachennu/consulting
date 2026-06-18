@@ -1279,7 +1279,7 @@ class RawJobDetailView(SuperuserRequiredMixin, DetailView):
             default=str,
         )
         effective_seed = {}
-        if snapshot and snapshot.approved_output:
+        if snapshot and snapshot.approved_output and not snapshot.approval_is_stale:
             effective_seed = snapshot.approved_output
         elif snapshot and snapshot.merged_output:
             effective_seed = snapshot.merged_output
@@ -1540,6 +1540,12 @@ class RawJobPushToVettingView(SuperuserRequiredMixin, View):
                 if not snapshot or not snapshot.approved_output:
                     messages.error(request, "Approve a classification result before pushing to vetting.")
                     return redirect(return_url)
+                if snapshot.approval_is_stale:
+                    messages.error(
+                        request,
+                        "Approved classification is stale because the JD changed. Re-run classification and approve it again before pushing.",
+                    )
+                    return redirect(return_url)
 
                 if snapshot.pushed_job_id and snapshot.pushed_to_vetting_at:
                     warning_text = ""
@@ -1646,14 +1652,20 @@ class RawJobClassificationQueueView(SuperuserRequiredMixin, TemplateView):
 
         counts = {
             "needs_review": RawJobClassificationSnapshot.objects.filter(needs_review=True).count(),
-            "approved_not_pushed": RawJobClassificationSnapshot.objects.exclude(approved_output={}).filter(pushed_to_vetting_at__isnull=True).count(),
+            "approved_not_pushed": RawJobClassificationSnapshot.objects.exclude(approved_output={}).filter(
+                approval_is_stale=False,
+                pushed_to_vetting_at__isnull=True,
+            ).count(),
             "pushed_with_warnings": RawJobClassificationSnapshot.objects.filter(pushed_to_vetting_with_warnings=True).count(),
             "all": RawJobClassificationSnapshot.objects.count(),
         }
         if queue_tab == "needs_review":
             queue_qs = base_qs.filter(needs_review=True)
         elif queue_tab == "approved_not_pushed":
-            queue_qs = base_qs.exclude(approved_output={}).filter(pushed_to_vetting_at__isnull=True)
+            queue_qs = base_qs.exclude(approved_output={}).filter(
+                approval_is_stale=False,
+                pushed_to_vetting_at__isnull=True,
+            )
         elif queue_tab == "pushed_with_warnings":
             queue_qs = base_qs.filter(pushed_to_vetting_with_warnings=True)
         else:
@@ -1795,7 +1807,10 @@ class RunRawJobClassificationBackfillView(SuperuserRequiredMixin, View):
     """POST — queue historical RawJob dual-classification backfill."""
 
     def post(self, request):
-        from jobs.tasks import backfill_rawjob_dual_classification_task
+        from jobs.tasks import (
+            DUAL_CLASSIFICATION_BACKFILL_QUEUE,
+            backfill_rawjob_dual_classification_task,
+        )
 
         try:
             batch_size = int((request.POST.get("batch_size") or "").strip() or 0)
@@ -1803,10 +1818,13 @@ class RunRawJobClassificationBackfillView(SuperuserRequiredMixin, View):
             batch_size = 0
         force = (request.POST.get("force") or "").strip() == "1"
         only_missing = (request.POST.get("only_missing") or "").strip() != "0"
-        task = backfill_rawjob_dual_classification_task.delay(
-            batch_size=batch_size or None,
-            force=force,
-            only_missing=only_missing,
+        task = backfill_rawjob_dual_classification_task.apply_async(
+            kwargs={
+                "batch_size": batch_size or None,
+                "force": force,
+                "only_missing": only_missing,
+            },
+            queue=DUAL_CLASSIFICATION_BACKFILL_QUEUE,
         )
         return redirect_with_task_progress(
             "harvest-rawjob-review-queue",

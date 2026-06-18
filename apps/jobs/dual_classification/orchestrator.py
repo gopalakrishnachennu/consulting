@@ -19,8 +19,16 @@ from .providers import (
     RuntimeLLMSecondaryProvider,
     SecondaryStubProvider,
 )
-from .schema import build_raw_job_input, compute_input_hash, validate_canonical_output
+from .schema import (
+    build_raw_job_input,
+    compute_approval_input_hash,
+    compute_input_hash,
+    validate_canonical_output,
+)
 from .verifier import verify_output
+
+
+STALE_APPROVAL_REVIEW_REASON = "input_changed_after_approval"
 
 
 def _create_run_record(raw_job: RawJob, provider_result: ProviderResult, input_hash: str, status: str, error_message: str = ""):
@@ -66,6 +74,15 @@ def _persist_snapshot(
     status: str,
 ) -> RawJobClassificationSnapshot:
     with transaction.atomic():
+        fresh_approval_hash = compute_approval_input_hash(raw_job)
+        approval_is_stale = bool(
+            snapshot.approved_output
+            and snapshot.approval_input_hash
+            and snapshot.approval_input_hash != fresh_approval_hash
+        )
+        if approval_is_stale:
+            needs_review = True
+            review_reason = STALE_APPROVAL_REVIEW_REASON
         snapshot.current_input_hash = input_hash
         snapshot.backend_run = backend_run
         snapshot.secondary_run = secondary_run
@@ -75,7 +92,14 @@ def _persist_snapshot(
         snapshot.needs_review = needs_review
         snapshot.review_reason = review_reason
         snapshot.ready_for_vetting = False
-        snapshot.status = status
+        snapshot.status = (
+            RawJobClassificationSnapshot.Status.NEEDS_REVIEW
+            if approval_is_stale
+            else status
+        )
+        snapshot.approval_is_stale = approval_is_stale
+        if approval_is_stale and not snapshot.approval_stale_at:
+            snapshot.approval_stale_at = timezone.now()
         snapshot.last_merged_at = timezone.now()
         snapshot.save()
 
@@ -93,6 +117,57 @@ def _persist_snapshot(
                 note=conflict["note"],
             )
     return snapshot
+
+
+def invalidate_approved_snapshot_for_raw_job_input_change(
+    raw_job: RawJob,
+    *,
+    fresh_input_hash: str | None = None,
+) -> dict:
+    snapshot = getattr(raw_job, "classification_snapshot", None)
+    if not snapshot:
+        return {"invalidated": False, "reason": "no_snapshot"}
+    if not snapshot.approved_output:
+        return {"invalidated": False, "reason": "no_approved_output"}
+
+    fresh_hash = fresh_input_hash
+    if not fresh_hash:
+        fresh_hash = compute_approval_input_hash(raw_job)
+    approved_hash = snapshot.approval_input_hash or ""
+    if not approved_hash:
+        with transaction.atomic():
+            locked_snapshot = RawJobClassificationSnapshot.objects.select_for_update().get(pk=snapshot.pk)
+            if not locked_snapshot.approval_input_hash and locked_snapshot.approved_output:
+                locked_snapshot.approval_input_hash = fresh_hash
+                locked_snapshot.save(update_fields=["approval_input_hash", "updated_at"])
+        return {"invalidated": False, "reason": "approval_baseline_initialized"}
+    if approved_hash == fresh_hash:
+        return {"invalidated": False, "reason": "input_unchanged"}
+
+    with transaction.atomic():
+        locked_snapshot = RawJobClassificationSnapshot.objects.select_for_update().get(pk=snapshot.pk)
+        if locked_snapshot.approval_is_stale:
+            return {"invalidated": False, "reason": "already_stale"}
+        approved_hash = locked_snapshot.approval_input_hash or ""
+        if not approved_hash or approved_hash == fresh_hash or not locked_snapshot.approved_output:
+            return {"invalidated": False, "reason": "input_unchanged"}
+
+        locked_snapshot.approval_is_stale = True
+        locked_snapshot.approval_stale_at = timezone.now()
+        locked_snapshot.ready_for_vetting = False
+        locked_snapshot.needs_review = True
+        locked_snapshot.review_reason = STALE_APPROVAL_REVIEW_REASON
+        locked_snapshot.save(
+            update_fields=[
+                "approval_is_stale",
+                "approval_stale_at",
+                "ready_for_vetting",
+                "needs_review",
+                "review_reason",
+                "updated_at",
+            ]
+        )
+    return {"invalidated": True, "reason": STALE_APPROVAL_REVIEW_REASON}
 
 
 def run_shadow_classification_for_raw_job(raw_job_id: int, *, force: bool = False) -> dict:
@@ -363,6 +438,9 @@ def approve_snapshot_for_raw_job(
     verifier_summary = verify_output(raw_job, chosen_output)
     ready_for_vetting = verifier_summary.get("status") != "fail"
     snapshot.approval_state = approval_state
+    snapshot.approval_input_hash = compute_approval_input_hash(raw_job)
+    snapshot.approval_is_stale = False
+    snapshot.approval_stale_at = None
     snapshot.approved_output = chosen_output
     snapshot.approved_source = source
     snapshot.approval_note = note or ""
@@ -375,6 +453,9 @@ def approve_snapshot_for_raw_job(
     snapshot.save(
         update_fields=[
             "approval_state",
+            "approval_input_hash",
+            "approval_is_stale",
+            "approval_stale_at",
             "approved_output",
             "approved_source",
             "approval_note",

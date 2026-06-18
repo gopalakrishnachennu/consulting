@@ -26,6 +26,21 @@
       <div class="mt-1">{{ snapshot.review_reason|default:"—" }}</div>
     </div>
     <div>
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Approval Freshness</div>
+      <div class="mt-1">
+        {% if snapshot.approval_is_stale %}
+          <span class="font-semibold text-rose-700">Stale after JD change</span>
+          {% if snapshot.approval_stale_at %}
+            <span class="text-slate-500">· {{ snapshot.approval_stale_at|date:"M j, Y H:i" }}</span>
+          {% endif %}
+        {% elif snapshot.approval_state != 'UNREVIEWED' %}
+          <span class="font-semibold text-emerald-700">Current</span>
+        {% else %}
+          —
+        {% endif %}
+      </div>
+    </div>
+    <div>
       <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Last Updated</div>
       <div class="mt-1">{{ snapshot.updated_at|date:"M j, Y H:i" }}</div>
     </div>

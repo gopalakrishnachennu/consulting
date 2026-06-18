@@ -28,7 +28,11 @@ from .marketing_role_routing import (
 from .services import match_jobs_for_consultant
 from .tasks import _department_sync_value, classify_jobs_task
 from .tasks import validate_job_urls_task, auto_close_jobs_task
-from .tasks import backfill_rawjob_dual_classification_task, run_rawjob_dual_classification_shadow_task
+from .tasks import (
+    DUAL_CLASSIFICATION_BACKFILL_QUEUE,
+    backfill_rawjob_dual_classification_task,
+    run_rawjob_dual_classification_shadow_task,
+)
 
 
 class JobsPipelineRouteOwnershipTests(SimpleTestCase):
@@ -595,6 +599,132 @@ class RawJobDualClassificationShadowTests(TestCase):
     @patch("jobs.gating.apply_gate_result_to_job")
     @patch("jobs.gating.evaluate_raw_job_gate")
     @patch("harvest.url_health.check_job_posting_live")
+    def test_jd_change_marks_approved_snapshot_stale_and_blocks_push(
+        self,
+        mock_live,
+        mock_gate,
+        _mock_apply,
+    ):
+        raw = self._raw_job("8c-stale")
+        run_rawjob_dual_classification_shadow_task(raw.pk)
+        self.client.force_login(self.admin)
+        payload = {
+            "identity": {
+                "raw_job_id": raw.pk,
+                "title": raw.title,
+                "company_name": raw.company_name,
+            },
+            "classification": {
+                "job_category": "Engineering",
+                "job_domain": "platform-engineer",
+                "department_normalized": "engineering",
+                "role_category": "cloud",
+            },
+            "skills": {"skills": ["AWS"], "tech_stack": ["AWS"]},
+            "requirements": {
+                "years_required": 5,
+                "years_required_max": None,
+                "education_required": "BS",
+                "visa_sponsorship": False,
+                "work_authorization": "US work authorization",
+                "clearance_required": False,
+                "clearance_level": "",
+            },
+            "location": {
+                "country": "United States",
+                "country_codes": ["US"],
+                "location_type": "REMOTE",
+                "is_remote": True,
+            },
+        }
+        self.client.post(
+            reverse("harvest-rawjob-secondary-ingest", args=[raw.pk]),
+            {
+                "provider": RawJobClassifierRun.Provider.CLAUDE,
+                "prompt_version": "v2",
+                "confidence": "0.91",
+                "normalized_output_json": json.dumps(payload),
+            },
+        )
+        self.client.post(
+            reverse("harvest-rawjob-classification-review", args=[raw.pk]),
+            {"source": "secondary", "approval_note": "Ready for vetting."},
+        )
+        snapshot = RawJobClassificationSnapshot.objects.get(raw_job=raw)
+        self.assertFalse(snapshot.approval_is_stale)
+        original_approval_hash = snapshot.approval_input_hash
+
+        raw.description = f"{raw.description} Now requires Azure administration and hybrid travel."
+        raw.description_clean = raw.description
+        raw.save()
+
+        snapshot.refresh_from_db()
+        self.assertTrue(snapshot.approval_is_stale)
+        self.assertEqual(snapshot.review_reason, "input_changed_after_approval")
+        self.assertTrue(snapshot.needs_review)
+        self.assertFalse(snapshot.ready_for_vetting)
+        self.assertEqual(snapshot.approval_input_hash, original_approval_hash)
+        self.assertIsNotNone(snapshot.approval_stale_at)
+
+        mock_gate.return_value = SimpleNamespace(
+            passed=True,
+            lane="READY",
+            status="eligible",
+            reason_code="",
+            reasons=[],
+            checks={},
+            data_quality_score=0.9,
+            trust_score=0.9,
+            candidate_fit_score=0.9,
+            vet_priority_score=0.9,
+        )
+        mock_live.return_value = SimpleNamespace(
+            is_live=True,
+            reason="",
+            status_code=200,
+            final_url=raw.original_url,
+        )
+
+        response = self.client.post(
+            reverse("harvest-rawjob-push-vetting", args=[raw.pk]),
+            {"push_note": "Should be blocked because approval is stale."},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Approved classification is stale because the JD changed")
+        self.assertFalse(Job.objects.filter(source_raw_job=raw).exists())
+
+    def test_rerun_keeps_approval_stale_until_reapproved(self):
+        raw = self._raw_job("8d-stale-rerun")
+        run_rawjob_dual_classification_shadow_task(raw.pk)
+        self.client.force_login(self.admin)
+        self.client.post(
+            reverse("harvest-rawjob-classification-review", args=[raw.pk]),
+            {"source": "merged", "approval_note": "Initial approval."},
+        )
+
+        raw.description = f"{raw.description} Added Azure and disaster recovery ownership."
+        raw.description_clean = raw.description
+        raw.save()
+
+        snapshot = RawJobClassificationSnapshot.objects.get(raw_job=raw)
+        self.assertTrue(snapshot.approval_is_stale)
+        original_hash = snapshot.approval_input_hash
+
+        result = run_rawjob_dual_classification_shadow_task(raw.pk, force=True)
+
+        snapshot.refresh_from_db()
+        self.assertNotEqual(snapshot.current_input_hash, original_hash)
+        self.assertTrue(snapshot.approval_is_stale)
+        self.assertEqual(snapshot.review_reason, "input_changed_after_approval")
+        self.assertTrue(snapshot.needs_review)
+        self.assertFalse(snapshot.ready_for_vetting)
+        self.assertEqual(result["status"], RawJobClassificationSnapshot.Status.NEEDS_REVIEW)
+
+    @patch("jobs.gating.apply_gate_result_to_job")
+    @patch("jobs.gating.evaluate_raw_job_gate")
+    @patch("harvest.url_health.check_job_posting_live")
     def test_push_to_vetting_records_audit_for_ready_approved_snapshot(
         self,
         mock_live,
@@ -1003,11 +1133,11 @@ class RawJobDualClassificationShadowTests(TestCase):
         snapshot = RawJobClassificationSnapshot.objects.get(raw_job=raw)
         self.assertEqual(Job.objects.filter(source_raw_job=raw).count(), 1)
         self.assertEqual(snapshot.pushed_to_vetting_note, "First push note.")
-        self.assertContains(second, f"RawJob #{raw.pk} was already pushed to vetting as Job #{snapshot.pushed_job_id}")
         self.assertEqual(
             snapshot.pushed_job.validation_result["dual_classification"]["pushed_to_vetting_note"],
             "First push note.",
         )
+        self.assertFalse(snapshot.approval_is_stale)
 
     @patch("jobs.gating.apply_gate_result_to_job")
     @patch("jobs.gating.evaluate_raw_job_gate")
@@ -1142,6 +1272,26 @@ class RawJobDualClassificationShadowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "RawJob Classification Review Queue")
         self.assertContains(response, raw.title)
+
+    @patch("jobs.tasks.backfill_rawjob_dual_classification_task.apply_async")
+    def test_review_queue_backfill_uses_isolated_queue(self, mock_apply_async):
+        self.client.force_login(self.admin)
+        mock_apply_async.return_value = SimpleNamespace(id="task-123")
+
+        response = self.client.post(
+            reverse("harvest-run-classification-backfill"),
+            {"batch_size": "25", "force": "1", "only_missing": "0"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        mock_apply_async.assert_called_once_with(
+            kwargs={
+                "batch_size": 25,
+                "force": True,
+                "only_missing": False,
+            },
+            queue=DUAL_CLASSIFICATION_BACKFILL_QUEUE,
+        )
 
 
 class ClassificationQueueV2ViewTests(TestCase):
@@ -1279,6 +1429,34 @@ class ClassificationQueueV2ViewTests(TestCase):
         self.assertContains(response, "classification.job_domain")
         self.assertContains(response, "rule_regex_v2")
         self.assertContains(response, "Open legacy RawJob review")
+
+    def test_stale_approved_snapshot_moves_to_review_queue_and_shows_badge(self):
+        self.snapshot.approved_output = {"classification": {"job_domain": "platform-engineer"}}
+        self.snapshot.approved_source = "merged"
+        self.snapshot.approval_state = RawJobClassificationSnapshot.ApprovalState.APPROVED
+        self.snapshot.approval_is_stale = True
+        self.snapshot.needs_review = True
+        self.snapshot.review_reason = "input_changed_after_approval"
+        self.snapshot.ready_for_vetting = False
+        self.snapshot.save(
+            update_fields=[
+                "approved_output",
+                "approved_source",
+                "approval_state",
+                "approval_is_stale",
+                "needs_review",
+                "review_reason",
+                "ready_for_vetting",
+                "updated_at",
+            ]
+        )
+
+        self.client.login(username="classification_v2_employee", password="testpass")
+        response = self.client.get(reverse("jobs-classification-queue"), {"queue": "needs_review"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Stale approval")
+        self.assertEqual(response.context["queue_counts"]["approved_not_pushed"], 0)
 
 
 class ClassificationSettingsV2ViewTests(TestCase):

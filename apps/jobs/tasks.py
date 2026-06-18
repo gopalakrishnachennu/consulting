@@ -12,6 +12,8 @@ from harvest.url_health import LinkHealthResult, build_link_health_payload, chec
 
 logger = logging.getLogger(__name__)
 
+DUAL_CLASSIFICATION_BACKFILL_QUEUE = "batches"
+
 
 _JOB_DEPARTMENT_SYNC_ALIASES: dict[str, str] = {
     "information technology": Job.Department.IT_MANAGEMENT,
@@ -139,7 +141,11 @@ def run_rawjob_dual_classification_shadow_task(raw_job_id: int, force: bool = Fa
     return run_shadow_classification_for_raw_job(raw_job_id, force=force)
 
 
-@shared_task(bind=True, name="jobs.backfill_rawjob_dual_classification")
+@shared_task(
+    bind=True,
+    name="jobs.backfill_rawjob_dual_classification",
+    queue=DUAL_CLASSIFICATION_BACKFILL_QUEUE,
+)
 def backfill_rawjob_dual_classification_task(
     self,
     *,

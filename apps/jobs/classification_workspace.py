@@ -172,6 +172,7 @@ class ClassificationQueueV2View(LoginRequiredMixin, ClassificationWorkspaceRequi
         counts = {
             "needs_review": RawJobClassificationSnapshot.objects.filter(needs_review=True).count(),
             "approved_not_pushed": RawJobClassificationSnapshot.objects.exclude(approved_output={}).filter(
+                approval_is_stale=False,
                 pushed_to_vetting_at__isnull=True
             ).count(),
             "pushed_with_warnings": RawJobClassificationSnapshot.objects.filter(
@@ -182,7 +183,10 @@ class ClassificationQueueV2View(LoginRequiredMixin, ClassificationWorkspaceRequi
         if queue_tab == "needs_review":
             queue_qs = base_qs.filter(needs_review=True)
         elif queue_tab == "approved_not_pushed":
-            queue_qs = base_qs.exclude(approved_output={}).filter(pushed_to_vetting_at__isnull=True)
+            queue_qs = base_qs.exclude(approved_output={}).filter(
+                approval_is_stale=False,
+                pushed_to_vetting_at__isnull=True,
+            )
         elif queue_tab == "pushed_with_warnings":
             queue_qs = base_qs.filter(pushed_to_vetting_with_warnings=True)
         else:
@@ -320,7 +324,7 @@ class ClassificationDetailV2View(LoginRequiredMixin, ClassificationWorkspaceRequ
         )
         current_page_url = reverse("jobs-classification-detail", args=[snapshot.pk])
         effective_seed = {}
-        if snapshot.approved_output:
+        if snapshot.approved_output and not snapshot.approval_is_stale:
             effective_seed = snapshot.approved_output
         elif snapshot.merged_output:
             effective_seed = snapshot.merged_output
@@ -446,6 +450,7 @@ class ClassificationSettingsV2View(ClassificationSettingsRequiredMixin, UpdateVi
                 "settings_metrics": {
                     "needs_review": RawJobClassificationSnapshot.objects.filter(needs_review=True).count(),
                     "approved_not_pushed": RawJobClassificationSnapshot.objects.exclude(approved_output={}).filter(
+                        approval_is_stale=False,
                         pushed_to_vetting_at__isnull=True
                     ).count(),
                     "pushed_with_warnings": RawJobClassificationSnapshot.objects.filter(
@@ -536,12 +541,14 @@ class ClassificationMetricsV2View(LoginRequiredMixin, ClassificationMetricsRequi
         queue_counts = {
             "needs_review": snapshots.filter(needs_review=True).count(),
             "approved_not_pushed": snapshots.exclude(approved_output={}).filter(
+                approval_is_stale=False,
                 pushed_to_vetting_at__isnull=True
             ).count(),
             "pushed_with_warnings": snapshots.filter(pushed_to_vetting_with_warnings=True).count(),
-            "ready_for_vetting": snapshots.filter(ready_for_vetting=True).count(),
+            "ready_for_vetting": snapshots.filter(ready_for_vetting=True, approval_is_stale=False).count(),
             "failed": snapshots.filter(status=RawJobClassificationSnapshot.Status.FAILED).count(),
             "partial": snapshots.filter(status=RawJobClassificationSnapshot.Status.PARTIAL).count(),
+            "stale_approvals": snapshots.filter(approval_is_stale=True).count(),
         }
         total_snapshots = snapshots.count()
         total_secondary_completed = snapshots.filter(
@@ -570,7 +577,7 @@ class ClassificationMetricsV2View(LoginRequiredMixin, ClassificationMetricsRequi
                     "reviewed_count": snapshots.exclude(
                         approval_state=RawJobClassificationSnapshot.ApprovalState.UNREVIEWED
                     ).count(),
-                    "approved_count": snapshots.exclude(approved_output={}).count(),
+                    "approved_count": snapshots.exclude(approved_output={}).filter(approval_is_stale=False).count(),
                     "pushed_count": snapshots.filter(pushed_to_vetting_at__isnull=False).count(),
                     "secondary_completed": total_secondary_completed,
                     "agreement_rate": agreement_rate,
@@ -579,11 +586,13 @@ class ClassificationMetricsV2View(LoginRequiredMixin, ClassificationMetricsRequi
                     **queue_counts,
                     "stale_reviews": snapshots.filter(needs_review=True, updated_at__lt=stale_review_cutoff).count(),
                     "stale_approved_not_pushed": snapshots.exclude(approved_output={}).filter(
+                        approval_is_stale=False,
                         pushed_to_vetting_at__isnull=True,
                         approved_at__lt=stale_push_cutoff,
                     ).count(),
                     "oldest_review": snapshots.filter(needs_review=True).order_by("updated_at").first(),
                     "oldest_approved_not_pushed": snapshots.exclude(approved_output={}).filter(
+                        approval_is_stale=False,
                         pushed_to_vetting_at__isnull=True
                     ).order_by("approved_at", "updated_at").first(),
                     "raw_backlog_without_snapshot": RawJob.objects.filter(

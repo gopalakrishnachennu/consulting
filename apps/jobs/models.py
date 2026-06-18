@@ -525,6 +525,9 @@ class RawJobClassificationSnapshot(models.Model):
         default=ApprovalState.UNREVIEWED,
         db_index=True,
     )
+    approval_input_hash = models.CharField(max_length=64, blank=True, db_index=True)
+    approval_is_stale = models.BooleanField(default=False, db_index=True)
+    approval_stale_at = models.DateTimeField(null=True, blank=True, db_index=True)
     approved_output = models.JSONField(default=dict, blank=True)
     approved_source = models.CharField(max_length=16, blank=True)
     approval_note = models.TextField(blank=True)

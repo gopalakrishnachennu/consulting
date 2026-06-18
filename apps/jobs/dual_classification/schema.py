@@ -69,6 +69,33 @@ def build_raw_job_input(raw_job: Any) -> dict[str, Any]:
     return payload
 
 
+def build_approval_input(raw_job: Any) -> dict[str, Any]:
+    payload = build_enrichment_input(
+        raw_job,
+        company_name=getattr(raw_job, "company_name", "") or "",
+        overrides={"raw_payload": {}},
+    )
+    payload.pop("raw_payload", None)
+    payload.update(
+        {
+            "raw_job_id": raw_job.pk,
+            "platform_slug": getattr(raw_job, "platform_slug", "") or "",
+            "original_url": getattr(raw_job, "original_url", "") or "",
+            "apply_url": getattr(raw_job, "apply_url", "") or "",
+            "location_type": getattr(raw_job, "location_type", "") or "",
+            "is_remote": bool(getattr(raw_job, "is_remote", False)),
+            "role_category": getattr(raw_job, "role_category", "") or "",
+            "country_code": getattr(raw_job, "country_code", "") or "",
+            "scope_status": getattr(raw_job, "scope_status", "") or "",
+        }
+    )
+    return payload
+
+
+def compute_approval_input_hash(raw_job: Any) -> str:
+    return compute_input_hash(build_approval_input(raw_job))
+
+
 def canonical_from_enrichment(raw_job: Any, enriched: dict[str, Any], input_payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "identity": {

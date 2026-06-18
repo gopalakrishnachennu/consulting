@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .config import require_approval_for_sync
+from .effective import approved_snapshot_is_usable
 
 
 def raw_job_requires_dual_classification(raw_job) -> bool:
@@ -14,15 +15,17 @@ def raw_job_requires_dual_classification(raw_job) -> bool:
 
 
 def sync_block_reason(raw_job) -> str:
-    if not require_approval_for_sync():
-        return ""
     if not raw_job_requires_dual_classification(raw_job):
         return ""
 
     snapshot = getattr(raw_job, "classification_snapshot", None)
+    if snapshot and bool(getattr(snapshot, "approval_is_stale", False)):
+        return "Approved dual classification is stale because the JD changed. Re-run and approve it again before vetting sync."
+    if not require_approval_for_sync():
+        return ""
     if not snapshot:
         return "Awaiting approved dual classification before vetting sync."
-    if not getattr(snapshot, "approved_output", None):
+    if not approved_snapshot_is_usable(snapshot):
         return "Approve backend, secondary, merged, or manual classification before vetting sync."
     if not bool(getattr(snapshot, "ready_for_vetting", False)):
         return "Approved dual classification still has blocking verifier warnings."

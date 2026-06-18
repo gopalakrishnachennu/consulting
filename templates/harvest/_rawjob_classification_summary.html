@@ -62,6 +62,12 @@
     </div>
     {% endif %}
 
+    {% if classification_snapshot.approval_is_stale %}
+    <div class="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+      <strong>Approval stale:</strong> the JD changed after approval. Re-run classification and approve it again before pushing to vetting.
+    </div>
+    {% endif %}
+
     {% if classification_snapshot.pushed_to_vetting_at %}
     <div class="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">
       <strong>Pushed:</strong>
