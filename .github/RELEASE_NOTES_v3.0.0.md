@@ -1,4 +1,4 @@
-## GoCareers v3.0.0 (major)
+## Consulting v3.0.0 (major)
 
 **Commit:** `fa0eff6` on `main`
 

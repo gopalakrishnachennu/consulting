@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # ─────────────────────────────────────────────────────────────────────────────
-# GoCareers — Celery Worker
+# Consulting — Celery Worker
 # Picks up tasks from Redis queue and executes them.
 # Runs 24/7 — completely independent of the web server.
 # Closing the browser does NOT affect this process.

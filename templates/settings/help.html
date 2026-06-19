@@ -6,7 +6,7 @@
         <div>
             <h1 class="text-3xl font-bold text-gray-900">Help Center</h1>
             <p class="text-gray-600 text-sm mt-1">
-                Practical, step-by-step guides for configuring core services in GoCareers.
+                Practical, step-by-step guides for configuring core services in Consulting.
             </p>
         </div>
         <a href="{% url 'settings-dashboard' %}" class="text-blue-600 hover:text-blue-800 text-sm font-medium">
@@ -32,7 +32,7 @@
                     <li>On the 2‑Step Verification page, scroll down and open <strong>App passwords</strong> (or visit <span class="font-mono text-xs">https://myaccount.google.com/apppasswords</span>).</li>
                     <li>Create an App Password:
                         <ul class="list-disc list-inside ml-4">
-                            <li>App: <strong>Mail</strong> (or “Other (Custom)” → type <strong>GoCareers IMAP</strong>).</li>
+                            <li>App: <strong>Mail</strong> (or “Other (Custom)” → type <strong>Consulting IMAP</strong>).</li>
                             <li>Generate and copy the 16‑character password (e.g. <code>abcd efgh ijkl mnop</code>).</li>
                         </ul>
                     </li>
@@ -44,7 +44,7 @@
                     </li>
                 </ol>
 
-                <h3 class="text-sm font-semibold text-gray-900 mb-1">1.2 Configure GoCareers IMAP settings</h3>
+                <h3 class="text-sm font-semibold text-gray-900 mb-1">1.2 Configure Consulting IMAP settings</h3>
                 <ol class="list-decimal list-inside text-sm text-gray-700 space-y-1 mb-4">
                     <li>Go to <strong>Settings → Platform Config → Email Ingestion (IMAP)</strong>.</li>
                     <li>Turn ON <strong>Enable IMAP email ingestion</strong>.</li>
@@ -88,7 +88,7 @@
                 <ol class="list-decimal list-inside text-sm text-gray-700 space-y-1">
                     <li>Employer replies to an application (e.g. “We’d like to interview John”).</li>
                     <li>Employee forwards that email to the dedicated inbox (e.g. <code>yourplatform.updates@gmail.com</code>).</li>
-                    <li>Within ~60 seconds, GoCareers:
+                    <li>Within ~60 seconds, Consulting:
                         <ul class="list-disc list-inside ml-4">
                             <li>Reads the email via IMAP.</li>
                             <li>Uses rules (and optional AI) to detect status.</li>
@@ -104,7 +104,7 @@
             <section class="bg-white border border-indigo-100 rounded-xl shadow-sm p-5">
                 <h2 class="text-xl font-bold text-gray-900 mb-2">2. LLM Configuration (OpenAI)</h2>
                 <p class="text-sm text-gray-600 mb-4">
-                    GoCareers uses OpenAI for resume generation and some analytics features. All usage is tracked and capped.
+                    Consulting uses OpenAI for resume generation and some analytics features. All usage is tracked and capped.
                 </p>
 
                 <h3 class="text-sm font-semibold text-gray-900 mb-1">2.1 Add / rotate the API key</h3>
@@ -133,7 +133,7 @@
             <section class="bg-white border border-gray-100 rounded-xl shadow-sm p-5">
                 <h2 class="text-xl font-bold text-gray-900 mb-2">3. Background Workers (Celery)</h2>
                 <p class="text-sm text-gray-600 mb-4">
-                    Celery workers let GoCareers run tasks like IMAP polling in the background.
+                    Celery workers let Consulting run tasks like IMAP polling in the background.
                 </p>
 
                 <h3 class="text-sm font-semibold text-gray-900 mb-1">3.1 Services you should run</h3>
@@ -151,9 +151,9 @@
                             <li><strong>Enable background polling</strong> = ON</li>
                         </ul>
                     </li>
-                    <li>GoCareers creates or updates a periodic task:
+                    <li>Consulting creates or updates a periodic task:
                         <ul class="list-disc list-inside ml-4">
-                            <li>Name: <code>GoCareers: IMAP email ingestion poller</code></li>
+                            <li>Name: <code>Consulting: IMAP email ingestion poller</code></li>
                             <li>Task: <code>core.tasks.poll_email_ingest_task</code></li>
                             <li>Interval: <code>email_poll_interval_seconds</code> (minimum 30s).</li>
                         </ul>
@@ -190,4 +190,3 @@
     </div>
 </div>
 {% endblock %}
-

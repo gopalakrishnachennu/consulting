@@ -1,4 +1,4 @@
-# GoCareers Project Architecture Guide
+# Consulting Project Architecture Guide
 
 This guide explains how the consulting platform works for employees, consultants, admins, and operations teams.
 
@@ -10,7 +10,7 @@ The diagrams are **Mermaid diagrams**, so they render as vector diagrams in GitH
 
 ```mermaid
 flowchart TB
-  subgraph People["People using GoCareers"]
+  subgraph People["People using Consulting"]
     Consultant["Consultants"]
     Employee["Employees / Recruiters"]
     Admin["Admins"]

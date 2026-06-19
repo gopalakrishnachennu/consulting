@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-GoCareers — Platform Smoke Test
+Consulting — Platform Smoke Test
 ================================
 Tests EACH job-board harvester against 10 real public companies.
 Runs entirely standalone — no DB, no Celery, no Django required.
@@ -22,7 +22,7 @@ The Markdown log is structured so that any LLM can understand:
   - Any errors with full stack traces
   - Suggested root-cause and fix
 
-Author: GoCareers harvest team
+Author: Consulting harvest team
 """
 from __future__ import annotations
 
@@ -389,7 +389,7 @@ def build_markdown_report(
     max_jobs: int,
 ) -> str:
     lines: list[str] = []
-    lines.append(f"# GoCareers Harvest — Platform Smoke Test Report")
+    lines.append(f"# Consulting Harvest — Platform Smoke Test Report")
     lines.append(f"**Generated:** {run_ts}  |  **Jobs per company:** {max_jobs}")
     lines.append("")
 
@@ -573,7 +573,7 @@ def build_markdown_report(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="GoCareers platform smoke test")
+    parser = argparse.ArgumentParser(description="Consulting platform smoke test")
     parser.add_argument("--platform", default=None,
                         help="Test only this platform (default: all)")
     parser.add_argument("--max-jobs", type=int, default=5,
@@ -598,7 +598,7 @@ def main():
     done = 0
 
     print(f"\n{BOLD}{CYAN}╔══════════════════════════════════════════════════════╗{RESET}")
-    print(f"{BOLD}{CYAN}║   GoCareers — Platform Smoke Test                    ║{RESET}")
+    print(f"{BOLD}{CYAN}║   Consulting — Platform Smoke Test                   ║{RESET}")
     print(f"{BOLD}{CYAN}║   Platforms: {len(platforms_to_test):2d}   Companies: {total_companies:3d}   Jobs/co: {args.max_jobs}  ║{RESET}")
     print(f"{BOLD}{CYAN}╚══════════════════════════════════════════════════════╝{RESET}\n")
 

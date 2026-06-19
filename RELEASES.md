@@ -1,6 +1,6 @@
 # Releases
 
-Production release log for GoCareers. Newest first. Created/updated by the `/release` skill
+Production release log for Consulting. Newest first. Created/updated by the `/release` skill
 (verify CI green → version + changelog → deploy → health-verify → auto-rollback → record).
 
 ## v4.4.9 — Vet Gate: show the effective LLM model (2026-06-13)

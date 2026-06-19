@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # ─────────────────────────────────────────────────────────────────────────────
-# GoCareers — Celery Beat Scheduler
+# Consulting — Celery Beat Scheduler
 # Fires periodic tasks on the defined schedule (see config/celery.py).
 # ⚠️  ONLY ONE beat instance should run at a time — duplicate instances will
 #     fire duplicate tasks.

@@ -1,4 +1,4 @@
-# GoCareers — UI/UX Style Contract
+# Consulting — UI/UX Style Contract
 
 **This is the single source of truth for UI. Before building ANY new UI, read this and reuse what exists. Add a new pattern ONLY if none here fits, and document it here when you do.**
 

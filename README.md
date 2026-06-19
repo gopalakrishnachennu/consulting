@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="docs/readme-assets/banner.svg" alt="GoCareers platform banner" width="100%" />
+<img src="docs/readme-assets/banner.svg" alt="Consulting platform banner" width="100%" />
 
-# GoCareers
+# Consulting
 
 ### Enterprise-grade consulting & talent operations
 
@@ -38,7 +38,7 @@
 
 ## Overview
 
-**GoCareers** is a **Django** monolith that powers consultant workforce operations: **public and internal job inventory**, **application workflow**, **AI-assisted resume generation** with structured validation, **messaging and interviews**, and a **large-scale harvest engine** that ingests roles from major ATS platforms into a unified **Raw → Pool → Vetted** pipeline.
+**Consulting** is a **Django** monolith that powers consultant workforce operations: **public and internal job inventory**, **application workflow**, **AI-assisted resume generation** with structured validation, **messaging and interviews**, and a **large-scale harvest engine** that ingests roles from major ATS platforms into a unified **Raw → Pool → Vetted** pipeline.
 
 The stack is designed for **production deployment on Docker** (Hetzner VPS or equivalent), with **Celery + Redis** for async jobs, **PostgreSQL** as the system of record, and optional **Sentry** for error monitoring.
 
@@ -197,7 +197,7 @@ consulting/
 
 ```bash
 git clone https://github.com/gopalakrishnachennu/consulting.git
-cd consulting   # or your local folder name (e.g. GoCareers)
+cd consulting
 python3 -m venv venv
 source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt

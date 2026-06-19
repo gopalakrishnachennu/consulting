@@ -1,6 +1,6 @@
 # Consistent Release
 
-One-command, repeatable production release for GoCareers. The SAME steps run every time:
+One-command, repeatable production release for Consulting. The SAME steps run every time:
 verify CI is green → version + changelog → deploy → health-verify → auto-rollback on failure → record it.
 
 Use this instead of a bare `/deploy` when you want a tracked, versioned release.

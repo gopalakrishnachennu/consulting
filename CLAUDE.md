@@ -1,4 +1,4 @@
-# GoCareers — Claude Code Context
+# Consulting — Claude Code Context
 
 ## Environment map (read this before suggesting any command)
 

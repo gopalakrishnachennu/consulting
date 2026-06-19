@@ -1,6 +1,6 @@
 # Deploy to Production
 
-One-command deploy pipeline for GoCareers. Handles the full push → build → wait → deploy → verify cycle.
+One-command deploy pipeline for Consulting. Handles the full push → build → wait → deploy → verify cycle.
 
 ## Steps
 
