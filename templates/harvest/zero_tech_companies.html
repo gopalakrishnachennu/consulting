@@ -3,10 +3,29 @@
 {% include 'jobs/_pipeline_subnav.html' %}
 <div class="container mx-auto px-4 max-w-7xl">
   <div class="page-header mb-5">
-    <h1 class="text-2xl font-bold text-gray-900">Zero-Tech Companies</h1>
-    <p class="text-sm text-gray-500 mt-0.5">Labels that repeatedly produce no matched technical roles. Skips always expire.</p>
+    <h1 class="text-3xl font-bold text-slate-950">Company Exceptions</h1>
+    <p class="mt-1 text-sm text-slate-500">Manage zero-tech skips, portal-health warnings, and companies that might deserve re-entry into selective harvest even though they were previously suppressed.</p>
   </div>
   {% include 'harvest/_selective_filter_nav.html' %}
+
+  <section class="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p class="text-[11px] uppercase tracking-wide text-slate-400">Active Skips</p>
+      <p class="mt-2 text-3xl font-semibold text-slate-950">{{ workspace_summary.active_skips }}</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p class="text-[11px] uppercase tracking-wide text-slate-400">Expiring Soon</p>
+      <p class="mt-2 text-3xl font-semibold text-slate-950">{{ workspace_summary.expiring_soon }}</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p class="text-[11px] uppercase tracking-wide text-slate-400">Portal Down</p>
+      <p class="mt-2 text-3xl font-semibold text-slate-950">{{ workspace_summary.portal_down }}</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p class="text-[11px] uppercase tracking-wide text-slate-400">Historical Hits Still Skipped</p>
+      <p class="mt-2 text-3xl font-semibold text-slate-950">{{ workspace_summary.high_yield_skips }}</p>
+    </div>
+  </section>
 
   {% if messages %}{% for message in messages %}
   <div class="mb-4 rounded-lg border px-4 py-3 text-sm {% if message.tags == 'error' %}border-red-200 bg-red-50 text-red-700{% else %}border-green-200 bg-green-50 text-green-700{% endif %}">{{ message }}</div>
@@ -21,7 +40,7 @@
   <section class="card-table">
     <div class="table-scroll">
       <table class="w-full text-sm table-min-wide">
-        <thead class="tbl-head"><tr><th class="tbl-th">Company</th><th class="tbl-th">Platform</th><th class="tbl-th">Zero-Tech Count</th><th class="tbl-th">Recent skipped titles</th><th class="tbl-th">Skip</th><th class="tbl-th">Expires</th><th class="tbl-th-right">Actions</th></tr></thead>
+        <thead class="tbl-head"><tr><th class="tbl-th">Company</th><th class="tbl-th">Platform</th><th class="tbl-th">Zero-Tech Count</th><th class="tbl-th">Recent skipped titles</th><th class="tbl-th">Signals</th><th class="tbl-th">Skip</th><th class="tbl-th">Expires</th><th class="tbl-th-right">Actions</th></tr></thead>
         <tbody>
           {% for label in rows %}
           <tr class="tbl-row">
@@ -39,6 +58,19 @@
               <span class="text-xs text-gray-400">No skipped-title history</span>
               {% endif %}
             </td>
+            <td class="tbl-td">
+              <div class="flex flex-wrap gap-1 text-[11px]">
+                {% if label.recent_success_count %}
+                <span class="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700">{{ label.recent_success_count }} success 30d</span>
+                {% endif %}
+                {% for warning in label.workspace_warnings %}
+                <span class="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-red-700">{{ warning|cut:"_" }}</span>
+                {% endfor %}
+                {% if not label.workspace_warnings and not label.recent_success_count %}
+                <span class="text-slate-400">No extra warnings</span>
+                {% endif %}
+              </div>
+            </td>
             <td class="tbl-td">{% if label.skip_in_selective_harvest %}<span class="badge-yellow">Skipped</span>{% else %}<span class="badge-green">Included</span>{% endif %}</td>
             <td class="tbl-td text-xs text-gray-500">{% if label.skip_expires_at %}{{ label.skip_expires_at }}{% else %}—{% endif %}</td>
             <td class="tbl-td-right">
@@ -49,7 +81,7 @@
             </td>
           </tr>
           {% empty %}
-          <tr><td colspan="7" class="tbl-empty">No zero-tech labels currently need review.</td></tr>
+          <tr><td colspan="8" class="tbl-empty">No zero-tech labels currently need review.</td></tr>
           {% endfor %}
         </tbody>
       </table>

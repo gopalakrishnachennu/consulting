@@ -497,9 +497,15 @@ class HarvestEngineHardeningTests(TestCase):
 
 class SelectiveHarvestEngineTests(TestCase):
     def setUp(self):
+        from django.contrib.auth import get_user_model
         from companies.models import Company
         from harvest.models import CompanyPlatformLabel, HarvestEngineConfig, HarvestRoleCategory, JobBoardPlatform
 
+        self.admin = get_user_model().objects.create_superuser(
+            "selective-admin@example.com",
+            "selective-admin@example.com",
+            "pw",
+        )
         self.company = Company.objects.create(name="Selective Co")
         self.platform, _ = JobBoardPlatform.objects.update_or_create(
             slug="greenhouse",
@@ -826,6 +832,92 @@ class SelectiveHarvestEngineTests(TestCase):
 
         self.assertEqual(result["fallback_company_fetch_task_id"], "fallback-task")
         self.assertTrue(mocked.called)
+
+    def test_selective_workspace_surfaces_diagnostics_and_apply_preview(self):
+        from harvest.models import HarvestFilterSnapshot, HarvestOpsRun, HarvestRoleCategory, HarvestSkippedTitle
+
+        old_snapshot = HarvestFilterSnapshot.create_snapshot()
+        HarvestRoleCategory.objects.create(
+            name="Cloud Platform",
+            slug="cloud-platform",
+            priority=20,
+            include_phrases=["devops engineer", "platform engineer"],
+            exclude_phrases=["platform engineer"],
+            is_active=True,
+        )
+        self._raw_job(
+            url_hash="stale-role",
+            original_url="https://selective.example/jobs/stale-role",
+            title="DevOps Engineer",
+            role_category="devops",
+            filter_decision="STRONG",
+            filter_snapshot_id=old_snapshot.snapshot_id,
+        )
+        recoverable = self._raw_job(
+            url_hash="recoverable",
+            original_url="https://selective.example/jobs/recoverable",
+            title="DevOps Engineer Intern",
+        )
+        HarvestSkippedTitle.objects.create(
+            company_name=self.company.name,
+            platform_slug=self.platform.slug,
+            job_title="DevOps Engineer Intern",
+            filter_decision="COLD",
+            filter_reason="test",
+            raw_job=recoverable,
+        )
+        HarvestOpsRun.objects.create(
+            operation=HarvestOpsRun.Operation.CLASSIFY,
+            status=HarvestOpsRun.Status.RUNNING,
+            celery_task_id="task-12345678",
+            audit_payload={"queue": {"source": "role_studio_apply"}},
+            progress_current=10,
+            progress_total=25,
+            progress_message="Applying phrases",
+        )
+
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("harvest-role-categories"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Selective Filter Studio")
+        self.assertGreater(response.context["category_diagnostics"]["duplicate_include_phrases"], 0)
+        self.assertGreater(response.context["apply_preview"]["raw_jobs_to_reclassify"], 0)
+        self.assertIsNotNone(response.context["ops_summary"]["active_run"])
+
+    @patch("harvest.tasks.reclassify_stale_rawjobs_task.delay")
+    def test_apply_view_blocks_when_workspace_apply_run_is_already_active(self, mock_delay):
+        from harvest.models import HarvestOpsRun
+
+        HarvestOpsRun.objects.create(
+            operation=HarvestOpsRun.Operation.CLASSIFY,
+            status=HarvestOpsRun.Status.RUNNING,
+            celery_task_id="task-abcdef12",
+            audit_payload={"queue": {"source": "role_studio_apply"}},
+        )
+        self.client.force_login(self.admin)
+
+        response = self.client.post(reverse("harvest-role-apply"), {"next": reverse("harvest-role-categories")}, follow=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "already active")
+        mock_delay.assert_not_called()
+
+    def test_snapshot_detail_exposes_diff_against_previous_snapshot(self):
+        from harvest.models import HarvestFilterSnapshot, HarvestRoleCategory
+
+        first = HarvestFilterSnapshot.create_snapshot()
+        category = HarvestRoleCategory.objects.get(slug="devops")
+        category.include_phrases = list(category.include_phrases) + ["platform engineer"]
+        category.save(update_fields=["include_phrases", "updated_at"])
+        second = HarvestFilterSnapshot.create_snapshot()
+
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("harvest-filter-snapshot-detail", args=[second.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["previous_snapshot"].pk, first.pk)
+        self.assertGreater(response.context["snapshot_delta"]["added_phrase_count"], 0)
 
 
 class RawJobPayloadArchiveTests(TestCase):

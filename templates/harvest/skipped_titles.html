@@ -3,10 +3,33 @@
 {% include 'jobs/_pipeline_subnav.html' %}
 <div class="container mx-auto px-4 max-w-7xl">
   <div class="page-header mb-5">
-    <h1 class="text-2xl font-bold text-gray-900">Skipped Titles Audit</h1>
-    <p class="text-sm text-gray-500 mt-0.5">Review COLD and NO_MATCH decisions. Recover any false negative directly from this page.</p>
+    <h1 class="text-3xl font-bold text-slate-950">Review Queue</h1>
+    <p class="mt-1 text-sm text-slate-500">Audit COLD and NO_MATCH decisions, recover false negatives, and keep language/platform edge cases visible instead of buried in the raw skip log.</p>
   </div>
   {% include 'harvest/_selective_filter_nav.html' %}
+
+  <section class="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p class="text-[11px] uppercase tracking-wide text-slate-400">Skipped Rows</p>
+      <p class="mt-2 text-3xl font-semibold text-slate-950">{{ workspace_summary.total }}</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p class="text-[11px] uppercase tracking-wide text-slate-400">Recoverable</p>
+      <p class="mt-2 text-3xl font-semibold text-slate-950">{{ workspace_summary.recoverable }}</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p class="text-[11px] uppercase tracking-wide text-slate-400">Repeated Titles</p>
+      <p class="mt-2 text-3xl font-semibold text-slate-950">{{ workspace_summary.repeated_titles }}</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p class="text-[11px] uppercase tracking-wide text-slate-400">NO_MATCH</p>
+      <p class="mt-2 text-3xl font-semibold text-slate-950">{{ workspace_summary.no_match }}</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p class="text-[11px] uppercase tracking-wide text-slate-400">Non-ASCII</p>
+      <p class="mt-2 text-3xl font-semibold text-slate-950">{{ workspace_summary.non_ascii }}</p>
+    </div>
+  </section>
 
   {% if messages %}{% for message in messages %}
   <div class="mb-4 rounded-lg border px-4 py-3 text-sm {% if message.tags == 'error' %}border-red-200 bg-red-50 text-red-700{% else %}border-green-200 bg-green-50 text-green-700{% endif %}">{{ message }}</div>
@@ -32,7 +55,7 @@
         <tbody>
           {% for row in rows %}
           <tr class="tbl-row align-top">
-            <td class="tbl-td font-semibold text-gray-900">{{ row.job_title }}{% if row.is_sampled %}<span class="ml-2 badge-yellow">Sample</span>{% endif %}<div class="text-xs text-gray-400">{{ row.department|default:"" }}</div></td>
+            <td class="tbl-td font-semibold text-gray-900">{{ row.job_title }}{% if row.is_sampled %}<span class="ml-2 badge-yellow">Sample</span>{% endif %}{% if row.job_title and row.job_title|slugify == "" %}<span class="ml-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-500">non-Latin</span>{% endif %}<div class="text-xs text-gray-400">{{ row.department|default:"" }}</div></td>
             <td class="tbl-td">{{ row.company_name }}</td>
             <td class="tbl-td font-mono text-xs">{{ row.platform_slug }}</td>
             <td class="tbl-td">{% if row.filter_decision == 'NO_MATCH' %}<span class="badge-red">NO_MATCH</span>{% else %}<span class="badge-gray">COLD</span>{% endif %}</td>

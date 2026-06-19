@@ -1,21 +1,23 @@
 {% extends 'base.html' %}
 {% block content %}
 {% include 'jobs/_pipeline_subnav.html' %}
-<div class="container mx-auto px-4 max-w-7xl">
+<div class="container mx-auto max-w-7xl px-4">
 
-  <div class="page-header flex items-start justify-between mb-5">
+  <div class="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
     <div>
-      <h1 class="text-2xl font-bold text-gray-900">Selective Filter</h1>
-      <p class="text-sm text-gray-500 mt-0.5">Configure harvest role phrases and test titles before they affect JD fetching.</p>
+      <h1 class="text-3xl font-bold text-slate-950">Selective Filter Studio</h1>
+      <p class="mt-1 max-w-3xl text-sm text-slate-500">Manage phrase routing, audit skipped titles, inspect company exceptions, and roll changes forward without losing the existing selective-harvest behavior.</p>
     </div>
-    <div class="flex gap-2">
+    <div class="flex flex-wrap gap-2">
       <form method="post" action="{% url 'harvest-role-apply' %}"
-            onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='Queuing…'">
+            data-gc-confirm-title="Apply phrase changes"
+            data-gc-confirm-text="Queue apply"
+            data-gc-confirm-variant="warning"
+            data-gc-confirm-message="This will reclassify {{ apply_preview.raw_jobs_to_reclassify }} stale RawJobs and revisit {{ apply_preview.synced_jobs_to_refresh }} synced rows using the current phrase bank.">
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ request.get_full_path }}">
-        <button type="submit" class="btn-secondary"
-                title="Re-run the title filter over existing RawJobs so phrase changes take effect on already-fetched jobs">
-          ↻ Apply phrases to existing jobs
+        <button type="submit" class="btn-secondary" {% if ops_summary.active_run %}disabled{% endif %}>
+          {% if ops_summary.active_run %}Apply running…{% else %}Apply phrases to existing jobs{% endif %}
         </button>
       </form>
       <a href="{% url 'harvest-role-category-create' %}" class="btn-primary">+ Add Category</a>
@@ -25,172 +27,480 @@
   {% include 'harvest/_selective_filter_nav.html' %}
 
   {% if messages %}
-  {% for message in messages %}
-  <div class="mb-4 rounded-lg border px-4 py-3 text-sm {% if message.tags == 'error' %}border-red-200 bg-red-50 text-red-700{% else %}border-green-200 bg-green-50 text-green-700{% endif %}">{{ message }}</div>
-  {% endfor %}
+    {% for message in messages %}
+    <div class="mb-4 rounded-xl border px-4 py-3 text-sm {% if message.tags == 'error' %}border-red-200 bg-red-50 text-red-700{% elif message.tags == 'warning' %}border-amber-200 bg-amber-50 text-amber-700{% else %}border-emerald-200 bg-emerald-50 text-emerald-700{% endif %}">
+      {{ message }}
+    </div>
+    {% endfor %}
   {% endif %}
 
-  <!-- ── Live Title Tester ── -->
-  <section class="mb-6 rounded-xl border border-indigo-200 bg-white p-5 shadow-sm">
-    <div class="flex items-center gap-2 mb-3">
-      <span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-white text-[10px] font-bold">⚡</span>
-      <h2 class="text-sm font-bold text-gray-800">Live Title Tester</h2>
-      <span class="text-xs text-gray-400">— test any job title against the active phrase bank</span>
+  <section class="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Active Categories</p>
+      <p class="mt-2 text-3xl font-semibold text-slate-950">{{ workspace_kpis.active_categories }}</p>
+      <p class="mt-1 text-xs text-slate-500">{{ workspace_kpis.active_include_phrases }} include phrases live</p>
     </div>
-    <div class="flex gap-2">
-      <input id="title-test-title" class="form-input flex-1" placeholder="e.g. Senior AI Engineer">
-      <input id="title-test-department" class="form-input w-56 shrink-0" placeholder="Department (optional)">
-      <button type="button" id="title-test-button" class="btn-primary shrink-0 px-5">Test</button>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Exclude Rules</p>
+      <p class="mt-2 text-3xl font-semibold text-slate-950">{{ workspace_kpis.active_exclude_phrases }}</p>
+      <p class="mt-1 text-xs text-slate-500">{{ category_diagnostics.cross_exclude_phrases }} cross-category conflicts</p>
     </div>
-
-    <!-- Result panel — hidden until first test -->
-    <div id="title-test-result" class="hidden mt-3 rounded-xl border p-4">
-      <div class="flex items-start gap-4">
-        <!-- Decision badge -->
-        <div id="ttr-badge"
-             class="shrink-0 w-24 rounded-lg py-2 text-center text-xs font-bold uppercase tracking-wide"></div>
-        <!-- Detail -->
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span id="ttr-category" class="hidden rounded bg-gray-100 px-2 py-0.5 font-mono text-xs text-gray-600"></span>
-            <span id="ttr-phrase"   class="hidden rounded border border-green-200 bg-green-50 px-2 py-0.5 text-xs text-green-700"></span>
-            <span id="ttr-negative" class="hidden rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs text-red-700"></span>
-          </div>
-          <p id="ttr-reason" class="mt-1.5 text-xs text-gray-500"></p>
-        </div>
-      </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Skipped 14d</p>
+      <p class="mt-2 text-3xl font-semibold text-slate-950">{{ workspace_kpis.skipped_titles_14d }}</p>
+      <p class="mt-1 text-xs text-slate-500">{{ review_summary.recoverable }} recoverable rows, {{ review_summary.repeated_titles }} repeated titles</p>
     </div>
-
-    <!-- Placeholder message when empty -->
-    <div id="title-test-placeholder" class="mt-3 rounded-lg border border-dashed border-gray-200 px-3 py-2 text-xs text-center text-gray-400">
-      Type a job title above and press <kbd class="rounded border border-gray-300 px-1 py-0.5 font-mono text-[10px] bg-gray-50">Test</kbd> to see how the engine classifies it.
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Zero-Tech Flags</p>
+      <p class="mt-2 text-3xl font-semibold text-slate-950">{{ workspace_kpis.zero_tech_flagged }}</p>
+      <p class="mt-1 text-xs text-slate-500">{{ company_exception_summary.expiring_soon }} expiring soon, {{ company_exception_summary.portal_down }} portal down</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Phrase Risk</p>
+      <p class="mt-2 text-3xl font-semibold text-slate-950">{{ category_diagnostics.duplicate_include_phrases }}</p>
+      <p class="mt-1 text-xs text-slate-500">{{ category_diagnostics.self_conflict_categories }} self-conflicts, {{ category_diagnostics.stale_active_categories }} stale active categories</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Latest Snapshot</p>
+      <p class="mt-2 text-lg font-semibold text-slate-950">{% if latest_snapshot %}{{ latest_snapshot.taken_at|timesince }} ago{% else %}Not captured{% endif %}</p>
+      <p class="mt-1 text-xs text-slate-500">{% if snapshot_delta.has_changes %}{{ snapshot_delta.changed_categories|length }} changed categories since previous{% elif latest_snapshot %}No diff vs previous snapshot{% else %}Capture begins on next apply{% endif %}</p>
     </div>
   </section>
 
-  <!-- ── Category Table ── -->
-  <section class="card-table">
-    <div class="table-scroll">
-      <table class="w-full text-sm table-min-wide">
-        <thead class="tbl-head">
-          <tr>
-            <th class="tbl-th w-8">P</th>
-            <th class="tbl-th">Category</th>
-            <th class="tbl-th">Include phrases</th>
-            <th class="tbl-th">Exclude</th>
-            <th class="tbl-th text-center">Matched 7d</th>
-            <th class="tbl-th text-center">Matched 30d</th>
-            <th class="tbl-th text-center">Status</th>
-            <th class="tbl-th-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in categories %}
-          <tr class="tbl-row group">
-            <td class="tbl-td">
-              <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-[10px] font-bold text-gray-500">{{ row.obj.priority }}</span>
-            </td>
-            <td class="tbl-td">
-              <div class="font-semibold text-gray-900">{{ row.obj.name }}</div>
-              <div class="font-mono text-[10px] text-gray-400">{{ row.obj.slug }}</div>
-            </td>
-            <td class="tbl-td max-w-xs">
-              <!-- Show first 5 phrases as chips, rest as +N -->
-              <div class="flex flex-wrap gap-1">
-                {% for phrase in row.obj.include_phrases|slice:":6" %}
-                <span class="inline-flex items-center rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[10px] font-medium text-green-800 whitespace-nowrap">{{ phrase }}</span>
-                {% endfor %}
-                {% if row.include_count > 6 %}
-                <span class="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500">+{{ row.include_count|add:"-6" }} more</span>
-                {% endif %}
+  <section class="mb-6 grid gap-6 xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,1fr)]">
+    <div class="space-y-6">
+      <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500">Apply Preview</h2>
+            <p class="mt-1 text-sm text-slate-600">Queue the current phrase bank against existing RawJobs only when the scope looks right. This keeps the underlying feature unchanged, but makes the blast radius visible before you touch it.</p>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            Current phrase hash
+            <div class="mt-1 font-mono text-[11px] text-slate-500">{{ apply_preview.current_hash|slice:":18" }}</div>
+          </div>
+        </div>
+        <div class="mt-4 grid gap-3 md:grid-cols-4">
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p class="text-[11px] uppercase tracking-wide text-slate-400">Stale RawJobs</p>
+            <p class="mt-2 text-2xl font-semibold text-slate-950">{{ apply_preview.raw_jobs_to_reclassify }}</p>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p class="text-[11px] uppercase tracking-wide text-slate-400">Synced Rows</p>
+            <p class="mt-2 text-2xl font-semibold text-slate-950">{{ apply_preview.synced_jobs_to_refresh }}</p>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p class="text-[11px] uppercase tracking-wide text-slate-400">With JD</p>
+            <p class="mt-2 text-2xl font-semibold text-slate-950">{{ apply_preview.jobs_with_descriptions }}</p>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p class="text-[11px] uppercase tracking-wide text-slate-400">Unclassified</p>
+            <p class="mt-2 text-2xl font-semibold text-slate-950">{{ apply_preview.unclassified_rows }}</p>
+          </div>
+        </div>
+        {% if apply_preview.sample_titles %}
+        <div class="mt-4">
+          <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Recent stale samples</p>
+          <div class="flex flex-wrap gap-2">
+            {% for title in apply_preview.sample_titles %}
+            <span class="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600">{{ title|truncatechars:48 }}</span>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        {% if ops_summary.active_run %}
+        <div class="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          Apply run in progress: {{ ops_summary.active_run.progress_current }}/{{ ops_summary.active_run.progress_total|default:"?" }} {% if ops_summary.active_run.progress_message %}- {{ ops_summary.active_run.progress_message }}{% endif %}
+        </div>
+        {% endif %}
+      </section>
+
+      <section class="rounded-2xl border border-indigo-200 bg-white p-5 shadow-sm">
+        <div class="mb-3 flex items-center gap-2">
+          <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-[11px] font-bold text-white">T</span>
+          <div>
+            <h2 class="text-sm font-semibold text-slate-950">Live Title Tester</h2>
+            <p class="text-xs text-slate-500">Check a title against the active phrase bank without creating a persistent snapshot.</p>
+          </div>
+        </div>
+        <div class="grid gap-2 md:grid-cols-[minmax(0,1fr)_280px_88px]">
+          <input id="title-test-title" class="form-input" placeholder="e.g. Senior AI Engineer">
+          <input id="title-test-department" class="form-input" placeholder="Department (optional)">
+          <button type="button" id="title-test-button" class="btn-primary">Test</button>
+        </div>
+        <div id="title-test-result" class="hidden mt-3 rounded-xl border p-4">
+          <div class="flex items-start gap-4">
+            <div id="ttr-badge" class="shrink-0 w-24 rounded-lg py-2 text-center text-xs font-bold uppercase tracking-wide"></div>
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <span id="ttr-category" class="hidden rounded bg-slate-100 px-2 py-0.5 font-mono text-xs text-slate-600"></span>
+                <span id="ttr-phrase" class="hidden rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700"></span>
+                <span id="ttr-negative" class="hidden rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs text-red-700"></span>
               </div>
-            </td>
-            <td class="tbl-td text-xs text-gray-400">
-              {% if row.exclude_count %}
-              <span class="rounded-full bg-red-50 border border-red-100 px-2 py-0.5 text-[10px] text-red-500">{{ row.exclude_count }} rules</span>
-              {% else %}—{% endif %}
-            </td>
-            <td class="tbl-td text-center">
-              {% if row.matched_7d %}
-              <span class="font-semibold text-indigo-600">{{ row.matched_7d }}</span>
-              {% else %}
-              <span class="text-gray-300">0</span>
-              {% endif %}
-            </td>
-            <td class="tbl-td text-center">
-              {% if row.matched_30d %}
-              <span class="font-semibold text-gray-700">{{ row.matched_30d }}</span>
-              {% else %}
-              <span class="text-gray-300">0</span>
-              {% endif %}
-            </td>
-            <td class="tbl-td text-center">
-              {% if row.obj.is_active %}
-              <span class="badge-green">Active</span>
-              {% else %}
-              <span class="badge-gray">Off</span>
-              {% endif %}
-            </td>
-            <td class="tbl-td-right">
-              <a href="{% url 'harvest-role-category-edit' row.obj.pk %}" class="link-action">Edit</a>
-            </td>
-          </tr>
-          {% empty %}
-          <tr><td colspan="8" class="tbl-empty">No role categories configured. Add one to start filtering.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
+              <p id="ttr-reason" class="mt-1.5 text-xs text-slate-500"></p>
+            </div>
+          </div>
+        </div>
+        <div id="title-test-placeholder" class="mt-3 rounded-lg border border-dashed border-slate-200 px-3 py-2 text-center text-xs text-slate-400">
+          Type a title and press <kbd class="rounded border border-slate-300 bg-slate-50 px-1 py-0.5 font-mono text-[10px]">Test</kbd> to inspect the decision path.
+        </div>
+      </section>
+
+      <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <h2 class="text-sm font-semibold text-slate-950">Category Workspace</h2>
+            <p class="text-xs text-slate-500">Keep the current category table, but surface impact, trend, and phrase conflict risk before edits spread to existing jobs.</p>
+          </div>
+          <form method="get" class="grid gap-2 sm:grid-cols-2 xl:grid-cols-[260px_150px_150px_auto]">
+            <input type="text" name="q" value="{{ filter_controls.q }}" class="form-input" placeholder="Search category or phrase">
+            <select name="status" class="form-select">
+              <option value="">All statuses</option>
+              <option value="active" {% if filter_controls.status == 'active' %}selected{% endif %}>Active</option>
+              <option value="inactive" {% if filter_controls.status == 'inactive' %}selected{% endif %}>Inactive</option>
+              <option value="risky" {% if filter_controls.status == 'risky' %}selected{% endif %}>Risky</option>
+              <option value="stale" {% if filter_controls.status == 'stale' %}selected{% endif %}>Stale</option>
+            </select>
+            <select name="sort" class="form-select">
+              <option value="priority" {% if filter_controls.sort == 'priority' %}selected{% endif %}>Priority</option>
+              <option value="impact" {% if filter_controls.sort == 'impact' %}selected{% endif %}>Impact</option>
+              <option value="trend" {% if filter_controls.sort == 'trend' %}selected{% endif %}>Trend</option>
+              <option value="risk" {% if filter_controls.sort == 'risk' %}selected{% endif %}>Risk</option>
+              <option value="alpha" {% if filter_controls.sort == 'alpha' %}selected{% endif %}>A-Z</option>
+            </select>
+            <button class="btn-secondary">Apply</button>
+          </form>
+        </div>
+
+        <div class="mb-4 grid gap-3 md:grid-cols-4">
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p class="text-[11px] uppercase tracking-wide text-slate-400">Duplicate Include Phrases</p>
+            <p class="mt-1 text-2xl font-semibold text-slate-950">{{ category_diagnostics.duplicate_include_phrases }}</p>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p class="text-[11px] uppercase tracking-wide text-slate-400">Cross Exclude Collisions</p>
+            <p class="mt-1 text-2xl font-semibold text-slate-950">{{ category_diagnostics.cross_exclude_phrases }}</p>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p class="text-[11px] uppercase tracking-wide text-slate-400">Self Conflicts</p>
+            <p class="mt-1 text-2xl font-semibold text-slate-950">{{ category_diagnostics.self_conflict_categories }}</p>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p class="text-[11px] uppercase tracking-wide text-slate-400">Stale Active Categories</p>
+            <p class="mt-1 text-2xl font-semibold text-slate-950">{{ category_diagnostics.stale_active_categories }}</p>
+          </div>
+        </div>
+
+        <div class="table-scroll">
+          <table class="w-full text-sm table-min-wide">
+            <thead class="tbl-head">
+              <tr>
+                <th class="tbl-th w-10">P</th>
+                <th class="tbl-th">Category</th>
+                <th class="tbl-th">Include</th>
+                <th class="tbl-th">Exclude</th>
+                <th class="tbl-th text-center">7d</th>
+                <th class="tbl-th text-center">Prev 7d</th>
+                <th class="tbl-th text-center">30d</th>
+                <th class="tbl-th">Risk</th>
+                <th class="tbl-th text-center">Status</th>
+                <th class="tbl-th-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in categories %}
+              <tr class="tbl-row align-top">
+                <td class="tbl-td">
+                  <span class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-[11px] font-bold text-slate-500">{{ row.obj.priority }}</span>
+                </td>
+                <td class="tbl-td">
+                  <div class="font-semibold text-slate-950">{{ row.obj.name }}</div>
+                  <div class="font-mono text-[11px] text-slate-400">{{ row.obj.slug }}</div>
+                  {% if row.is_stale %}
+                  <div class="mt-2"><span class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">No 30d matches</span></div>
+                  {% endif %}
+                </td>
+                <td class="tbl-td max-w-sm">
+                  <div class="flex flex-wrap gap-1">
+                    {% for phrase in row.obj.include_phrases|slice:":5" %}
+                    <span class="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">{{ phrase }}</span>
+                    {% endfor %}
+                    {% if row.include_count > 5 %}
+                    <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">+{{ row.include_count|add:"-5" }} more</span>
+                    {% endif %}
+                  </div>
+                </td>
+                <td class="tbl-td">
+                  {% if row.exclude_count %}
+                  <span class="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] text-red-700">{{ row.exclude_count }} rules</span>
+                  {% else %}
+                  <span class="text-slate-300">0</span>
+                  {% endif %}
+                </td>
+                <td class="tbl-td text-center"><span class="font-semibold text-indigo-600">{{ row.matched_7d }}</span></td>
+                <td class="tbl-td text-center"><span class="font-semibold text-slate-600">{{ row.matched_prev_7d }}</span></td>
+                <td class="tbl-td text-center">
+                  <div class="font-semibold text-slate-900">{{ row.matched_30d }}</div>
+                  <div class="text-[11px] {% if row.trend_delta > 0 %}text-emerald-600{% elif row.trend_delta < 0 %}text-red-600{% else %}text-slate-400{% endif %}">
+                    {% if row.trend_delta > 0 %}+{% endif %}{{ row.trend_delta }}
+                  </div>
+                </td>
+                <td class="tbl-td">
+                  {% if row.warning_count %}
+                  <div class="space-y-1 text-[11px]">
+                    {% if row.duplicate_include %}
+                    <div class="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-amber-700">Shared include: {{ row.duplicate_include|join:", "|truncatechars:42 }}</div>
+                    {% endif %}
+                    {% if row.cross_exclude %}
+                    <div class="rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-red-700">Blocked elsewhere: {{ row.cross_exclude|join:", "|truncatechars:42 }}</div>
+                    {% endif %}
+                    {% if row.self_conflicts %}
+                    <div class="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700">Self conflict: {{ row.self_conflicts|join:", "|truncatechars:42 }}</div>
+                    {% endif %}
+                  </div>
+                  {% else %}
+                  <span class="text-slate-400">Clean</span>
+                  {% endif %}
+                </td>
+                <td class="tbl-td text-center">
+                  {% if row.obj.is_active %}
+                  <span class="badge-green">Active</span>
+                  {% else %}
+                  <span class="badge-gray">Off</span>
+                  {% endif %}
+                </td>
+                <td class="tbl-td-right"><a href="{% url 'harvest-role-category-edit' row.obj.pk %}" class="link-action">Edit</a></td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="10" class="tbl-empty">No role categories match this filter.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm">
+        <div class="mb-3 flex items-center gap-2">
+          <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-[11px] font-bold text-white">P</span>
+          <div>
+            <h2 class="text-sm font-semibold text-slate-950">Phrase Impact Preview</h2>
+            <p class="text-xs text-slate-500">Preview likely 90-day title matches before adding a phrase to the bank.</p>
+          </div>
+        </div>
+        <div class="grid gap-2 md:grid-cols-[minmax(0,1fr)_110px]">
+          <input id="impact-phrase" class="form-input" placeholder="e.g. machine learning engineer">
+          <button type="button" id="impact-button" class="btn-primary">Preview</button>
+        </div>
+        <div id="impact-result" class="hidden mt-3 rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 text-sm"></div>
+      </section>
+
+      <section class="rounded-2xl border border-amber-200 bg-white p-5 shadow-sm">
+        <div class="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <h2 class="text-sm font-semibold text-slate-950">Missed Titles Summary</h2>
+            <p class="text-xs text-slate-500">Keep this compact on the categories page. Use the full review queue for deep triage.</p>
+          </div>
+          <a href="{% url 'harvest-skipped-titles' %}" class="link-action text-sm">Open review queue</a>
+        </div>
+        <div class="table-scroll">
+          <table class="w-full text-sm table-min-wide">
+            <thead class="tbl-head">
+              <tr>
+                <th class="tbl-th">Skipped Title</th>
+                <th class="tbl-th text-center">Seen</th>
+                <th class="tbl-th">Route to Category</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in missed_titles %}
+              <tr class="tbl-row" data-missed-row>
+                <td class="tbl-td font-medium text-slate-900">
+                  {{ item.job_title|truncatechars:88 }}
+                  {% if item.job_title and item.job_title|length and item.job_title|slugify == "" %}
+                  <span class="ml-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-500">non-Latin</span>
+                  {% endif %}
+                </td>
+                <td class="tbl-td text-center text-slate-500">x{{ item.seen }}</td>
+                <td class="tbl-td">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <select class="form-select !py-1 text-xs w-56" data-missed-cat>
+                      {% for row in categories %}
+                      <option value="{{ row.obj.pk }}">{{ row.obj.name }}</option>
+                      {% endfor %}
+                    </select>
+                    <button type="button" class="btn-secondary !px-3 !py-1 text-xs" data-missed-add="{{ item.job_title|escapejs }}">+ Add phrase</button>
+                  </div>
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="3" class="tbl-empty">No recent missed titles.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
+
+    <aside class="space-y-6">
+      <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <h2 class="text-sm font-semibold text-slate-950">Review Queue</h2>
+            <p class="text-xs text-slate-500">Keep the deep audit in its own tab, but show operator-grade signals here.</p>
+          </div>
+          <a href="{% url 'harvest-skipped-titles' %}" class="link-action text-sm">Open</a>
+        </div>
+        <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p class="text-[11px] uppercase tracking-wide text-slate-400">NO_MATCH</p>
+            <p class="mt-1 text-2xl font-semibold text-slate-950">{{ review_summary.no_match }}</p>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p class="text-[11px] uppercase tracking-wide text-slate-400">COLD</p>
+            <p class="mt-1 text-2xl font-semibold text-slate-950">{{ review_summary.cold }}</p>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p class="text-[11px] uppercase tracking-wide text-slate-400">Recoverable</p>
+            <p class="mt-1 text-2xl font-semibold text-slate-950">{{ review_summary.recoverable }}</p>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p class="text-[11px] uppercase tracking-wide text-slate-400">Non-ASCII</p>
+            <p class="mt-1 text-2xl font-semibold text-slate-950">{{ review_summary.non_ascii }}</p>
+          </div>
+        </div>
+        {% if review_summary.top_companies %}
+        <div class="mt-4 border-t border-slate-100 pt-4">
+          <p class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Skip hotspots</p>
+          <div class="space-y-2">
+            {% for name, count in review_summary.top_companies %}
+            <div class="flex items-center justify-between text-sm">
+              <span class="truncate text-slate-700">{{ name }}</span>
+              <span class="font-semibold text-slate-950">{{ count }}</span>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+      </section>
+
+      <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <h2 class="text-sm font-semibold text-slate-950">Company Exceptions</h2>
+            <p class="text-xs text-slate-500">Zero-tech skips, portal health, and companies that may now deserve to re-enter selective harvest.</p>
+          </div>
+          <a href="{% url 'harvest-zero-tech-companies' %}" class="link-action text-sm">Open</a>
+        </div>
+        <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p class="text-[11px] uppercase tracking-wide text-slate-400">Active Skips</p>
+            <p class="mt-1 text-2xl font-semibold text-slate-950">{{ company_exception_summary.active_skips }}</p>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p class="text-[11px] uppercase tracking-wide text-slate-400">Expiring Soon</p>
+            <p class="mt-1 text-2xl font-semibold text-slate-950">{{ company_exception_summary.expiring_soon }}</p>
+          </div>
+        </div>
+        <div class="mt-4 space-y-3">
+          {% for label in company_exception_summary.rows %}
+          <div class="rounded-xl border border-slate-200 p-3">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="font-semibold text-slate-950">{{ label.company.name }}</p>
+                <p class="text-xs text-slate-500">{{ label.platform.slug|default:"No ATS" }}{% if label.tenant_id %} · {{ label.tenant_id|truncatechars:28 }}{% endif %}</p>
+              </div>
+              {% if label.skip_in_selective_harvest %}
+              <span class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">Skipped</span>
+              {% else %}
+              <span class="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">Watchlist</span>
+              {% endif %}
+            </div>
+            <div class="mt-2 flex flex-wrap gap-2 text-[11px]">
+              <span class="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">zero-tech: {{ label.consecutive_zero_tech_fetches }}</span>
+              {% for warning in label.workspace_warnings %}
+              <span class="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-red-700">{{ warning|cut:"_" }}</span>
+              {% endfor %}
+            </div>
+          </div>
+          {% empty %}
+          <p class="text-sm text-slate-500">No active company exceptions.</p>
+          {% endfor %}
+        </div>
+      </section>
+
+      <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <h2 class="text-sm font-semibold text-slate-950">Snapshots & Diff</h2>
+            <p class="text-xs text-slate-500">Track phrase-bank drift and keep rollback visibility close to the main workspace.</p>
+          </div>
+          <a href="{% url 'harvest-filter-snapshots' %}" class="link-action text-sm">Open</a>
+        </div>
+        {% if latest_snapshot %}
+        <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <p class="text-[11px] uppercase tracking-wide text-slate-400">Latest snapshot</p>
+          <p class="mt-1 font-semibold text-slate-950">{{ latest_snapshot.taken_at|date:"M j, Y g:i a" }}</p>
+          <p class="mt-1 text-xs text-slate-500">{{ latest_snapshot.snapshot_id }}</p>
+        </div>
+        {% endif %}
+        <div class="mt-4 space-y-2 text-sm">
+          <div class="flex items-center justify-between">
+            <span class="text-slate-600">Changed categories</span>
+            <span class="font-semibold text-slate-950">{{ snapshot_delta.changed_categories|length }}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-slate-600">Added phrases</span>
+            <span class="font-semibold text-slate-950">{{ snapshot_delta.added_phrase_count }}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-slate-600">Removed phrases</span>
+            <span class="font-semibold text-slate-950">{{ snapshot_delta.removed_phrase_count }}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-slate-600">Hard negative delta</span>
+            <span class="font-semibold text-slate-950">+{{ snapshot_delta.hard_negative_added|length }} / -{{ snapshot_delta.hard_negative_removed|length }}</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <h2 class="text-sm font-semibold text-slate-950">Operations</h2>
+            <p class="text-xs text-slate-500">Live apply status plus the last few workspace runs.</p>
+          </div>
+          <a href="{% url 'harvest-monitor' %}" class="link-action text-sm">Run Monitor</a>
+        </div>
+        <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p class="text-[11px] uppercase tracking-wide text-slate-400">Success 30d</p>
+            <p class="mt-1 text-2xl font-semibold text-slate-950">{{ ops_summary.success_30d }}</p>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p class="text-[11px] uppercase tracking-wide text-slate-400">Failed 30d</p>
+            <p class="mt-1 text-2xl font-semibold text-slate-950">{{ ops_summary.failed_30d }}</p>
+          </div>
+        </div>
+        <div class="mt-4 space-y-3">
+          {% for run in ops_summary.recent_runs %}
+          <div class="rounded-xl border border-slate-200 p-3">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <p class="font-semibold text-slate-950">{{ run.get_status_display }}</p>
+                <p class="text-xs text-slate-500">{{ run.created_at|timesince }} ago{% if run.progress_message %} · {{ run.progress_message }}{% endif %}</p>
+              </div>
+              <span class="rounded-full px-2 py-0.5 text-[11px] {% if run.status == 'SUCCESS' %}bg-emerald-50 text-emerald-700{% elif run.status == 'FAILED' %}bg-red-50 text-red-700{% elif run.status == 'RUNNING' %}bg-amber-50 text-amber-700{% else %}bg-slate-100 text-slate-600{% endif %}">{{ run.status }}</span>
+            </div>
+          </div>
+          {% empty %}
+          <p class="text-sm text-slate-500">No recent selective apply runs.</p>
+          {% endfor %}
+        </div>
+      </section>
+    </aside>
   </section>
 
 </div>
-
-  <!-- ── Phrase Impact Preview ── -->
-  <section class="mb-6 rounded-xl border border-emerald-200 bg-white p-5 shadow-sm">
-    <div class="flex items-center gap-2 mb-3">
-      <span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white text-[10px] font-bold">◎</span>
-      <h2 class="text-sm font-bold text-gray-800">Phrase Impact Preview</h2>
-      <span class="text-xs text-gray-400">— see what a phrase WOULD match before adding it</span>
-    </div>
-    <div class="flex gap-2">
-      <input id="impact-phrase" class="form-input flex-1" placeholder="e.g. machine learning engineer">
-      <button type="button" id="impact-button" class="btn-primary shrink-0 px-5" style="background:#059669">Preview</button>
-    </div>
-    <div id="impact-result" class="hidden mt-3 rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 text-sm"></div>
-  </section>
-
-  <!-- ── Missed Titles Review ── -->
-  {% if missed_titles %}
-  <section class="mb-6 rounded-xl border border-amber-200 bg-white p-5 shadow-sm">
-    <div class="flex items-center gap-2 mb-1">
-      <span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-white text-[10px] font-bold">⚑</span>
-      <h2 class="text-sm font-bold text-gray-800">Missed Titles (skipped last 14 days)</h2>
-    </div>
-    <p class="text-xs text-gray-400 mb-3">Titles the filter rejected. If one should have been harvested, add it as an include phrase — then click "Apply phrases to existing jobs".</p>
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead class="tbl-head"><tr>
-          <th class="tbl-th">Skipped title</th><th class="tbl-th text-center">Seen</th><th class="tbl-th">Add as include phrase to…</th>
-        </tr></thead>
-        <tbody class="divide-y divide-gray-100">
-          {% for m in missed_titles %}
-          <tr data-missed-row>
-            <td class="tbl-td font-medium text-gray-800">{{ m.job_title|truncatechars:80 }}</td>
-            <td class="tbl-td text-center text-gray-500">×{{ m.n }}</td>
-            <td class="tbl-td">
-              <div class="flex items-center gap-2">
-                <select class="form-input !py-1 text-xs w-48" data-missed-cat>
-                  {% for row in categories %}<option value="{{ row.obj.pk }}">{{ row.obj.name }}</option>{% endfor %}
-                </select>
-                <button type="button" class="btn-secondary !py-1 !px-3 text-xs" data-missed-add="{{ m.job_title|escapejs }}">+ Add phrase</button>
-              </div>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
-  {% endif %}
 
 <script>
 (function () {
@@ -202,22 +512,22 @@
     UNKNOWN:  { badge: 'bg-blue-100 text-blue-700 border border-blue-200',     panel: 'border-blue-200 bg-blue-50' },
   };
 
-  const resultPanel      = document.getElementById('title-test-result');
-  const placeholder      = document.getElementById('title-test-placeholder');
-  const badge            = document.getElementById('ttr-badge');
-  const categoryEl       = document.getElementById('ttr-category');
-  const phraseEl         = document.getElementById('ttr-phrase');
-  const negativeEl       = document.getElementById('ttr-negative');
-  const reasonEl         = document.getElementById('ttr-reason');
+  const resultPanel = document.getElementById('title-test-result');
+  const placeholder = document.getElementById('title-test-placeholder');
+  const badge = document.getElementById('ttr-badge');
+  const categoryEl = document.getElementById('ttr-category');
+  const phraseEl = document.getElementById('ttr-phrase');
+  const negativeEl = document.getElementById('ttr-negative');
+  const reasonEl = document.getElementById('ttr-reason');
 
   async function runTest() {
     const title = document.getElementById('title-test-title').value.trim();
-    const dept  = document.getElementById('title-test-department').value.trim();
+    const dept = document.getElementById('title-test-department').value.trim();
     if (!title) return;
 
     badge.textContent = '…';
-    badge.className = 'shrink-0 w-24 rounded-lg py-2 text-center text-xs font-bold uppercase tracking-wide bg-gray-100 text-gray-400';
-    resultPanel.className = 'mt-3 rounded-xl border p-4 border-gray-200 bg-gray-50';
+    badge.className = 'shrink-0 w-24 rounded-lg py-2 text-center text-xs font-bold uppercase tracking-wide bg-slate-100 text-slate-400';
+    resultPanel.className = 'mt-3 rounded-xl border p-4 border-slate-200 bg-slate-50';
     resultPanel.classList.remove('hidden');
     placeholder.classList.add('hidden');
 
@@ -226,30 +536,29 @@
       url.searchParams.set('title', title);
       if (dept) url.searchParams.set('department', dept);
       const data = await fetch(url).then(r => r.json());
-
       const style = DECISION_STYLES[data.decision] || DECISION_STYLES.COLD;
       badge.textContent = data.decision;
       badge.className = 'shrink-0 w-24 rounded-lg py-2 text-center text-xs font-bold uppercase tracking-wide ' + style.badge;
       resultPanel.className = 'mt-3 rounded-xl border p-4 ' + style.panel;
 
-      // category chip
       if (data.category) {
         categoryEl.textContent = data.category;
         categoryEl.classList.remove('hidden');
-      } else { categoryEl.classList.add('hidden'); }
-
-      // matched phrase
+      } else {
+        categoryEl.classList.add('hidden');
+      }
       if (data.matched_phrase) {
         phraseEl.textContent = '✓ "' + data.matched_phrase + '"';
         phraseEl.classList.remove('hidden');
-      } else { phraseEl.classList.add('hidden'); }
-
-      // matched negative
+      } else {
+        phraseEl.classList.add('hidden');
+      }
       if (data.matched_negative) {
         negativeEl.textContent = '✕ "' + data.matched_negative + '"';
         negativeEl.classList.remove('hidden');
-      } else { negativeEl.classList.add('hidden'); }
-
+      } else {
+        negativeEl.classList.add('hidden');
+      }
       reasonEl.textContent = data.reason;
     } catch {
       badge.textContent = 'ERR';
@@ -264,55 +573,68 @@
   });
 })();
 
-// ── Phrase Impact Preview + Missed Titles quick-add ──
 (function () {
   const csrf = document.cookie.match(/csrftoken=([^;]+)/)?.[1] || "{{ csrf_token }}";
+  const ibtn = document.getElementById('impact-button');
+  const iin = document.getElementById('impact-phrase');
+  const ires = document.getElementById('impact-result');
 
-  const ibtn = document.getElementById("impact-button");
-  const iin  = document.getElementById("impact-phrase");
-  const ires = document.getElementById("impact-result");
   async function runImpact() {
-    const phrase = (iin.value || "").trim();
+    const phrase = (iin.value || '').trim();
     if (!phrase) return;
-    ires.classList.remove("hidden");
-    ires.innerHTML = "Checking…";
+    ires.classList.remove('hidden');
+    ires.innerHTML = 'Checking…';
     try {
       const r = await fetch("{% url 'harvest-role-phrase-impact' %}", {
-        method: "POST",
-        headers: {"Content-Type": "application/json", "X-CSRFToken": csrf},
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
         body: JSON.stringify({phrase}),
       });
       const d = await r.json();
-      if (!d.ok) { ires.innerHTML = "⚠ " + (d.error || "failed"); return; }
-      const samples = (d.samples || []).map(s => `<li class="text-gray-600">· ${s}</li>`).join("");
+      if (!d.ok) {
+        ires.innerHTML = '⚠ ' + (d.error || 'failed');
+        return;
+      }
+      const samples = (d.samples || []).map(s => `<li class="text-slate-600">· ${s}</li>`).join('');
       ires.innerHTML = `
-        <div class="flex flex-wrap gap-4 mb-2">
+        <div class="mb-2 flex flex-wrap gap-4">
           <span>Would match <strong class="text-emerald-700">${d.matched_90d}</strong> titles (90d)</span>
-          <span>Among recently skipped: <strong class="${d.skipped_14d ? "text-amber-600" : "text-gray-500"}">${d.skipped_14d}</strong> (14d)</span>
-          <span class="text-gray-400">normalized: <code>${d.phrase}</code></span>
+          <span>Recently skipped: <strong class="${d.skipped_14d ? 'text-amber-600' : 'text-slate-500'}">${d.skipped_14d}</strong></span>
+          <span class="text-slate-400">normalized: <code>${d.phrase}</code></span>
         </div>
-        ${samples ? `<ul class="text-xs space-y-0.5">${samples}</ul>` : `<span class="text-xs text-gray-400">no sample titles</span>`}`;
-    } catch (e) { ires.innerHTML = "⚠ request failed"; }
+        ${samples ? `<ul class="space-y-0.5 text-xs">${samples}</ul>` : `<span class="text-xs text-slate-400">no sample titles</span>`}`;
+    } catch {
+      ires.innerHTML = '⚠ request failed';
+    }
   }
-  if (ibtn) ibtn.addEventListener("click", runImpact);
-  if (iin) iin.addEventListener("keydown", e => { if (e.key === "Enter") runImpact(); });
 
-  document.querySelectorAll("[data-missed-add]").forEach(btn => {
-    btn.addEventListener("click", async () => {
-      const row = btn.closest("[data-missed-row]");
-      const catId = row.querySelector("[data-missed-cat]").value;
-      btn.disabled = true; btn.textContent = "Adding…";
+  if (ibtn) ibtn.addEventListener('click', runImpact);
+  if (iin) iin.addEventListener('keydown', e => { if (e.key === 'Enter') runImpact(); });
+
+  document.querySelectorAll('[data-missed-add]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const row = btn.closest('[data-missed-row]');
+      const catId = row.querySelector('[data-missed-cat]').value;
+      btn.disabled = true;
+      btn.textContent = 'Adding…';
       try {
         const r = await fetch("{% url 'harvest-role-phrase-edit' %}", {
-          method: "POST",
-          headers: {"Content-Type": "application/json", "X-CSRFToken": csrf},
-          body: JSON.stringify({category_id: catId, list: "include", action: "add",
-                                phrase: btn.getAttribute("data-missed-add")}),
+          method: 'POST',
+          headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+          body: JSON.stringify({category_id: catId, list: 'include', action: 'add', phrase: btn.getAttribute('data-missed-add')}),
         });
         const d = await r.json();
-        if (d.ok) { btn.textContent = "✓ Added"; btn.classList.add("!text-emerald-700"); }
-        else { btn.textContent = "⚠ " + (d.error || "failed"); btn.disabled = false; }
-      } catch (e) { btn.textContent = "⚠ failed"; btn.disabled = false; }
+        if (d.ok) {
+          btn.textContent = '✓ Added';
+          btn.classList.add('!text-emerald-700');
+        } else {
+          btn.textContent = '⚠ ' + (d.error || 'failed');
+          btn.disabled = false;
+        }
+      } catch {
+        btn.textContent = '⚠ failed';
+        btn.disabled = false;
+      }
     });
   });
 })();

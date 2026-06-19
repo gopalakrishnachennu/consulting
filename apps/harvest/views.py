@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+from collections import Counter, defaultdict
 from urllib.parse import urlencode
 
 from django.conf import settings
@@ -75,6 +76,328 @@ logger = logging.getLogger(__name__)
 
 _FULL_CRAWL_COOLDOWN_HOURS = 2  # fallback; actual value from HarvestEngineConfig
 _FULL_CRAWL_LOCK_KEY = "harvest:full_crawl:cooldown_lock"  # cache-layer enforcement
+
+
+def _contains_non_ascii(value: str) -> bool:
+    return any(ord(char) > 127 for char in (value or ""))
+
+
+def _selective_current_phrase_payload() -> tuple[dict, list[dict], list[str], str]:
+    from .role_filter import compute_phrase_hash
+
+    cfg = HarvestEngineConfig.get()
+    categories = list(
+        HarvestRoleCategory.objects.filter(is_active=True)
+        .order_by("priority", "name")
+        .values("name", "slug", "priority", "include_phrases", "exclude_phrases")
+    )
+    hard_negatives = cfg.hard_negative_phrases if isinstance(cfg.hard_negative_phrases, list) else []
+    payload = {
+        "categories": categories,
+        "hard_negative_phrases": hard_negatives,
+    }
+    return payload, categories, hard_negatives, compute_phrase_hash(payload)
+
+
+def _selective_snapshot_delta(current: HarvestFilterSnapshot | None, previous: HarvestFilterSnapshot | None) -> dict:
+    def _category_map(snapshot: HarvestFilterSnapshot | None) -> dict[str, dict]:
+        if not snapshot:
+            return {}
+        return {
+            (item.get("slug") or ""): item
+            for item in snapshot.get_categories()
+            if item.get("slug")
+        }
+
+    current_categories = _category_map(current)
+    previous_categories = _category_map(previous)
+    current_hard = set((current.get_hard_negatives() if current else []) or [])
+    previous_hard = set((previous.get_hard_negatives() if previous else []) or [])
+
+    added_categories = sorted(set(current_categories) - set(previous_categories))
+    removed_categories = sorted(set(previous_categories) - set(current_categories))
+    changed_categories: list[str] = []
+    added_phrases: list[str] = []
+    removed_phrases: list[str] = []
+
+    for slug in sorted(set(current_categories) & set(previous_categories)):
+        current_item = current_categories[slug]
+        previous_item = previous_categories[slug]
+        current_include = set(current_item.get("include_phrases") or [])
+        previous_include = set(previous_item.get("include_phrases") or [])
+        current_exclude = set(current_item.get("exclude_phrases") or [])
+        previous_exclude = set(previous_item.get("exclude_phrases") or [])
+        if current_include != previous_include or current_exclude != previous_exclude:
+            changed_categories.append(slug)
+        added_phrases.extend(sorted(current_include - previous_include))
+        added_phrases.extend(sorted(current_exclude - previous_exclude))
+        removed_phrases.extend(sorted(previous_include - current_include))
+        removed_phrases.extend(sorted(previous_exclude - current_exclude))
+
+    return {
+        "added_categories": added_categories,
+        "removed_categories": removed_categories,
+        "changed_categories": changed_categories,
+        "added_phrase_count": len(added_phrases),
+        "removed_phrase_count": len(removed_phrases),
+        "added_phrases_sample": added_phrases[:8],
+        "removed_phrases_sample": removed_phrases[:8],
+        "hard_negative_added": sorted(current_hard - previous_hard),
+        "hard_negative_removed": sorted(previous_hard - current_hard),
+        "has_changes": bool(
+            added_categories
+            or removed_categories
+            or changed_categories
+            or added_phrases
+            or removed_phrases
+            or current_hard != previous_hard
+        ),
+    }
+
+
+def _selective_recent_apply_runs(limit: int = 12) -> list[HarvestOpsRun]:
+    runs = []
+    for run in HarvestOpsRun.objects.filter(operation=HarvestOpsRun.Operation.CLASSIFY).order_by("-created_at")[:limit]:
+        queue = (run.audit_payload or {}).get("queue") or {}
+        if queue.get("source") == "role_studio_apply":
+            runs.append(run)
+    return runs
+
+
+def _build_selective_review_summary(days: int = 14, limit: int = 8) -> dict:
+    since = timezone.now() - timedelta(days=days)
+    grouped = list(
+        HarvestSkippedTitle.objects.filter(skipped_at__gte=since)
+        .values("job_title")
+        .annotate(
+            seen=Count("id"),
+            last_seen=Max("skipped_at"),
+            sample_company=Min("company_name"),
+            sample_platform=Min("platform_slug"),
+        )
+        .order_by("-seen", "-last_seen")[:limit]
+    )
+    recent_rows = list(
+        HarvestSkippedTitle.objects.filter(skipped_at__gte=since)
+        .select_related("raw_job")
+        .order_by("-skipped_at")[:250]
+    )
+    repeated_titles = sum(1 for row in grouped if (row.get("seen") or 0) > 1)
+    recoverable = sum(1 for row in recent_rows if row.raw_job_id)
+    non_ascii = sum(1 for row in recent_rows if _contains_non_ascii(row.job_title))
+    company_hotspots = Counter(row.company_name for row in recent_rows if row.company_name)
+    return {
+        "total": len(recent_rows),
+        "recoverable": recoverable,
+        "repeated_titles": repeated_titles,
+        "no_match": sum(1 for row in recent_rows if row.filter_decision == "NO_MATCH"),
+        "cold": sum(1 for row in recent_rows if row.filter_decision == "COLD"),
+        "non_ascii": non_ascii,
+        "top_titles": grouped,
+        "top_companies": company_hotspots.most_common(5),
+    }
+
+
+def _selective_company_exception_summary(limit: int = 6) -> dict:
+    qs = CompanyPlatformLabel.objects.select_related("company", "platform").filter(
+        Q(consecutive_zero_tech_fetches__gt=0) | Q(skip_in_selective_harvest=True)
+    )
+    rows = list(
+        qs.order_by(
+            "-skip_in_selective_harvest",
+            "-consecutive_zero_tech_fetches",
+            "company__name",
+        )[:limit]
+    )
+    now = timezone.now()
+    active_skips = qs.filter(skip_in_selective_harvest=True).count()
+    expiring_soon = qs.filter(skip_in_selective_harvest=True, skip_expires_at__lte=now + timedelta(days=7)).count()
+    portal_down = qs.filter(skip_in_selective_harvest=True, portal_alive=False).count()
+    high_yield_skips = qs.filter(skip_in_selective_harvest=True, historical_confirmed_count__gt=0).count()
+    for label in rows:
+        warnings = []
+        if label.skip_in_selective_harvest and label.skip_expires_at and label.skip_expires_at <= now + timedelta(days=7):
+            warnings.append("expires_soon")
+        if label.portal_alive is False:
+            warnings.append("portal_down")
+        if label.skip_in_selective_harvest and label.historical_confirmed_count > 0:
+            warnings.append("historical_hits")
+        label.workspace_warnings = warnings
+    return {
+        "rows": rows,
+        "active_skips": active_skips,
+        "expiring_soon": expiring_soon,
+        "portal_down": portal_down,
+        "high_yield_skips": high_yield_skips,
+    }
+
+
+def _selective_ops_summary() -> dict:
+    runs = _selective_recent_apply_runs(limit=12)
+    active_run = next((run for run in runs if run.status == HarvestOpsRun.Status.RUNNING), None)
+    last_run = runs[0] if runs else None
+    return {
+        "active_run": active_run,
+        "last_run": last_run,
+        "recent_runs": runs[:5],
+        "success_30d": HarvestOpsRun.objects.filter(
+            operation=HarvestOpsRun.Operation.CLASSIFY,
+            status=HarvestOpsRun.Status.SUCCESS,
+            created_at__gte=timezone.now() - timedelta(days=30),
+        ).count(),
+        "failed_30d": HarvestOpsRun.objects.filter(
+            operation=HarvestOpsRun.Operation.CLASSIFY,
+            status=HarvestOpsRun.Status.FAILED,
+            created_at__gte=timezone.now() - timedelta(days=30),
+        ).count(),
+    }
+
+
+def _selective_apply_preview() -> dict:
+    payload, categories, hard_negatives, current_hash = _selective_current_phrase_payload()
+    stale_snapshot_ids = set(
+        HarvestFilterSnapshot.objects.exclude(phrase_hash=current_hash).values_list("snapshot_id", flat=True)
+    )
+    stale_q = Q(filter_snapshot_id__in=stale_snapshot_ids)
+    stale_rows = RawJob.objects.filter(stale_q, is_test_run=False)
+    unclassified_q = Q(filter_snapshot_id__isnull=True) | Q(filter_decision__isnull=True)
+    unclassified_rows = RawJob.objects.filter(unclassified_q, is_test_run=False)
+    return {
+        "current_hash": current_hash,
+        "active_categories": len(categories),
+        "hard_negative_count": len(hard_negatives),
+        "raw_jobs_to_reclassify": stale_rows.count(),
+        "synced_jobs_to_refresh": stale_rows.filter(sync_status=RawJob.SyncStatus.SYNCED).count(),
+        "jobs_with_descriptions": stale_rows.filter(has_description=True).count(),
+        "unclassified_rows": unclassified_rows.count(),
+        "sample_titles": list(stale_rows.order_by("-fetched_at").values_list("title", flat=True)[:5]),
+    }
+
+
+def _build_selective_category_rows(request) -> tuple[list[dict], dict]:
+    from .role_filter import normalize_phrase
+
+    now = timezone.now()
+    since_7d = now - timedelta(days=7)
+    since_14d = now - timedelta(days=14)
+    since_30d = now - timedelta(days=30)
+    stats_7d = {
+        row["role_category"]: row["n"]
+        for row in RawJob.objects.filter(fetched_at__gte=since_7d)
+        .exclude(role_category__isnull=True)
+        .values("role_category")
+        .annotate(n=Count("id"))
+    }
+    stats_prev_7d = {
+        row["role_category"]: row["n"]
+        for row in RawJob.objects.filter(fetched_at__gte=since_14d, fetched_at__lt=since_7d)
+        .exclude(role_category__isnull=True)
+        .values("role_category")
+        .annotate(n=Count("id"))
+    }
+    stats_30d = {
+        row["role_category"]: row["n"]
+        for row in RawJob.objects.filter(fetched_at__gte=since_30d)
+        .exclude(role_category__isnull=True)
+        .values("role_category")
+        .annotate(n=Count("id"))
+    }
+
+    cats = list(HarvestRoleCategory.objects.order_by("priority", "name"))
+    include_map: dict[str, set[str]] = defaultdict(set)
+    exclude_map: dict[str, set[str]] = defaultdict(set)
+    category_include_sets: dict[str, set[str]] = {}
+    category_exclude_sets: dict[str, set[str]] = {}
+    for cat in cats:
+        include_set = {normalize_phrase(item) for item in (cat.include_phrases or []) if normalize_phrase(item)}
+        exclude_set = {normalize_phrase(item) for item in (cat.exclude_phrases or []) if normalize_phrase(item)}
+        category_include_sets[cat.slug] = include_set
+        category_exclude_sets[cat.slug] = exclude_set
+        for phrase in include_set:
+            include_map[phrase].add(cat.slug)
+        for phrase in exclude_set:
+            exclude_map[phrase].add(cat.slug)
+
+    q = (request.GET.get("q") or "").strip().lower()
+    status = (request.GET.get("status") or "").strip().lower()
+    sort = (request.GET.get("sort") or "priority").strip().lower()
+
+    rows = []
+    for cat in cats:
+        include_set = category_include_sets[cat.slug]
+        exclude_set = category_exclude_sets[cat.slug]
+        duplicate_include = sorted(
+            phrase for phrase in include_set
+            if len(include_map.get(phrase, set())) > 1
+        )
+        cross_exclude = sorted(
+            phrase for phrase in include_set
+            if exclude_map.get(phrase, set()) - {cat.slug}
+        )
+        self_conflicts = sorted(include_set & exclude_set)
+        overlap_categories = sorted({
+            other
+            for phrase in duplicate_include
+            for other in include_map.get(phrase, set())
+            if other != cat.slug
+        })
+        matched_7d = stats_7d.get(cat.slug, 0)
+        matched_prev_7d = stats_prev_7d.get(cat.slug, 0)
+        matched_30d = stats_30d.get(cat.slug, 0)
+        trend_delta = matched_7d - matched_prev_7d
+        warning_count = len(duplicate_include) + len(cross_exclude) + len(self_conflicts)
+        row = {
+            "obj": cat,
+            "include_count": len(include_set),
+            "exclude_count": len(exclude_set),
+            "matched_7d": matched_7d,
+            "matched_prev_7d": matched_prev_7d,
+            "matched_30d": matched_30d,
+            "trend_delta": trend_delta,
+            "duplicate_include": duplicate_include[:6],
+            "cross_exclude": cross_exclude[:6],
+            "self_conflicts": self_conflicts[:6],
+            "overlap_categories": overlap_categories[:5],
+            "warning_count": warning_count,
+            "is_stale": cat.is_active and matched_30d == 0,
+            "is_busy": matched_30d >= 100,
+        }
+        haystack = " ".join([
+            cat.name.lower(),
+            cat.slug.lower(),
+            " ".join(sorted(include_set)),
+            " ".join(sorted(exclude_set)),
+        ])
+        if q and q not in haystack:
+            continue
+        if status == "active" and not cat.is_active:
+            continue
+        if status == "inactive" and cat.is_active:
+            continue
+        if status == "risky" and warning_count == 0:
+            continue
+        if status == "stale" and not row["is_stale"]:
+            continue
+        rows.append(row)
+
+    if sort == "impact":
+        rows.sort(key=lambda item: (-item["matched_30d"], item["obj"].priority, item["obj"].name.lower()))
+    elif sort == "trend":
+        rows.sort(key=lambda item: (-item["trend_delta"], -item["matched_7d"], item["obj"].priority))
+    elif sort == "risk":
+        rows.sort(key=lambda item: (-item["warning_count"], -item["matched_30d"], item["obj"].priority))
+    elif sort == "alpha":
+        rows.sort(key=lambda item: item["obj"].name.lower())
+    else:
+        rows.sort(key=lambda item: (item["obj"].priority, item["obj"].name.lower()))
+
+    diagnostics = {
+        "duplicate_include_phrases": sum(1 for phrase, slugs in include_map.items() if len(slugs) > 1),
+        "cross_exclude_phrases": sum(1 for phrase, slugs in include_map.items() if exclude_map.get(phrase)),
+        "self_conflict_categories": sum(1 for slug in category_include_sets if category_include_sets[slug] & category_exclude_sets[slug]),
+        "stale_active_categories": sum(1 for row in rows if row["is_stale"]),
+    }
+    return rows, diagnostics
 
 
 def _effective_classification_q(min_conf: float = 0.01) -> Q:
@@ -4400,43 +4723,39 @@ class SelectiveRoleCategoryListView(SuperuserRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        since_7d = timezone.now() - timedelta(days=7)
-        since_30d = timezone.now() - timedelta(days=30)
-        stats_7d = {
-            row["role_category"]: row["n"]
-            for row in RawJob.objects.filter(fetched_at__gte=since_7d)
-            .exclude(role_category__isnull=True)
-            .values("role_category")
-            .annotate(n=Count("id"))
-        }
-        stats_30d = {
-            row["role_category"]: row["n"]
-            for row in RawJob.objects.filter(fetched_at__gte=since_30d)
-            .exclude(role_category__isnull=True)
-            .values("role_category")
-            .annotate(n=Count("id"))
-        }
-        categories = []
-        for cat in HarvestRoleCategory.objects.order_by("priority", "name"):
-            categories.append({
-                "obj": cat,
-                "include_count": len(cat.include_phrases or []),
-                "exclude_count": len(cat.exclude_phrases or []),
-                "matched_7d": stats_7d.get(cat.slug, 0),
-                "matched_30d": stats_30d.get(cat.slug, 0),
-            })
-        ctx["categories"] = categories
-        # Missed-titles review: what the filter skipped recently, grouped —
-        # one-click 'add as phrase' turns misses into phrase-bank improvements.
-        from datetime import timedelta as _td
-        from .models import HarvestSkippedTitle
-        ctx["missed_titles"] = list(
-            HarvestSkippedTitle.objects.filter(
-                skipped_at__gte=timezone.now() - _td(days=14))
-            .values("job_title")
-            .annotate(n=Count("id"))
-            .order_by("-n")[:25]
+        categories, diagnostics = _build_selective_category_rows(self.request)
+        latest_snapshot = HarvestFilterSnapshot.objects.order_by("-taken_at").first()
+        previous_snapshot = (
+            HarvestFilterSnapshot.objects.exclude(pk=getattr(latest_snapshot, "pk", None)).order_by("-taken_at").first()
+            if latest_snapshot else None
         )
+        review_summary = _build_selective_review_summary(days=14, limit=8)
+        company_summary = _selective_company_exception_summary(limit=6)
+        ops_summary = _selective_ops_summary()
+        apply_preview = _selective_apply_preview()
+        ctx["categories"] = categories
+        ctx["category_diagnostics"] = diagnostics
+        ctx["review_summary"] = review_summary
+        ctx["missed_titles"] = review_summary["top_titles"][:5]
+        ctx["company_exception_summary"] = company_summary
+        ctx["ops_summary"] = ops_summary
+        ctx["apply_preview"] = apply_preview
+        ctx["latest_snapshot"] = latest_snapshot
+        ctx["previous_snapshot"] = previous_snapshot
+        ctx["snapshot_delta"] = _selective_snapshot_delta(latest_snapshot, previous_snapshot)
+        ctx["filter_controls"] = {
+            "q": self.request.GET.get("q", ""),
+            "status": self.request.GET.get("status", ""),
+            "sort": self.request.GET.get("sort", "priority"),
+        }
+        ctx["workspace_kpis"] = {
+            "active_categories": HarvestRoleCategory.objects.filter(is_active=True).count(),
+            "active_include_phrases": sum(row["include_count"] for row in categories if row["obj"].is_active),
+            "active_exclude_phrases": sum(row["exclude_count"] for row in categories if row["obj"].is_active),
+            "skipped_titles_14d": review_summary["total"],
+            "zero_tech_flagged": company_summary["active_skips"],
+            "repeated_titles": review_summary["repeated_titles"],
+        }
         return ctx
 
 
@@ -4845,6 +5164,7 @@ class SkippedTitlesAuditView(SuperuserRequiredMixin, TemplateView):
                 .order_by("platform_slug")
             ),
             "summary": qs.values("filter_decision").annotate(n=Count("id")).order_by("filter_decision"),
+            "workspace_summary": _build_selective_review_summary(days=days, limit=10),
         })
         return ctx
 
@@ -4914,12 +5234,29 @@ class ZeroTechCompaniesView(SuperuserRequiredMixin, TemplateView):
                     (label.company.name, label.platform.slug if label.platform_id else ""),
                     [],
                 )
+                label.recent_success_count = CompanyFetchRun.objects.filter(
+                    label=label,
+                    status=CompanyFetchRun.Status.SUCCESS,
+                    completed_at__gte=timezone.now() - timedelta(days=30),
+                ).count()
+                label.last_success_at = CompanyFetchRun.objects.filter(
+                    label=label,
+                    status=CompanyFetchRun.Status.SUCCESS,
+                ).aggregate(last=Max("completed_at"))["last"]
+                label.workspace_warnings = []
+                if label.skip_in_selective_harvest and label.skip_expires_at and label.skip_expires_at <= timezone.now() + timedelta(days=7):
+                    label.workspace_warnings.append("expires_soon")
+                if label.portal_alive is False:
+                    label.workspace_warnings.append("portal_down")
+                if label.skip_in_selective_harvest and label.historical_confirmed_count > 0:
+                    label.workspace_warnings.append("historical_hits")
         ctx.update({
             "rows": labels,
             "page_obj": page_obj,
             "q": q,
             "platform": platform,
             "platforms": JobBoardPlatform.objects.filter(labels__isnull=False).distinct().order_by("slug"),
+            "workspace_summary": _selective_company_exception_summary(limit=6),
         })
         return ctx
 
@@ -4962,9 +5299,20 @@ class FilterSnapshotListView(SuperuserRequiredMixin, TemplateView):
         qs = HarvestFilterSnapshot.objects.select_related("batch").order_by("-taken_at")
         paginator = Paginator(qs, 50)
         page_obj = paginator.get_page(self.request.GET.get("page"))
+        rows = list(page_obj.object_list)
+        previous_by_pk: dict[int, HarvestFilterSnapshot | None] = {}
+        for index, row in enumerate(rows):
+            if index + 1 < len(rows):
+                previous_by_pk[row.pk] = rows[index + 1]
+            else:
+                previous_by_pk[row.pk] = (
+                    HarvestFilterSnapshot.objects.filter(taken_at__lt=row.taken_at).order_by("-taken_at").first()
+                )
+            row.workspace_delta = _selective_snapshot_delta(row, previous_by_pk[row.pk])
         ctx.update({
-            "rows": page_obj.object_list,
+            "rows": rows,
             "page_obj": page_obj,
+            "latest_snapshot": rows[0] if rows else None,
         })
         return ctx
 
@@ -4978,6 +5326,9 @@ class FilterSnapshotDetailView(SuperuserRequiredMixin, DetailView):
         ctx = super().get_context_data(**kwargs)
         ctx["categories"] = self.object.get_categories()
         ctx["hard_negatives"] = self.object.get_hard_negatives()
+        previous_snapshot = HarvestFilterSnapshot.objects.filter(taken_at__lt=self.object.taken_at).order_by("-taken_at").first()
+        ctx["previous_snapshot"] = previous_snapshot
+        ctx["snapshot_delta"] = _selective_snapshot_delta(self.object, previous_snapshot)
         return ctx
 
 
@@ -5926,10 +6277,18 @@ class RoleReclassifyApplyView(SuperuserRequiredMixin, View):
 
     def post(self, request):
         from .tasks import reclassify_stale_rawjobs_task
+        current_run = _selective_ops_summary()["active_run"]
+        if current_run:
+            messages.warning(
+                request,
+                f"A selective apply run is already active ({current_run.celery_task_id[:8] if current_run.celery_task_id else current_run.pk}). Wait for it to finish before queueing another one.",
+            )
+            return redirect(request.POST.get("next") or "harvest-role-categories")
+        preview = _selective_apply_preview()
         task = reclassify_stale_rawjobs_task.delay()
         messages.success(
             request,
-            f"Re-classification queued (Task {task.id[:8]}…) — existing jobs will "
-            "pick up your phrase changes. Watch the Live Ops Monitor.",
+            f"Re-classification queued (Task {task.id[:8]}…) for {preview['raw_jobs_to_reclassify']} stale RawJobs and "
+            f"{preview['synced_jobs_to_refresh']} synced rows. Watch the Live Ops Monitor.",
         )
         return redirect(request.POST.get("next") or "harvest-role-categories")

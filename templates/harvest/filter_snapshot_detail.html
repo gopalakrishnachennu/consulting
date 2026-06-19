@@ -29,6 +29,60 @@
     </div>
   </div>
 
+  <section class="mb-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <h2 class="text-sm font-semibold text-slate-950">Diff vs Previous Snapshot</h2>
+        <p class="text-xs text-slate-500">Use this before trusting a rollout. It shows whether the phrase bank actually changed and where.</p>
+      </div>
+      {% if previous_snapshot %}
+      <a href="{% url 'harvest-filter-snapshot-detail' previous_snapshot.pk %}" class="link-action text-sm">Open previous</a>
+      {% endif %}
+    </div>
+    <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <p class="text-[11px] uppercase tracking-wide text-slate-400">Changed Categories</p>
+        <p class="mt-1 text-2xl font-semibold text-slate-950">{{ snapshot_delta.changed_categories|length }}</p>
+      </div>
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <p class="text-[11px] uppercase tracking-wide text-slate-400">Added Phrases</p>
+        <p class="mt-1 text-2xl font-semibold text-slate-950">{{ snapshot_delta.added_phrase_count }}</p>
+      </div>
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <p class="text-[11px] uppercase tracking-wide text-slate-400">Removed Phrases</p>
+        <p class="mt-1 text-2xl font-semibold text-slate-950">{{ snapshot_delta.removed_phrase_count }}</p>
+      </div>
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <p class="text-[11px] uppercase tracking-wide text-slate-400">Hard Negative Delta</p>
+        <p class="mt-1 text-2xl font-semibold text-slate-950">{{ snapshot_delta.hard_negative_added|length }} / {{ snapshot_delta.hard_negative_removed|length }}</p>
+      </div>
+    </div>
+    {% if snapshot_delta.has_changes %}
+    <div class="mt-4 grid gap-4 lg:grid-cols-2">
+      <div>
+        <p class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Added phrases</p>
+        <div class="flex flex-wrap gap-1">
+          {% for phrase in snapshot_delta.added_phrases_sample %}
+          <span class="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">{{ phrase }}</span>
+          {% empty %}
+          <span class="text-xs text-slate-400">No added phrase sample.</span>
+          {% endfor %}
+        </div>
+      </div>
+      <div>
+        <p class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Removed phrases</p>
+        <div class="flex flex-wrap gap-1">
+          {% for phrase in snapshot_delta.removed_phrases_sample %}
+          <span class="inline-flex rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] text-red-700">{{ phrase }}</span>
+          {% empty %}
+          <span class="text-xs text-slate-400">No removed phrase sample.</span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </section>
+
   <!-- Categories -->
   <section class="rounded-xl border border-gray-200 bg-white shadow-sm mb-5">
     <div class="border-b border-gray-100 px-5 py-3">
