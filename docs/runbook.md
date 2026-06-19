@@ -2,17 +2,38 @@
 
 ## Deploy
 
+**Canonical: one command.** After your code is on `main`, run:
+
 ```bash
-# 1. Push code to main
+./scripts/release.sh
+```
+
+It verifies the safe sequence and **fails fast** at the first problem:
+on `main` & in sync with origin → migration-drift check → CI + Docker image green on HEAD →
+deploy-permission preflight → dispatch `deploy-vps.yml` (`confirm=DEPLOY`) → watch the run →
+health-check `https://chennu.co/core/health/`.
+
+Canonical repo: **`gopalakrishnachennu/consulting`** (not GoCareers). `gh` must target it.
+
+### Deploy permissions (run if a dispatch fails)
+`workflow_dispatch` needs **repo write/admin**. To check the current token *before* pushing:
+
+```bash
+./scripts/check_deploy_perms.sh
+```
+
+If it reports the token can't dispatch, deploy with an admin-capable credential:
+
+```bash
+gh workflow run deploy-vps.yml --repo gopalakrishnachennu/consulting --ref main -f confirm=DEPLOY
+```
+
+### Manual fallback (if the script is unavailable)
+
+```bash
 git push origin main
-
-# 2. Wait for Docker build (auto-triggered)
-gh run watch --workflow="Build & publish Docker image"
-
-# 3. Trigger deploy
-gh workflow run deploy-vps.yml -f confirm=DEPLOY
-
-# 4. Monitor
+gh run watch --workflow="Build & publish Docker image"   # wait for image
+gh workflow run deploy-vps.yml --repo gopalakrishnachennu/consulting --ref main -f confirm=DEPLOY
 gh run watch --workflow="Deploy to Hetzner VPS"
 ```
 
