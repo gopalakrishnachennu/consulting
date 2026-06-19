@@ -1528,7 +1528,6 @@ class RawJobPushToVettingView(SuperuserRequiredMixin, View):
                 raw_job = RawJob.objects.select_for_update().get(pk=pk)
                 snapshot = (
                     RawJobClassificationSnapshot.objects.select_for_update()
-                    .select_related("pushed_job")
                     .filter(raw_job=raw_job)
                     .first()
                 )
