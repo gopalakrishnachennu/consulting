@@ -5317,6 +5317,14 @@ class SelectiveTitleTestApiView(SuperuserRequiredMixin, View):
             custom_phrases=custom_phrases,
             snapshot_id=None,
         )
+        normalized_title = normalize(title)
+        input_warning = ""
+        if normalized_title and len(normalized_title.split()) < 2:
+            input_warning = (
+                "This looks like a short phrase, not a full job title. "
+                "Use Text Match Preview for phrase overlap, or test a full title such as "
+                "'Senior Civil Engineer'."
+            )
         return JsonResponse({
             "decision": result.decision,
             "category": result.category,
@@ -5324,7 +5332,8 @@ class SelectiveTitleTestApiView(SuperuserRequiredMixin, View):
             "matched_negative": result.matched_negative,
             "reason": result.reason,
             "snapshot_id": result.snapshot_id,
-            "normalized_title": normalize(title),
+            "normalized_title": normalized_title,
+            "input_warning": input_warning,
             "category_jobs_url": (
                 _selective_workspace_url("harvest-rawjobs", role_category=result.category, fetched_from=(timezone.now() - timedelta(days=30)).date().isoformat())
                 if result.category else ""

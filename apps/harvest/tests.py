@@ -661,6 +661,20 @@ class SelectiveHarvestEngineTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["decision"], "STRONG")
         self.assertEqual(response.json()["category"], "devops")
+        self.assertEqual(response.json()["input_warning"], "")
+
+    def test_selective_gui_title_tester_warns_on_fragment_input(self):
+        from django.contrib.auth import get_user_model
+
+        user = get_user_model().objects.create_superuser("frag@example.com", "frag@example.com", "pw")
+        self.client.force_login(user)
+        response = self.client.get(reverse("harvest-title-test-api"), {"title": "Civil"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["decision"], "COLD")
+        self.assertIn("short phrase", payload["input_warning"])
+        self.assertIn("Senior Civil Engineer", payload["input_warning"])
 
     def test_commands_support_dry_run_paths(self):
         from harvest.models import HarvestFilterSnapshot, HarvestSkippedTitle

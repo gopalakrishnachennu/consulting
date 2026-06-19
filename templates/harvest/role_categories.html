@@ -151,6 +151,7 @@
                 <span id="ttr-phrase" class="hidden rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700"></span>
                 <span id="ttr-negative" class="hidden rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs text-red-700"></span>
               </div>
+              <div id="ttr-warning" class="hidden mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700"></div>
               <p id="ttr-reason" class="mt-1.5 text-xs text-slate-500"></p>
               <div id="ttr-links" class="mt-2 flex flex-wrap gap-3 text-xs"></div>
             </div>
@@ -608,6 +609,7 @@ const selectiveEscapeHtml = (value) => String(value || '')
   const categoryEl = document.getElementById('ttr-category');
   const phraseEl = document.getElementById('ttr-phrase');
   const negativeEl = document.getElementById('ttr-negative');
+  const warningEl = document.getElementById('ttr-warning');
   const reasonEl = document.getElementById('ttr-reason');
   const linksEl = document.getElementById('ttr-links');
 
@@ -696,6 +698,12 @@ const selectiveEscapeHtml = (value) => String(value || '')
         negativeEl.classList.remove('hidden');
       } else {
         negativeEl.classList.add('hidden');
+      }
+      if (data.input_warning) {
+        warningEl.textContent = data.input_warning;
+        warningEl.classList.remove('hidden');
+      } else {
+        warningEl.classList.add('hidden');
       }
       reasonEl.textContent = data.reason;
       const links = [];
