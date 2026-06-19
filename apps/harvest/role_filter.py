@@ -244,6 +244,9 @@ COMPOUND_JOINS = [
     (r"\bback\s+end\b",                   "backend"),
     (r"\bfront\s+end\b",                  "frontend"),
     (r"\bfull\s+stack\b",                 "full stack"),  # keep two-word
+    (r"\bservice\s+now\b",                "servicenow"),
+    (r"\bsales\s+force\b",                "salesforce"),
+    (r"\bwork\s+day\b",                   "workday"),
     (r"\bopen\s+ai\b",                    "openai"),
     (r"\bno\s+sql\b",                     "nosql"),
     (r"\bci\s+cd\b",                      "cicd"),
@@ -324,6 +327,35 @@ def normalize_phrase(phrase: str) -> str:
     text = re.sub(r"\s+", " ", text).strip()
     text = _apply_compound_joins(text)
     return re.sub(r"\s+", " ", text).strip()
+
+
+EQUIVALENT_PHRASE_VARIANTS = {
+    "servicenow": ("service now",),
+    "salesforce": ("sales force",),
+    "workday": ("work day",),
+}
+_INVERSE_EQUIVALENT_VARIANTS = {
+    alias: canonical
+    for canonical, aliases in EQUIVALENT_PHRASE_VARIANTS.items()
+    for alias in aliases
+}
+
+
+def phrase_search_variants(phrase: str) -> list[str]:
+    """Equivalent normalized variants used for UI impact searches on old rows.
+
+    Runtime title classification normalizes both sides, so one canonical form is
+    enough there. The preview UI also needs to match historical RawJob
+    ``normalized_title`` values that may still contain pre-canonical forms such
+    as ``service now``. This helper returns all safe equivalents.
+    """
+    normalized = normalize_phrase(phrase)
+    if not normalized:
+        return []
+    canonical = _INVERSE_EQUIVALENT_VARIANTS.get(normalized, normalized)
+    variants = {canonical, normalized}
+    variants.update(EQUIVALENT_PHRASE_VARIANTS.get(canonical, ()))
+    return sorted(variants)
 
 
 def phrase_match(normalized_text: str, phrase: str) -> bool:

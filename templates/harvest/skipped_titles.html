@@ -55,19 +55,38 @@
         <tbody>
           {% for row in rows %}
           <tr class="tbl-row align-top">
-            <td class="tbl-td font-semibold text-gray-900">{{ row.job_title }}{% if row.is_sampled %}<span class="ml-2 badge-yellow">Sample</span>{% endif %}{% if row.job_title and row.job_title|slugify == "" %}<span class="ml-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-500">non-Latin</span>{% endif %}<div class="text-xs text-gray-400">{{ row.department|default:"" }}</div></td>
-            <td class="tbl-td">{{ row.company_name }}</td>
+            <td class="tbl-td font-semibold text-gray-900">
+              {% if row.rawjob_detail_url %}
+              <a href="{{ row.rawjob_detail_url }}" class="hover:text-indigo-700 hover:underline">{{ row.job_title }}</a>
+              {% else %}
+              {{ row.job_title }}
+              {% endif %}
+              {% if row.is_sampled %}<span class="ml-2 badge-yellow">Sample</span>{% endif %}{% if row.job_title and row.job_title|slugify == "" %}<span class="ml-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-500">non-Latin</span>{% endif %}
+              <div class="text-xs text-gray-400">{{ row.department|default:"" }}</div>
+            </td>
+            <td class="tbl-td">
+              {% if row.company_detail_url %}
+              <a href="{{ row.company_detail_url }}" class="hover:text-indigo-700 hover:underline">{{ row.company_name }}</a>
+              {% else %}
+              {{ row.company_name }}
+              {% endif %}
+            </td>
             <td class="tbl-td font-mono text-xs">{{ row.platform_slug }}</td>
             <td class="tbl-td">{% if row.filter_decision == 'NO_MATCH' %}<span class="badge-red">NO_MATCH</span>{% else %}<span class="badge-gray">COLD</span>{% endif %}</td>
             <td class="tbl-td max-w-md text-xs text-gray-600">{{ row.filter_reason }}{% if row.matched_negative %}<div class="text-red-700">negative: {{ row.matched_negative }}</div>{% endif %}</td>
             <td class="tbl-td text-xs text-gray-500">{{ row.skipped_at|timesince }} ago</td>
             <td class="tbl-td-right">
               {% if row.raw_job_id %}
-              <form method="post" action="{% url 'harvest-skipped-title-recover' row.pk %}"
-                data-gc-confirm-message="Recover this RawJob and queue one JD fetch?"
-                data-gc-confirm-title="Recover skipped title"
-                data-gc-confirm-text="Recover"
-                data-gc-confirm-variant="warning">{% csrf_token %}<button class="btn-secondary btn-sm">Recover</button></form>
+              <div class="flex items-center justify-end gap-2">
+                {% if row.rawjob_detail_url %}
+                <a href="{{ row.rawjob_detail_url }}" class="text-xs font-semibold text-slate-500 hover:text-indigo-700">Open job</a>
+                {% endif %}
+                <form method="post" action="{% url 'harvest-skipped-title-recover' row.pk %}"
+                  data-gc-confirm-message="Recover this RawJob and queue one JD fetch?"
+                  data-gc-confirm-title="Recover skipped title"
+                  data-gc-confirm-text="Recover"
+                  data-gc-confirm-variant="warning">{% csrf_token %}<button class="btn-secondary btn-sm">Recover</button></form>
+              </div>
               {% else %}<span class="text-xs text-gray-400">No RawJob</span>{% endif %}
             </td>
           </tr>

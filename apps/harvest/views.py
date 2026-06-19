@@ -82,6 +82,16 @@ def _contains_non_ascii(value: str) -> bool:
     return any(ord(char) > 127 for char in (value or ""))
 
 
+def _selective_workspace_url(viewname: str, **params: str | int | None) -> str:
+    clean = {
+        key: str(value).strip()
+        for key, value in params.items()
+        if value not in ("", None)
+    }
+    base = reverse(viewname)
+    return f"{base}?{urlencode(clean)}" if clean else base
+
+
 def _selective_current_phrase_payload() -> tuple[dict, list[dict], list[str], str]:
     from .role_filter import compute_phrase_hash
 
@@ -179,13 +189,19 @@ def _build_selective_review_summary(days: int = 14, limit: int = 8) -> dict:
     )
     recent_rows = list(
         HarvestSkippedTitle.objects.filter(skipped_at__gte=since)
-        .select_related("raw_job")
+        .select_related("raw_job", "raw_job__company")
         .order_by("-skipped_at")[:250]
     )
     repeated_titles = sum(1 for row in grouped if (row.get("seen") or 0) > 1)
     recoverable = sum(1 for row in recent_rows if row.raw_job_id)
     non_ascii = sum(1 for row in recent_rows if _contains_non_ascii(row.job_title))
     company_hotspots = Counter(row.company_name for row in recent_rows if row.company_name)
+    for row in grouped:
+        row["review_url"] = _selective_workspace_url(
+            "harvest-skipped-titles",
+            q=row.get("job_title", ""),
+            days=days,
+        )
     return {
         "total": len(recent_rows),
         "recoverable": recoverable,
@@ -194,7 +210,21 @@ def _build_selective_review_summary(days: int = 14, limit: int = 8) -> dict:
         "cold": sum(1 for row in recent_rows if row.filter_decision == "COLD"),
         "non_ascii": non_ascii,
         "top_titles": grouped,
-        "top_companies": company_hotspots.most_common(5),
+        "top_companies": [
+            {
+                "name": name,
+                "count": count,
+                "review_url": _selective_workspace_url("harvest-skipped-titles", q=name, days=days),
+            }
+            for name, count in company_hotspots.most_common(5)
+        ],
+        "links": {
+            "all": _selective_workspace_url("harvest-skipped-titles", days=days),
+            "no_match": _selective_workspace_url("harvest-skipped-titles", decision="NO_MATCH", days=days),
+            "cold": _selective_workspace_url("harvest-skipped-titles", decision="COLD", days=days),
+            "recoverable": _selective_workspace_url("harvest-skipped-titles", sampled=1, days=days),
+            "non_ascii": _selective_workspace_url("harvest-skipped-titles", q=" ", days=days),
+        },
     }
 
 
@@ -223,12 +253,14 @@ def _selective_company_exception_summary(limit: int = 6) -> dict:
         if label.skip_in_selective_harvest and label.historical_confirmed_count > 0:
             warnings.append("historical_hits")
         label.workspace_warnings = warnings
+        label.company_detail_url = reverse("company-detail", args=[label.company_id]) if label.company_id else ""
     return {
         "rows": rows,
         "active_skips": active_skips,
         "expiring_soon": expiring_soon,
         "portal_down": portal_down,
         "high_yield_skips": high_yield_skips,
+        "workspace_url": reverse("harvest-zero-tech-companies"),
     }
 
 
@@ -253,6 +285,25 @@ def _selective_ops_summary() -> dict:
     }
 
 
+def _selective_recent_phrase_changes(limit: int = 6) -> list[HarvestOpsRun]:
+    rows: list[HarvestOpsRun] = []
+    for run in HarvestOpsRun.objects.filter(operation=HarvestOpsRun.Operation.CLASSIFY).order_by("-created_at")[: max(limit * 6, 18)]:
+        payload = run.audit_payload or {}
+        queue = payload.get("queue") or {}
+        completion = payload.get("completion") or {}
+        if queue.get("source") != "role_phrase_quick_add":
+            continue
+        run.workspace_phrase = completion.get("phrase") or ""
+        run.workspace_phrase_source = completion.get("source") or ""
+        run.workspace_category_slug = completion.get("category_slug") or ""
+        run.workspace_category_name = completion.get("category_name") or run.workspace_category_slug
+        run.workspace_list_name = completion.get("list") or "include"
+        rows.append(run)
+        if len(rows) >= limit:
+            break
+    return rows
+
+
 def _selective_apply_preview() -> dict:
     payload, categories, hard_negatives, current_hash = _selective_current_phrase_payload()
     stale_snapshot_ids = set(
@@ -272,6 +323,137 @@ def _selective_apply_preview() -> dict:
         "unclassified_rows": unclassified_rows.count(),
         "sample_titles": list(stale_rows.order_by("-fetched_at").values_list("title", flat=True)[:5]),
     }
+
+
+def _selective_phrase_quality(raw_phrase: str, normalized_phrase: str) -> tuple[bool, list[dict]]:
+    warnings: list[dict] = []
+    can_add = True
+    if not normalized_phrase or len(normalized_phrase) < 2:
+        return False, [{"tone": "red", "label": "Phrase is too short after normalization.", "blocking": True}]
+    if not re.search(r"[A-Za-z]", raw_phrase or ""):
+        warnings.append({
+            "tone": "red",
+            "label": "Phrase has no Latin letters. The current classifier does not route non-English title text reliably.",
+            "blocking": True,
+        })
+        can_add = False
+    if _contains_non_ascii(raw_phrase):
+        warnings.append({
+            "tone": "amber",
+            "label": "Phrase contains non-ASCII characters. Use an English alias before saving if possible.",
+            "blocking": False,
+        })
+    if len(normalized_phrase.split()) == 1:
+        warnings.append({
+            "tone": "amber",
+            "label": "Single-word phrase. Check the simulated decision impact before saving.",
+            "blocking": False,
+        })
+    if len(normalized_phrase) >= 56:
+        warnings.append({
+            "tone": "slate",
+            "label": "Very long exact-title phrase. Useful for recovery, but usually low reuse.",
+            "blocking": False,
+        })
+    if re.search(r"\b(remote|hybrid|onsite|on site|full time|part time|contract)\b", normalized_phrase):
+        warnings.append({
+            "tone": "amber",
+            "label": "Phrase includes work-mode or contract terms. These often create noisy matches.",
+            "blocking": False,
+        })
+    return can_add, warnings
+
+
+def _selective_phrase_match_search(phrase: str, *, days: int = 90, sample_limit: int = 8) -> dict:
+    from .role_filter import normalize_phrase, phrase_search_variants
+
+    normalized_phrase = normalize_phrase(phrase)
+    variants = phrase_search_variants(phrase)
+    since = timezone.now() - timedelta(days=days)
+    base = RawJob.objects.filter(fetched_at__gte=since, is_test_run=False)
+    title_q = Q(pk__in=[])
+    for variant in variants:
+        rx = r"\m" + re.escape(variant) + r"\M"
+        title_q |= Q(normalized_title__iregex=rx)
+    try:
+        qs = base.filter(title_q).order_by("-fetched_at", "-id")
+        sample_rows = list(qs.values("id", "title", "company_name", "normalized_title")[:sample_limit])
+        matched_90d = qs.count()
+    except Exception:
+        fallback_q = Q(pk__in=[])
+        for variant in variants:
+            fallback_q |= Q(normalized_title__icontains=variant)
+        qs = base.filter(fallback_q).order_by("-fetched_at", "-id")
+        sample_rows = list(qs.values("id", "title", "company_name", "normalized_title")[:sample_limit])
+        matched_90d = qs.count()
+
+    skipped_q = Q(pk__in=[])
+    for variant in variants:
+        skipped_q |= Q(job_title__icontains=variant)
+    skipped_14d = HarvestSkippedTitle.objects.filter(
+        skipped_at__gte=timezone.now() - timedelta(days=14)
+    ).filter(skipped_q).count()
+    return {
+        "normalized_phrase": normalized_phrase,
+        "variants": variants,
+        "matched_90d": matched_90d,
+        "skipped_14d": skipped_14d,
+        "sample_rows": sample_rows,
+    }
+
+
+def _selective_decision_simulation(
+    *,
+    sample_rows: list[dict],
+    categories: list[dict],
+    hard_negatives: list[str],
+    proposed_category_slug: str = "",
+    proposed_phrase: str = "",
+) -> tuple[dict[str, int], dict[str, int], list[dict]]:
+    from .role_filter import classify_title, normalize_phrase
+
+    current_counts: Counter = Counter()
+    proposed_counts: Counter = Counter()
+    detailed_rows: list[dict] = []
+
+    proposed_categories = json.loads(json.dumps(categories))
+    normalized_phrase = normalize_phrase(proposed_phrase)
+    if proposed_category_slug and normalized_phrase:
+        for category in proposed_categories:
+            if str(category.get("slug") or "") != proposed_category_slug:
+                continue
+            include_phrases = list(category.get("include_phrases") or [])
+            normalized_includes = {normalize_phrase(item) for item in include_phrases}
+            if normalized_phrase not in normalized_includes:
+                include_phrases.append(normalized_phrase)
+            category["include_phrases"] = include_phrases
+            break
+
+    for row in sample_rows:
+        title = row.get("title") or ""
+        current_result = classify_title(
+            title=title,
+            categories=categories,
+            hard_negatives=hard_negatives,
+            snapshot_id=None,
+        )
+        proposed_result = classify_title(
+            title=title,
+            categories=proposed_categories,
+            hard_negatives=hard_negatives,
+            snapshot_id=None,
+        )
+        current_counts[current_result.decision] += 1
+        proposed_counts[proposed_result.decision] += 1
+        detailed_rows.append({
+            **row,
+            "current_decision": current_result.decision,
+            "proposed_decision": proposed_result.decision,
+            "current_category": current_result.category or "",
+            "proposed_category": proposed_result.category or "",
+            "detail_url": reverse("harvest-rawjob-detail", args=[row["id"]]),
+        })
+    return dict(current_counts), dict(proposed_counts), detailed_rows
 
 
 def _build_selective_category_rows(request) -> tuple[list[dict], dict]:
@@ -361,6 +543,22 @@ def _build_selective_category_rows(request) -> tuple[list[dict], dict]:
             "warning_count": warning_count,
             "is_stale": cat.is_active and matched_30d == 0,
             "is_busy": matched_30d >= 100,
+            "jobs_url_7d": _selective_workspace_url(
+                "harvest-rawjobs",
+                role_category=cat.slug,
+                fetched_from=since_7d.date().isoformat(),
+            ),
+            "jobs_url_prev_7d": _selective_workspace_url(
+                "harvest-rawjobs",
+                role_category=cat.slug,
+                fetched_from=since_14d.date().isoformat(),
+                fetched_to=(since_7d - timedelta(days=1)).date().isoformat(),
+            ),
+            "jobs_url_30d": _selective_workspace_url(
+                "harvest-rawjobs",
+                role_category=cat.slug,
+                fetched_from=since_30d.date().isoformat(),
+            ),
         }
         haystack = " ".join([
             cat.name.lower(),
@@ -4733,6 +4931,7 @@ class SelectiveRoleCategoryListView(SuperuserRequiredMixin, TemplateView):
         company_summary = _selective_company_exception_summary(limit=6)
         ops_summary = _selective_ops_summary()
         apply_preview = _selective_apply_preview()
+        phrase_change_log = _selective_recent_phrase_changes(limit=6)
         ctx["categories"] = categories
         ctx["category_diagnostics"] = diagnostics
         ctx["review_summary"] = review_summary
@@ -4740,6 +4939,7 @@ class SelectiveRoleCategoryListView(SuperuserRequiredMixin, TemplateView):
         ctx["company_exception_summary"] = company_summary
         ctx["ops_summary"] = ops_summary
         ctx["apply_preview"] = apply_preview
+        ctx["phrase_change_log"] = phrase_change_log
         ctx["latest_snapshot"] = latest_snapshot
         ctx["previous_snapshot"] = previous_snapshot
         ctx["snapshot_delta"] = _selective_snapshot_delta(latest_snapshot, previous_snapshot)
@@ -4755,6 +4955,18 @@ class SelectiveRoleCategoryListView(SuperuserRequiredMixin, TemplateView):
             "skipped_titles_14d": review_summary["total"],
             "zero_tech_flagged": company_summary["active_skips"],
             "repeated_titles": review_summary["repeated_titles"],
+        }
+        ctx["workspace_links"] = {
+            "active_categories": reverse("harvest-role-categories"),
+            "exclude_rules": reverse("harvest-role-categories") + "?status=risky",
+            "skipped_titles": review_summary["links"]["all"],
+            "zero_tech": company_summary["workspace_url"],
+            "phrase_risk": reverse("harvest-role-categories") + "?status=risky&sort=risk",
+            "snapshots": reverse("harvest-filter-snapshots"),
+            "latest_snapshot": (
+                reverse("harvest-filter-snapshot-detail", args=[latest_snapshot.pk])
+                if latest_snapshot else reverse("harvest-filter-snapshots")
+            ),
         }
         return ctx
 
@@ -5080,7 +5292,7 @@ class JobDomainTestApiView(SuperuserRequiredMixin, View):
 
 class SelectiveTitleTestApiView(SuperuserRequiredMixin, View):
     def get(self, request, *args, **kwargs):
-        from .role_filter import classify_title
+        from .role_filter import classify_title, normalize
 
         title = request.GET.get("title", "")
         department = request.GET.get("department", "")
@@ -5112,6 +5324,12 @@ class SelectiveTitleTestApiView(SuperuserRequiredMixin, View):
             "matched_negative": result.matched_negative,
             "reason": result.reason,
             "snapshot_id": result.snapshot_id,
+            "normalized_title": normalize(title),
+            "category_jobs_url": (
+                _selective_workspace_url("harvest-rawjobs", role_category=result.category, fetched_from=(timezone.now() - timedelta(days=30)).date().isoformat())
+                if result.category else ""
+            ),
+            "phrase_preview_url": reverse("harvest-role-categories") + "#impact-preview",
         })
 
 
@@ -5130,7 +5348,7 @@ class SkippedTitlesAuditView(SuperuserRequiredMixin, TemplateView):
             days = 30
         days = max(1, min(days, 365))
 
-        qs = HarvestSkippedTitle.objects.select_related("raw_job").filter(
+        qs = HarvestSkippedTitle.objects.select_related("raw_job", "raw_job__company").filter(
             skipped_at__gte=timezone.now() - timedelta(days=days)
         )
         if q:
@@ -5149,6 +5367,11 @@ class SkippedTitlesAuditView(SuperuserRequiredMixin, TemplateView):
 
         paginator = Paginator(qs.order_by("-skipped_at"), 50)
         page_obj = paginator.get_page(self.request.GET.get("page"))
+        for row in page_obj.object_list:
+            row.rawjob_detail_url = reverse("harvest-rawjob-detail", args=[row.raw_job_id]) if row.raw_job_id else ""
+            row.company_detail_url = ""
+            if row.raw_job_id and getattr(row.raw_job, "company_id", None):
+                row.company_detail_url = reverse("company-detail", args=[row.raw_job.company_id])
         ctx.update({
             "page_obj": page_obj,
             "rows": page_obj.object_list,
@@ -6219,9 +6442,14 @@ class RolePhraseQuickAddView(SuperuserRequiredMixin, View):
         except HarvestRoleCategory.DoesNotExist:
             return JsonResponse({"ok": False, "error": "category not found"}, status=404)
         list_name = "exclude_phrases" if body.get("list") == "exclude" else "include_phrases"
-        phrase = normalize_phrase(str(body.get("phrase") or ""))
+        raw_phrase = str(body.get("phrase") or "")
+        phrase = normalize_phrase(raw_phrase)
+        can_add, quality_flags = _selective_phrase_quality(raw_phrase, phrase)
         if not phrase or len(phrase) < 2:
             return JsonResponse({"ok": False, "error": "phrase too short"}, status=400)
+        if not can_add:
+            blocking = next((flag["label"] for flag in quality_flags if flag.get("blocking")), "phrase blocked")
+            return JsonResponse({"ok": False, "error": blocking}, status=400)
         phrases = list(getattr(cat, list_name) or [])
         if body.get("action") == "remove":
             phrases = [p for p in phrases if p != phrase]
@@ -6230,8 +6458,141 @@ class RolePhraseQuickAddView(SuperuserRequiredMixin, View):
                 phrases.append(phrase)
         setattr(cat, list_name, phrases)
         cat.save(update_fields=[list_name, "updated_at"])
+        HarvestOpsRun.objects.create(
+            operation=HarvestOpsRun.Operation.CLASSIFY,
+            celery_task_id=f"quick-add:{cat.pk}:{phrase}"[:128],
+            status=HarvestOpsRun.Status.SUCCESS,
+            audit_payload={
+                "queue": {"source": "role_phrase_quick_add"},
+                "completion": {
+                    "action": body.get("action") or "add",
+                    "list": list_name,
+                    "phrase": phrase,
+                    "raw_phrase": raw_phrase,
+                    "category_slug": cat.slug,
+                    "category_name": cat.name,
+                    "source": (body.get("source") or "workspace")[:64],
+                    "quality_flags": quality_flags,
+                },
+            },
+            triggered_by_user=request.user if getattr(request.user, "is_authenticated", False) else None,
+            progress_total=1,
+            progress_current=1,
+            progress_message=f"{'Removed' if body.get('action') == 'remove' else 'Added'} phrase {phrase[:80]}",
+            last_heartbeat_at=timezone.now(),
+            finished_at=timezone.now(),
+        )
         return JsonResponse({"ok": True, "category": cat.slug, "list": list_name,
                              "phrases": phrases, "phrase": phrase})
+
+
+class RolePhraseCandidateView(SuperuserRequiredMixin, View):
+    """Preview impact, conflicts, and simulated routing before adding a phrase."""
+
+    def post(self, request):
+        import json as _json
+        from .models import HarvestRoleCategory
+        from .role_filter import normalize_phrase
+
+        try:
+            body = _json.loads(request.body)
+        except Exception:
+            return JsonResponse({"ok": False, "error": "invalid json"}, status=400)
+
+        try:
+            category = HarvestRoleCategory.objects.get(pk=body.get("category_id"))
+        except HarvestRoleCategory.DoesNotExist:
+            return JsonResponse({"ok": False, "error": "category not found"}, status=404)
+
+        raw_phrase = str(body.get("phrase") or "")
+        normalized_phrase = normalize_phrase(raw_phrase)
+        if not normalized_phrase or len(normalized_phrase) < 2:
+            return JsonResponse({"ok": False, "error": "phrase too short"}, status=400)
+
+        can_add, quality_flags = _selective_phrase_quality(raw_phrase, normalized_phrase)
+        payload, categories, hard_negatives, _ = _selective_current_phrase_payload()
+        _ = payload  # parity with snapshot helper; keeps current category payload source clear.
+        search = _selective_phrase_match_search(raw_phrase, days=90, sample_limit=8)
+        include_map: dict[str, list[str]] = defaultdict(list)
+        exclude_map: dict[str, list[str]] = defaultdict(list)
+        category_name_map: dict[str, str] = {}
+        for item in categories:
+            slug = str(item.get("slug") or "")
+            category_name_map[slug] = str(item.get("name") or slug)
+            for phrase in item.get("include_phrases") or []:
+                include_map[normalize_phrase(str(phrase))].append(slug)
+            for phrase in item.get("exclude_phrases") or []:
+                exclude_map[normalize_phrase(str(phrase))].append(slug)
+
+        current_counts, proposed_counts, sample_rows = _selective_decision_simulation(
+            sample_rows=search["sample_rows"],
+            categories=categories,
+            hard_negatives=hard_negatives,
+            proposed_category_slug=category.slug,
+            proposed_phrase=normalized_phrase,
+        )
+        duplicate_include = [slug for slug in include_map.get(normalized_phrase, []) if slug != category.slug]
+        blocked_elsewhere = [slug for slug in exclude_map.get(normalized_phrase, []) if slug != category.slug]
+        already_in_include = normalized_phrase in {normalize_phrase(item) for item in (category.include_phrases or [])}
+        already_in_exclude = normalized_phrase in {normalize_phrase(item) for item in (category.exclude_phrases or [])}
+
+        if already_in_include:
+            can_add = False
+            quality_flags.append({
+                "tone": "slate",
+                "label": f"Phrase already exists in {category.name}.",
+                "blocking": True,
+            })
+        if already_in_exclude:
+            quality_flags.append({
+                "tone": "amber",
+                "label": f"Phrase already exists in {category.name}'s exclude list.",
+                "blocking": False,
+            })
+        if duplicate_include:
+            quality_flags.append({
+                "tone": "amber",
+                "label": "Phrase already includes under: " + ", ".join(category_name_map.get(slug, slug) for slug in duplicate_include),
+                "blocking": False,
+            })
+        if blocked_elsewhere:
+            quality_flags.append({
+                "tone": "red",
+                "label": "Phrase is excluded in: " + ", ".join(category_name_map.get(slug, slug) for slug in blocked_elsewhere),
+                "blocking": False,
+            })
+
+        return JsonResponse({
+            "ok": True,
+            "raw_phrase": raw_phrase,
+            "normalized_phrase": normalized_phrase,
+            "variants": search["variants"],
+            "category": {
+                "id": category.pk,
+                "slug": category.slug,
+                "name": category.name,
+            },
+            "can_add": can_add,
+            "quality_flags": quality_flags,
+            "matched_90d": search["matched_90d"],
+            "skipped_14d": search["skipped_14d"],
+            "current_counts": current_counts,
+            "proposed_counts": proposed_counts,
+            "samples": sample_rows,
+            "already_in_include": already_in_include,
+            "already_in_exclude": already_in_exclude,
+            "duplicate_include_categories": [
+                {"slug": slug, "name": category_name_map.get(slug, slug)}
+                for slug in duplicate_include
+            ],
+            "blocked_elsewhere": [
+                {"slug": slug, "name": category_name_map.get(slug, slug)}
+                for slug in blocked_elsewhere
+            ],
+            "raw_jobs_url": _selective_workspace_url("harvest-rawjobs", q=normalized_phrase),
+            "skipped_titles_url": _selective_workspace_url("harvest-skipped-titles", q=normalized_phrase, days=14),
+            "source": (body.get("source") or "workspace")[:64],
+        })
 
 
 class RolePhraseImpactView(SuperuserRequiredMixin, View):
@@ -6241,9 +6602,6 @@ class RolePhraseImpactView(SuperuserRequiredMixin, View):
 
     def post(self, request):
         import json as _json
-        import re as _re
-        from datetime import timedelta as _td
-        from .models import RawJob, HarvestSkippedTitle
         from .role_filter import normalize_phrase
         try:
             body = _json.loads(request.body)
@@ -6252,23 +6610,33 @@ class RolePhraseImpactView(SuperuserRequiredMixin, View):
         phrase = normalize_phrase(str(body.get("phrase") or ""))
         if not phrase or len(phrase) < 2:
             return JsonResponse({"ok": False, "error": "phrase too short"}, status=400)
-        now = timezone.now()
-        rx = r"\m" + _re.escape(phrase) + r"\M"   # Postgres word boundaries
-        base = RawJob.objects.filter(fetched_at__gte=now - _td(days=90))
-        try:
-            qs = base.filter(normalized_title__iregex=rx)
-            count = qs.count()
-            samples = list(qs.values_list("title", flat=True)[:5])
-        except Exception:
-            qs = base.filter(normalized_title__icontains=phrase)
-            count = qs.count()
-            samples = list(qs.values_list("title", flat=True)[:5])
-        skipped = HarvestSkippedTitle.objects.filter(
-            skipped_at__gte=now - _td(days=14),
-            job_title__icontains=phrase,
-        ).count()
-        return JsonResponse({"ok": True, "phrase": phrase, "matched_90d": count,
-                             "skipped_14d": skipped, "samples": samples})
+        search = _selective_phrase_match_search(phrase, days=90, sample_limit=5)
+        _, categories, hard_negatives, _ = _selective_current_phrase_payload()
+        current_counts, _, sample_rows = _selective_decision_simulation(
+            sample_rows=search["sample_rows"],
+            categories=categories,
+            hard_negatives=hard_negatives,
+        )
+        category_hits = []
+        for category in categories:
+            normalized_includes = {normalize_phrase(item) for item in (category.get("include_phrases") or [])}
+            if phrase in normalized_includes:
+                category_hits.append({
+                    "slug": category.get("slug") or "",
+                    "name": category.get("name") or category.get("slug") or "",
+                })
+        return JsonResponse({
+            "ok": True,
+            "phrase": phrase,
+            "matched_90d": search["matched_90d"],
+            "skipped_14d": search["skipped_14d"],
+            "variants": search["variants"],
+            "current_counts": current_counts,
+            "category_hits": category_hits,
+            "samples": sample_rows,
+            "raw_jobs_url": _selective_workspace_url("harvest-rawjobs", q=phrase),
+            "skipped_titles_url": _selective_workspace_url("harvest-skipped-titles", q=phrase, days=14),
+        })
 
 
 class RoleReclassifyApplyView(SuperuserRequiredMixin, View):

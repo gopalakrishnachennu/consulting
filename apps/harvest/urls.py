@@ -183,6 +183,7 @@ urlpatterns = [
     path("job-domains/test/", JobDomainTestApiView.as_view(), name="harvest-job-domain-test"),
     path("role-categories/", SelectiveRoleCategoryListView.as_view(), name="harvest-role-categories"),
     path("role-categories/phrase/", views.RolePhraseQuickAddView.as_view(), name="harvest-role-phrase-edit"),
+    path("role-categories/phrase-candidate/", views.RolePhraseCandidateView.as_view(), name="harvest-role-phrase-candidate"),
     path("role-categories/phrase-impact/", views.RolePhraseImpactView.as_view(), name="harvest-role-phrase-impact"),
     path("role-categories/apply/", views.RoleReclassifyApplyView.as_view(), name="harvest-role-apply"),
     path("role-categories/new/", SelectiveRoleCategoryCreateView.as_view(), name="harvest-role-category-create"),

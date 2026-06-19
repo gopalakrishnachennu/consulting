@@ -881,9 +881,14 @@ class SelectiveHarvestEngineTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Selective Filter Studio")
+        self.assertContains(response, "Classifier Decision Test")
+        self.assertContains(response, "Text Match Preview")
+        self.assertContains(response, "Open skipped-title queue")
         self.assertGreater(response.context["category_diagnostics"]["duplicate_include_phrases"], 0)
         self.assertGreater(response.context["apply_preview"]["raw_jobs_to_reclassify"], 0)
         self.assertIsNotNone(response.context["ops_summary"]["active_run"])
+        self.assertIn("links", response.context["review_summary"])
+        self.assertContains(response, "role_category=devops")
 
     @patch("harvest.tasks.reclassify_stale_rawjobs_task.delay")
     def test_apply_view_blocks_when_workspace_apply_run_is_already_active(self, mock_delay):
@@ -918,6 +923,125 @@ class SelectiveHarvestEngineTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["previous_snapshot"].pk, first.pk)
         self.assertGreater(response.context["snapshot_delta"]["added_phrase_count"], 0)
+
+    def test_phrase_impact_api_returns_drilldowns_and_sample_links(self):
+        raw = self._raw_job(
+            url_hash="impact-sample",
+            original_url="https://selective.example/jobs/impact-sample",
+            title="ServiceNow Developer",
+            normalized_title="servicenow developer",
+        )
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse("harvest-role-phrase-impact"),
+            data=json.dumps({"phrase": "servicenow"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertIn("raw_jobs_url", payload)
+        self.assertIn("skipped_titles_url", payload)
+        self.assertEqual(payload["samples"][0]["detail_url"], reverse("harvest-rawjob-detail", args=[raw.pk]))
+        self.assertIn("current_counts", payload)
+
+    def test_phrase_candidate_preview_simulates_after_add_and_warns_on_single_word(self):
+        from harvest.models import HarvestRoleCategory
+
+        raw = self._raw_job(
+            url_hash="candidate-sample",
+            original_url="https://selective.example/jobs/candidate-sample",
+            title="Service Now Developer",
+            normalized_title="service now developer",
+        )
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse("harvest-role-phrase-candidate"),
+            data=json.dumps({
+                "phrase": "servicenow",
+                "category_id": HarvestRoleCategory.objects.get(slug="devops").pk,
+                "source": "impact_preview",
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["normalized_phrase"], "servicenow")
+        self.assertIn("service now", payload["variants"])
+        self.assertEqual(payload["samples"][0]["detail_url"], reverse("harvest-rawjob-detail", args=[raw.pk]))
+        self.assertGreaterEqual(payload["proposed_counts"].get("STRONG", 0), payload["current_counts"].get("STRONG", 0))
+        self.assertTrue(any("Single-word phrase" in flag["label"] for flag in payload["quality_flags"]))
+
+    def test_rawjob_query_supports_role_category_filter(self):
+        from harvest.services.rawjob_query import apply_rawjob_filters
+
+        matched = self._raw_job(
+            url_hash="role-cat-match",
+            original_url="https://selective.example/jobs/role-cat-match",
+            title="DevOps Engineer",
+            role_category="devops",
+        )
+        other = self._raw_job(
+            url_hash="role-cat-other",
+            original_url="https://selective.example/jobs/role-cat-other",
+            title="Sales Manager",
+            role_category="sales",
+        )
+
+        qs = apply_rawjob_filters(
+            matched.__class__.objects.all(),
+            {"role_category": "devops", "include_test": "all"},
+        )
+
+        self.assertTrue(qs.filter(pk=matched.pk).exists())
+        self.assertFalse(qs.filter(pk=other.pk).exists())
+
+    def test_quick_add_rejects_non_latin_phrase(self):
+        from harvest.models import HarvestRoleCategory
+
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse("harvest-role-phrase-edit"),
+            data=json.dumps({
+                "category_id": HarvestRoleCategory.objects.get(slug="devops").pk,
+                "list": "include",
+                "action": "add",
+                "phrase": "販売スタッフ",
+                "source": "missed_title_summary",
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("no Latin letters", response.json()["error"])
+
+    def test_quick_add_writes_phrase_change_audit(self):
+        from harvest.models import HarvestRoleCategory, HarvestOpsRun
+
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse("harvest-role-phrase-edit"),
+            data=json.dumps({
+                "category_id": HarvestRoleCategory.objects.get(slug="devops").pk,
+                "list": "include",
+                "action": "add",
+                "phrase": "platform operations",
+                "source": "missed_title_summary",
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        run = HarvestOpsRun.objects.filter(operation=HarvestOpsRun.Operation.CLASSIFY).order_by("-created_at").first()
+        self.assertEqual((run.audit_payload or {}).get("queue", {}).get("source"), "role_phrase_quick_add")
+        self.assertEqual((run.audit_payload or {}).get("completion", {}).get("phrase"), "platformops")
 
 
 class RawJobPayloadArchiveTests(TestCase):
@@ -3962,6 +4086,13 @@ class SelectiveHarvestRoleFilterTests(SimpleTestCase):
         )
 
         self.assertEqual(result.decision, COLD)
+
+    def test_service_now_normalizes_to_servicenow_equivalents(self):
+        from harvest.role_filter import normalize, normalize_phrase, phrase_search_variants
+
+        self.assertEqual(normalize("Service Now Developer"), "servicenow developer")
+        self.assertEqual(normalize_phrase("service now"), "servicenow")
+        self.assertEqual(phrase_search_variants("servicenow"), ["service now", "servicenow"])
 
 
 class HarvestLLMResolveTests(TestCase):

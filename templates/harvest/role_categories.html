@@ -39,31 +39,37 @@
       <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Active Categories</p>
       <p class="mt-2 text-3xl font-semibold text-slate-950">{{ workspace_kpis.active_categories }}</p>
       <p class="mt-1 text-xs text-slate-500">{{ workspace_kpis.active_include_phrases }} include phrases live</p>
+      <a href="{{ workspace_links.active_categories }}" class="mt-3 inline-flex text-xs font-semibold text-indigo-600 hover:text-indigo-700">Open categories</a>
     </div>
     <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Exclude Rules</p>
       <p class="mt-2 text-3xl font-semibold text-slate-950">{{ workspace_kpis.active_exclude_phrases }}</p>
       <p class="mt-1 text-xs text-slate-500">{{ category_diagnostics.cross_exclude_phrases }} cross-category conflicts</p>
+      <a href="{{ workspace_links.exclude_rules }}" class="mt-3 inline-flex text-xs font-semibold text-indigo-600 hover:text-indigo-700">Review risky categories</a>
     </div>
     <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Skipped 14d</p>
       <p class="mt-2 text-3xl font-semibold text-slate-950">{{ workspace_kpis.skipped_titles_14d }}</p>
       <p class="mt-1 text-xs text-slate-500">{{ review_summary.recoverable }} recoverable rows, {{ review_summary.repeated_titles }} repeated titles</p>
+      <a href="{{ workspace_links.skipped_titles }}" class="mt-3 inline-flex text-xs font-semibold text-indigo-600 hover:text-indigo-700">Open skipped-title queue</a>
     </div>
     <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Zero-Tech Flags</p>
       <p class="mt-2 text-3xl font-semibold text-slate-950">{{ workspace_kpis.zero_tech_flagged }}</p>
       <p class="mt-1 text-xs text-slate-500">{{ company_exception_summary.expiring_soon }} expiring soon, {{ company_exception_summary.portal_down }} portal down</p>
+      <a href="{{ workspace_links.zero_tech }}" class="mt-3 inline-flex text-xs font-semibold text-indigo-600 hover:text-indigo-700">Open company exceptions</a>
     </div>
     <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Phrase Risk</p>
       <p class="mt-2 text-3xl font-semibold text-slate-950">{{ category_diagnostics.duplicate_include_phrases }}</p>
       <p class="mt-1 text-xs text-slate-500">{{ category_diagnostics.self_conflict_categories }} self-conflicts, {{ category_diagnostics.stale_active_categories }} stale active categories</p>
+      <a href="{{ workspace_links.phrase_risk }}" class="mt-3 inline-flex text-xs font-semibold text-indigo-600 hover:text-indigo-700">Open risk view</a>
     </div>
     <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Latest Snapshot</p>
       <p class="mt-2 text-lg font-semibold text-slate-950">{% if latest_snapshot %}{{ latest_snapshot.taken_at|timesince }} ago{% else %}Not captured{% endif %}</p>
       <p class="mt-1 text-xs text-slate-500">{% if snapshot_delta.has_changes %}{{ snapshot_delta.changed_categories|length }} changed categories since previous{% elif latest_snapshot %}No diff vs previous snapshot{% else %}Capture begins on next apply{% endif %}</p>
+      <a href="{{ workspace_links.latest_snapshot }}" class="mt-3 inline-flex text-xs font-semibold text-indigo-600 hover:text-indigo-700">{% if latest_snapshot %}Open snapshot diff{% else %}Open snapshots{% endif %}</a>
     </div>
   </section>
 
@@ -115,16 +121,24 @@
         {% endif %}
       </section>
 
-      <section class="rounded-2xl border border-indigo-200 bg-white p-5 shadow-sm">
+      <section id="decision-tester" class="rounded-2xl border border-indigo-200 bg-white p-5 shadow-sm">
         <div class="mb-3 flex items-center gap-2">
           <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-[11px] font-bold text-white">T</span>
           <div>
-            <h2 class="text-sm font-semibold text-slate-950">Live Title Tester</h2>
-            <p class="text-xs text-slate-500">Check a title against the active phrase bank without creating a persistent snapshot.</p>
+            <h2 class="text-sm font-semibold text-slate-950">Classifier Decision Test</h2>
+            <p class="text-xs text-slate-500">Paste a full job title here. This shows the real selective-filter decision path, not just text overlap.</p>
           </div>
         </div>
+        <div class="mb-3 grid gap-2 md:grid-cols-2">
+          <div class="rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-xs text-indigo-700">
+            Use this for complete titles like <span class="font-semibold">Senior Civil Engineer</span> or <span class="font-semibold">ServiceNow Developer</span>.
+          </div>
+          <a href="#impact-preview" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 hover:border-indigo-200 hover:text-indigo-700">
+            Need phrase-only impact instead? Use Text Match Preview below.
+          </a>
+        </div>
         <div class="grid gap-2 md:grid-cols-[minmax(0,1fr)_280px_88px]">
-          <input id="title-test-title" class="form-input" placeholder="e.g. Senior AI Engineer">
+          <input id="title-test-title" class="form-input" placeholder="Paste a full job title, e.g. Senior Civil Engineer">
           <input id="title-test-department" class="form-input" placeholder="Department (optional)">
           <button type="button" id="title-test-button" class="btn-primary">Test</button>
         </div>
@@ -138,21 +152,22 @@
                 <span id="ttr-negative" class="hidden rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs text-red-700"></span>
               </div>
               <p id="ttr-reason" class="mt-1.5 text-xs text-slate-500"></p>
+              <div id="ttr-links" class="mt-2 flex flex-wrap gap-3 text-xs"></div>
             </div>
           </div>
         </div>
         <div id="title-test-placeholder" class="mt-3 rounded-lg border border-dashed border-slate-200 px-3 py-2 text-center text-xs text-slate-400">
-          Type a title and press <kbd class="rounded border border-slate-300 bg-slate-50 px-1 py-0.5 font-mono text-[10px]">Test</kbd> to inspect the decision path.
+          Type a full title and press <kbd class="rounded border border-slate-300 bg-slate-50 px-1 py-0.5 font-mono text-[10px]">Test</kbd> to inspect the decision path.
         </div>
       </section>
 
       <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div class="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-          <div>
+        <div class="mb-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(460px,auto)] xl:items-end">
+          <div class="max-w-2xl">
             <h2 class="text-sm font-semibold text-slate-950">Category Workspace</h2>
-            <p class="text-xs text-slate-500">Keep the current category table, but surface impact, trend, and phrase conflict risk before edits spread to existing jobs.</p>
+            <p class="text-xs text-slate-500">Keep the current category table, but surface impact, trend, and phrase conflict risk before edits spread to existing jobs. Count drilldowns below open the exact raw-job slice behind each category.</p>
           </div>
-          <form method="get" class="grid gap-2 sm:grid-cols-2 xl:grid-cols-[260px_150px_150px_auto]">
+          <form method="get" class="grid gap-2 sm:grid-cols-2 xl:grid-cols-[220px_140px_140px_auto]">
             <input type="text" name="q" value="{{ filter_controls.q }}" class="form-input" placeholder="Search category or phrase">
             <select name="status" class="form-select">
               <option value="">All statuses</option>
@@ -237,10 +252,14 @@
                   <span class="text-slate-300">0</span>
                   {% endif %}
                 </td>
-                <td class="tbl-td text-center"><span class="font-semibold text-indigo-600">{{ row.matched_7d }}</span></td>
-                <td class="tbl-td text-center"><span class="font-semibold text-slate-600">{{ row.matched_prev_7d }}</span></td>
                 <td class="tbl-td text-center">
-                  <div class="font-semibold text-slate-900">{{ row.matched_30d }}</div>
+                  <a href="{{ row.jobs_url_7d }}" class="font-semibold text-indigo-600 hover:text-indigo-700 hover:underline">{{ row.matched_7d }}</a>
+                </td>
+                <td class="tbl-td text-center">
+                  <a href="{{ row.jobs_url_prev_7d }}" class="font-semibold text-slate-600 hover:text-slate-800 hover:underline">{{ row.matched_prev_7d }}</a>
+                </td>
+                <td class="tbl-td text-center">
+                  <a href="{{ row.jobs_url_30d }}" class="font-semibold text-slate-900 hover:text-indigo-700 hover:underline">{{ row.matched_30d }}</a>
                   <div class="text-[11px] {% if row.trend_delta > 0 %}text-emerald-600{% elif row.trend_delta < 0 %}text-red-600{% else %}text-slate-400{% endif %}">
                     {% if row.trend_delta > 0 %}+{% endif %}{{ row.trend_delta }}
                   </div>
@@ -269,7 +288,12 @@
                   <span class="badge-gray">Off</span>
                   {% endif %}
                 </td>
-                <td class="tbl-td-right"><a href="{% url 'harvest-role-category-edit' row.obj.pk %}" class="link-action">Edit</a></td>
+                <td class="tbl-td-right">
+                  <div class="flex items-center justify-end gap-3">
+                    <a href="{{ row.jobs_url_30d }}" class="text-xs font-semibold text-slate-500 hover:text-indigo-700">Jobs</a>
+                    <a href="{% url 'harvest-role-category-edit' row.obj.pk %}" class="link-action">Edit</a>
+                  </div>
+                </td>
               </tr>
               {% empty %}
               <tr><td colspan="10" class="tbl-empty">No role categories match this filter.</td></tr>
@@ -279,19 +303,37 @@
         </div>
       </section>
 
-      <section class="rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm">
+      <section id="impact-preview" class="rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm">
         <div class="mb-3 flex items-center gap-2">
           <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-[11px] font-bold text-white">P</span>
           <div>
-            <h2 class="text-sm font-semibold text-slate-950">Phrase Impact Preview</h2>
-            <p class="text-xs text-slate-500">Preview likely 90-day title matches before adding a phrase to the bank.</p>
+            <h2 class="text-sm font-semibold text-slate-950">Text Match Preview</h2>
+            <p class="text-xs text-slate-500">Preview phrase overlap against recent titles before adding a phrase to the bank. This is not a routing decision.</p>
+          </div>
+        </div>
+        <div class="mb-3 grid gap-2 md:grid-cols-2">
+          <div class="rounded-xl border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-xs text-emerald-700">
+            Use this for short phrases like <span class="font-semibold">civil</span> or <span class="font-semibold">service now</span> to estimate blast radius.
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            Phrase normalization is canonicalized for common platform variants. <span class="font-semibold">servicenow</span> and <span class="font-semibold">service now</span> are treated as the same normalized phrase in preview and review flows.
           </div>
         </div>
         <div class="grid gap-2 md:grid-cols-[minmax(0,1fr)_110px]">
-          <input id="impact-phrase" class="form-input" placeholder="e.g. machine learning engineer">
+          <input id="impact-phrase" class="form-input" placeholder="Phrase only, e.g. civil or machine learning engineer">
           <button type="button" id="impact-button" class="btn-primary">Preview</button>
         </div>
         <div id="impact-result" class="hidden mt-3 rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 text-sm"></div>
+        <div class="mt-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_220px_160px]">
+          <input id="impact-title-bridge" class="form-input" placeholder="Or paste a full title here and send it to the classifier test">
+          <select id="impact-category" class="form-select">
+            {% for row in categories %}
+            <option value="{{ row.obj.pk }}">{{ row.obj.name }}</option>
+            {% endfor %}
+          </select>
+          <button type="button" id="impact-review-button" class="btn-secondary">Review before add</button>
+        </div>
+        <div id="phrase-proposal" class="hidden mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4"></div>
       </section>
 
       <section class="rounded-2xl border border-amber-200 bg-white p-5 shadow-sm">
@@ -315,10 +357,11 @@
               {% for item in missed_titles %}
               <tr class="tbl-row" data-missed-row>
                 <td class="tbl-td font-medium text-slate-900">
-                  {{ item.job_title|truncatechars:88 }}
+                  <a href="{{ item.review_url }}" class="hover:text-indigo-700 hover:underline">{{ item.job_title|truncatechars:88 }}</a>
                   {% if item.job_title and item.job_title|length and item.job_title|slugify == "" %}
                   <span class="ml-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-500">non-Latin</span>
                   {% endif %}
+                  <div class="mt-1 text-[11px] font-normal text-slate-400">{{ item.sample_company|default:"Unknown company" }}{% if item.sample_platform %} · {{ item.sample_platform }}{% endif %}</div>
                 </td>
                 <td class="tbl-td text-center text-slate-500">x{{ item.seen }}</td>
                 <td class="tbl-td">
@@ -328,7 +371,7 @@
                       <option value="{{ row.obj.pk }}">{{ row.obj.name }}</option>
                       {% endfor %}
                     </select>
-                    <button type="button" class="btn-secondary !px-3 !py-1 text-xs" data-missed-add="{{ item.job_title|escapejs }}">+ Add phrase</button>
+                    <button type="button" class="btn-secondary !px-3 !py-1 text-xs" data-missed-add="{{ item.job_title|escapejs }}">Review add</button>
                   </div>
                 </td>
               </tr>
@@ -351,31 +394,31 @@
           <a href="{% url 'harvest-skipped-titles' %}" class="link-action text-sm">Open</a>
         </div>
         <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <a href="{{ review_summary.links.no_match }}" class="rounded-xl border border-slate-200 bg-slate-50 p-4 transition hover:border-slate-300 hover:bg-white">
             <p class="text-[11px] uppercase tracking-wide text-slate-400">NO_MATCH</p>
             <p class="mt-1 text-2xl font-semibold text-slate-950">{{ review_summary.no_match }}</p>
-          </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          </a>
+          <a href="{{ review_summary.links.cold }}" class="rounded-xl border border-slate-200 bg-slate-50 p-4 transition hover:border-slate-300 hover:bg-white">
             <p class="text-[11px] uppercase tracking-wide text-slate-400">COLD</p>
             <p class="mt-1 text-2xl font-semibold text-slate-950">{{ review_summary.cold }}</p>
-          </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          </a>
+          <a href="{{ review_summary.links.all }}" class="rounded-xl border border-slate-200 bg-slate-50 p-4 transition hover:border-slate-300 hover:bg-white">
             <p class="text-[11px] uppercase tracking-wide text-slate-400">Recoverable</p>
             <p class="mt-1 text-2xl font-semibold text-slate-950">{{ review_summary.recoverable }}</p>
-          </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          </a>
+          <a href="{{ review_summary.links.all }}" class="rounded-xl border border-slate-200 bg-slate-50 p-4 transition hover:border-slate-300 hover:bg-white">
             <p class="text-[11px] uppercase tracking-wide text-slate-400">Non-ASCII</p>
             <p class="mt-1 text-2xl font-semibold text-slate-950">{{ review_summary.non_ascii }}</p>
-          </div>
+          </a>
         </div>
         {% if review_summary.top_companies %}
         <div class="mt-4 border-t border-slate-100 pt-4">
           <p class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Skip hotspots</p>
           <div class="space-y-2">
-            {% for name, count in review_summary.top_companies %}
+            {% for item in review_summary.top_companies %}
             <div class="flex items-center justify-between text-sm">
-              <span class="truncate text-slate-700">{{ name }}</span>
-              <span class="font-semibold text-slate-950">{{ count }}</span>
+              <a href="{{ item.review_url }}" class="truncate text-slate-700 hover:text-indigo-700 hover:underline">{{ item.name }}</a>
+              <span class="font-semibold text-slate-950">{{ item.count }}</span>
             </div>
             {% endfor %}
           </div>
@@ -406,7 +449,13 @@
           <div class="rounded-xl border border-slate-200 p-3">
             <div class="flex items-start justify-between gap-3">
               <div>
-                <p class="font-semibold text-slate-950">{{ label.company.name }}</p>
+                <p class="font-semibold text-slate-950">
+                  {% if label.company_detail_url %}
+                  <a href="{{ label.company_detail_url }}" class="hover:text-indigo-700 hover:underline">{{ label.company.name }}</a>
+                  {% else %}
+                  {{ label.company.name }}
+                  {% endif %}
+                </p>
                 <p class="text-xs text-slate-500">{{ label.platform.slug|default:"No ATS" }}{% if label.tenant_id %} · {{ label.tenant_id|truncatechars:28 }}{% endif %}</p>
               </div>
               {% if label.skip_in_selective_harvest %}
@@ -437,11 +486,11 @@
           <a href="{% url 'harvest-filter-snapshots' %}" class="link-action text-sm">Open</a>
         </div>
         {% if latest_snapshot %}
-        <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <a href="{% url 'harvest-filter-snapshot-detail' latest_snapshot.pk %}" class="mt-4 block rounded-xl border border-slate-200 bg-slate-50 p-4 transition hover:border-slate-300 hover:bg-white">
           <p class="text-[11px] uppercase tracking-wide text-slate-400">Latest snapshot</p>
           <p class="mt-1 font-semibold text-slate-950">{{ latest_snapshot.taken_at|date:"M j, Y g:i a" }}</p>
           <p class="mt-1 text-xs text-slate-500">{{ latest_snapshot.snapshot_id }}</p>
-        </div>
+        </a>
         {% endif %}
         <div class="mt-4 space-y-2 text-sm">
           <div class="flex items-center justify-between">
@@ -497,13 +546,50 @@
           {% endfor %}
         </div>
       </section>
+
+      <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <h2 class="text-sm font-semibold text-slate-950">Recent Phrase Changes</h2>
+            <p class="text-xs text-slate-500">Quick-add actions are now logged so inline changes are visible on the workspace.</p>
+          </div>
+          <a href="{% url 'harvest-role-categories' %}?sort=risk" class="link-action text-sm">Review</a>
+        </div>
+        <div class="mt-4 space-y-3">
+          {% for run in phrase_change_log %}
+          <div class="rounded-xl border border-slate-200 p-3">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="font-semibold text-slate-950">{{ run.workspace_phrase }}</p>
+                <p class="text-xs text-slate-500">{{ run.workspace_category_name }} · {{ run.workspace_list_name|cut:"_phrases" }} · {{ run.created_at|timesince }} ago</p>
+              </div>
+              <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">{{ run.workspace_phrase_source|default:"workspace" }}</span>
+            </div>
+          </div>
+          {% empty %}
+          <p class="text-sm text-slate-500">No recent phrase changes.</p>
+          {% endfor %}
+        </div>
+      </section>
     </aside>
   </section>
 
 </div>
 
 <script>
+const selectiveEscapeHtml = (value) => String(value || '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
 (function () {
+  const STORAGE_KEYS = {
+    title: 'selective:title-test:title',
+    department: 'selective:title-test:department',
+    phrase: 'selective:impact:phrase',
+  };
   const DECISION_STYLES = {
     STRONG:   { badge: 'bg-green-100 text-green-800 border border-green-200',  panel: 'border-green-200 bg-green-50' },
     POSSIBLE: { badge: 'bg-yellow-100 text-yellow-800 border border-yellow-200', panel: 'border-yellow-200 bg-yellow-50' },
@@ -511,7 +597,11 @@
     NO_MATCH: { badge: 'bg-red-100 text-red-700 border border-red-200',        panel: 'border-red-200 bg-red-50' },
     UNKNOWN:  { badge: 'bg-blue-100 text-blue-700 border border-blue-200',     panel: 'border-blue-200 bg-blue-50' },
   };
+  const COUNT_ORDER = ['STRONG', 'POSSIBLE', 'COLD', 'NO_MATCH', 'UNKNOWN'];
+  const csrf = document.cookie.match(/csrftoken=([^;]+)/)?.[1] || "{{ csrf_token }}";
 
+  const titleInput = document.getElementById('title-test-title');
+  const deptInput = document.getElementById('title-test-department');
   const resultPanel = document.getElementById('title-test-result');
   const placeholder = document.getElementById('title-test-placeholder');
   const badge = document.getElementById('ttr-badge');
@@ -519,17 +609,65 @@
   const phraseEl = document.getElementById('ttr-phrase');
   const negativeEl = document.getElementById('ttr-negative');
   const reasonEl = document.getElementById('ttr-reason');
+  const linksEl = document.getElementById('ttr-links');
+
+  const impactPhraseInput = document.getElementById('impact-phrase');
+  const impactResult = document.getElementById('impact-result');
+  const impactCategory = document.getElementById('impact-category');
+  const impactReviewButton = document.getElementById('impact-review-button');
+  const impactTitleBridge = document.getElementById('impact-title-bridge');
+  const proposalEl = document.getElementById('phrase-proposal');
+
+  let lastImpactPhrase = '';
+  let proposalState = null;
+
+  function setStored(key, value) {
+    try { window.localStorage.setItem(key, value || ''); } catch {}
+  }
+
+  function getStored(key) {
+    try { return window.localStorage.getItem(key) || ''; } catch { return ''; }
+  }
+
+  function renderCounts(label, counts) {
+    const items = COUNT_ORDER
+      .filter((key) => Number(counts?.[key] || 0) > 0)
+      .map((key) => `<span class="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-600">${label} ${key}: <strong class="text-slate-900">${counts[key]}</strong></span>`);
+    return items.join('');
+  }
+
+  function fillImpactPhrase(phrase, { run = false } = {}) {
+    impactPhraseInput.value = phrase || '';
+    lastImpactPhrase = (phrase || '').trim();
+    setStored(STORAGE_KEYS.phrase, lastImpactPhrase);
+    if (run && lastImpactPhrase) {
+      runImpact();
+    }
+  }
+
+  function fillTitleTester(title, department = '', { run = false } = {}) {
+    titleInput.value = title || '';
+    deptInput.value = department || '';
+    setStored(STORAGE_KEYS.title, titleInput.value);
+    setStored(STORAGE_KEYS.department, deptInput.value);
+    if (run && titleInput.value.trim()) {
+      runTest();
+    }
+  }
 
   async function runTest() {
-    const title = document.getElementById('title-test-title').value.trim();
-    const dept = document.getElementById('title-test-department').value.trim();
+    const title = titleInput.value.trim();
+    const dept = deptInput.value.trim();
     if (!title) return;
+    setStored(STORAGE_KEYS.title, title);
+    setStored(STORAGE_KEYS.department, dept);
 
     badge.textContent = '…';
     badge.className = 'shrink-0 w-24 rounded-lg py-2 text-center text-xs font-bold uppercase tracking-wide bg-slate-100 text-slate-400';
     resultPanel.className = 'mt-3 rounded-xl border p-4 border-slate-200 bg-slate-50';
     resultPanel.classList.remove('hidden');
     placeholder.classList.add('hidden');
+    linksEl.innerHTML = '';
 
     try {
       const url = new URL("{% url 'harvest-title-test-api' %}", window.location.origin);
@@ -560,30 +698,45 @@
         negativeEl.classList.add('hidden');
       }
       reasonEl.textContent = data.reason;
+      const links = [];
+      if (data.category_jobs_url) {
+        links.push(`<a href="${data.category_jobs_url}" class="font-semibold text-indigo-600 hover:text-indigo-700">Open ${selectiveEscapeHtml(data.category)} jobs</a>`);
+      }
+      if (data.matched_phrase) {
+        links.push(`<button type="button" data-send-phrase="${selectiveEscapeHtml(data.matched_phrase)}" class="font-semibold text-indigo-600 hover:text-indigo-700">Preview matched phrase</button>`);
+      }
+      if (data.phrase_preview_url) {
+        links.push(`<a href="${data.phrase_preview_url}" class="font-semibold text-slate-600 hover:text-indigo-700">Need phrase-only preview?</a>`);
+      }
+      linksEl.innerHTML = links.join('<span class="text-slate-300">|</span>');
     } catch {
       badge.textContent = 'ERR';
       badge.className = 'shrink-0 w-24 rounded-lg py-2 text-center text-xs font-bold uppercase tracking-wide bg-red-100 text-red-600';
       reasonEl.textContent = 'Could not reach server.';
+      linksEl.innerHTML = '';
     }
   }
 
   document.getElementById('title-test-button').addEventListener('click', runTest);
-  document.getElementById('title-test-title').addEventListener('keydown', e => {
+  titleInput.addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); runTest(); }
   });
-})();
-
-(function () {
-  const csrf = document.cookie.match(/csrftoken=([^;]+)/)?.[1] || "{{ csrf_token }}";
-  const ibtn = document.getElementById('impact-button');
-  const iin = document.getElementById('impact-phrase');
-  const ires = document.getElementById('impact-result');
+  titleInput.addEventListener('input', () => setStored(STORAGE_KEYS.title, titleInput.value));
+  deptInput.addEventListener('input', () => setStored(STORAGE_KEYS.department, deptInput.value));
+  linksEl.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-send-phrase]');
+    if (!btn) return;
+    fillImpactPhrase(btn.getAttribute('data-send-phrase') || '', { run: true });
+    document.getElementById('impact-preview').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
 
   async function runImpact() {
-    const phrase = (iin.value || '').trim();
+    const phrase = (impactPhraseInput.value || '').trim();
     if (!phrase) return;
-    ires.classList.remove('hidden');
-    ires.innerHTML = 'Checking…';
+    lastImpactPhrase = phrase;
+    setStored(STORAGE_KEYS.phrase, phrase);
+    impactResult.classList.remove('hidden');
+    impactResult.innerHTML = 'Checking…';
     try {
       const r = await fetch("{% url 'harvest-role-phrase-impact' %}", {
         method: 'POST',
@@ -592,51 +745,196 @@
       });
       const d = await r.json();
       if (!d.ok) {
-        ires.innerHTML = '⚠ ' + (d.error || 'failed');
+        impactResult.innerHTML = '⚠ ' + (d.error || 'failed');
         return;
       }
-      const samples = (d.samples || []).map(s => `<li class="text-slate-600">· ${s}</li>`).join('');
-      ires.innerHTML = `
-        <div class="mb-2 flex flex-wrap gap-4">
+      const samples = (d.samples || []).map(s => `
+        <li class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <a href="${s.detail_url}" class="text-slate-600 hover:text-indigo-700 hover:underline">· ${selectiveEscapeHtml(s.title)}</a>
+          </div>
+          <button type="button" data-run-title="${selectiveEscapeHtml(s.title)}" class="shrink-0 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700">Test title</button>
+        </li>`).join('');
+      const decisionCounts = renderCounts('Current sample', d.current_counts || {});
+      const categoryHits = (d.category_hits || []).map((hit) => `<span class="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">${selectiveEscapeHtml(hit.name)}</span>`).join('');
+      impactResult.innerHTML = `
+        <div class="rounded-lg border border-emerald-100 bg-white/70 px-3 py-2 text-xs text-slate-600">
+          Text overlap only: this counts recent titles containing the normalized phrase. It does not mean the classifier will accept the title.
+        </div>
+        <div class="mt-3 mb-2 flex flex-wrap gap-4">
           <span>Would match <strong class="text-emerald-700">${d.matched_90d}</strong> titles (90d)</span>
           <span>Recently skipped: <strong class="${d.skipped_14d ? 'text-amber-600' : 'text-slate-500'}">${d.skipped_14d}</strong></span>
-          <span class="text-slate-400">normalized: <code>${d.phrase}</code></span>
+          <span class="text-slate-400">normalized: <code>${selectiveEscapeHtml(d.phrase)}</code></span>
+        </div>
+        ${(d.variants || []).length > 1 ? `<div class="mb-2 flex flex-wrap gap-2 text-[11px] text-slate-500">Equivalent search forms: ${(d.variants || []).map((variant) => `<span class="rounded-full border border-slate-200 bg-white px-2 py-0.5">${selectiveEscapeHtml(variant)}</span>`).join('')}</div>` : ''}
+        ${decisionCounts ? `<div class="mb-2 flex flex-wrap gap-2 text-xs">${decisionCounts}</div>` : ''}
+        ${categoryHits ? `<div class="mb-2 flex flex-wrap gap-2 text-xs"><span class="text-slate-500">Already live in:</span>${categoryHits}</div>` : ''}
+        <div class="mb-2 flex flex-wrap gap-3 text-xs">
+          <a href="${d.raw_jobs_url}" class="font-semibold text-indigo-600 hover:text-indigo-700">Open raw jobs</a>
+          <a href="${d.skipped_titles_url}" class="font-semibold text-indigo-600 hover:text-indigo-700">Open skipped titles</a>
+          <a href="#decision-tester" class="font-semibold text-slate-600 hover:text-indigo-700">Need a decision? Use Classifier Test</a>
         </div>
         ${samples ? `<ul class="space-y-0.5 text-xs">${samples}</ul>` : `<span class="text-xs text-slate-400">no sample titles</span>`}`;
+      impactReviewButton.disabled = false;
     } catch {
-      ires.innerHTML = '⚠ request failed';
+      impactResult.innerHTML = '⚠ request failed';
     }
   }
 
-  if (ibtn) ibtn.addEventListener('click', runImpact);
-  if (iin) iin.addEventListener('keydown', e => { if (e.key === 'Enter') runImpact(); });
+  async function previewCandidate({ phrase, categoryId, source }) {
+    const cleanedPhrase = (phrase || '').trim();
+    if (!cleanedPhrase || !categoryId) return;
+    proposalEl.classList.remove('hidden');
+    proposalEl.innerHTML = 'Checking phrase conflicts and simulated routing…';
+    try {
+      const response = await fetch("{% url 'harvest-role-phrase-candidate' %}", {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+        body: JSON.stringify({ phrase: cleanedPhrase, category_id: categoryId, source }),
+      });
+      const data = await response.json();
+      if (!data.ok) {
+        proposalEl.innerHTML = `<div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">⚠ ${selectiveEscapeHtml(data.error || 'failed')}</div>`;
+        return;
+      }
+      proposalState = data;
+      const flags = (data.quality_flags || []).map((flag) => {
+        const tone = flag.tone === 'red'
+          ? 'border-red-200 bg-red-50 text-red-700'
+          : flag.tone === 'amber'
+            ? 'border-amber-200 bg-amber-50 text-amber-700'
+            : 'border-slate-200 bg-white text-slate-600';
+        return `<div class="rounded-lg border px-3 py-2 text-xs ${tone}">${selectiveEscapeHtml(flag.label)}</div>`;
+      }).join('');
+      const currentCounts = renderCounts('Current sample', data.current_counts || {});
+      const proposedCounts = renderCounts('After add', data.proposed_counts || {});
+      const duplicateInclude = (data.duplicate_include_categories || []).map((row) => selectiveEscapeHtml(row.name)).join(', ');
+      const blockedElsewhere = (data.blocked_elsewhere || []).map((row) => selectiveEscapeHtml(row.name)).join(', ');
+      const samples = (data.samples || []).map((sample) => `
+        <tr class="border-t border-slate-200">
+          <td class="px-0 py-2 pr-3 text-xs">
+            <a href="${sample.detail_url}" class="text-slate-700 hover:text-indigo-700 hover:underline">${selectiveEscapeHtml(sample.title)}</a>
+            <div class="text-[11px] text-slate-400">${selectiveEscapeHtml(sample.company_name || '')}</div>
+          </td>
+          <td class="px-0 py-2 text-center text-[11px] font-semibold text-slate-500">${selectiveEscapeHtml(sample.current_decision)}</td>
+          <td class="px-0 py-2 text-center text-[11px] font-semibold text-indigo-600">${selectiveEscapeHtml(sample.proposed_decision)}</td>
+        </tr>`).join('');
+      proposalEl.innerHTML = `
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h3 class="text-sm font-semibold text-slate-950">Phrase Review</h3>
+            <p class="text-xs text-slate-500">Target category: <span class="font-semibold text-slate-700">${selectiveEscapeHtml(data.category.name)}</span></p>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+            normalized: <code>${selectiveEscapeHtml(data.normalized_phrase)}</code>
+          </div>
+        </div>
+        ${(data.variants || []).length > 1 ? `<div class="flex flex-wrap gap-2 text-[11px] text-slate-500">${(data.variants || []).map((variant) => `<span class="rounded-full border border-slate-200 bg-white px-2 py-0.5">${selectiveEscapeHtml(variant)}</span>`).join('')}</div>` : ''}
+        ${flags ? `<div class="grid gap-2">${flags}</div>` : ''}
+        <div class="grid gap-3 md:grid-cols-2">
+          <div class="rounded-xl border border-slate-200 bg-white p-3">
+            <p class="text-[11px] uppercase tracking-wide text-slate-400">Observed overlap</p>
+            <div class="mt-2 flex flex-wrap gap-2 text-xs">
+              <span class="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-600">90d titles: <strong class="text-slate-900">${data.matched_90d}</strong></span>
+              <span class="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-600">Skipped 14d: <strong class="text-slate-900">${data.skipped_14d}</strong></span>
+            </div>
+            ${duplicateInclude ? `<p class="mt-2 text-xs text-amber-700">Already included in: ${duplicateInclude}</p>` : ''}
+            ${blockedElsewhere ? `<p class="mt-2 text-xs text-red-700">Excluded elsewhere: ${blockedElsewhere}</p>` : ''}
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-white p-3">
+            <p class="text-[11px] uppercase tracking-wide text-slate-400">Sample routing simulation</p>
+            <div class="mt-2 flex flex-wrap gap-2 text-xs">${currentCounts}${proposedCounts}</div>
+          </div>
+        </div>
+        ${samples ? `<div class="rounded-xl border border-slate-200 bg-white p-3"><table class="w-full text-sm"><thead><tr class="text-[11px] uppercase tracking-wide text-slate-400"><th class="px-0 pb-2 text-left">Sample title</th><th class="px-0 pb-2 text-center">Current</th><th class="px-0 pb-2 text-center">After add</th></tr></thead><tbody>${samples}</tbody></table></div>` : ''}
+        <div class="flex flex-wrap items-center gap-3">
+          <a href="${data.raw_jobs_url}" class="text-xs font-semibold text-indigo-600 hover:text-indigo-700">Open raw jobs</a>
+          <a href="${data.skipped_titles_url}" class="text-xs font-semibold text-indigo-600 hover:text-indigo-700">Open skipped titles</a>
+          <button type="button" data-confirm-phrase class="btn-primary text-sm"${data.can_add ? '' : ' disabled'}>${data.can_add ? 'Add phrase now' : 'Cannot add automatically'}</button>
+        </div>`;
+      proposalEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch {
+      proposalEl.innerHTML = '<div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">⚠ request failed</div>';
+    }
+  }
+
+  async function confirmAddPhrase() {
+    if (!proposalState || !proposalState.can_add) return;
+    const button = proposalEl.querySelector('[data-confirm-phrase]');
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Adding…';
+    }
+    try {
+      const response = await fetch("{% url 'harvest-role-phrase-edit' %}", {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+        body: JSON.stringify({
+          category_id: proposalState.category.id,
+          list: 'include',
+          action: 'add',
+          phrase: proposalState.raw_phrase,
+          source: proposalState.source || 'workspace',
+        }),
+      });
+      const data = await response.json();
+      if (!data.ok) {
+        throw new Error(data.error || 'failed');
+      }
+      proposalEl.innerHTML = `<div class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">Added <strong>${selectiveEscapeHtml(data.phrase)}</strong> to ${selectiveEscapeHtml(data.category)}.</div>`;
+    } catch (error) {
+      proposalEl.innerHTML = `<div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">⚠ ${selectiveEscapeHtml(error.message || 'failed')}</div>`;
+    }
+  }
+
+  document.getElementById('impact-button').addEventListener('click', runImpact);
+  impactPhraseInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      runImpact();
+    }
+  });
+  impactPhraseInput.addEventListener('input', () => setStored(STORAGE_KEYS.phrase, impactPhraseInput.value));
+  impactResult.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-run-title]');
+    if (!button) return;
+    fillTitleTester(button.getAttribute('data-run-title') || '', '', { run: true });
+    document.getElementById('decision-tester').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  impactReviewButton.addEventListener('click', () => {
+    previewCandidate({
+      phrase: impactPhraseInput.value,
+      categoryId: impactCategory.value,
+      source: 'impact_preview',
+    });
+  });
+  impactTitleBridge.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    fillTitleTester(impactTitleBridge.value || '', '', { run: true });
+    document.getElementById('decision-tester').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  proposalEl.addEventListener('click', (event) => {
+    const confirm = event.target.closest('[data-confirm-phrase]');
+    if (confirm) {
+      confirmAddPhrase();
+    }
+  });
 
   document.querySelectorAll('[data-missed-add]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const row = btn.closest('[data-missed-row]');
       const catId = row.querySelector('[data-missed-cat]').value;
-      btn.disabled = true;
-      btn.textContent = 'Adding…';
-      try {
-        const r = await fetch("{% url 'harvest-role-phrase-edit' %}", {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
-          body: JSON.stringify({category_id: catId, list: 'include', action: 'add', phrase: btn.getAttribute('data-missed-add')}),
-        });
-        const d = await r.json();
-        if (d.ok) {
-          btn.textContent = '✓ Added';
-          btn.classList.add('!text-emerald-700');
-        } else {
-          btn.textContent = '⚠ ' + (d.error || 'failed');
-          btn.disabled = false;
-        }
-      } catch {
-        btn.textContent = '⚠ failed';
-        btn.disabled = false;
-      }
+      await previewCandidate({
+        phrase: btn.getAttribute('data-missed-add') || '',
+        categoryId: catId,
+        source: 'missed_title_summary',
+      });
     });
   });
+
+  fillTitleTester(getStored(STORAGE_KEYS.title), getStored(STORAGE_KEYS.department));
+  fillImpactPhrase(getStored(STORAGE_KEYS.phrase));
 })();
 </script>
 {% endblock %}

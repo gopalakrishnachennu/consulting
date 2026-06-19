@@ -78,6 +78,7 @@ FILTER_STATE_KEYS = (
     "scope_status",
     "country_code",
     "marketing_role",
+    "role_category",
     "filter_decision",
     "include_test",
     "search_by",
@@ -495,6 +496,10 @@ def apply_rawjob_filters(qs: QuerySet[RawJob], params: Mapping[str, str]) -> Que
             Q(job_domain__iexact=marketing_role_f)
             | json_array_contains_q("job_domain_candidates", marketing_role_f)
         )
+
+    role_category_f = _get(params, "role_category")
+    if role_category_f:
+        qs = qs.filter(role_category__iexact=role_category_f)
 
     return qs
 
