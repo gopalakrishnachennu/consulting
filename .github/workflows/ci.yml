@@ -80,8 +80,11 @@ jobs:
       - name: Critical smoke tests (core + auth)
         run: |
           START=$(date +%s)
-          python manage.py test core.tests users.tests --verbosity 1 --parallel auto 2>/dev/null || \
-          python manage.py test core.tests users.tests --verbosity 1
+          if ! python manage.py test core.tests users.tests --verbosity 1 --parallel auto 2>/dev/null; then
+            echo "Parallel smoke run failed. Dropping test DB before sequential retry."
+            sudo -u postgres psql -v ON_ERROR_STOP=1 -d postgres -c "DROP DATABASE IF EXISTS test_consulting_ci WITH (FORCE);" || true
+            python manage.py test core.tests users.tests --verbosity 1
+          fi
           echo "⏱ smoke tests: $(($(date +%s)-START))s"
 
 # ─── Job 2: App matrix (runs in parallel after smoke passes) ───────────────
@@ -131,8 +134,11 @@ jobs:
       - name: Run ${{ matrix.app }} tests             # Item 3: parallel tests
         run: |
           START=$(date +%s)
-          python manage.py test ${{ matrix.app }} --verbosity 1 --parallel auto 2>/dev/null || \
-          python manage.py test ${{ matrix.app }} --verbosity 1
+          if ! python manage.py test ${{ matrix.app }} --verbosity 1 --parallel auto 2>/dev/null; then
+            echo "Parallel ${{ matrix.app }} run failed. Dropping test DB before sequential retry."
+            sudo -u postgres psql -v ON_ERROR_STOP=1 -d postgres -c "DROP DATABASE IF EXISTS test_consulting_ci WITH (FORCE);" || true
+            python manage.py test ${{ matrix.app }} --verbosity 1
+          fi
           echo "⏱ ${{ matrix.app }} tests: $(($(date +%s)-START))s"
 
 # ─── Job 3: pip-audit security scan ────────────────────────────────────────

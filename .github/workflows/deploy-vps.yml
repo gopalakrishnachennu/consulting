@@ -40,13 +40,22 @@ jobs:
           SHA=$(gh api repos/$REPO/commits/main --jq '.sha')
           echo "Main SHA: $SHA"
 
-          # Check CI workflow conclusion for this SHA
-          CONCLUSION=$(gh api "repos/$REPO/commits/$SHA/check-runs" \
-            --jq '[.check_runs[] | select(.name | startswith("Smoke") or startswith("Tests")) | .conclusion] | unique | @json')
-          echo "CI conclusions: $CONCLUSION"
+          # Use only the latest check-run result per name so old failed attempts
+          # do not permanently block deploy after a successful rerun.
+          LATEST_CHECKS=$(gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" \
+            --jq '[.check_runs[]
+              | select(.name | startswith("Smoke") or startswith("Tests"))
+              | {name, status, conclusion, completed_at}
+            ]
+            | sort_by(.name, .completed_at)
+            | group_by(.name)
+            | map(last)')
+          echo "Latest CI checks: $LATEST_CHECKS"
 
-          if echo "$CONCLUSION" | grep -q "failure\|cancelled"; then
-            echo "❌ CI failed or was cancelled on main — refusing deploy"
+          BAD_CHECKS=$(printf "%s" "$LATEST_CHECKS" | jq -c '[.[] | select(.status != "completed" or .conclusion != "success")]')
+          if [ "$BAD_CHECKS" != "[]" ]; then
+            echo "❌ Latest CI checks are not green — refusing deploy"
+            echo "$BAD_CHECKS"
             exit 1
           fi
           echo "✅ CI passed"
