@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 
@@ -183,3 +184,26 @@ class EnrichmentLog(models.Model):
 
     def __str__(self) -> str:
         return f"{self.company_id} @ {self.timestamp} ({self.source})"
+
+
+class CompanySavedView(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="company_saved_views",
+    )
+    name = models.CharField(max_length=80)
+    is_default = models.BooleanField(default=False, db_index=True)
+    is_pinned = models.BooleanField(default=False, db_index=True)
+    position = models.PositiveIntegerField(default=0)
+    archived_at = models.DateTimeField(null=True, blank=True)
+    query_params = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+        unique_together = ("user", "name")
+
+    def __str__(self) -> str:
+        return f"{self.user_id}:{self.name}"

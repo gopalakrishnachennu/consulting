@@ -1,140 +1,279 @@
-<div class="h-full flex flex-col bg-white">
-    <div class="border-b border-gray-200 px-5 py-4">
+<div class="flex h-full flex-col bg-white">
+    <div class="border-b border-slate-200 px-5 py-4">
         <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-                <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Company intelligence</p>
-                <h2 class="mt-1 text-xl font-bold text-gray-950 truncate">{{ company.name }}</h2>
-                <p class="mt-1 text-sm text-gray-500 truncate">{{ company.industry|default:"No industry" }}{% if company.relationship_status %} · {{ company.relationship_status }}{% endif %}</p>
+            <div class="min-w-0 space-y-2">
+                <div class="flex flex-wrap items-center gap-2">
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Company Inspector</p>
+                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold
+                        {% if company.engine_row_state.readiness_tone == 'emerald' %}bg-emerald-50 text-emerald-700
+                        {% elif company.engine_row_state.readiness_tone == 'blue' %}bg-blue-50 text-blue-700
+                        {% elif company.engine_row_state.readiness_tone == 'amber' %}bg-amber-50 text-amber-700
+                        {% else %}bg-rose-50 text-rose-700{% endif %}">
+                        {{ company.engine_row_state.readiness_label }} · {{ company.engine_row_state.readiness_score }}%
+                    </span>
+                </div>
+                <div>
+                    <h2 class="truncate text-xl font-bold text-slate-950">{{ company.name }}</h2>
+                    <p class="mt-1 truncate text-sm text-slate-500">
+                        {{ company.industry|default:"No industry" }}
+                        {% if company.relationship_status %} · {{ company.relationship_status }}{% endif %}
+                        {% if company.alias %} · {{ company.alias }}{% endif %}
+                    </p>
+                </div>
+                {% if company.engine_row_state.warnings %}
+                <div class="flex flex-wrap gap-1.5">
+                    {% for warning in company.engine_row_state.warnings %}
+                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold
+                        {% if warning.tone == 'rose' %}bg-rose-50 text-rose-700
+                        {% elif warning.tone == 'amber' %}bg-amber-50 text-amber-700
+                        {% elif warning.tone == 'blue' %}bg-blue-50 text-blue-700
+                        {% elif warning.tone == 'yellow' %}bg-yellow-50 text-yellow-800
+                        {% elif warning.tone == 'indigo' %}bg-indigo-50 text-indigo-700
+                        {% elif warning.tone == 'orange' %}bg-orange-50 text-orange-700
+                        {% else %}bg-slate-100 text-slate-700{% endif %}">
+                        {{ warning.label }}
+                    </span>
+                    {% endfor %}
+                    {% if company.engine_row_state.extra_warning_count %}
+                    <span class="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">+{{ company.engine_row_state.extra_warning_count }}</span>
+                    {% endif %}
+                </div>
+                {% endif %}
             </div>
-            <button type="button" class="rounded-lg border border-gray-200 px-2.5 py-1.5 text-gray-500 hover:bg-gray-50" onclick="closeCompanyIntel()" aria-label="Close">×</button>
+            <button type="button" class="rounded-lg border border-slate-200 px-2.5 py-1.5 text-slate-500 hover:bg-slate-50" onclick="closeCompanyIntel()" aria-label="Close">×</button>
         </div>
     </div>
 
     <div class="flex-1 overflow-y-auto px-5 py-4 space-y-5">
         <section class="grid grid-cols-2 gap-3">
-            <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Submissions</div>
-                <div class="mt-1 text-2xl font-bold text-gray-950">{{ company.total_submissions }}</div>
+            <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div class="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Jobs</div>
+                <div class="mt-1 text-2xl font-bold text-slate-950">{{ company.job_count }}</div>
+                <div class="mt-1 text-xs text-slate-500">{{ company.total_submissions }} submissions</div>
             </div>
-            <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Jobs</div>
-                <div class="mt-1 text-2xl font-bold text-gray-950">{{ company.job_count }}</div>
+            <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div class="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Raw jobs</div>
+                <div class="mt-1 text-2xl font-bold text-slate-950">{{ raw_job_stats.total }}</div>
+                <div class="mt-1 text-xs text-slate-500">{{ raw_job_stats.pending }} pending sync</div>
             </div>
-            <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Raw jobs</div>
-                <div class="mt-1 text-2xl font-bold text-gray-950">{{ raw_job_stats.total }}</div>
+            <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div class="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Interviews</div>
+                <div class="mt-1 text-2xl font-bold text-slate-950">{{ company.total_interviews }}</div>
+                <div class="mt-1 text-xs text-slate-500">{{ company.total_placements }} placements</div>
             </div>
-            <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Placements</div>
-                <div class="mt-1 text-2xl font-bold text-gray-950">{{ company.total_placements }}</div>
+            <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div class="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Portal</div>
+                <div class="mt-1 text-xl font-bold text-slate-950">
+                    {% if label and label.portal_alive is True %}Live
+                    {% elif label and label.portal_alive is False %}Down
+                    {% elif label and label.platform %}Unchecked
+                    {% else %}Unmapped{% endif %}
+                </div>
+                <div class="mt-1 text-xs text-slate-500">{{ company.engine_row_state.health_age|default:"No recent verification" }}</div>
             </div>
         </section>
 
-        <section class="rounded-lg border border-gray-200 p-4">
+        <section class="rounded-xl border border-slate-200 p-4">
             <div class="flex items-center justify-between gap-3">
-                <h3 class="text-sm font-bold text-gray-900">ATS state</h3>
+                <h3 class="text-sm font-bold text-slate-900">ATS mapping</h3>
                 {% if label and label.is_verified %}
                 <span class="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">Verified</span>
                 {% elif label %}
                 <span class="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">Review</span>
                 {% else %}
-                <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-600">Unlabeled</span>
+                <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">Unlabeled</span>
                 {% endif %}
             </div>
             <dl class="mt-3 grid grid-cols-[110px_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
-                <dt class="text-gray-500">Platform</dt>
-                <dd class="font-medium text-gray-900">
-                    {% if label.platform %}{{ label.platform.name }}{% elif label and label.detection_method == "UNDETECTED" %}No ATS{% else %}—{% endif %}
+                <dt class="text-slate-500">Platform</dt>
+                <dd class="font-medium text-slate-900">
+                    {% if label and label.platform %}{{ label.platform.name }}{% elif label and label.detection_method == "UNDETECTED" %}No ATS{% else %}—{% endif %}
                 </dd>
-                <dt class="text-gray-500">Tenant</dt>
-                <dd class="font-mono text-xs text-gray-800 break-all">{{ label.tenant_id|default:"—" }}</dd>
-                <dt class="text-gray-500">Health</dt>
+                <dt class="text-slate-500">Tenant</dt>
+                <dd class="font-mono text-xs text-slate-800 break-all">{{ label.tenant_id|default:"—" }}</dd>
+                <dt class="text-slate-500">Health</dt>
                 <dd>
-                    {% if label.portal_alive is True %}
-                    <span class="text-emerald-700 font-medium">Live</span>
-                    {% elif label.portal_alive is False %}
-                    <span class="text-rose-700 font-medium">Down</span>
+                    {% if label and label.portal_alive is True %}
+                    <span class="font-medium text-emerald-700">Live</span>
+                    {% elif label and label.portal_alive is False %}
+                    <span class="font-medium text-rose-700">Down</span>
                     {% elif label %}
-                    <span class="text-gray-500">Unchecked</span>
+                    <span class="text-slate-500">Unchecked</span>
                     {% else %}
-                    <span class="text-gray-400">—</span>
+                    <span class="text-slate-400">—</span>
                     {% endif %}
                 </dd>
-                <dt class="text-gray-500">Confidence</dt>
+                <dt class="text-slate-500">Confidence</dt>
                 <dd>{{ label.get_confidence_display|default:"—" }}</dd>
-                <dt class="text-gray-500">Last checked</dt>
+                <dt class="text-slate-500">Last checked</dt>
                 <dd>{{ label.portal_last_verified|date:"M d, Y H:i"|default:"—" }}</dd>
+                <dt class="text-slate-500">Website</dt>
+                <dd>
+                    {% if company.website %}
+                    <a href="{{ company.website }}" target="_blank" rel="noopener" class="break-all text-blue-600 hover:text-blue-800 hover:underline">{{ company.website }}</a>
+                    {% else %}
+                    <span class="text-slate-400">—</span>
+                    {% endif %}
+                </dd>
             </dl>
         </section>
 
-        <section class="rounded-lg border border-gray-200 p-4">
-            <h3 class="text-sm font-bold text-gray-900">Attention</h3>
+        <section class="rounded-xl border border-slate-200 p-4">
+            <div class="flex items-center justify-between gap-3">
+                <h3 class="text-sm font-bold text-slate-900">Recent fetch runs</h3>
+                <a href="{{ raw_jobs_url }}" class="text-xs font-semibold text-blue-600 hover:text-blue-800">Raw jobs</a>
+            </div>
             <div class="mt-3 space-y-2">
-                {% for title, body in attention_items %}
-                <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-                    <div class="text-sm font-semibold text-amber-900">{{ title }}</div>
-                    <div class="text-xs text-amber-800 mt-0.5">{{ body }}</div>
+                {% for run in recent_runs %}
+                <div class="rounded-xl border border-slate-200 px-3 py-2">
+                    <div class="flex items-center justify-between gap-3">
+                        <span class="text-sm font-semibold
+                            {% if run.status == 'SUCCESS' %}text-emerald-700
+                            {% elif run.status == 'FAILED' %}text-rose-700
+                            {% elif run.status == 'RUNNING' %}text-blue-700
+                            {% else %}text-slate-700{% endif %}">
+                            {{ run.get_status_display }}
+                        </span>
+                        <span class="text-xs text-slate-500">{{ run.started_at|date:"M d, H:i" }}</span>
+                    </div>
+                    <div class="mt-1 text-xs text-slate-600">
+                        {{ run.jobs_found|default:0 }} found · {{ run.jobs_new|default:0 }} new · {{ run.jobs_updated|default:0 }} updated
+                    </div>
+                    {% if run.error_message %}
+                    <div class="mt-1 text-xs text-rose-700">{{ run.error_message|truncatechars:120 }}</div>
+                    {% endif %}
                 </div>
                 {% empty %}
-                <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">No blocking ATS or company issues found.</div>
+                <p class="text-sm text-slate-500">No company fetch history yet.</p>
                 {% endfor %}
             </div>
         </section>
 
-        <section class="rounded-lg border border-gray-200 p-4">
+        <section class="rounded-xl border border-slate-200 p-4">
             <div class="flex items-center justify-between gap-3">
-                <h3 class="text-sm font-bold text-gray-900">Harvest activity</h3>
-                <a href="{{ raw_jobs_url }}" class="text-xs font-semibold text-blue-600 hover:text-blue-800">Raw jobs</a>
+                <h3 class="text-sm font-bold text-slate-900">Attention</h3>
+                <a href="{{ jobs_url }}" class="text-xs font-semibold text-blue-600 hover:text-blue-800">Downstream jobs</a>
             </div>
-            <div class="mt-3 grid grid-cols-3 gap-2 text-center">
-                <div class="rounded-lg bg-gray-50 px-2 py-2">
-                    <div class="text-xs text-gray-500">Pending</div>
-                    <div class="font-bold text-gray-950">{{ raw_job_stats.pending }}</div>
-                </div>
-                <div class="rounded-lg bg-gray-50 px-2 py-2">
-                    <div class="text-xs text-gray-500">Synced</div>
-                    <div class="font-bold text-gray-950">{{ raw_job_stats.synced }}</div>
-                </div>
-                <div class="rounded-lg bg-gray-50 px-2 py-2">
-                    <div class="text-xs text-gray-500">Failed</div>
-                    <div class="font-bold text-gray-950">{{ raw_job_stats.failed }}</div>
-                </div>
-            </div>
-            {% if latest_run %}
-            <div class="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm">
-                <div class="flex items-center justify-between gap-2">
-                    <span class="font-semibold text-slate-900">{{ latest_run.get_status_display }}</span>
-                    <span class="text-xs text-slate-500">{{ latest_run.started_at|date:"M d, H:i" }}</span>
-                </div>
-                <div class="mt-1 text-xs text-slate-600">{{ latest_run.jobs_found }} found · {{ latest_run.jobs_new }} new · {{ latest_run.jobs_updated }} updated</div>
-                {% if latest_run.error_message %}
-                <div class="mt-1 text-xs text-rose-700">{{ latest_run.error_message|truncatechars:120 }}</div>
-                {% endif %}
-            </div>
-            {% endif %}
             <div class="mt-3 space-y-2">
-                {% for job in raw_jobs %}
-                <a href="{% url 'harvest-rawjob-detail' job.pk %}" class="block rounded-lg border border-gray-100 px-3 py-2 hover:bg-gray-50">
-                    <div class="truncate text-sm font-medium text-gray-900">{{ job.title }}</div>
-                    <div class="mt-0.5 text-xs text-gray-500">{{ job.platform_slug|default:"raw" }} · {{ job.sync_status }} · {{ job.fetched_at|date:"M d" }}</div>
-                </a>
+                {% for title, body in attention_items %}
+                <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                    <div class="text-sm font-semibold text-amber-900">{{ title }}</div>
+                    <div class="mt-0.5 text-xs text-amber-800">{{ body }}</div>
+                </div>
                 {% empty %}
-                <p class="text-sm text-gray-500">No raw jobs collected for this company yet.</p>
+                <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">No blocking ATS or company issues found.</div>
                 {% endfor %}
             </div>
+        </section>
+
+        <section class="rounded-xl border border-slate-200 p-4">
+            <h3 class="text-sm font-bold text-slate-900">Job flow</h3>
+            <div class="mt-3 grid grid-cols-4 gap-2 text-center">
+                <div class="rounded-lg bg-slate-50 px-2 py-2">
+                    <div class="text-[11px] text-slate-500">Pending</div>
+                    <div class="font-bold text-slate-950">{{ raw_job_stats.pending }}</div>
+                </div>
+                <div class="rounded-lg bg-slate-50 px-2 py-2">
+                    <div class="text-[11px] text-slate-500">Synced</div>
+                    <div class="font-bold text-slate-950">{{ raw_job_stats.synced }}</div>
+                </div>
+                <div class="rounded-lg bg-slate-50 px-2 py-2">
+                    <div class="text-[11px] text-slate-500">Failed</div>
+                    <div class="font-bold text-slate-950">{{ raw_job_stats.failed }}</div>
+                </div>
+                <div class="rounded-lg bg-slate-50 px-2 py-2">
+                    <div class="text-[11px] text-slate-500">Jobs</div>
+                    <div class="font-bold text-slate-950">{{ company.job_count }}</div>
+                </div>
+            </div>
+            <div class="mt-3 space-y-2">
+                {% for job in raw_jobs %}
+                <a href="{% url 'harvest-rawjob-detail' job.pk %}" class="block rounded-lg border border-slate-100 px-3 py-2 hover:bg-slate-50">
+                    <div class="truncate text-sm font-medium text-slate-900">{{ job.title }}</div>
+                    <div class="mt-0.5 text-xs text-slate-500">{{ job.platform_slug|default:"raw" }} · {{ job.sync_status }} · {{ job.fetched_at|date:"M d" }}</div>
+                </a>
+                {% empty %}
+                <p class="text-sm text-slate-500">No raw jobs collected for this company yet.</p>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="rounded-xl border border-slate-200 p-4">
+            <div class="flex items-center justify-between gap-3">
+                <h3 class="text-sm font-bold text-slate-900">Recent activity</h3>
+                <a href="{{ company_detail_url }}" class="text-xs font-semibold text-blue-600 hover:text-blue-800">Full timeline</a>
+            </div>
+            {% if activity_timeline %}
+            <div class="mt-3 relative pl-5 space-y-3">
+                <div class="absolute left-1.5 top-1 bottom-1 w-px bg-slate-200"></div>
+                {% for ts, kind, label in activity_timeline %}
+                <div class="relative">
+                    <span class="absolute left-[-14px] top-1.5 h-2.5 w-2.5 rounded-full
+                        {% if kind == 'offer' %}bg-emerald-500
+                        {% elif kind == 'interview' %}bg-blue-500
+                        {% elif kind == 'email' %}bg-indigo-500
+                        {% elif kind == 'status_change' %}bg-amber-500
+                        {% else %}bg-slate-400{% endif %}"></span>
+                    <div class="flex items-center gap-2">
+                        <span class="text-[10px] font-bold uppercase tracking-[0.14em]
+                            {% if kind == 'offer' %}text-emerald-600
+                            {% elif kind == 'interview' %}text-blue-600
+                            {% elif kind == 'email' %}text-indigo-600
+                            {% elif kind == 'status_change' %}text-amber-600
+                            {% else %}text-slate-500{% endif %}">
+                            {% if kind == 'offer' %}Offer{% elif kind == 'interview' %}Interview{% elif kind == 'email' %}Email{% elif kind == 'status_change' %}Status{% else %}Submission{% endif %}
+                        </span>
+                        <span class="text-[10px] text-slate-400">{{ ts|date:"M d, H:i" }}</span>
+                    </div>
+                    <p class="mt-1 text-sm text-slate-700">{{ label }}</p>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="mt-3 text-sm text-slate-500">No downstream activity recorded for this company yet.</p>
+            {% endif %}
+        </section>
+
+        <section class="rounded-xl border border-slate-200 p-4">
+            <div class="flex items-center justify-between gap-3">
+                <h3 class="text-sm font-bold text-slate-900">Quick actions</h3>
+                <span class="text-xs text-slate-500">Inspector-level fixes</span>
+            </div>
+            <div class="mt-3 grid grid-cols-2 gap-2">
+                <button type="button" class="btn-secondary btn-sm" onclick="runCompanyQuickAction({{ company.pk }}, 'mark_review')">Mark review</button>
+                {% if company.is_blacklisted %}
+                <button type="button" class="btn-secondary btn-sm" onclick="runCompanyQuickAction({{ company.pk }}, 'unblacklist')">Unblock</button>
+                {% else %}
+                <button type="button" class="btn-secondary btn-sm" onclick="runCompanyQuickAction({{ company.pk }}, 'blacklist')">Block</button>
+                {% endif %}
+                {% if request.user.is_superuser and label %}
+                <button type="button" class="btn-secondary btn-sm" onclick="toggleVerify({{ label.pk }}, this)">Toggle verify</button>
+                <button type="button" class="btn-secondary btn-sm" onclick="startDrawerTenantEdit({{ label.pk }}, '{{ label.tenant_id|escapejs }}')">Edit tenant</button>
+                {% endif %}
+            </div>
+            {% if request.user.is_superuser and label %}
+            <div id="drawer-tenant-edit-{{ label.pk }}" class="mt-3 hidden gap-2">
+                <input type="text" id="drawer-tenant-input-{{ label.pk }}" value="{{ label.tenant_id|default:'' }}" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono" placeholder="Tenant ID">
+                <button type="button" class="btn-primary btn-sm" onclick="saveDrawerTenant({{ label.pk }}, {{ company.pk }})">Save</button>
+                <button type="button" class="btn-secondary btn-sm" onclick="cancelDrawerTenantEdit({{ label.pk }})">Cancel</button>
+            </div>
+            {% endif %}
         </section>
     </div>
 
-    <div class="border-t border-gray-200 p-4">
+    <div class="border-t border-slate-200 p-4">
         <div class="grid grid-cols-2 gap-2">
-            <a href="{% url 'company-detail' company.pk %}" class="btn-secondary btn-sm text-center">Open profile</a>
-            <a href="{% url 'job-create' %}?company_id={{ company.pk }}" class="btn-secondary btn-sm text-center">Create job</a>
+            <a href="{{ company_detail_url }}" class="btn-secondary btn-sm text-center">Open profile</a>
+            <a href="{{ job_create_url }}" class="btn-secondary btn-sm text-center">Create job</a>
             {% if request.user.is_superuser and label %}
             <button type="button" class="btn-primary btn-sm" onclick="fetchCompanyJobs({{ label.pk }})">Fetch jobs</button>
             <button type="button" class="btn-secondary btn-sm" onclick="openSetPlatform({{ label.pk }}, {{ label.platform.pk|default:'null' }})">Set ATS</button>
+            {% elif request.user.is_superuser %}
+            <a href="{{ company_edit_url }}" class="btn-secondary btn-sm text-center">Edit company</a>
+            <a href="{{ company_detail_url }}" class="btn-secondary btn-sm text-center">Open detail</a>
             {% endif %}
             {% if request.user.is_superuser or request.user.role == 'ADMIN' %}
-            <a href="{% url 'company-edit' company.pk %}" class="btn-secondary btn-sm text-center">Edit</a>
+            <a href="{{ company_edit_url }}" class="btn-secondary btn-sm text-center">Edit</a>
             {% endif %}
             <a href="{{ raw_jobs_url }}" class="btn-secondary btn-sm text-center">View raw</a>
         </div>

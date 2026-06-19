@@ -4,26 +4,51 @@
 
 {% include 'jobs/_pipeline_subnav.html' %}
 
-<div class="container mx-auto px-4">
-    <div class="flat-page-header gap-4">
-        <div class="space-y-3">
-            <h1 class="page-title">Company Engine</h1>
-            <p class="page-subtitle">Operate companies, ATS detection, portal health, raw jobs, and submission history from one command center.</p>
-            {% if ats_enabled %}
-            <div class="flex flex-wrap gap-2">
-                {% for queue in saved_company_views %}
-                <a href="{{ queue.url }}" class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition {% if selected_smart == queue.key %}border-[var(--brand-300)] bg-[var(--brand-50)] text-[var(--brand-700)]{% elif queue.tone == 'amber' %}border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100{% elif queue.tone == 'emerald' %}border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100{% elif queue.tone == 'rose' %}border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100{% elif queue.tone == 'yellow' %}border-yellow-200 bg-yellow-50 text-yellow-800 hover:bg-yellow-100{% elif queue.tone == 'blue' %}border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100{% elif queue.tone == 'indigo' %}border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100{% elif queue.tone == 'orange' %}border-orange-200 bg-orange-50 text-orange-800 hover:bg-orange-100{% else %}border-slate-200 bg-white text-slate-700 hover:bg-slate-50{% endif %}">
-                    <span>{{ queue.label }}</span>
-                    <span class="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px]">{{ queue.count }}</span>
-                </a>
-                {% endfor %}
+<style>
+    .company-grid-sticky-left,
+    .company-grid-sticky-right {
+        position: sticky;
+        background: #ffffff;
+    }
+    thead .company-grid-sticky-left,
+    thead .company-grid-sticky-right {
+        background: #f8fafc;
+        z-index: 30;
+    }
+    .company-grid-sticky-left {
+        z-index: 12;
+        box-shadow: 1px 0 0 #e2e8f0;
+    }
+    .company-grid-sticky-right {
+        z-index: 12;
+        box-shadow: -1px 0 0 #e2e8f0;
+    }
+    .company-grid-row:hover .company-grid-sticky-left,
+    .company-grid-row:hover .company-grid-sticky-right {
+        background: #f8fafc;
+    }
+    .company-grid-row.bg-blue-50 .company-grid-sticky-left,
+    .company-grid-row.bg-blue-50 .company-grid-sticky-right {
+        background: #eff6ff;
+    }
+</style>
+
+<div class="container mx-auto px-4 space-y-6">
+    <div class="flat-page-header gap-5">
+        <div class="space-y-2">
+            <div class="flex items-center gap-2">
+                <h1 class="page-title">Company Engine</h1>
+                {% if ats_enabled %}
+                <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                    {{ stat_total_companies }} companies
+                </span>
+                {% endif %}
             </div>
-            {% endif %}
+            <p class="page-subtitle max-w-3xl">Operate ATS mapping, portal health, harvest readiness, raw jobs, and company cleanup from one control center.</p>
         </div>
         <div class="flex items-center gap-2 flex-wrap justify-end">
             {% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}
             <a href="{% url 'company-duplicate-review' %}" class="btn-secondary btn-sm" style="border-color:#fde68a;background:#fffbeb;color:#92400e;">Duplicates</a>
-            <a href="{% url 'company-list' %}?view=engine" class="btn-secondary btn-sm ring-2 ring-indigo-200">Engine</a>
             <a href="{% url 'company-import-csv' %}" class="btn-secondary btn-sm">Import CSV</a>
             <a href="{% url 'company-import-domains' %}" class="btn-secondary btn-sm">Import Domains</a>
             <a href="{% url 'company-import-linkedin' %}" class="btn-secondary btn-sm">Import LinkedIn</a>
@@ -34,240 +59,357 @@
     </div>
 
     {% if ats_enabled %}
-    <section class="mb-6 space-y-4">
-        <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-            <div class="flex flex-col gap-3 border-b border-gray-100 bg-gray-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                    <h2 class="text-sm font-bold text-gray-900">Company engine workspace</h2>
-                    <p class="mt-0.5 text-xs text-gray-500">Global engine health and queues. Current table filters remain separate below.</p>
+    <section class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div class="border-b border-slate-100 px-5 py-4">
+            <div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+                <div class="space-y-1">
+                    <h2 class="text-sm font-bold uppercase tracking-[0.16em] text-slate-500">Saved Views</h2>
+                    <p class="text-sm text-slate-600">Use queue presets first, then narrow with filters when you need a specific cleanup pass.</p>
                 </div>
-                <div class="flex flex-wrap gap-2" role="tablist" aria-label="Company engine insights">
-                    <button type="button" id="engine-tab-overview" class="engine-insight-tab inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition" data-panel="overview" role="tab" aria-selected="true" aria-expanded="true" aria-controls="engine-panel-overview">
-                        <span>Overview</span>
-                        <span class="rounded-full bg-white px-2 py-0.5 text-xs text-gray-500 border border-gray-200">{{ stat_total_companies }}</span>
-                        <svg class="engine-insight-chevron h-4 w-4 transition-transform rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                        </svg>
-                    </button>
-                    <button type="button" id="engine-tab-queues" class="engine-insight-tab inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition" data-panel="queues" role="tab" aria-selected="false" aria-expanded="false" aria-controls="engine-panel-queues">
-                        <span>Work Queues</span>
-                        <span class="rounded-full bg-white px-2 py-0.5 text-xs text-gray-500 border border-gray-200">{{ stat_attention }}</span>
-                        <svg class="engine-insight-chevron h-4 w-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                        </svg>
-                    </button>
-                    <button type="button" id="engine-tab-platforms" class="engine-insight-tab inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition" data-panel="platforms" role="tab" aria-selected="false" aria-expanded="false" aria-controls="engine-panel-platforms">
-                        <span>Platform Distribution</span>
-                        <span class="rounded-full bg-white px-2 py-0.5 text-xs text-gray-500 border border-gray-200">{{ stat_labeled }}</span>
-                        <svg class="engine-insight-chevron h-4 w-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                        </svg>
-                    </button>
-                    <button type="button" id="engine-tab-health" class="engine-insight-tab inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition" data-panel="health" role="tab" aria-selected="false" aria-expanded="false" aria-controls="engine-panel-health">
-                        <span>Engine Health</span>
-                        <span class="rounded-full bg-white px-2 py-0.5 text-xs text-gray-500 border border-gray-200">{% if portal_health_pct is not None %}{{ portal_health_pct }}%{% else %}—{% endif %}</span>
-                        <svg class="engine-insight-chevron h-4 w-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                        </svg>
-                    </button>
-                    <button type="button" id="engine-tab-operations" class="engine-insight-tab inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition" data-panel="operations" role="tab" aria-selected="false" aria-expanded="false" aria-controls="engine-panel-operations">
-                        <span>Recent Operations</span>
-                        <svg class="engine-insight-chevron h-4 w-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                        </svg>
-                    </button>
+                <div class="flex flex-wrap gap-2">
+                    {% for queue in saved_company_views %}
+                    <a href="{{ queue.url }}" class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition {% if selected_smart == queue.key %}border-[var(--brand-300)] bg-[var(--brand-50)] text-[var(--brand-700)]{% elif queue.tone == 'amber' %}border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100{% elif queue.tone == 'emerald' %}border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100{% elif queue.tone == 'rose' %}border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100{% elif queue.tone == 'yellow' %}border-yellow-200 bg-yellow-50 text-yellow-800 hover:bg-yellow-100{% elif queue.tone == 'blue' %}border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100{% elif queue.tone == 'indigo' %}border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100{% elif queue.tone == 'orange' %}border-orange-200 bg-orange-50 text-orange-800 hover:bg-orange-100{% else %}border-slate-200 bg-white text-slate-700 hover:bg-slate-50{% endif %}">
+                        <span>{{ queue.label }}</span>
+                        <span class="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px]">{{ queue.count }}</span>
+                    </a>
+                    {% endfor %}
                 </div>
             </div>
-
-            <div id="engine-panel-overview" class="engine-insight-panel p-4 md:p-5" role="tabpanel" aria-labelledby="engine-tab-overview">
-                <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px] gap-4">
-                    <div>
-                        <div class="flex items-center gap-2 flex-wrap">
-                            <span class="rounded-full border border-[var(--brand-200)] bg-[var(--brand-50)] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[var(--brand-700)]">Company Engine</span>
-                            {% if running_batches or running_company_fetches %}
-                            <span class="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">Running now</span>
-                            {% else %}
-                            <span class="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">Idle</span>
-                            {% endif %}
-                        </div>
-                        <div class="mt-5 grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                                <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Companies</div>
-                                <div class="mt-1 text-3xl font-bold text-slate-950">{{ stat_total_companies }}</div>
-                            </div>
-                            <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                                <div class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Ready</div>
-                                <div class="mt-1 text-3xl font-bold text-emerald-900">{{ stat_ready_to_fetch }}</div>
-                            </div>
-                            <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                                <div class="text-xs font-semibold uppercase tracking-wide text-amber-700">Attention</div>
-                                <div class="mt-1 text-3xl font-bold text-amber-900">{{ stat_attention }}</div>
-                            </div>
-                            <div class="rounded-xl border border-blue-200 bg-blue-50 p-4">
-                                <div class="text-xs font-semibold uppercase tracking-wide text-blue-700">Raw jobs pending</div>
-                                <div class="mt-1 text-3xl font-bold text-blue-900">{{ raw_job_pending }}</div>
-                            </div>
-                        </div>
-                        <div class="mt-5 grid grid-cols-2 md:grid-cols-6 gap-2 text-sm">
-                            <a href="{% url 'company-list' %}?view=engine&ats_status=verified" class="rounded-lg border border-slate-200 bg-white px-3 py-2 hover:bg-slate-50"><span class="block text-slate-500 text-xs">Live portals</span><strong class="text-slate-950">{{ stat_live }}</strong></a>
-                            <a href="{% url 'company-list' %}?view=engine&smart=portal_down" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 hover:bg-rose-100"><span class="block text-rose-700 text-xs">Down</span><strong class="text-rose-900">{{ stat_down }}</strong></a>
-                            <a href="{% url 'company-list' %}?view=engine&ats_status=unchecked" class="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 hover:bg-blue-100"><span class="block text-blue-700 text-xs">Unchecked</span><strong class="text-blue-900">{{ stat_unchecked }}</strong></a>
-                            <a href="{% url 'company-list' %}?view=engine&smart=no_tenant" class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 hover:bg-amber-100"><span class="block text-amber-700 text-xs">No tenant</span><strong class="text-amber-900">{{ stat_no_tenant }}</strong></a>
-                            <a href="{% url 'company-list' %}?view=engine&smart=no_ats" class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 hover:bg-slate-100"><span class="block text-slate-600 text-xs">No ATS</span><strong class="text-slate-950">{{ stat_no_ats }}</strong></a>
-                            <a href="{% url 'company-list' %}?view=engine&smart=scraper_inbox" class="rounded-lg border {% if stat_scraper_inbox %}border-orange-300 bg-orange-50 hover:bg-orange-100{% else %}border-slate-200 bg-slate-50 hover:bg-slate-100{% endif %} px-3 py-2 relative">
-                                <span class="block {% if stat_scraper_inbox %}text-orange-700{% else %}text-slate-500{% endif %} text-xs">Scraper inbox</span>
-                                <strong class="{% if stat_scraper_inbox %}text-orange-900{% else %}text-slate-950{% endif %}">{{ stat_scraper_inbox }}</strong>
-                                {% if stat_scraper_inbox %}<span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-orange-500 animate-ping"></span>{% endif %}
-                            </a>
-                        </div>
-                    </div>
-                    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                        <h2 class="text-sm font-bold text-slate-900">Engine operations</h2>
-                        {% if request.user.is_superuser %}
-                        <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-3">
-                            <form method="post" action="{% url 'harvest-run-fetch-batch' %}"
-                              data-gc-confirm-message="Fetch ready companies now? This queues background harvest tasks."
-                              data-gc-confirm-title="Fetch ready companies"
-                              data-gc-confirm-text="Start fetch"
-                              data-gc-confirm-variant="warning">{% csrf_token %}
-                                <input type="hidden" name="fetch_mode" value="quick">
-                                <button type="submit" {% if running_batches %}disabled{% endif %} class="w-full rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-left hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed">
-                                    <span class="block text-sm font-bold text-emerald-900">Fetch ready companies</span>
-                                    <span class="block text-xs text-emerald-700 mt-0.5">{% if running_batches %}A batch is already running. Wait for it to finish.{% else %}Incremental harvest using platform + tenant labels.{% endif %}</span>
-                                </button>
-                            </form>
-                            <form method="post" action="{% url 'harvest-run-detect' %}"
-                              data-gc-confirm-message="Run ATS detection across companies?"
-                              data-gc-confirm-title="Run detection"
-                              data-gc-confirm-text="Run detection"
-                              data-gc-confirm-variant="warning">{% csrf_token %}
-                                <button type="submit" class="w-full rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-left hover:bg-blue-100">
-                                    <span class="block text-sm font-bold text-blue-900">Run detection</span>
-                                    <span class="block text-xs text-blue-700 mt-0.5">Scan company career sites and detect ATS platforms.</span>
-                                </button>
-                            </form>
-                            <form method="post" action="{% url 'harvest-run-verify-portals' %}"
-                              data-gc-confirm-message="Verify portal live/down status now?"
-                              data-gc-confirm-title="Verify portals"
-                              data-gc-confirm-text="Verify"
-                              data-gc-confirm-variant="warning">{% csrf_token %}
-                                <button type="submit" class="w-full rounded-lg border border-violet-200 bg-violet-50 px-4 py-3 text-left hover:bg-violet-100">
-                                    <span class="block text-sm font-bold text-violet-900">Verify portals</span>
-                                    <span class="block text-xs text-violet-700 mt-0.5">Refresh live/down status before fetches.</span>
-                                </button>
-                            </form>
-                            {% if stat_scraper_inbox %}
-                            <a href="{% url 'company-list' %}?view=engine&smart=scraper_inbox" class="block w-full rounded-lg border border-orange-300 bg-orange-50 px-4 py-3 text-left hover:bg-orange-100 relative">
-                                <span class="absolute top-3 right-3 inline-flex items-center justify-center w-6 h-6 rounded-full bg-orange-500 text-white text-xs font-bold">{{ stat_scraper_inbox }}</span>
-                                <span class="block text-sm font-bold text-orange-900">Scraper inbox</span>
-                                <span class="block text-xs text-orange-700 mt-0.5">New companies found by scraper — review &amp; verify to add to harvest.</span>
-                            </a>
-                            {% endif %}
-                            <form method="post" action="{% url 'harvest-run-backfill' %}"
-                              data-gc-confirm-message="Backfill missing ATS labels from existing job URLs?"
-                              data-gc-confirm-title="Backfill labels"
-                              data-gc-confirm-text="Backfill"
-                              data-gc-confirm-variant="warning">{% csrf_token %}
-                                <button type="submit" class="w-full rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-left hover:bg-amber-100">
-                                    <span class="block text-sm font-bold text-amber-900">Backfill labels</span>
-                                    <span class="block text-xs text-amber-700 mt-0.5">Use existing job URLs to fill missing labels.</span>
-                                </button>
-                            </form>
-                        </div>
-                        {% else %}
-                        <p class="mt-3 text-sm text-slate-600">Engine operations are superuser-only. You can inspect queues, companies, ATS health, and results.</p>
+            <div class="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between gap-3">
+                        <div class="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">My Views</div>
+                        {% if company_default_saved_view_applied and selected_company_saved_view %}
+                        <a href="{% url 'company-list' %}?view=engine&default_view=off" class="text-[11px] font-semibold text-blue-700 hover:text-blue-800">Open full engine</a>
                         {% endif %}
                     </div>
+                    {% if company_default_saved_view_applied and selected_company_saved_view %}
+                    <div class="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+                        Default landing view applied: <span class="font-semibold">{{ selected_company_saved_view.name }}</span>
+                    </div>
+                    {% endif %}
+                    <div class="grid gap-2 lg:grid-cols-2">
+                        {% for custom_view in custom_company_views %}
+                        <div class="rounded-xl border p-3 {% if custom_view.is_active %}border-slate-300 bg-slate-900 text-white{% else %}border-slate-200 bg-white text-slate-800{% endif %}">
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <a href="{{ custom_view.url }}" class="block truncate text-sm font-semibold {% if custom_view.is_active %}text-white{% else %}text-slate-900{% endif %}">{{ custom_view.name }}</a>
+                                    <div class="mt-1 flex flex-wrap gap-1">
+                                        {% if custom_view.is_default %}
+                                        <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold {% if custom_view.is_active %}bg-white/15 text-white{% else %}bg-blue-50 text-blue-700{% endif %}">Default</span>
+                                        {% endif %}
+                                        {% if custom_view.is_pinned %}
+                                        <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold {% if custom_view.is_active %}bg-white/15 text-white{% else %}bg-violet-50 text-violet-700{% endif %}">Pinned</span>
+                                        {% endif %}
+                                        {% if custom_view.is_active %}
+                                        <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold {% if custom_view.is_active %}bg-white/15 text-white{% else %}bg-slate-100 text-slate-700{% endif %}">Active</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <div class="text-[11px] font-medium {% if custom_view.is_active %}text-white/75{% else %}text-slate-500{% endif %}">{{ custom_view.filter_count }} filters</div>
+                            </div>
+                            <div class="mt-2 flex flex-wrap gap-1">
+                                {% for summary in custom_view.summary_items %}
+                                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium {% if custom_view.is_active %}bg-white/10 text-white/90{% else %}bg-slate-100 text-slate-700{% endif %}">{{ summary }}</span>
+                                {% endfor %}
+                                {% if custom_view.extra_summary_count %}
+                                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium {% if custom_view.is_active %}bg-white/10 text-white/90{% else %}bg-slate-100 text-slate-700{% endif %}">+{{ custom_view.extra_summary_count }}</span>
+                                {% endif %}
+                            </div>
+                            <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+                                <div class="rounded-lg border px-2.5 py-2 {% if custom_view.is_active %}border-white/10 bg-white/5{% else %}border-slate-200 bg-slate-50{% endif %}">
+                                    <div class="{% if custom_view.is_active %}text-white/65{% else %}text-slate-500{% endif %}">Matches</div>
+                                    <div class="mt-1 text-lg font-bold {% if custom_view.is_active %}text-white{% else %}text-slate-900{% endif %}">{{ custom_view.match_count }}</div>
+                                </div>
+                                <div class="rounded-lg border px-2.5 py-2 {% if custom_view.is_active %}border-white/10 bg-white/5{% else %}border-slate-200 bg-slate-50{% endif %}">
+                                    <div class="{% if custom_view.is_active %}text-white/65{% else %}text-slate-500{% endif %}">Needs review</div>
+                                    <div class="mt-1 text-lg font-bold {% if custom_view.review_count %}text-amber-600{% elif custom_view.is_active %}text-white{% else %}text-slate-900{% endif %}">{{ custom_view.review_count }}</div>
+                                </div>
+                                <div class="rounded-lg border px-2.5 py-2 {% if custom_view.is_active %}border-white/10 bg-white/5{% else %}border-slate-200 bg-slate-50{% endif %}">
+                                    <div class="{% if custom_view.is_active %}text-white/65{% else %}text-slate-500{% endif %}">Portal down</div>
+                                    <div class="mt-1 text-lg font-bold {% if custom_view.down_count %}text-rose-600{% elif custom_view.is_active %}text-white{% else %}text-slate-900{% endif %}">{{ custom_view.down_count }}</div>
+                                </div>
+                                <div class="rounded-lg border px-2.5 py-2 {% if custom_view.is_active %}border-white/10 bg-white/5{% else %}border-slate-200 bg-slate-50{% endif %}">
+                                    <div class="{% if custom_view.is_active %}text-white/65{% else %}text-slate-500{% endif %}">Blocked</div>
+                                    <div class="mt-1 text-lg font-bold {% if custom_view.blocked_count %}text-rose-600{% elif custom_view.is_active %}text-white{% else %}text-slate-900{% endif %}">{{ custom_view.blocked_count }}</div>
+                                </div>
+                            </div>
+                            <div class="mt-2 flex flex-wrap gap-1.5">
+                                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium {% if custom_view.is_active %}bg-white/10 text-white/90{% else %}bg-slate-100 text-slate-700{% endif %}">No tenant {{ custom_view.no_tenant_count }}</span>
+                                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium {% if custom_view.is_active %}bg-white/10 text-white/90{% else %}bg-slate-100 text-slate-700{% endif %}">Unlabeled {{ custom_view.unlabeled_count }}</span>
+                                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium {% if custom_view.is_active %}bg-white/10 text-white/90{% else %}bg-slate-100 text-slate-700{% endif %}">Portal stale {{ custom_view.stale_count }}</span>
+                                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium {% if custom_view.is_active %}bg-white/10 text-white/90{% else %}bg-slate-100 text-slate-700{% endif %}">Raw pending {{ custom_view.raw_pending_count }}</span>
+                            </div>
+                            <div class="mt-3 flex flex-wrap gap-2">
+                                <a href="{{ custom_view.url }}" class="rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold {% if custom_view.is_active %}border-white/15 text-white hover:bg-white/10{% else %}border-slate-200 text-slate-700 hover:bg-slate-50{% endif %}">Open</a>
+                                <form method="post" action="{% url 'company-saved-view-default' custom_view.id %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                    <button type="submit" class="rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold {% if custom_view.is_default %}{% if custom_view.is_active %}border-blue-200 bg-blue-500/20 text-white hover:bg-blue-500/30{% else %}border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100{% endif %}{% else %}{% if custom_view.is_active %}border-white/15 text-white hover:bg-white/10{% else %}border-slate-200 text-slate-700 hover:bg-slate-50{% endif %}{% endif %}">
+                                        {% if custom_view.is_default %}Clear default{% else %}Set default{% endif %}
+                                    </button>
+                                </form>
+                                <form method="post" action="{% url 'company-saved-view-manage' custom_view.id %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="manage_action" value="pin">
+                                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                    <button type="submit" class="rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold {% if custom_view.is_active %}border-white/15 text-white hover:bg-white/10{% else %}border-slate-200 text-slate-700 hover:bg-slate-50{% endif %}">
+                                        {% if custom_view.is_pinned %}Unpin{% else %}Pin{% endif %}
+                                    </button>
+                                </form>
+                                <form method="post" action="{% url 'company-saved-view-manage' custom_view.id %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="manage_action" value="duplicate">
+                                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                    <button type="submit" class="rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold {% if custom_view.is_active %}border-white/15 text-white hover:bg-white/10{% else %}border-slate-200 text-slate-700 hover:bg-slate-50{% endif %}">Duplicate</button>
+                                </form>
+                                <form method="post" action="{% url 'company-saved-view-manage' custom_view.id %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="manage_action" value="move_up">
+                                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                    <button type="submit" class="rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold {% if custom_view.is_active %}border-white/15 text-white hover:bg-white/10{% else %}border-slate-200 text-slate-700 hover:bg-slate-50{% endif %}">Up</button>
+                                </form>
+                                <form method="post" action="{% url 'company-saved-view-manage' custom_view.id %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="manage_action" value="move_down">
+                                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                    <button type="submit" class="rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold {% if custom_view.is_active %}border-white/15 text-white hover:bg-white/10{% else %}border-slate-200 text-slate-700 hover:bg-slate-50{% endif %}">Down</button>
+                                </form>
+                                <form method="post" action="{% url 'company-saved-view-manage' custom_view.id %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="manage_action" value="archive">
+                                    <input type="hidden" name="next" value="{% url 'company-list' %}?view=engine">
+                                    <button type="submit" class="rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold {% if custom_view.is_active %}border-white/15 text-white hover:bg-white/10{% else %}border-amber-200 text-amber-800 hover:bg-amber-50{% endif %}">Archive</button>
+                                </form>
+                                <form method="post" action="{% url 'company-saved-view-delete' custom_view.id %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="next" value="{% url 'company-list' %}?view=engine">
+                                    <button type="submit" class="rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold {% if custom_view.is_active %}border-white/15 text-white hover:bg-white/10{% else %}border-rose-200 text-rose-700 hover:bg-rose-50{% endif %}">Delete</button>
+                                </form>
+                            </div>
+                            <form method="post" action="{% url 'company-saved-view-manage' custom_view.id %}" class="mt-3 flex gap-2">
+                                {% csrf_token %}
+                                <input type="hidden" name="manage_action" value="rename">
+                                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                <input type="text" name="name" maxlength="80" value="{{ custom_view.name }}" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-xs {% if custom_view.is_active %}bg-white/10 text-white placeholder:text-white/50 border-white/15{% else %}bg-white text-slate-900{% endif %}">
+                                <button type="submit" class="rounded-lg border px-2.5 py-2 text-[11px] font-semibold {% if custom_view.is_active %}border-white/15 text-white hover:bg-white/10{% else %}border-slate-200 text-slate-700 hover:bg-slate-50{% endif %}">Rename</button>
+                            </form>
+                        </div>
+                        {% empty %}
+                        <p class="text-xs text-slate-500">No personal views yet.</p>
+                        {% endfor %}
+                    </div>
+                </div>
+                <form method="post" action="{% url 'company-saved-view-create' %}" class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    {% csrf_token %}
+                    <input type="hidden" name="query" value="{{ company_saved_view_query }}">
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <label class="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Save current filter state</label>
+                    <div class="mt-2 flex gap-2">
+                        <input type="text" name="name" maxlength="80" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900" placeholder="e.g. Priority ATS cleanup" value="{% if selected_company_saved_view %}{{ selected_company_saved_view.name }}{% endif %}">
+                        <button type="submit" class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800">Save</button>
+                    </div>
+                    <p class="mt-2 text-xs text-slate-500">Stores the current engine filters, sort, and page size for your account.</p>
+                </form>
+            </div>
+        </div>
+
+        <div class="border-b border-slate-100 px-5 py-4">
+            <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+                <a href="{% url 'company-list' %}?view=engine" class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 hover:bg-slate-100">
+                    <div class="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Total</div>
+                    <div class="mt-1 text-2xl font-bold text-slate-950">{{ stat_total_companies }}</div>
+                </a>
+                <a href="{% url 'company-list' %}?view=engine&smart=ready" class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 hover:bg-emerald-100">
+                    <div class="text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-700">Ready</div>
+                    <div class="mt-1 text-2xl font-bold text-emerald-900">{{ stat_ready_to_fetch }}</div>
+                </a>
+                <a href="{% url 'company-list' %}?view=engine&smart=attention" class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 hover:bg-amber-100">
+                    <div class="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700">Attention</div>
+                    <div class="mt-1 text-2xl font-bold text-amber-900">{{ stat_attention }}</div>
+                </a>
+                <a href="{% url 'company-list' %}?view=engine&ats_status=verified" class="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 hover:bg-blue-100">
+                    <div class="text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-700">Live portals</div>
+                    <div class="mt-1 text-2xl font-bold text-blue-900">{{ stat_live }}</div>
+                </a>
+                <a href="{% url 'company-list' %}?view=engine&smart=no_tenant" class="rounded-xl border border-yellow-200 bg-yellow-50 px-4 py-3 hover:bg-yellow-100">
+                    <div class="text-[11px] font-semibold uppercase tracking-[0.14em] text-yellow-700">No tenant</div>
+                    <div class="mt-1 text-2xl font-bold text-yellow-900">{{ stat_no_tenant }}</div>
+                </a>
+                <a href="{% url 'company-list' %}?view=engine&smart=scraper_inbox" class="rounded-xl border {% if stat_scraper_inbox %}border-orange-300 bg-orange-50 hover:bg-orange-100{% else %}border-slate-200 bg-slate-50 hover:bg-slate-100{% endif %} px-4 py-3">
+                    <div class="text-[11px] font-semibold uppercase tracking-[0.14em] {% if stat_scraper_inbox %}text-orange-700{% else %}text-slate-500{% endif %}">Scraper inbox</div>
+                    <div class="mt-1 text-2xl font-bold {% if stat_scraper_inbox %}text-orange-900{% else %}text-slate-950{% endif %}">{{ stat_scraper_inbox }}</div>
+                </a>
+            </div>
+        </div>
+
+        <div class="grid gap-5 px-5 py-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.9fr)]">
+            <div class="space-y-5">
+                <div class="grid gap-4 lg:grid-cols-2">
+                    <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div class="flex items-start justify-between gap-4">
+                            <div>
+                                <h3 class="text-sm font-bold text-slate-900">Engine status</h3>
+                                <p class="mt-1 text-xs text-slate-500">Global harvest health and current system posture.</p>
+                            </div>
+                            {% if running_batches or running_company_fetches %}
+                            <span class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Running now</span>
+                            {% else %}
+                            <span class="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">Idle</span>
+                            {% endif %}
+                        </div>
+                        <div class="mt-4 grid grid-cols-2 gap-3">
+                            <div class="rounded-xl border border-white bg-white px-3 py-3">
+                                <div class="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Portal health</div>
+                                <div class="mt-1 text-xl font-bold text-slate-950">{% if portal_health_pct is not None %}{{ portal_health_pct }}%{% else %}—{% endif %}</div>
+                            </div>
+                            <div class="rounded-xl border border-white bg-white px-3 py-3">
+                                <div class="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Running fetches</div>
+                                <div class="mt-1 text-xl font-bold text-slate-950">{{ running_company_fetches }}</div>
+                            </div>
+                            <div class="rounded-xl border border-white bg-white px-3 py-3">
+                                <div class="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Raw jobs stored</div>
+                                <div class="mt-1 text-xl font-bold text-slate-950">{{ raw_job_total }}</div>
+                            </div>
+                            <div class="rounded-xl border border-white bg-white px-3 py-3">
+                                <div class="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Raw failed</div>
+                                <div class="mt-1 text-xl font-bold text-slate-950">{{ raw_job_failed }}</div>
+                            </div>
+                        </div>
+                        <div class="mt-4 space-y-1 text-xs text-slate-500">
+                            {% if last_batch %}
+                            <p>Last batch: <span class="font-semibold text-slate-800">{{ last_batch.status }}</span> · {{ last_batch.created_at|date:"M d, H:i" }}</p>
+                            {% else %}
+                            <p>No fetch batch history yet.</p>
+                            {% endif %}
+                            {% if engine_config %}
+                            <p>Rate: {{ engine_config.task_rate_limit }}/min · Re-fetch guard: {{ engine_config.min_hours_since_fetch }}h</p>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div class="flex items-start justify-between gap-4">
+                            <div>
+                                <h3 class="text-sm font-bold text-slate-900">Platform distribution</h3>
+                                <p class="mt-1 text-xs text-slate-500">Top ATS mappings in the current engine footprint.</p>
+                            </div>
+                            <span class="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">{{ stat_labeled }} labeled</span>
+                        </div>
+                        <div class="mt-4 space-y-2">
+                            {% for platform in platforms_chart|slice:":5" %}
+                            <a href="{% url 'company-list' %}?view=engine&platform={{ platform.slug }}" class="grid grid-cols-[100px_minmax(0,1fr)_44px] items-center gap-3 rounded-xl border border-white bg-white px-3 py-2 hover:bg-slate-50">
+                                <span class="truncate text-xs font-semibold text-slate-700">{{ platform.name }}</span>
+                                <span class="h-2 overflow-hidden rounded-full bg-slate-100">
+                                    <span class="block h-full rounded-full company-platform-bar" style="width:0;background:{{ platform.color_hex }};" data-count="{{ platform.company_count }}"></span>
+                                </span>
+                                <span class="text-right text-sm font-bold" style="color:{{ platform.color_hex }};">{{ platform.company_count }}</span>
+                            </a>
+                            {% empty %}
+                            <p class="text-sm text-slate-500">No platform labels yet.</p>
+                            {% endfor %}
+                        </div>
+                        <details class="mt-4 border-t border-slate-200 pt-3" {% if selected_platform %}open{% endif %}>
+                            <summary class="cursor-pointer text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">View all platforms</summary>
+                            <div class="mt-3 max-h-52 space-y-1.5 overflow-y-auto pr-1">
+                                {% for platform in platforms_chart %}
+                                <a href="{% url 'company-list' %}?view=engine&platform={{ platform.slug }}" class="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 hover:bg-white">
+                                    <span class="truncate text-sm text-slate-700">{{ platform.name }}</span>
+                                    <span class="text-sm font-bold" style="color:{{ platform.color_hex }};">{{ platform.company_count }}</span>
+                                </a>
+                                {% endfor %}
+                            </div>
+                        </details>
+                    </div>
+                </div>
+
+                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <h3 class="text-sm font-bold text-slate-900">Work queues</h3>
+                            <p class="mt-1 text-xs text-slate-500">Use these lanes to run focused cleanup passes instead of broad sweeps.</p>
+                        </div>
+                        <span class="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">{{ stat_attention }} need attention</span>
+                    </div>
+                    <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        {% for queue in saved_company_views %}
+                        <a href="{{ queue.url }}" title="{{ queue.description }}" class="rounded-xl border px-3 py-3 transition {% if selected_smart == queue.key %}border-[var(--brand-300)] bg-[var(--brand-50)] text-[var(--brand-800)] ring-1 ring-[var(--brand-ring)]{% elif queue.tone == 'amber' %}border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100{% elif queue.tone == 'emerald' %}border-emerald-200 bg-emerald-50 text-emerald-900 hover:bg-emerald-100{% elif queue.tone == 'rose' %}border-rose-200 bg-rose-50 text-rose-900 hover:bg-rose-100{% elif queue.tone == 'yellow' %}border-yellow-200 bg-yellow-50 text-yellow-900 hover:bg-yellow-100{% elif queue.tone == 'blue' %}border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100{% elif queue.tone == 'indigo' %}border-indigo-200 bg-indigo-50 text-indigo-900 hover:bg-indigo-100{% elif queue.tone == 'pink' %}border-pink-200 bg-pink-50 text-pink-900 hover:bg-pink-100{% else %}border-gray-200 bg-white text-gray-800 hover:bg-gray-50{% endif %}">
+                            <span class="block text-[11px] font-semibold uppercase tracking-[0.14em] opacity-75">{{ queue.label }}</span>
+                            <span class="mt-1 block text-2xl font-bold">{{ queue.count }}</span>
+                            <span class="mt-1 block text-xs opacity-70">{{ queue.description }}</span>
+                        </a>
+                        {% endfor %}
+                    </div>
                 </div>
             </div>
 
-            <div id="engine-panel-queues" class="engine-insight-panel hidden p-4 md:p-5" role="tabpanel" aria-labelledby="engine-tab-queues">
-                <div class="flex items-center justify-between gap-3 mb-3">
-                    <h2 class="text-sm font-bold text-gray-900">Work queues</h2>
-                    <span class="text-xs text-gray-500">{{ results_total|default:stat_total_companies }} companies in current view</span>
-                </div>
-                <div class="grid grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 gap-2">
-                    {% for queue in engine_queues %}
-                    <a href="{{ queue.url }}" title="{{ queue.description }}" class="rounded-lg border px-3 py-3 transition {% if selected_smart == queue.key or not selected_smart and not queue.key %}border-[var(--brand-300)] bg-[var(--brand-50)] text-[var(--brand-800)] ring-1 ring-[var(--brand-ring)]{% elif queue.tone == 'amber' %}border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100{% elif queue.tone == 'emerald' %}border-emerald-200 bg-emerald-50 text-emerald-900 hover:bg-emerald-100{% elif queue.tone == 'rose' %}border-rose-200 bg-rose-50 text-rose-900 hover:bg-rose-100{% elif queue.tone == 'yellow' %}border-yellow-200 bg-yellow-50 text-yellow-900 hover:bg-yellow-100{% elif queue.tone == 'blue' %}border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100{% elif queue.tone == 'indigo' %}border-indigo-200 bg-indigo-50 text-indigo-900 hover:bg-indigo-100{% elif queue.tone == 'pink' %}border-pink-200 bg-pink-50 text-pink-900 hover:bg-pink-100{% else %}border-gray-200 bg-white text-gray-800 hover:bg-gray-50{% endif %}">
-                        <span class="block text-xs font-semibold uppercase tracking-wide opacity-70">{{ queue.label }}</span>
-                        <span class="mt-1 block text-2xl font-bold">{{ queue.count }}</span>
-                    </a>
-                    {% endfor %}
-                </div>
-            </div>
-
-            <div id="engine-panel-platforms" class="engine-insight-panel hidden p-4 md:p-5" role="tabpanel" aria-labelledby="engine-tab-platforms">
-                <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
-                    {% for platform in platforms_chart|slice:":5" %}
-                    <a href="{% url 'company-list' %}?view=engine&platform={{ platform.slug }}" class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 hover:bg-gray-100">
-                        <span class="block truncate text-xs font-semibold text-gray-600">{{ platform.name }}</span>
-                        <span class="mt-1 block text-lg font-bold" style="color:{{ platform.color_hex }};">{{ platform.company_count }}</span>
-                    </a>
-                    {% endfor %}
-                </div>
-                <details class="mt-4 border-t border-gray-100 pt-3" {% if selected_platform %}open{% endif %}>
-                    <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wider text-gray-500">View all platforms</summary>
-                    <div class="mt-3 max-h-64 overflow-y-auto pr-1 space-y-1.5">
-                    {% for platform in platforms_chart %}
-                    <a href="{% url 'company-list' %}?view=engine&platform={{ platform.slug }}" class="grid grid-cols-[150px_minmax(0,1fr)_48px] items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-gray-50">
-                        <span class="truncate text-sm font-medium text-gray-700">{{ platform.name }}</span>
-                        <span class="h-2 rounded-full bg-gray-100 overflow-hidden">
-                            <span class="block h-full rounded-full company-platform-bar" style="width:0;background:{{ platform.color_hex }};" data-count="{{ platform.company_count }}"></span>
-                        </span>
-                        <span class="text-right text-sm font-bold" style="color:{{ platform.color_hex }};">{{ platform.company_count }}</span>
-                    </a>
-                    {% empty %}
-                    <p class="text-sm text-gray-500">No platform labels yet. Run detection or backfill labels.</p>
-                    {% endfor %}
+            <div class="space-y-4">
+                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <h3 class="text-sm font-bold text-slate-900">Operations console</h3>
+                            <p class="mt-1 text-xs text-slate-500">Run global engine tasks from one place.</p>
+                        </div>
+                        {% if stat_scraper_inbox %}
+                        <a href="{% url 'company-list' %}?view=engine&smart=scraper_inbox" class="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-semibold text-orange-700">
+                            Inbox {{ stat_scraper_inbox }}
+                        </a>
+                        {% endif %}
                     </div>
-                </details>
-            </div>
-
-            <div id="engine-panel-health" class="engine-insight-panel hidden p-4 md:p-5" role="tabpanel" aria-labelledby="engine-tab-health">
-                <h2 class="text-sm font-bold text-gray-900">Engine health</h2>
-                <div class="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-                    <div class="rounded-lg bg-gray-50 px-3 py-2">
-                        <span class="block text-xs text-gray-500">Portal health</span>
-                        <strong class="text-gray-950">{% if portal_health_pct is not None %}{{ portal_health_pct }}%{% else %}—{% endif %}</strong>
+                    {% if request.user.is_superuser %}
+                    <div class="mt-4 grid gap-3">
+                        <form method="post" action="{% url 'harvest-run-fetch-batch' %}" data-gc-confirm-message="Fetch ready companies now? This queues background harvest tasks." data-gc-confirm-title="Fetch ready companies" data-gc-confirm-text="Start fetch" data-gc-confirm-variant="warning">{% csrf_token %}
+                            <input type="hidden" name="fetch_mode" value="quick">
+                            <button type="submit" {% if running_batches %}disabled{% endif %} class="w-full rounded-xl border border-emerald-200 bg-white px-4 py-3 text-left hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50">
+                                <span class="block text-sm font-bold text-emerald-900">Fetch ready companies</span>
+                                <span class="mt-1 block text-xs text-emerald-700">{% if running_batches %}A batch is already running.{% else %}Incremental fetch using verified ATS + tenant labels.{% endif %}</span>
+                            </button>
+                        </form>
+                        <div class="grid gap-3 sm:grid-cols-2">
+                            <form method="post" action="{% url 'harvest-run-detect' %}" data-gc-confirm-message="Run ATS detection across companies?" data-gc-confirm-title="Run detection" data-gc-confirm-text="Run detection" data-gc-confirm-variant="warning">{% csrf_token %}
+                                <button type="submit" class="w-full rounded-xl border border-blue-200 bg-white px-4 py-3 text-left hover:bg-blue-50">
+                                    <span class="block text-sm font-bold text-blue-900">Run detection</span>
+                                    <span class="mt-1 block text-xs text-blue-700">Scan career sites and refresh ATS mappings.</span>
+                                </button>
+                            </form>
+                            <form method="post" action="{% url 'harvest-run-verify-portals' %}" data-gc-confirm-message="Verify portal live/down status now?" data-gc-confirm-title="Verify portals" data-gc-confirm-text="Verify" data-gc-confirm-variant="warning">{% csrf_token %}
+                                <button type="submit" class="w-full rounded-xl border border-violet-200 bg-white px-4 py-3 text-left hover:bg-violet-50">
+                                    <span class="block text-sm font-bold text-violet-900">Verify portals</span>
+                                    <span class="mt-1 block text-xs text-violet-700">Refresh live/down state before harvest.</span>
+                                </button>
+                            </form>
+                            <form method="post" action="{% url 'harvest-run-backfill' %}" data-gc-confirm-message="Backfill missing ATS labels from existing job URLs?" data-gc-confirm-title="Backfill labels" data-gc-confirm-text="Backfill" data-gc-confirm-variant="warning">{% csrf_token %}
+                                <button type="submit" class="w-full rounded-xl border border-amber-200 bg-white px-4 py-3 text-left hover:bg-amber-50">
+                                    <span class="block text-sm font-bold text-amber-900">Backfill labels</span>
+                                    <span class="mt-1 block text-xs text-amber-700">Fill missing labels from existing job URLs.</span>
+                                </button>
+                            </form>
+                            <a href="{% url 'company-duplicate-review' %}" class="block rounded-xl border border-amber-200 bg-white px-4 py-3 text-left hover:bg-amber-50">
+                                <span class="block text-sm font-bold text-amber-900">Review duplicates</span>
+                                <span class="mt-1 block text-xs text-amber-700">Resolve duplicate companies before harvest cleanup.</span>
+                            </a>
+                        </div>
                     </div>
-                    <div class="rounded-lg bg-gray-50 px-3 py-2">
-                        <span class="block text-xs text-gray-500">Running fetches</span>
-                        <strong class="text-gray-950">{{ running_company_fetches }}</strong>
-                    </div>
-                    <div class="rounded-lg bg-gray-50 px-3 py-2">
-                        <span class="block text-xs text-gray-500">Raw jobs stored</span>
-                        <strong class="text-gray-950">{{ raw_job_total }}</strong>
-                    </div>
-                    <div class="rounded-lg bg-gray-50 px-3 py-2">
-                        <span class="block text-xs text-gray-500">Raw jobs failed</span>
-                        <strong class="text-gray-950">{{ raw_job_failed }}</strong>
-                    </div>
-                </div>
-                <div class="mt-3 text-xs text-gray-500">
-                    {% if last_batch %}
-                    Last batch: <span class="font-semibold text-gray-800">{{ last_batch.status }}</span> · {{ last_batch.created_at|date:"M d, H:i" }}
                     {% else %}
-                    No fetch batch history yet.
+                    <p class="mt-4 text-sm text-slate-600">Engine operations are restricted. You can still review queues, ATS health, readiness, and company warnings.</p>
                     {% endif %}
                 </div>
-                {% if engine_config %}
-                <div class="mt-2 text-xs text-gray-500">Rate: {{ engine_config.task_rate_limit }}/min · Re-fetch guard: {{ engine_config.min_hours_since_fetch }}h</div>
-                {% endif %}
-            </div>
 
-            <div id="engine-panel-operations" class="engine-insight-panel hidden p-4 md:p-5" role="tabpanel" aria-labelledby="engine-tab-operations">
-                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
-                    {% for op in recent_ops %}
-                    <div class="rounded-lg border border-gray-100 bg-white px-3 py-2">
-                        <div class="flex items-center justify-between gap-2">
-                            <span class="text-sm font-semibold text-gray-900">{{ op.label }}</span>
-                            <span class="text-xs font-semibold {% if op.status == 'SUCCESS' %}text-emerald-700{% elif op.status == 'FAILED' %}text-rose-700{% elif op.status == 'RUNNING' %}text-blue-700{% else %}text-gray-600{% endif %}">{{ op.status }}</span>
+                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <h3 class="text-sm font-bold text-slate-900">Recent operations</h3>
+                    <div class="mt-3 space-y-2">
+                        {% for op in recent_ops|slice:":5" %}
+                        <div class="rounded-xl border border-white bg-white px-3 py-2">
+                            <div class="flex items-center justify-between gap-3">
+                                <span class="text-sm font-semibold text-slate-900">{{ op.label }}</span>
+                                <span class="text-[11px] font-semibold {% if op.status == 'SUCCESS' %}text-emerald-700{% elif op.status == 'FAILED' %}text-rose-700{% elif op.status == 'RUNNING' %}text-blue-700{% else %}text-slate-500{% endif %}">{{ op.status }}</span>
+                            </div>
+                            <div class="mt-0.5 text-xs text-slate-500">{{ op.created_at|date:"M d, H:i" }}</div>
                         </div>
-                        <div class="mt-0.5 text-xs text-gray-500">{{ op.created_at|date:"M d, H:i" }}</div>
+                        {% empty %}
+                        <p class="text-sm text-slate-500">No recent engine operations.</p>
+                        {% endfor %}
                     </div>
-                    {% empty %}
-                    <p class="text-sm text-gray-500">No recent engine operations.</p>
-                    {% endfor %}
                 </div>
             </div>
         </div>
@@ -337,7 +479,7 @@
         <div class="flex items-center gap-2 flex-wrap">
             <button type="submit" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700">Search</button>
             {% if has_active_filters %}
-            <a href="{% url 'company-list' %}?view=engine" class="px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">Clear filters</a>
+            <a href="{% url 'company-list' %}?view=engine{% if company_default_saved_view_applied %}&default_view=off{% endif %}" class="px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">Clear filters</a>
             {% endif %}
             <details class="ml-auto" {% if advanced_filters_active %}open{% endif %}>
                 <summary class="list-none cursor-pointer rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
@@ -414,6 +556,7 @@
         <input type="hidden" name="sort" value="{{ selected_sort }}">
         {% if is_ats_view %}<input type="hidden" name="view" value="engine">{% endif %}
         {% if selected_smart %}<input type="hidden" name="smart" value="{{ selected_smart }}">{% endif %}
+        {% if selected_company_saved_view %}<input type="hidden" name="saved_view" value="{{ selected_company_saved_view.pk }}">{% endif %}
         </div>
     </form>
 
@@ -424,268 +567,317 @@
     </p>
     {% endif %}
 
-    <!-- Bulk actions / Export -->
     {% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}
-    <div class="mb-3 flex items-center gap-3 flex-wrap">
-        <a href="{% url 'company-export-csv' %}?{{ pagination_query }}" class="text-sm text-gray-600 hover:text-gray-800 font-medium">
-            Export all
-        </a>
-        <button type="button" id="btnExportSelected" class="text-sm text-blue-600 hover:text-blue-800 font-medium disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-            Export selected (<span id="exportSelectedCount">0</span>)
-        </button>
-    </div>
+    <form method="post" action="{% url 'company-bulk-action' %}" id="company-bulk-action-form" class="mb-4">
+        {% csrf_token %}
+        <input type="hidden" name="ids" id="company-bulk-ids" value="">
+        <input type="hidden" name="action" id="company-bulk-action" value="">
+        <input type="hidden" name="scope" id="company-bulk-scope" value="selected">
+        <input type="hidden" name="query" id="company-bulk-query" value="{{ company_view_action_query }}">
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        {% if company_view_actions_enabled %}
+        <div class="mb-3 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3">
+            <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                    <div class="text-sm font-semibold text-blue-900">Queue actions</div>
+                    <div class="mt-0.5 text-xs text-blue-700">Apply workflow actions to the current saved view or filtered result set. <span class="font-semibold">{{ results_total }}</span> companies in scope.</div>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <button type="button" data-view-action="mark_review" class="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50">Mark current view</button>
+                    <button type="button" data-view-action="blacklist" class="rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50">Block current view</button>
+                    <button type="button" data-view-action="unblacklist" class="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">Unblock current view</button>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        <div id="company-bulk-toolbar" class="hidden rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div class="flex items-center gap-2 text-sm text-slate-700">
+                    <span class="font-semibold"><span id="company-bulk-count">0</span> selected</span>
+                    <span class="text-slate-300">•</span>
+                    <span>Applies to companies selected on this page only.</span>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <button type="button" data-bulk-action="mark_review" class="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100">Mark review</button>
+                    <button type="button" data-bulk-action="blacklist" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100">Block selected</button>
+                    <button type="button" data-bulk-action="unblacklist" class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100">Unblock selected</button>
+                    <button type="button" id="company-bulk-clear" class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">Clear</button>
+                </div>
+            </div>
+        </div>
+    </form>
     {% endif %}
 
-    <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-        <div class="flex items-center justify-between gap-3 border-b border-gray-100 bg-gray-50 px-4 py-2">
-            <p class="text-xs font-medium text-gray-500">
-                {% if is_ats_view %}Company Engine grid: scroll inside the table to see tenant, health, raw jobs, funnel, links, and actions.{% else %}Company grid{% endif %}
-            </p>
-            {% if is_ats_view %}
-            <span class="hidden md:inline-flex items-center rounded-full bg-white px-2.5 py-1 text-xs font-medium text-gray-500 border border-gray-200">Horizontal + vertical scroll enabled</span>
-            {% endif %}
+    <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div class="flex flex-col gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+                <p class="text-sm font-semibold text-slate-900">{% if is_ats_view %}Companies work queue{% else %}Companies{% endif %}</p>
+                <p class="mt-0.5 text-xs text-slate-500">{% if is_ats_view %}Select a company to inspect ATS mapping, readiness, tenant state, and job flow without leaving the grid.{% else %}Browse companies and jump into profile details.{% endif %}</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 text-xs justify-end">
+                <span class="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 font-medium text-slate-600">{{ results_total|default:stat_total_companies }} rows</span>
+                <div class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1">
+                    <span class="px-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Columns</span>
+                    <button type="button" data-company-column-preset="all" class="rounded-full px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100">All</button>
+                    <button type="button" data-company-column-preset="ops" class="rounded-full px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100">Ops</button>
+                    <button type="button" data-company-column-preset="compact" class="rounded-full px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100">Compact</button>
+                    <details class="relative">
+                        <summary class="list-none cursor-pointer rounded-full px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100">Customize</summary>
+                        <div class="absolute right-0 z-30 mt-2 w-48 rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
+                            <div class="space-y-2">
+                                <label class="flex items-center justify-between gap-3 text-xs text-slate-700"><span>ATS mapping</span><input type="checkbox" value="ats" data-company-column-toggle class="rounded border-slate-300"></label>
+                                <label class="flex items-center justify-between gap-3 text-xs text-slate-700"><span>Health</span><input type="checkbox" value="health" data-company-column-toggle class="rounded border-slate-300"></label>
+                                <label class="flex items-center justify-between gap-3 text-xs text-slate-700"><span>Pipeline</span><input type="checkbox" value="pipeline" data-company-column-toggle class="rounded border-slate-300"></label>
+                                <label class="flex items-center justify-between gap-3 text-xs text-slate-700"><span>Readiness</span><input type="checkbox" value="readiness" data-company-column-toggle class="rounded border-slate-300"></label>
+                            </div>
+                        </div>
+                    </details>
+                </div>
+                {% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}
+                <button type="button" id="btnExportSelected" class="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50" disabled>
+                    Export selected (<span id="exportSelectedCount">0</span>)
+                </button>
+                {% endif %}
+                <a href="{% url 'company-export-csv' %}?{{ pagination_query }}" class="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 font-medium text-slate-600 hover:bg-slate-100">Export view</a>
+            </div>
         </div>
-        <div class="{% if is_ats_view %}max-h-[72vh] overflow-auto{% else %}overflow-x-auto{% endif %}" id="company-grid-scroll">
-        <table class="{% if is_ats_view %}min-w-[2160px]{% else %}min-w-[1280px]{% endif %} w-full text-sm">
-            <thead class="{% if is_ats_view %}sticky top-0 z-20{% endif %}">
-                <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+        <div class="overflow-x-auto">
+        <table id="company-engine-grid" class="min-w-[1320px] w-full text-sm">
+            <thead class="bg-slate-50">
+                <tr class="border-b border-slate-200 text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                     {% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}
-                    <th class="px-4 py-3 w-12 {% if is_ats_view %}sticky left-0 z-30 bg-gray-50{% endif %}">
+                    <th class="company-grid-sticky-left px-4 py-3 w-12" style="left:0;">
                         <input type="checkbox" id="selectAll" class="rounded border-gray-300">
                     </th>
                     {% endif %}
-                    <th class="px-4 py-3 w-[220px] {% if is_ats_view %}sticky left-12 z-30 bg-gray-50 shadow-[1px_0_0_#e5e7eb]{% endif %}">
-                        <a href="?{{ pagination_query }}&sort={% if selected_sort == 'name' %}name_desc{% else %}name{% endif %}" class="hover:text-blue-600 inline-flex items-center gap-1">Company {% if selected_sort == 'name' %}<span class="text-blue-600">↑</span>{% elif selected_sort == 'name_desc' %}<span class="text-blue-600">↓</span>{% endif %}</a>
+                    <th data-company-col="company" class="company-grid-sticky-left px-4 py-3 min-w-[290px]" style="left:{% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}3.5rem{% else %}0{% endif %};">
+                        <a href="?{{ pagination_query }}&sort={% if selected_sort == 'name' %}name_desc{% else %}name{% endif %}" class="inline-flex items-center gap-1 hover:text-blue-600">
+                            Company
+                            {% if selected_sort == 'name' %}<span class="text-blue-600">↑</span>{% elif selected_sort == 'name_desc' %}<span class="text-blue-600">↓</span>{% endif %}
+                        </a>
                     </th>
-                    <th class="px-4 py-3 w-[180px] {% if not is_ats_view %}hidden md:table-cell{% endif %}">Industry</th>
-                    <th class="px-4 py-3 w-[180px] {% if not is_ats_view %}hidden lg:table-cell{% endif %}">Website</th>
-                    <th class="px-4 py-3 w-[170px] {% if not is_ats_view %}hidden xl:table-cell{% endif %}">ATS Platform</th>
-                    {% if is_ats_view %}
-                    <th class="px-4 py-3 w-[220px]">Tenant</th>
-                    <th class="px-4 py-3 w-[130px] text-center">ATS Health</th>
-                    <th class="px-4 py-3 w-[120px] text-center">Confidence</th>
-                    <th class="px-4 py-3 w-[110px] text-center">Verified</th>
-                    {% endif %}
-                    <th class="px-4 py-3 w-[130px] text-right font-mono">
-                        <a href="?{{ pagination_query }}&sort=submissions" class="hover:text-blue-600 inline-flex items-center justify-end gap-1">Submissions {% if selected_sort == 'submissions' %}<span class="text-blue-600">↓</span>{% endif %}</a>
-                    </th>
-                    <th class="px-4 py-3 w-[120px] text-right font-mono">
-                        <a href="?{{ pagination_query }}&sort=interviews" class="hover:text-blue-600 inline-flex items-center justify-end gap-1">Interviews {% if selected_sort == 'interviews' %}<span class="text-blue-600">↓</span>{% endif %}</a>
-                    </th>
-                    <th class="px-4 py-3 w-[125px] text-right font-mono">
-                        <a href="?{{ pagination_query }}&sort=placements" class="hover:text-blue-600 inline-flex items-center justify-end gap-1">Placements {% if selected_sort == 'placements' %}<span class="text-blue-600">↓</span>{% endif %}</a>
-                    </th>
-                    <th class="px-4 py-3 w-[90px] text-right font-mono">
-                        <a href="?{{ pagination_query }}&sort=jobs" class="hover:text-blue-600 inline-flex items-center justify-end gap-1">Jobs {% if selected_sort == 'jobs' %}<span class="text-blue-600">↓</span>{% endif %}</a>
-                    </th>
-                    {% if is_ats_view %}
-                    <th class="px-4 py-3 w-[105px] text-right font-mono">Raw</th>
-                    <th class="px-4 py-3 w-[110px] text-right font-mono">Pending</th>
-                    {% endif %}
-                    <th class="px-4 py-3 w-[150px] {% if not is_ats_view %}hidden sm:table-cell{% endif %} text-center">Status</th>
-                    <th class="px-4 py-3 w-[95px] {% if not is_ats_view %}hidden md:table-cell{% endif %} text-center">Links</th>
-                    <th class="px-4 py-3 w-[180px] text-right {% if is_ats_view %}sticky right-0 z-30 bg-gray-50 shadow-[-1px_0_0_#e5e7eb]{% endif %}">Actions</th>
+                    <th data-company-col="ats" class="px-4 py-3 min-w-[230px]">ATS mapping</th>
+                    <th data-company-col="health" class="px-4 py-3 min-w-[170px]">Health</th>
+                    <th data-company-col="pipeline" class="px-4 py-3 min-w-[230px]">Pipeline</th>
+                    <th data-company-col="readiness" class="px-4 py-3 min-w-[150px]">Readiness</th>
+                    <th data-company-col="actions" class="company-grid-sticky-right px-4 py-3 min-w-[240px] text-right" style="right:0;">Actions</th>
                 </tr>
             </thead>
             <tbody>
                 {% for company in companies %}
-                <tr class="group border-b border-gray-100 hover:bg-gray-50/50" data-company-pk="{{ company.pk }}" {% if company.platform_label %}data-label-pk="{{ company.platform_label.pk }}" data-platform-pk="{{ company.platform_label.platform.pk|default:'' }}"{% endif %}>
+                <tr class="company-grid-row border-b border-slate-100 align-top hover:bg-slate-50/70" data-company-pk="{{ company.pk }}" {% if company.platform_label %}data-label-pk="{{ company.platform_label.pk }}" data-platform-pk="{{ company.platform_label.platform.pk|default:'' }}"{% endif %}>
                     {% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}
-                    <td class="px-4 py-3 {% if is_ats_view %}sticky left-0 z-10 bg-white group-hover:bg-gray-50{% endif %}">
+                    <td class="company-grid-sticky-left px-4 py-4" style="left:0;">
                         <input type="checkbox" class="company-checkbox rounded border-gray-300" value="{{ company.pk }}">
                     </td>
                     {% endif %}
-                    <td class="px-4 py-3 {% if is_ats_view %}sticky left-12 z-10 bg-white shadow-[1px_0_0_#f1f5f9] group-hover:bg-gray-50{% endif %}">
-                        <span class="inline-flex items-center gap-2 flex-wrap">
-                            {% if company.is_blacklisted %}
-                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-red-100 text-red-800 border border-red-200" title="Blacklisted">BL</span>
-                            {% endif %}
-                            <a href="{% url 'company-detail' company.pk %}" class="font-medium text-gray-900 hover:underline">
-                                {{ company.name }}
-                            </a>
-                        </span>
-                        {% if company.alias %}
-                        <div class="text-xs text-gray-500">Alias: {{ company.alias }}</div>
-                        {% endif %}
-                        <div class="mt-1 flex items-center gap-2">
-                            <button type="button" class="company-preview-trigger text-xs text-gray-500 hover:text-blue-600" data-company-name="{{ company.name }}" data-company-industry="{{ company.industry|default:'—' }}" data-company-website="{{ company.website|default:'—' }}" data-company-status="{{ company.relationship_status|default:'—' }}" data-company-contact="{{ company.primary_contact_name|default:'—' }}" title="Quick preview">Preview</button>
-                        </div>
-                        {% if company.engine_row_state.warnings %}
-                        <div class="mt-2 flex flex-wrap gap-1.5">
-                            {% for warning in company.engine_row_state.warnings %}
-                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold
-                                {% if warning.tone == 'rose' %}bg-rose-50 text-rose-700
-                                {% elif warning.tone == 'amber' %}bg-amber-50 text-amber-700
-                                {% elif warning.tone == 'blue' %}bg-blue-50 text-blue-700
-                                {% elif warning.tone == 'yellow' %}bg-yellow-50 text-yellow-800
-                                {% elif warning.tone == 'indigo' %}bg-indigo-50 text-indigo-700
-                                {% elif warning.tone == 'orange' %}bg-orange-50 text-orange-700
-                                {% else %}bg-slate-100 text-slate-700{% endif %}">
-                                {{ warning.label }}
-                            </span>
-                            {% endfor %}
-                            {% if company.engine_row_state.extra_warning_count %}
-                            <span class="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">+{{ company.engine_row_state.extra_warning_count }}</span>
-                            {% endif %}
-                        </div>
-                        {% endif %}
-                    </td>
-                    <td class="px-4 py-3 {% if not is_ats_view %}hidden md:table-cell{% endif %} text-gray-600">{{ company.industry|default:"—" }}</td>
-                    <td class="px-4 py-3 {% if not is_ats_view %}hidden lg:table-cell{% endif %}">
-                        {% if company.website %}
-                        <a href="{{ company.website }}" target="_blank" rel="noopener" class="text-blue-600 hover:underline text-xs break-all">
-                            {{ company.website|truncatechars:50 }}
-                        </a>
-                        {% else %}
-                        <span class="text-gray-400 text-xs">—</span>
-                        {% endif %}
-                    </td>
-                    <td class="px-4 py-3 {% if not is_ats_view %}hidden xl:table-cell{% endif %}">
-                        {% with label=company.platform_label %}
-                        {% if label and label.platform %}
-                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border"
-                            style="background-color:{{ label.platform.color_hex }}18;color:{{ label.platform.color_hex }};border-color:{{ label.platform.color_hex }}44;">
-                            <span class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background-color:{{ label.platform.color_hex }};"></span>
-                            {{ label.platform.name }}
-                        </span>
-                        {% elif label and label.detection_method == 'UNDETECTED' %}
-                        <span class="text-xs text-gray-400 italic">No ATS</span>
-                        {% else %}
-                        <span class="text-xs text-gray-300">—</span>
-                        {% endif %}
-                        {% endwith %}
-                    </td>
-                    {% if is_ats_view %}
-                    <td class="px-4 py-3">
-                        {% with label=company.platform_label %}
-                        {% if label %}
-                        <div class="flex items-center gap-1.5" id="tenant-display-{{ label.pk }}">
-                            {% if label.tenant_id %}
-                            <span class="font-mono text-[11px] text-gray-700 bg-gray-100 rounded px-2 py-1 max-w-[180px] truncate" title="{{ label.tenant_id }}">{{ label.tenant_id }}</span>
-                            {% else %}
-                            <span class="text-xs text-amber-700">missing</span>
-                            {% endif %}
-                            {% if request.user.is_superuser %}
-                            <button type="button" onclick="startEditTenant({{ label.pk }}, '{{ label.tenant_id|escapejs }}')" class="text-gray-400 hover:text-blue-600" title="Edit tenant ID">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                            </button>
-                            {% endif %}
-                        </div>
-                        <div class="hidden items-center gap-1.5" id="tenant-edit-{{ label.pk }}">
-                            <input type="text" id="tenant-input-{{ label.pk }}" value="{{ label.tenant_id|default:'' }}" class="w-40 rounded-md border border-blue-300 px-2 py-1 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-100" onkeydown="handleTenantKey(event, {{ label.pk }})">
-                            <button type="button" onclick="saveTenant({{ label.pk }})" class="text-emerald-600 hover:text-emerald-800" title="Save">✓</button>
-                            <button type="button" onclick="cancelEditTenant({{ label.pk }})" class="text-gray-400 hover:text-gray-700" title="Cancel">×</button>
-                        </div>
-                        {% else %}
-                        <span class="text-xs text-gray-400">—</span>
-                        {% endif %}
-                        {% endwith %}
-                    </td>
-                    <td class="px-4 py-3 text-center">
-                        {% with label=company.platform_label %}
-                        {% if label %}
-                            {% with s=label.scrape_status %}
-                            {% if s == 'verified' %}
-                            <span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">● Live</span>
-                            {% elif s == 'down' %}
-                            <span class="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700">● Down</span>
-                            {% elif s == 'ready' %}
-                            <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">● Ready</span>
-                            {% elif s == 'needs_backfill' %}
-                            <span class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">Fix</span>
-                            {% elif s == 'no_tenant' %}
-                            <span class="inline-flex items-center gap-1 rounded-full bg-yellow-50 px-2 py-0.5 text-xs font-medium text-yellow-800">No tenant</span>
-                            {% elif s == 'no_ats' %}
-                            <span class="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">No ATS</span>
-                            {% else %}
-                            <span class="text-xs text-gray-400">—</span>
-                            {% endif %}
-                            {% endwith %}
-                            {% if company.engine_row_state.health_age %}
-                            <div class="mt-1 text-[10px] text-gray-400">{{ company.engine_row_state.health_age }}</div>
-                            {% endif %}
-                        {% else %}
-                        <span class="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">Unlabeled</span>
-                        {% endif %}
-                        {% endwith %}
-                    </td>
-                    <td class="px-4 py-3 text-center">
-                        {% with label=company.platform_label %}
-                        {% if label.confidence == 'HIGH' %}
-                        <span class="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">High</span>
-                        {% elif label.confidence == 'MEDIUM' %}
-                        <span class="inline-flex rounded-full bg-yellow-50 px-2 py-0.5 text-xs font-medium text-yellow-800">Med</span>
-                        {% elif label.confidence == 'LOW' %}
-                        <span class="inline-flex rounded-full bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-700">Low</span>
-                        {% else %}
-                        <span class="text-xs text-gray-400">—</span>
-                        {% endif %}
-                        {% endwith %}
-                    </td>
-                    <td class="px-4 py-3 text-center">
-                        {% with label=company.platform_label %}
-                        {% if label %}
-                        {% if request.user.is_superuser %}
-                        <button type="button" onclick="toggleVerify({{ label.pk }}, this)" data-verified="{{ label.is_verified|yesno:'true,false' }}" class="text-lg leading-none {% if not label.is_verified %}opacity-40{% endif %}" title="{% if label.is_verified %}Verified. Click to unverify.{% else %}Click to verify{% endif %}">
-                            {% if label.is_verified %}✓{% else %}□{% endif %}
-                        </button>
-                        {% else %}
-                        <span class="text-xs {% if label.is_verified %}text-emerald-700{% else %}text-gray-400{% endif %}">{% if label.is_verified %}Yes{% else %}No{% endif %}</span>
-                        {% endif %}
-                        {% else %}
-                        <span class="text-xs text-gray-400">—</span>
-                        {% endif %}
-                        {% endwith %}
-                    </td>
-                    {% endif %}
-                    <td class="px-4 py-3 text-right font-mono">{{ company.total_submissions }}</td>
-                    <td class="px-4 py-3 text-right font-mono">{{ company.total_interviews }}</td>
-                    <td class="px-4 py-3 text-right font-mono">{{ company.total_placements }}</td>
-                    <td class="px-4 py-3 text-right font-mono">{{ company.job_count }}</td>
-                    {% if is_ats_view %}
-                    <td class="px-4 py-3 text-right font-mono">{{ company.raw_job_count|default:0 }}</td>
-                    <td class="px-4 py-3 text-right font-mono">{{ company.pending_raw_job_count|default:0 }}</td>
-                    {% endif %}
-                    <td class="px-4 py-3 {% if not is_ats_view %}hidden sm:table-cell{% endif %}">
-                        <div class="flex flex-wrap gap-1 justify-center">
-                            {% if company.is_blacklisted %}
-                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800">Blacklisted</span>
-                            {% endif %}
-                            {% if company.relationship_status %}
-                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-800">
-                                {{ company.relationship_status }}
-                            </span>
-                            {% endif %}
-                            {% if not company.is_blacklisted and not company.relationship_status %}
-                            <span class="text-gray-400 text-xs">—</span>
+                    <td data-company-col="company" class="company-grid-sticky-left px-4 py-4" style="left:{% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}3.5rem{% else %}0{% endif %};">
+                        <div class="space-y-2">
+                            <div class="flex items-start gap-2">
+                                {% if company.is_blacklisted %}
+                                <span class="mt-0.5 inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">Blocked</span>
+                                {% endif %}
+                                <div class="min-w-0">
+                                    <a href="{% url 'company-detail' company.pk %}" class="block truncate text-sm font-semibold text-slate-900 hover:text-blue-700 hover:underline">{{ company.name }}</a>
+                                    <div class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+                                        {% if company.alias %}<span>Alias: {{ company.alias|truncatechars:28 }}</span>{% endif %}
+                                        {% if company.industry %}<span>{{ company.industry|truncatechars:28 }}</span>{% endif %}
+                                        {% if company.website %}
+                                        <a href="{{ company.website }}" target="_blank" rel="noopener" class="text-blue-600 hover:underline">{{ company.website|truncatechars:32 }}</a>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                            {% if company.engine_row_state.warnings %}
+                            <div class="flex flex-wrap gap-1.5">
+                                {% for warning in company.engine_row_state.warnings %}
+                                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold
+                                    {% if warning.tone == 'rose' %}bg-rose-50 text-rose-700
+                                    {% elif warning.tone == 'amber' %}bg-amber-50 text-amber-700
+                                    {% elif warning.tone == 'blue' %}bg-blue-50 text-blue-700
+                                    {% elif warning.tone == 'yellow' %}bg-yellow-50 text-yellow-800
+                                    {% elif warning.tone == 'indigo' %}bg-indigo-50 text-indigo-700
+                                    {% elif warning.tone == 'orange' %}bg-orange-50 text-orange-700
+                                    {% else %}bg-slate-100 text-slate-700{% endif %}">
+                                    {{ warning.label }}
+                                </span>
+                                {% endfor %}
+                                {% if company.engine_row_state.extra_warning_count %}
+                                <span class="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">+{{ company.engine_row_state.extra_warning_count }}</span>
+                                {% endif %}
+                            </div>
                             {% endif %}
                         </div>
                     </td>
-                    <td class="px-4 py-3 {% if not is_ats_view %}hidden md:table-cell{% endif %} text-center">
-                        {% if company.website or company.career_site_url %}
-                            {% if company.website_is_valid %}
-                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-emerald-50 text-emerald-700" title="Website OK">OK</span>
-                            {% elif company.website %}
-                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700" title="Website unchecked">—</span>
+                    <td data-company-col="ats" class="px-4 py-4">
+                        {% with label=company.platform_label %}
+                        <div class="space-y-2">
+                            <div>
+                                {% if label and label.platform %}
+                                <span class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold"
+                                    style="background-color:{{ label.platform.color_hex }}18;color:{{ label.platform.color_hex }};border-color:{{ label.platform.color_hex }}44;">
+                                    <span class="h-1.5 w-1.5 rounded-full" style="background-color:{{ label.platform.color_hex }};"></span>
+                                    {{ label.platform.name }}
+                                </span>
+                                {% elif label and label.detection_method == 'UNDETECTED' %}
+                                <span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">No ATS</span>
+                                {% else %}
+                                <span class="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">Unlabeled</span>
+                                {% endif %}
+                            </div>
+                            <div class="space-y-1">
+                                <div class="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Tenant</div>
+                                {% if label %}
+                                <div class="flex items-center gap-1.5" id="tenant-display-{{ label.pk }}">
+                                    {% if label.tenant_id %}
+                                    <span class="max-w-[180px] truncate rounded bg-slate-100 px-2 py-1 font-mono text-[11px] text-slate-700" title="{{ label.tenant_id }}">{{ label.tenant_id }}</span>
+                                    {% else %}
+                                    <span class="text-xs text-amber-700">missing</span>
+                                    {% endif %}
+                                    {% if request.user.is_superuser %}
+                                    <button type="button" onclick="startEditTenant({{ label.pk }}, '{{ label.tenant_id|escapejs }}')" class="text-slate-400 hover:text-blue-600" title="Edit tenant ID">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                    </button>
+                                    {% endif %}
+                                </div>
+                                <div class="hidden items-center gap-1.5" id="tenant-edit-{{ label.pk }}">
+                                    <input type="text" id="tenant-input-{{ label.pk }}" value="{{ label.tenant_id|default:'' }}" class="w-40 rounded-md border border-blue-300 px-2 py-1 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-100" onkeydown="handleTenantKey(event, {{ label.pk }})">
+                                    <button type="button" onclick="saveTenant({{ label.pk }})" class="text-emerald-600 hover:text-emerald-800" title="Save">✓</button>
+                                    <button type="button" onclick="cancelEditTenant({{ label.pk }})" class="text-slate-400 hover:text-slate-700" title="Cancel">×</button>
+                                </div>
+                                {% else %}
+                                <div class="text-xs text-slate-400">No mapping</div>
+                                {% endif %}
+                            </div>
+                            {% if label %}
+                            <div class="flex items-center gap-2 text-[11px] text-slate-500">
+                                <span>
+                                    {% if label.confidence == 'HIGH' %}High confidence
+                                    {% elif label.confidence == 'MEDIUM' %}Medium confidence
+                                    {% elif label.confidence == 'LOW' %}Low confidence
+                                    {% else %}Unknown confidence{% endif %}
+                                </span>
+                                <span class="text-slate-300">•</span>
+                                {% if request.user.is_superuser %}
+                                <button type="button" onclick="toggleVerify({{ label.pk }}, this)" data-verified="{{ label.is_verified|yesno:'true,false' }}" class="font-semibold {% if label.is_verified %}text-emerald-700{% else %}text-slate-400{% endif %}" title="{% if label.is_verified %}Verified. Click to unverify.{% else %}Click to verify{% endif %}">
+                                    {% if label.is_verified %}Verified{% else %}Unverified{% endif %}
+                                </button>
+                                {% else %}
+                                <span class="font-semibold {% if label.is_verified %}text-emerald-700{% else %}text-slate-400{% endif %}">{% if label.is_verified %}Verified{% else %}Unverified{% endif %}</span>
+                                {% endif %}
+                            </div>
                             {% endif %}
-                        {% else %}
-                        <span class="text-gray-400 text-xs">—</span>
-                        {% endif %}
+                        </div>
+                        {% endwith %}
                     </td>
-                    <td class="px-4 py-3 text-right {% if is_ats_view %}sticky right-0 z-10 bg-white shadow-[-1px_0_0_#f1f5f9] group-hover:bg-gray-50{% endif %}">
-                        <div class="flex items-center justify-end gap-2">
-                            <span class="hidden xl:inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">Ready {{ company.engine_row_state.readiness_score }}%</span>
+                    <td data-company-col="health" class="px-4 py-4">
+                        {% with label=company.platform_label %}
+                        <div class="space-y-2">
+                            <div>
+                                {% if label %}
+                                    {% with s=label.scrape_status %}
+                                    {% if s == 'verified' %}
+                                    <span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">● Live</span>
+                                    {% elif s == 'down' %}
+                                    <span class="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700">● Down</span>
+                                    {% elif s == 'ready' %}
+                                    <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">● Ready</span>
+                                    {% elif s == 'needs_backfill' %}
+                                    <span class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">Fix required</span>
+                                    {% elif s == 'no_tenant' %}
+                                    <span class="inline-flex items-center gap-1 rounded-full bg-yellow-50 px-2.5 py-1 text-xs font-semibold text-yellow-800">No tenant</span>
+                                    {% elif s == 'no_ats' %}
+                                    <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">No ATS</span>
+                                    {% else %}
+                                    <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">Unknown</span>
+                                    {% endif %}
+                                    {% endwith %}
+                                {% else %}
+                                <span class="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">Unlabeled</span>
+                                {% endif %}
+                            </div>
+                            <div class="text-xs text-slate-500">
+                                {% if company.engine_row_state.health_age %}
+                                {{ company.engine_row_state.health_age }}
+                                {% elif label and label.platform %}
+                                never checked
+                                {% else %}
+                                waiting for mapping
+                                {% endif %}
+                            </div>
+                            <div class="text-xs text-slate-500">
+                                {% if company.website %}
+                                    {% if company.website_is_valid %}
+                                    Website valid
+                                    {% else %}
+                                    Website unchecked
+                                    {% endif %}
+                                {% else %}
+                                No website
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endwith %}
+                    </td>
+                    <td data-company-col="pipeline" class="px-4 py-4">
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                <div class="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Raw</div>
+                                <div class="mt-1 text-lg font-bold text-slate-900">{{ company.raw_job_count|default:0 }}</div>
+                            </div>
+                            <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                <div class="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Pending</div>
+                                <div class="mt-1 text-lg font-bold {% if company.pending_raw_job_count %}text-indigo-700{% else %}text-slate-900{% endif %}">{{ company.pending_raw_job_count|default:0 }}</div>
+                            </div>
+                            <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                <div class="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Jobs</div>
+                                <div class="mt-1 text-lg font-bold text-slate-900">{{ company.job_count }}</div>
+                            </div>
+                            <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                <div class="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Submissions</div>
+                                <div class="mt-1 text-lg font-bold text-slate-900">{{ company.total_submissions }}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td data-company-col="readiness" class="px-4 py-4">
+                        <div class="space-y-2">
+                            <div class="flex items-center gap-2">
+                                <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold
+                                    {% if company.engine_row_state.readiness_tone == 'emerald' %}bg-emerald-50 text-emerald-700
+                                    {% elif company.engine_row_state.readiness_tone == 'blue' %}bg-blue-50 text-blue-700
+                                    {% elif company.engine_row_state.readiness_tone == 'amber' %}bg-amber-50 text-amber-700
+                                    {% else %}bg-rose-50 text-rose-700{% endif %}">
+                                    {{ company.engine_row_state.readiness_label }}
+                                </span>
+                                <span class="text-sm font-bold text-slate-900">{{ company.engine_row_state.readiness_score }}%</span>
+                            </div>
+                            <div class="h-2 overflow-hidden rounded-full bg-slate-100">
+                                <div class="h-full rounded-full
+                                    {% if company.engine_row_state.readiness_tone == 'emerald' %}bg-emerald-500
+                                    {% elif company.engine_row_state.readiness_tone == 'blue' %}bg-blue-500
+                                    {% elif company.engine_row_state.readiness_tone == 'amber' %}bg-amber-500
+                                    {% else %}bg-rose-500{% endif %}" style="width: {{ company.engine_row_state.readiness_score }}%;"></div>
+                            </div>
+                            <div class="text-xs text-slate-500">
+                                {% if company.relationship_status %}{{ company.relationship_status }}{% else %}No relationship tag{% endif %}
+                                {% if company.total_interviews or company.total_placements %}
+                                <span class="text-slate-300">•</span>
+                                {{ company.total_interviews }} interviews / {{ company.total_placements }} placements
+                                {% endif %}
+                            </div>
+                        </div>
+                    </td>
+                    <td data-company-col="actions" class="company-grid-sticky-right px-4 py-4" style="right:0;">
+                        <div class="flex justify-end gap-2">
+                            <button type="button" onclick="openCompanyIntel({{ company.pk }})" class="inline-flex items-center rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Inspect</button>
                             {% if request.user.is_superuser or request.user.role == 'ADMIN' %}
-                            <a href="{% url 'company-edit' pk=company.pk %}" class="inline-flex items-center rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">Edit</a>
+                            <a href="{% url 'company-edit' pk=company.pk %}" class="inline-flex items-center rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Edit</a>
                             {% else %}
-                            <a href="{% url 'company-detail' company.pk %}" class="inline-flex items-center rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">Open</a>
+                            <a href="{% url 'company-detail' company.pk %}" class="inline-flex items-center rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Open</a>
                             {% endif %}
                             <details class="relative">
-                                <summary class="list-none inline-flex cursor-pointer items-center rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">More</summary>
-                                <div class="absolute right-0 z-30 mt-2 w-44 rounded-xl border border-gray-200 bg-white p-1.5 shadow-xl">
-                                    <button type="button" onclick="openCompanyIntel({{ company.pk }})" class="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50">
-                                        <span>Open Intel</span><span>→</span>
-                                    </button>
+                                <summary class="list-none inline-flex cursor-pointer items-center rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">More</summary>
+                                <div class="absolute right-0 z-30 mt-2 w-48 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
                                     {% if is_ats_view and company.platform_label and request.user.is_superuser and company.engine_row_state.show_set_ats %}
                                     <button type="button" onclick="openSetPlatform({{ company.platform_label.pk }}, {{ company.platform_label.platform.pk|default:'null' }})" class="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs text-indigo-700 hover:bg-indigo-50">
                                         <span>Set ATS</span><span>↗</span>
@@ -706,7 +898,7 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="{% if is_ats_view %}18{% else %}16{% endif %}" class="px-4 py-6 text-center text-sm text-gray-500">
+                    <td colspan="{% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}7{% else %}6{% endif %}" class="px-6 py-10 text-center text-sm text-slate-500">
                         {% if has_active_filters %}
                         No companies match the current filters. Clear filters or switch to a broader saved view.
                         {% else %}
@@ -752,7 +944,7 @@
 
 <div id="company-intel-drawer" class="fixed inset-0 z-40 hidden" aria-modal="true">
     <div class="absolute inset-0 bg-slate-900/40" onclick="closeCompanyIntel()"></div>
-    <aside class="absolute right-0 top-0 h-full w-full max-w-xl border-l border-gray-200 bg-white shadow-2xl">
+    <aside class="absolute right-0 top-0 h-full w-full max-w-2xl border-l border-gray-200 bg-white shadow-2xl">
         <div id="company-intel-content" class="h-full">
             <div class="h-full flex items-center justify-center text-sm text-gray-500">Loading company intelligence...</div>
         </div>
@@ -760,12 +952,102 @@
 </div>
 
 <script>
+var activeCompanyIntelRow = null;
+
+(function initCompanyColumnPreferences() {
+    var storageKey = 'company-engine-columns-v2';
+    var required = ['company', 'actions'];
+    var defaultColumns = ['company', 'ats', 'health', 'pipeline', 'readiness', 'actions'];
+    var presets = {
+        all: defaultColumns,
+        ops: ['company', 'ats', 'health', 'pipeline', 'actions'],
+        compact: ['company', 'ats', 'readiness', 'actions']
+    };
+    var toggleEls = Array.prototype.slice.call(document.querySelectorAll('[data-company-column-toggle]'));
+    var presetEls = Array.prototype.slice.call(document.querySelectorAll('[data-company-column-preset]'));
+    if (!toggleEls.length && !presetEls.length) return;
+
+    function normalize(columns) {
+        var normalized = Array.isArray(columns) ? columns.filter(Boolean) : defaultColumns.slice();
+        required.forEach(function(col) {
+            if (normalized.indexOf(col) === -1) normalized.push(col);
+        });
+        return normalized;
+    }
+
+    function readColumns() {
+        try {
+            var parsed = JSON.parse(window.localStorage.getItem(storageKey) || 'null');
+            return normalize(parsed);
+        } catch (err) {
+            return defaultColumns.slice();
+        }
+    }
+
+    function writeColumns(columns) {
+        window.localStorage.setItem(storageKey, JSON.stringify(normalize(columns)));
+    }
+
+    function currentPreset(columns) {
+        var active = normalize(columns).slice().sort().join(',');
+        for (var key in presets) {
+            if (normalize(presets[key]).slice().sort().join(',') === active) {
+                return key;
+            }
+        }
+        return '';
+    }
+
+    function paintPresetButtons(activePreset) {
+        presetEls.forEach(function(btn) {
+            var isActive = btn.getAttribute('data-company-column-preset') === activePreset;
+            btn.classList.toggle('bg-slate-900', isActive);
+            btn.classList.toggle('text-white', isActive);
+            btn.classList.toggle('text-slate-600', !isActive);
+        });
+    }
+
+    function applyColumns(columns) {
+        var activeColumns = normalize(columns);
+        document.querySelectorAll('[data-company-col]').forEach(function(node) {
+            var key = node.getAttribute('data-company-col');
+            node.style.display = activeColumns.indexOf(key) === -1 ? 'none' : '';
+        });
+        toggleEls.forEach(function(toggle) {
+            toggle.checked = activeColumns.indexOf(toggle.value) !== -1;
+        });
+        paintPresetButtons(currentPreset(activeColumns));
+    }
+
+    presetEls.forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var preset = presets[this.getAttribute('data-company-column-preset')] || defaultColumns;
+            writeColumns(preset);
+            applyColumns(preset);
+        });
+    });
+
+    toggleEls.forEach(function(toggle) {
+        toggle.addEventListener('change', function() {
+            var next = toggleEls.filter(function(item) { return item.checked; }).map(function(item) { return item.value; });
+            writeColumns(next);
+            applyColumns(next);
+        });
+    });
+
+    applyColumns(readColumns());
+})();
+
 function openCompanyIntel(pk) {
     var drawer = document.getElementById('company-intel-drawer');
     var content = document.getElementById('company-intel-content');
     if (!drawer || !content) return;
+    if (activeCompanyIntelRow) activeCompanyIntelRow.classList.remove('bg-blue-50');
+    activeCompanyIntelRow = document.querySelector('[data-company-pk="' + pk + '"]');
+    if (activeCompanyIntelRow) activeCompanyIntelRow.classList.add('bg-blue-50');
     drawer.classList.remove('hidden');
     content.innerHTML = '<div class="h-full flex items-center justify-center text-sm text-gray-500">Loading company intelligence...</div>';
+    document.body.classList.add('overflow-hidden');
     fetch('/companies/' + pk + '/intelligence/', {
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
     })
@@ -783,48 +1065,21 @@ function companyEscHtml(s) {
     return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-(function setupEngineInsightTabs() {
-    var tabs = Array.from(document.querySelectorAll('.engine-insight-tab'));
-    var panels = Array.from(document.querySelectorAll('.engine-insight-panel'));
-    if (!tabs.length || !panels.length) return;
-
-    function setTabStyle(tab, isOpen) {
-        tab.classList.toggle('border-[var(--brand-300)]', isOpen);
-        tab.classList.toggle('bg-[var(--brand-50)]', isOpen);
-        tab.classList.toggle('text-[var(--brand-700)]', isOpen);
-        tab.classList.toggle('shadow-sm', isOpen);
-        tab.classList.toggle('border-gray-200', !isOpen);
-        tab.classList.toggle('bg-white', !isOpen);
-        tab.classList.toggle('text-gray-700', !isOpen);
-    }
-
-    function setOpenPanel(panelName) {
-        tabs.forEach(function(tab) {
-            var isOpen = tab.getAttribute('data-panel') === panelName;
-            tab.setAttribute('aria-selected', isOpen ? 'true' : 'false');
-            tab.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-            setTabStyle(tab, isOpen);
-            var chevron = tab.querySelector('.engine-insight-chevron');
-            if (chevron) chevron.classList.toggle('rotate-180', isOpen);
-        });
-        panels.forEach(function(panel) {
-            panel.classList.toggle('hidden', panel.id !== 'engine-panel-' + panelName);
-        });
-    }
-
-    setOpenPanel('overview');
-    tabs.forEach(function(tab) {
-        tab.addEventListener('click', function() {
-            var currentPanel = tab.getAttribute('data-panel');
-            var isAlreadyOpen = tab.getAttribute('aria-expanded') === 'true';
-            setOpenPanel(isAlreadyOpen ? '' : currentPanel);
-        });
-    });
-})();
-
 function closeCompanyIntel() {
     var drawer = document.getElementById('company-intel-drawer');
     if (drawer) drawer.classList.add('hidden');
+    document.body.classList.remove('overflow-hidden');
+    if (activeCompanyIntelRow) {
+        activeCompanyIntelRow.classList.remove('bg-blue-50');
+        activeCompanyIntelRow = null;
+    }
+}
+
+function refreshActiveCompanyIntel() {
+    if (activeCompanyIntelRow) {
+        var pk = activeCompanyIntelRow.getAttribute('data-company-pk');
+        if (pk) openCompanyIntel(pk);
+    }
 }
 
 function fetchCompanyJobs(labelPk) {
@@ -861,17 +1116,29 @@ document.addEventListener('keydown', function(e) {
     var selectAll = document.getElementById('selectAll');
     var checkboxes = document.querySelectorAll('.company-checkbox');
     var btnExport = document.getElementById('btnExportSelected');
+    var bulkToolbar = document.getElementById('company-bulk-toolbar');
+    var bulkCount = document.getElementById('company-bulk-count');
+    var bulkIds = document.getElementById('company-bulk-ids');
+    var bulkForm = document.getElementById('company-bulk-action-form');
+    var bulkAction = document.getElementById('company-bulk-action');
+    var bulkScope = document.getElementById('company-bulk-scope');
+    var bulkClear = document.getElementById('company-bulk-clear');
     function updateExportBtn() {
         var checked = document.querySelectorAll('.company-checkbox:checked');
+        var ids = Array.prototype.map.call(checked, function(c) { return c.value; }).join(',');
         var countEl = document.getElementById('exportSelectedCount');
         if (countEl) countEl.textContent = checked.length;
+        if (bulkCount) bulkCount.textContent = checked.length;
+        if (bulkIds) bulkIds.value = ids;
+        if (bulkToolbar) bulkToolbar.classList.toggle('hidden', checked.length === 0);
         if (btnExport) {
             btnExport.disabled = checked.length === 0;
             if (checked.length > 0) {
-                var ids = Array.prototype.map.call(checked, function(c) { return c.value; }).join(',');
                 btnExport.onclick = function() {
                     window.location.href = exportBase + (exportBase.indexOf('?') >= 0 ? '&' : '') + 'ids=' + ids;
                 };
+            } else {
+                btnExport.onclick = null;
             }
         }
     }
@@ -883,6 +1150,32 @@ document.addEventListener('keydown', function(e) {
     }
     for (var i = 0; i < checkboxes.length; i++) {
         checkboxes[i].addEventListener('change', updateExportBtn);
+    }
+    if (bulkForm) {
+        var actionButtons = bulkForm.querySelectorAll('[data-bulk-action]');
+        for (var j = 0; j < actionButtons.length; j++) {
+            actionButtons[j].addEventListener('click', function() {
+                if (!bulkIds || !bulkIds.value) return;
+                if (bulkAction) bulkAction.value = this.getAttribute('data-bulk-action') || '';
+                if (bulkScope) bulkScope.value = 'selected';
+                bulkForm.submit();
+            });
+        }
+        var viewActionButtons = bulkForm.querySelectorAll('[data-view-action]');
+        for (var k = 0; k < viewActionButtons.length; k++) {
+            viewActionButtons[k].addEventListener('click', function() {
+                if (bulkAction) bulkAction.value = this.getAttribute('data-view-action') || '';
+                if (bulkScope) bulkScope.value = 'view';
+                bulkForm.submit();
+            });
+        }
+    }
+    if (bulkClear) {
+        bulkClear.addEventListener('click', function() {
+            if (selectAll) selectAll.checked = false;
+            for (var i = 0; i < checkboxes.length; i++) checkboxes[i].checked = false;
+            updateExportBtn();
+        });
     }
     updateExportBtn();
 })();
@@ -959,6 +1252,29 @@ function companyToast(message, isError) {
     el._timer = setTimeout(function() { el.classList.add('hidden'); }, 2600);
 }
 
+function runCompanyQuickAction(companyPk, action) {
+    var body = new URLSearchParams();
+    body.append('action', action);
+    fetch('/companies/' + companyPk + '/quick-action/', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': COMPANY_CSRF,
+            'X-Requested-With': 'XMLHttpRequest',
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: body.toString()
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (!data.ok) throw new Error(data.error || 'Action failed');
+        companyToast(data.label || 'Company updated');
+        window.location.reload();
+    })
+    .catch(function(err) {
+        companyToast(err.message || 'Could not update company', true);
+    });
+}
+
 function toggleVerify(pk, btn) {
     fetch('/harvest/labels/' + pk + '/verify/', {
         method: 'POST',
@@ -967,10 +1283,12 @@ function toggleVerify(pk, btn) {
     .then(function(r) { return r.json(); })
     .then(function(data) {
         btn.dataset.verified = data.verified ? 'true' : 'false';
-        btn.textContent = data.verified ? '✓' : '□';
-        btn.classList.toggle('opacity-40', !data.verified);
+        btn.textContent = data.verified ? 'Verified' : 'Unverified';
+        btn.classList.toggle('text-emerald-700', !!data.verified);
+        btn.classList.toggle('text-slate-400', !data.verified);
         btn.title = data.verified ? 'Verified. Click to unverify.' : 'Click to verify';
         companyToast(data.verified ? 'Marked verified' : 'Marked unverified');
+        refreshActiveCompanyIntel();
     })
     .catch(function() { companyToast('Could not update verification', true); });
 }
@@ -1029,6 +1347,48 @@ function saveTenant(pk) {
         }
         cancelEditTenant(pk);
         companyToast('Tenant saved');
+        refreshActiveCompanyIntel();
+    })
+    .catch(function() { companyToast('Could not save tenant', true); });
+}
+
+function startDrawerTenantEdit(pk, current) {
+    var wrap = document.getElementById('drawer-tenant-edit-' + pk);
+    var input = document.getElementById('drawer-tenant-input-' + pk);
+    if (!wrap || !input) return;
+    wrap.classList.remove('hidden');
+    wrap.classList.add('flex');
+    input.value = current || '';
+    input.focus();
+    input.select();
+}
+
+function cancelDrawerTenantEdit(pk) {
+    var wrap = document.getElementById('drawer-tenant-edit-' + pk);
+    if (!wrap) return;
+    wrap.classList.add('hidden');
+    wrap.classList.remove('flex');
+}
+
+function saveDrawerTenant(pk, companyPk) {
+    var input = document.getElementById('drawer-tenant-input-' + pk);
+    if (!input) return;
+    var value = input.value.trim();
+    fetch('/harvest/labels/' + pk + '/update-tenant/', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': COMPANY_CSRF,
+            'X-Requested-With': 'XMLHttpRequest',
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: 'tenant_id=' + encodeURIComponent(value)
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (!data.ok) throw new Error('Save failed');
+        companyToast('Tenant saved');
+        cancelDrawerTenantEdit(pk);
+        openCompanyIntel(companyPk);
     })
     .catch(function() { companyToast('Could not save tenant', true); });
 }
@@ -1088,41 +1448,4 @@ document.addEventListener('keydown', function(e) { if (e.key === 'Escape') close
 </script>
 {% endif %}
 
-<!-- Quick preview popover -->
-<div id="company-preview-popover" class="fixed z-50 hidden bg-white border border-gray-200 rounded-lg shadow-lg p-4 text-sm max-w-xs" style="min-width: 220px;">
-    <div class="font-semibold text-gray-900 mb-2" id="preview-name"></div>
-    <dl class="space-y-1 text-gray-600">
-        <div><dt class="inline font-medium">Industry:</dt> <dd class="inline" id="preview-industry"></dd></div>
-        <div><dt class="inline font-medium">Website:</dt> <dd class="inline truncate block" id="preview-website"></dd></div>
-        <div><dt class="inline font-medium">Status:</dt> <dd class="inline" id="preview-status"></dd></div>
-        <div><dt class="inline font-medium">Contact:</dt> <dd class="inline" id="preview-contact"></dd></div>
-    </dl>
-</div>
-<script>
-(function() {
-    var popover = document.getElementById('company-preview-popover');
-    var triggers = document.querySelectorAll('.company-preview-trigger');
-    var close = function() {
-        if (popover) popover.classList.add('hidden');
-    };
-    triggers.forEach(function(btn) {
-        btn.addEventListener('click', function(e) {
-            e.preventDefault();
-            if (!popover) return;
-            document.getElementById('preview-name').textContent = btn.getAttribute('data-company-name') || '';
-            document.getElementById('preview-industry').textContent = btn.getAttribute('data-company-industry') || '—';
-            document.getElementById('preview-website').textContent = btn.getAttribute('data-company-website') || '—';
-            document.getElementById('preview-status').textContent = btn.getAttribute('data-company-status') || '—';
-            document.getElementById('preview-contact').textContent = btn.getAttribute('data-company-contact') || '—';
-            popover.classList.remove('hidden');
-            var rect = btn.getBoundingClientRect();
-            popover.style.left = (rect.left + window.scrollX) + 'px';
-            popover.style.top = (rect.bottom + 4 + window.scrollY) + 'px';
-        });
-    });
-    document.addEventListener('click', function(e) {
-        if (popover && !popover.contains(e.target) && !e.target.classList.contains('company-preview-trigger')) close();
-    });
-})();
-</script>
 {% endblock %}

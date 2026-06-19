@@ -3,14 +3,18 @@ from django.contrib import messages
 from django.views.generic import ListView, DetailView, UpdateView, CreateView, View, TemplateView
 from django.urls import reverse, reverse_lazy
 from django.shortcuts import redirect, get_object_or_404, render
-from django.db.models import Count, Q
+from django.db import transaction
+from django.db.models import Count, Max, Q
 from django.http import HttpResponse, JsonResponse
 from django.core.exceptions import ObjectDoesNotExist
+from django.http import QueryDict
 from django.utils import timezone
+from datetime import timedelta
 import csv
 import json
+from urllib.parse import parse_qsl
 
-from .models import Company, EnrichmentLog
+from .models import Company, CompanySavedView, EnrichmentLog
 from .forms import (
     CompanyForm,
     CompanyCSVImportForm,
@@ -50,8 +54,214 @@ class AdminOrEmployeeRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
         return u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE)
 
 
-def _get_company_list_queryset(request):
+COMPANY_SAVED_VIEW_KEYS = (
+    "q",
+    "status",
+    "blacklisted",
+    "industry",
+    "website_valid",
+    "platform",
+    "ats_status",
+    "confidence",
+    "method",
+    "verified",
+    "smart",
+    "sort",
+    "page_size",
+    "view",
+)
+
+
+def _merge_company_saved_view_params(request, saved_view):
+    merged = QueryDict("", mutable=True)
+    for key, value in saved_view.query_params.items():
+        if value not in (None, ""):
+            merged[key] = str(value)
+    for key, values in request.GET.lists():
+        merged.setlist(key, values)
+    merged["saved_view"] = str(saved_view.pk)
+    return merged
+
+
+def _company_request_has_explicit_filters(request):
+    for key, values in request.GET.lists():
+        if key in {"saved_view", "default_view", "page"}:
+            continue
+        if key not in COMPANY_SAVED_VIEW_KEYS:
+            continue
+        normalized = [str(value).strip() for value in values if str(value).strip()]
+        if not normalized:
+            continue
+        if key == "view" and normalized == ["engine"]:
+            continue
+        return True
+    return False
+
+
+def _describe_company_saved_view(saved_view):
+    params = saved_view.query_params or {}
+    labels = []
+    smart_labels = {
+        "attention": "Needs attention",
+        "ready": "Ready to fetch",
+        "portal_down": "Portal down",
+        "unlabeled": "Unlabeled",
+        "raw_pending": "Raw pending",
+        "high_value": "High value",
+        "duplicates": "Duplicate review",
+        "blocked": "Blocked",
+        "scraper_inbox": "Scraper inbox",
+        "no_tenant": "No tenant",
+        "no_ats": "No ATS",
+    }
+    ats_status_labels = {
+        "verified": "Live portals",
+        "down": "Portal down",
+        "unchecked": "Unchecked",
+        "no_tenant": "No tenant",
+        "no_ats": "No ATS",
+        "unlabeled": "Unlabeled",
+    }
+    confidence_labels = {
+        "HIGH": "High confidence",
+        "MEDIUM": "Medium confidence",
+        "LOW": "Low confidence",
+        "UNKNOWN": "Unknown confidence",
+    }
+    verified_labels = {"yes": "Verified only", "no": "Unverified only"}
+    website_labels = {"1": "Valid websites", "0": "Invalid websites"}
+
+    def add(value):
+        if value and value not in labels:
+            labels.append(value)
+
+    add(smart_labels.get(params.get("smart", "")))
+    add(ats_status_labels.get(params.get("ats_status", "")))
+    add(website_labels.get(params.get("website_valid", "")))
+    add(confidence_labels.get(params.get("confidence", "")))
+    add(verified_labels.get(params.get("verified", "")))
+    if params.get("platform") == "UNDETECTED":
+        add("Platform: Not detected")
+    elif params.get("platform"):
+        add(f"Platform: {params['platform']}")
+    if params.get("status"):
+        add(f"Relationship: {params['status']}")
+    if params.get("industry"):
+        add(f"Industry: {params['industry']}")
+    if params.get("method"):
+        add(f"Method: {params['method']}")
+    if params.get("blacklisted") == "1":
+        add("Blocked only")
+    elif params.get("blacklisted") == "0":
+        add("Exclude blocked")
+    if params.get("q"):
+        add(f"Search: {params['q']}")
+    if not labels:
+        add("Base engine view")
+    return labels[:3], max(0, len(labels) - 3)
+
+
+def _company_query_params_from_string(raw_query):
+    params = QueryDict("", mutable=True)
+    for key, value in parse_qsl(raw_query or "", keep_blank_values=True):
+        if key in COMPANY_SAVED_VIEW_KEYS or key == "saved_view":
+            params.appendlist(key, value)
+    if not params.get("view"):
+        params["view"] = "engine"
+    return params
+
+
+def _company_saved_views_queryset(user):
+    return CompanySavedView.objects.filter(user=user, archived_at__isnull=True).order_by(
+        "-is_default",
+        "-is_pinned",
+        "position",
+        "name",
+    )
+
+
+def _company_params_have_actionable_scope(params):
+    for key in (
+        "q",
+        "status",
+        "blacklisted",
+        "industry",
+        "website_valid",
+        "platform",
+        "ats_status",
+        "confidence",
+        "method",
+        "verified",
+        "smart",
+    ):
+        if str(params.get(key, "")).strip():
+            return True
+    return False
+
+
+def _build_company_saved_view_metrics(request, saved_view):
+    params = QueryDict("", mutable=True)
+    for key, value in (saved_view.query_params or {}).items():
+        if key in COMPANY_SAVED_VIEW_KEYS and value not in ("", None):
+            params[key] = str(value)
+    if not params.get("view"):
+        params["view"] = "engine"
+    qs = _get_company_list_queryset(request, params=params)
+    stale_before = timezone.now() - timedelta(days=7)
+    return qs.aggregate(
+        match_count=Count("pk", distinct=True),
+        blocked_count=Count("pk", filter=Q(is_blacklisted=True), distinct=True),
+        review_count=Count("pk", filter=Q(needs_review=True), distinct=True),
+        down_count=Count("pk", filter=Q(platform_label__portal_alive=False), distinct=True),
+        stale_count=Count(
+            "pk",
+            filter=Q(platform_label__portal_alive__isnull=True, platform_label__portal_last_verified__lt=stale_before)
+            | Q(platform_label__portal_last_verified__lt=stale_before),
+            distinct=True,
+        ),
+        no_tenant_count=Count(
+            "pk",
+            filter=Q(platform_label__platform__isnull=False, platform_label__tenant_id=""),
+            distinct=True,
+        ),
+        unlabeled_count=Count("pk", filter=Q(platform_label__isnull=True), distinct=True),
+        raw_pending_count=Count("pk", filter=Q(raw_jobs__sync_status="PENDING"), distinct=True),
+    )
+
+
+def _resolve_company_list_params(request):
+    params = request.GET.copy()
+    saved_view = None
+    auto_applied = False
+    saved_view_id = request.GET.get("saved_view", "").strip()
+    if saved_view_id and request.user.is_authenticated:
+        try:
+            saved_view = CompanySavedView.objects.get(
+                pk=int(saved_view_id),
+                user=request.user,
+                archived_at__isnull=True,
+            )
+        except (CompanySavedView.DoesNotExist, ValueError, TypeError):
+            saved_view = None
+        if saved_view:
+            params = _merge_company_saved_view_params(request, saved_view)
+    elif (
+        request.user.is_authenticated
+        and request.GET.get("default_view", "").strip() != "off"
+        and not _company_request_has_explicit_filters(request)
+    ):
+        saved_view = _company_saved_views_queryset(request.user).filter(is_default=True).first()
+        if saved_view:
+            params = _merge_company_saved_view_params(request, saved_view)
+            auto_applied = True
+    if not params.get("view"):
+        params["view"] = "engine"
+    return params, saved_view, auto_applied
+
+
+def _get_company_list_queryset(request, params=None):
     """Shared queryset for list and CSV export (search, filters, sort)."""
+    params = params or request.GET
     qs = Company.objects.annotate(
         job_count=Count("jobs", distinct=True),
         raw_job_count=Count("raw_jobs", distinct=True),
@@ -61,32 +271,32 @@ def _get_company_list_queryset(request):
             distinct=True,
         ),
     )
-    q = request.GET.get("q", "").strip()
+    q = params.get("q", "").strip()
     if q:
         qs = qs.filter(name__icontains=q) | qs.filter(alias__icontains=q)
-    status_filter = request.GET.get("status", "").strip()
+    status_filter = params.get("status", "").strip()
     if status_filter:
         qs = qs.filter(relationship_status__iexact=status_filter)
-    blacklisted = request.GET.get("blacklisted", "")
+    blacklisted = params.get("blacklisted", "")
     if blacklisted == "1":
         qs = qs.filter(is_blacklisted=True)
     elif blacklisted == "0":
         qs = qs.filter(is_blacklisted=False)
-    industry_filter = request.GET.get("industry", "").strip()
+    industry_filter = params.get("industry", "").strip()
     if industry_filter:
         qs = qs.filter(industry__iexact=industry_filter)
-    website_valid = request.GET.get("website_valid", "").strip()
+    website_valid = params.get("website_valid", "").strip()
     if website_valid == "0":
         qs = qs.filter(website__isnull=False).exclude(website="").filter(website_is_valid=False)
     elif website_valid == "1":
         qs = qs.filter(website_is_valid=True)
-    platform_filter = request.GET.get("platform", "").strip()
+    platform_filter = params.get("platform", "").strip()
     if platform_filter == "UNDETECTED":
         qs = qs.filter(platform_label__detection_method="UNDETECTED")
     elif platform_filter:
         qs = qs.filter(platform_label__platform__slug=platform_filter)
 
-    ats_status = request.GET.get("ats_status", "").strip()
+    ats_status = params.get("ats_status", "").strip()
     if ats_status == "verified":
         qs = qs.filter(platform_label__portal_alive=True)
     elif ats_status == "down":
@@ -100,19 +310,19 @@ def _get_company_list_queryset(request):
     elif ats_status == "unlabeled":
         qs = qs.filter(platform_label__isnull=True)
 
-    confidence_filter = request.GET.get("confidence", "").strip()
+    confidence_filter = params.get("confidence", "").strip()
     if confidence_filter:
         qs = qs.filter(platform_label__confidence=confidence_filter)
-    method_filter = request.GET.get("method", "").strip()
+    method_filter = params.get("method", "").strip()
     if method_filter:
         qs = qs.filter(platform_label__detection_method=method_filter)
-    verified_filter = request.GET.get("verified", "").strip()
+    verified_filter = params.get("verified", "").strip()
     if verified_filter == "yes":
         qs = qs.filter(platform_label__is_verified=True)
     elif verified_filter == "no":
         qs = qs.filter(platform_label__is_verified=False)
 
-    smart_filter = request.GET.get("smart", "").strip()
+    smart_filter = params.get("smart", "").strip()
     if smart_filter == "attention":
         qs = qs.filter(
             Q(needs_review=True)
@@ -154,7 +364,7 @@ def _get_company_list_queryset(request):
     elif smart_filter == "raw_pending":
         qs = qs.filter(raw_jobs__sync_status="PENDING").distinct()
     qs = qs.prefetch_related("platform_label__platform")
-    sort = request.GET.get("sort", "name")
+    sort = params.get("sort", "name")
     if sort == "submissions":
         qs = qs.order_by("-total_submissions", "name")
     elif sort == "interviews":
@@ -170,8 +380,90 @@ def _get_company_list_queryset(request):
     return qs
 
 
-def _company_ats_context(request):
+def _build_company_activity_timeline(company, limit=100):
+    job_ids = list(company.jobs.values_list("id", flat=True))
+    if not job_ids:
+        return []
+
+    subs = ApplicationSubmission.objects.filter(job_id__in=job_ids).select_related("consultant__user", "job")
+    sub_ids = list(subs.values_list("id", flat=True))
+    if not sub_ids:
+        return []
+
+    timeline = []
+
+    def consultant_name(profile):
+        user = getattr(profile, "user", None)
+        if not user:
+            return "Unknown consultant"
+        return user.get_full_name() or user.username
+
+    for sub in subs:
+        timeline.append(
+            (
+                sub.created_at,
+                "submission_created",
+                f"Submission created for {consultant_name(sub.consultant)} on job {sub.job.title}",
+            )
+        )
+
+    for history in SubmissionStatusHistory.objects.filter(submission_id__in=sub_ids).select_related(
+        "submission__consultant__user"
+    ):
+        timeline.append(
+            (
+                history.created_at,
+                "status_change",
+                f"Status changed to {history.to_status} for {consultant_name(history.submission.consultant)}",
+            )
+        )
+
+    try:
+        from interviews_app.models import Interview
+
+        for interview in Interview.objects.filter(submission_id__in=sub_ids).select_related(
+            "submission__consultant__user"
+        ):
+            timeline.append(
+                (
+                    interview.scheduled_at,
+                    "interview",
+                    f"Interview ({interview.get_round_display()}) scheduled for {consultant_name(interview.submission.consultant)}",
+                )
+            )
+    except Exception:
+        pass
+
+    for event in EmailEvent.objects.filter(matched_submission_id__in=sub_ids).only(
+        "received_at",
+        "from_address",
+        "subject",
+    ):
+        timeline.append(
+            (
+                event.received_at,
+                "email",
+                f"Email from {event.from_address}: {event.subject}",
+            )
+        )
+
+    for offer in Offer.objects.filter(submission_id__in=sub_ids).select_related("submission__consultant__user"):
+        ts = offer.accepted_at or offer.created_at
+        timeline.append(
+            (
+                ts,
+                "offer",
+                f"Offer for {consultant_name(offer.submission.consultant)}",
+            )
+        )
+
+    timeline.sort(key=lambda item: item[0] or company.created_at, reverse=True)
+    return timeline[:limit]
+
+
+def _company_ats_context(request, params=None):
     """Shared context for the Company Engine command center."""
+    params = params or request.GET
     try:
         from harvest.models import (
             CompanyFetchRun,
@@ -273,7 +565,7 @@ def _company_ats_context(request):
         engine_config = None
     health_denominator = stat_live + stat_down
     portal_health_pct = round((stat_live / health_denominator) * 100) if health_denominator else None
-    selected_view = request.GET.get("view", "").strip()
+    selected_view = params.get("view", "").strip()
     is_ats_view = True
 
     engine_queues = [
@@ -385,10 +677,10 @@ def _company_ats_context(request):
         "portal_health_pct": portal_health_pct,
         "confidence_choices": CompanyPlatformLabel.Confidence.choices,
         "method_choices": CompanyPlatformLabel.DetectionMethod.choices,
-        "selected_ats_status": request.GET.get("ats_status", ""),
-        "selected_confidence": request.GET.get("confidence", ""),
-        "selected_method": request.GET.get("method", ""),
-        "selected_verified": request.GET.get("verified", ""),
+        "selected_ats_status": params.get("ats_status", ""),
+        "selected_confidence": params.get("confidence", ""),
+        "selected_method": params.get("method", ""),
+        "selected_verified": params.get("verified", ""),
         "selected_view": selected_view,
     }
 
@@ -431,6 +723,18 @@ def _build_company_engine_row_state(company):
         bool(getattr(company, "job_count", 0) or getattr(company, "raw_job_count", 0)),
     ]
     readiness_score = round((sum(1 for ok in score_parts if ok) / len(score_parts)) * 100)
+    if readiness_score >= 85:
+        readiness_tone = "emerald"
+        readiness_label = "Ready"
+    elif readiness_score >= 60:
+        readiness_tone = "blue"
+        readiness_label = "Usable"
+    elif readiness_score >= 35:
+        readiness_tone = "amber"
+        readiness_label = "Needs work"
+    else:
+        readiness_tone = "rose"
+        readiness_label = "Blocked"
 
     health_age = None
     if label and label.portal_last_verified:
@@ -446,13 +750,15 @@ def _build_company_engine_row_state(company):
         "warning_count": len(warnings),
         "extra_warning_count": max(0, len(warnings) - 4),
         "readiness_score": readiness_score,
+        "readiness_tone": readiness_tone,
+        "readiness_label": readiness_label,
         "health_age": health_age,
         "show_set_ats": not label or label.detection_method == "UNDETECTED" or not label.tenant_id,
         "show_create_job": getattr(company, "job_count", 0) == 0,
     }
 
 
-def _build_company_engine_filter_state(request, context):
+def _build_company_engine_filter_state(params, context):
     chips = []
 
     def add(label, value, key):
@@ -460,7 +766,7 @@ def _build_company_engine_filter_state(request, context):
             return
         chips.append({"label": label, "value": str(value), "key": key})
 
-    add("Search", request.GET.get("q", "").strip(), "q")
+    add("Search", params.get("q", "").strip(), "q")
     add("Relationship", context.get("selected_status"), "status")
     add("Blacklisted", "Yes" if context.get("selected_blacklisted") == "1" else "No" if context.get("selected_blacklisted") == "0" else "", "blacklisted")
     add("Industry", context.get("selected_industry"), "industry")
@@ -507,25 +813,38 @@ class CompanyListView(AdminOrEmployeeRequiredMixin, ListView):
         return get_page_size(self.request, default=100)
 
     def get_queryset(self):
-        return _get_company_list_queryset(self.request)
+        (
+            self.effective_params,
+            self.selected_company_saved_view,
+            self.company_default_saved_view_applied,
+        ) = _resolve_company_list_params(self.request)
+        return _get_company_list_queryset(self.request, params=self.effective_params)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        qd = self.request.GET.copy()
+        effective_params = getattr(self, "effective_params", None)
+        if effective_params is None:
+            (
+                effective_params,
+                self.selected_company_saved_view,
+                self.company_default_saved_view_applied,
+            ) = _resolve_company_list_params(self.request)
+            self.effective_params = effective_params
+        qd = effective_params.copy()
         qd.pop("page", None)
         context["pagination_query"] = qd.urlencode()
         context["page_size"] = get_page_size(self.request, default=100)
         context["page_size_options"] = PAGE_SIZE_OPTIONS
         if context.get("is_paginated"):
             context["pagination_pages"] = build_pagination_window(context["page_obj"])
-        context["selected_sort"] = self.request.GET.get("sort", "name")
-        context["selected_status"] = self.request.GET.get("status", "")
-        context["selected_blacklisted"] = self.request.GET.get("blacklisted", "")
-        context["selected_industry"] = self.request.GET.get("industry", "")
-        context["selected_website_valid"] = self.request.GET.get("website_valid", "")
-        context["selected_platform"] = self.request.GET.get("platform", "")
-        context["selected_smart"] = self.request.GET.get("smart", "")
-        context.update(_company_ats_context(self.request))
+        context["selected_sort"] = effective_params.get("sort", "name")
+        context["selected_status"] = effective_params.get("status", "")
+        context["selected_blacklisted"] = effective_params.get("blacklisted", "")
+        context["selected_industry"] = effective_params.get("industry", "")
+        context["selected_website_valid"] = effective_params.get("website_valid", "")
+        context["selected_platform"] = effective_params.get("platform", "")
+        context["selected_smart"] = effective_params.get("smart", "")
+        context.update(_company_ats_context(self.request, params=effective_params))
         context["relationship_statuses"] = (
             Company.objects.exclude(relationship_status="")
             .values_list("relationship_status", flat=True)
@@ -551,16 +870,59 @@ class CompanyListView(AdminOrEmployeeRequiredMixin, ListView):
             context["results_total"] = context["results_start"] = context["results_end"] = 0
         for company in context.get("companies", []):
             company.engine_row_state = _build_company_engine_row_state(company)
-        context.update(_build_company_engine_filter_state(self.request, context))
+        context.update(_build_company_engine_filter_state(effective_params, context))
         context["saved_company_views"] = [
             queue for queue in context.get("engine_queues", [])
             if queue["key"] in {"attention", "ready", "portal_down", "unlabeled", "no_tenant", "no_ats", "scraper_inbox", "high_value"}
         ]
+        context["selected_company_saved_view"] = getattr(self, "selected_company_saved_view", None)
+        context["company_default_saved_view_applied"] = getattr(
+            self,
+            "company_default_saved_view_applied",
+            False,
+        )
+        custom_company_views = []
+        for saved_view in _company_saved_views_queryset(self.request.user):
+            summary_items, extra_summary_count = _describe_company_saved_view(saved_view)
+            metrics = _build_company_saved_view_metrics(self.request, saved_view)
+            filter_count = sum(
+                1
+                for key, value in (saved_view.query_params or {}).items()
+                if key not in {"view", "sort", "page_size"} and value not in ("", None)
+            )
+            custom_company_views.append(
+                {
+                    "id": saved_view.pk,
+                    "name": saved_view.name,
+                    "url": f"{reverse('company-list')}?view=engine&saved_view={saved_view.pk}",
+                    "is_active": bool(getattr(self, "selected_company_saved_view", None) and self.selected_company_saved_view.pk == saved_view.pk),
+                    "is_default": saved_view.is_default,
+                    "is_pinned": saved_view.is_pinned,
+                    "summary_items": summary_items,
+                    "extra_summary_count": extra_summary_count,
+                    "filter_count": filter_count,
+                    "match_count": metrics.get("match_count", 0) or 0,
+                    "blocked_count": metrics.get("blocked_count", 0) or 0,
+                    "review_count": metrics.get("review_count", 0) or 0,
+                    "down_count": metrics.get("down_count", 0) or 0,
+                    "stale_count": metrics.get("stale_count", 0) or 0,
+                    "no_tenant_count": metrics.get("no_tenant_count", 0) or 0,
+                    "unlabeled_count": metrics.get("unlabeled_count", 0) or 0,
+                    "raw_pending_count": metrics.get("raw_pending_count", 0) or 0,
+                }
+            )
+        context["custom_company_views"] = custom_company_views
+        save_view_qd = effective_params.copy()
+        save_view_qd.pop("page", None)
+        save_view_qd.pop("saved_view", None)
+        context["company_saved_view_query"] = save_view_qd.urlencode()
         context["primary_filter_count"] = sum(
             1
             for key in ("q", "platform", "ats_status", "website_valid", "smart")
-            if self.request.GET.get(key, "").strip()
+            if effective_params.get(key, "").strip()
         )
+        context["company_view_actions_enabled"] = _company_params_have_actionable_scope(effective_params)
+        context["company_view_action_query"] = qd.urlencode()
         return context
 
 
@@ -582,6 +944,7 @@ class CompanyIntelligenceView(AdminOrEmployeeRequiredMixin, View):
             ).select_related("platform_label__platform"),
             pk=pk,
         )
+        company.engine_row_state = _build_company_engine_row_state(company)
         try:
             label = company.platform_label
         except ObjectDoesNotExist:
@@ -589,6 +952,7 @@ class CompanyIntelligenceView(AdminOrEmployeeRequiredMixin, View):
 
         raw_jobs = []
         latest_run = None
+        recent_runs = []
         raw_job_stats = {
             "total": getattr(company, "raw_job_count", 0),
             "pending": getattr(company, "pending_raw_job_count", 0),
@@ -603,6 +967,20 @@ class CompanyIntelligenceView(AdminOrEmployeeRequiredMixin, View):
                     CompanyFetchRun.objects.filter(label=label)
                     .order_by("-started_at", "-id")
                     .first()
+                )
+                recent_runs = list(
+                    CompanyFetchRun.objects.filter(label=label)
+                    .only(
+                        "id",
+                        "status",
+                        "started_at",
+                        "completed_at",
+                        "jobs_found",
+                        "jobs_new",
+                        "jobs_updated",
+                        "error_message",
+                    )
+                    .order_by("-started_at", "-id")[:5]
                 )
                 agg = RawJob.objects.filter(company=company).aggregate(
                     synced=Count("id", filter=Q(sync_status="SYNCED")),
@@ -639,11 +1017,17 @@ class CompanyIntelligenceView(AdminOrEmployeeRequiredMixin, View):
             "company": company,
             "label": label,
             "latest_run": latest_run,
+            "recent_runs": recent_runs,
+            "activity_timeline": _build_company_activity_timeline(company, limit=8),
             "raw_jobs": raw_jobs,
             "raw_job_stats": raw_job_stats,
             "attention_items": attention_items,
             "raw_jobs_url": f"{reverse('harvest-rawjobs')}?company_id={company.pk}",
             "jobs_url": f"{reverse('job-list')}?company={company.pk}",
+            "company_detail_url": reverse("company-detail", kwargs={"pk": company.pk}),
+            "company_edit_url": reverse("company-edit", kwargs={"pk": company.pk}),
+            "job_create_url": f"{reverse('job-create')}?company_id={company.pk}",
+            "company_action_url": reverse("company-quick-action", kwargs={"pk": company.pk}),
         }
         return render(request, self.template_name, context)
 
@@ -741,58 +1125,10 @@ class CompanyDetailView(AdminOrEmployeeRequiredMixin, DetailView):
             .order_by("-offers", "-interviews")[:5]
         )
 
-        # Interaction timeline: submissions, status changes, interviews, email events, offers
-        sub_ids = list(subs.values_list("id", flat=True))
-        timeline = []
-
-        # Submissions created
-        for sub in subs.select_related("consultant__user", "job"):
-            timeline.append(
-                (
-                    sub.created_at,
-                    "submission_created",
-                    f"Submission created for {sub.consultant.user.get_full_name() or sub.consultant.user.username} on job {sub.job.title}",
-                )
-            )
-
-        # Status history
-        for h in SubmissionStatusHistory.objects.filter(submission_id__in=sub_ids).select_related("submission"):
-            timeline.append(
-                (
-                    h.created_at,
-                    "status_change",
-                    f"Status changed to {h.to_status} for {h.submission.consultant.user.get_full_name() or h.submission.consultant.user.username}",
-                )
-            )
-
-        # Interviews
-        try:
-            from interviews_app.models import Interview
-
-            for iv in Interview.objects.filter(submission_id__in=sub_ids).select_related("submission", "submission__consultant__user"):
-                label = f"Interview ({iv.get_round_display()}) scheduled for {iv.submission.consultant.user.get_full_name() or iv.submission.consultant.user.username}"
-                timeline.append((iv.scheduled_at, "interview", label))
-        except Exception:
-            pass
-
-        # Email events
-        for ev in EmailEvent.objects.filter(matched_submission_id__in=sub_ids):
-            who = ev.from_address
-            label = f"Email from {who}: {ev.subject}"
-            timeline.append((ev.received_at, "email", label))
-
-        # Offers / placements
-        for offer in Offer.objects.filter(submission_id__in=sub_ids).select_related("submission", "submission__consultant__user"):
-            ts = offer.accepted_at or offer.created_at
-            label = f"Offer for {offer.submission.consultant.user.get_full_name() or offer.submission.consultant.user.username}"
-            timeline.append((ts, "offer", label))
-
-        timeline.sort(key=lambda x: x[0] or company.created_at, reverse=True)
-
         context["company_funnel"] = funnel
         context["company_top_employees"] = employees
         context["company_top_consultants"] = consultant_rows  # resolved lazily in template if needed
-        context["company_timeline"] = timeline[:100]
+        context["company_timeline"] = _build_company_activity_timeline(company, limit=100)
         context["company_jobs"] = company.jobs.all().select_related("posted_by").order_by("-created_at")
         context["harvest_health"] = harvest_summary
         context["company_platform_label"] = harvest_summary.get("label")
@@ -917,7 +1253,8 @@ class CompanyExportCSVView(LoginRequiredMixin, UserPassesTestMixin, View):
         return u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE)
 
     def get(self, request, *args, **kwargs):
-        qs = _get_company_list_queryset(request)
+        params, _saved, _auto_applied = _resolve_company_list_params(request)
+        qs = _get_company_list_queryset(request, params=params)
         ids = request.GET.get("ids", "").strip()
         if ids:
             try:
@@ -948,6 +1285,282 @@ class CompanyExportCSVView(LoginRequiredMixin, UserPassesTestMixin, View):
                 "Yes" if c.is_blacklisted else "No",
             ])
         return response
+
+
+class CompanySavedViewCreateView(LoginRequiredMixin, UserPassesTestMixin, View):
+    def test_func(self):
+        u = self.request.user
+        return u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE)
+
+    def post(self, request, *args, **kwargs):
+        name = (request.POST.get("name") or "").strip()
+        query = (request.POST.get("query") or "").strip()
+        next_url = request.POST.get("next", "").strip() or f"{reverse('company-list')}?view=engine"
+
+        if not name:
+            messages.error(request, "Saved view name is required.")
+            return redirect(next_url)
+
+        raw_pairs = parse_qsl(query, keep_blank_values=True)
+        query_params = {}
+        for key, value in raw_pairs:
+            if key in COMPANY_SAVED_VIEW_KEYS and value not in ("", None):
+                query_params[key] = value
+        query_params["view"] = "engine"
+
+        existing_view = CompanySavedView.objects.filter(
+            user=request.user,
+            name=name,
+            archived_at__isnull=True,
+        ).first()
+        next_position = (
+            CompanySavedView.objects.filter(user=request.user)
+            .aggregate(max_position=Max("position"))
+            .get("max_position")
+            or 0
+        ) + 1
+        saved_view, created = CompanySavedView.objects.update_or_create(
+            pk=existing_view.pk if existing_view else None,
+            defaults={
+                "user": request.user,
+                "name": name,
+                "query_params": query_params,
+                "archived_at": None,
+                "position": existing_view.position if existing_view else next_position,
+            },
+        )
+        if created:
+            messages.success(request, f'Saved view "{saved_view.name}" created.')
+        else:
+            messages.success(request, f'Saved view "{saved_view.name}" updated.')
+        return redirect(f"{reverse('company-list')}?view=engine&saved_view={saved_view.pk}")
+
+
+class CompanySavedViewDeleteView(LoginRequiredMixin, UserPassesTestMixin, View):
+    def test_func(self):
+        u = self.request.user
+        return u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE)
+
+    def post(self, request, pk, *args, **kwargs):
+        next_url = request.POST.get("next", "").strip() or f"{reverse('company-list')}?view=engine"
+        saved_view = get_object_or_404(CompanySavedView, pk=pk, user=request.user, archived_at__isnull=True)
+        name = saved_view.name
+        saved_view.delete()
+        messages.success(request, f'Saved view "{name}" deleted.')
+        return redirect(next_url)
+
+
+class CompanySavedViewDefaultView(LoginRequiredMixin, UserPassesTestMixin, View):
+    def test_func(self):
+        u = self.request.user
+        return u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE)
+
+    def post(self, request, pk, *args, **kwargs):
+        next_url = request.POST.get("next", "").strip() or f"{reverse('company-list')}?view=engine"
+        saved_view = get_object_or_404(CompanySavedView, pk=pk, user=request.user, archived_at__isnull=True)
+        was_default = saved_view.is_default
+
+        with transaction.atomic():
+            CompanySavedView.objects.filter(user=request.user, is_default=True).update(is_default=False)
+            if not was_default:
+                saved_view.is_default = True
+                saved_view.save(update_fields=["is_default", "updated_at"])
+
+        if was_default:
+            messages.success(request, f'Default landing view cleared for "{saved_view.name}".')
+        else:
+            messages.success(request, f'"{saved_view.name}" is now your default Companies view.')
+        return redirect(next_url)
+
+
+class CompanySavedViewManageView(LoginRequiredMixin, UserPassesTestMixin, View):
+    def test_func(self):
+        u = self.request.user
+        return u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE)
+
+    def post(self, request, pk, *args, **kwargs):
+        next_url = request.POST.get("next", "").strip() or f"{reverse('company-list')}?view=engine"
+        saved_view = get_object_or_404(CompanySavedView, pk=pk, user=request.user, archived_at__isnull=True)
+        action = (request.POST.get("manage_action") or "").strip()
+
+        if action == "rename":
+            new_name = (request.POST.get("name") or "").strip()
+            if not new_name:
+                messages.error(request, "Saved view name is required.")
+                return redirect(next_url)
+            if CompanySavedView.objects.filter(
+                user=request.user,
+                name=new_name,
+                archived_at__isnull=True,
+            ).exclude(pk=saved_view.pk).exists():
+                messages.error(request, f'Saved view "{new_name}" already exists.')
+                return redirect(next_url)
+            saved_view.name = new_name
+            saved_view.save(update_fields=["name", "updated_at"])
+            messages.success(request, f'Saved view renamed to "{saved_view.name}".')
+        elif action == "duplicate":
+            base_name = f"{saved_view.name} copy"
+            candidate_name = base_name
+            suffix = 2
+            while CompanySavedView.objects.filter(
+                user=request.user,
+                name=candidate_name,
+                archived_at__isnull=True,
+            ).exists():
+                candidate_name = f"{base_name} {suffix}"
+                suffix += 1
+            next_position = (
+                CompanySavedView.objects.filter(user=request.user)
+                .aggregate(max_position=Max("position"))
+                .get("max_position")
+                or 0
+            ) + 1
+            clone = CompanySavedView.objects.create(
+                user=request.user,
+                name=candidate_name,
+                query_params=dict(saved_view.query_params or {}),
+                position=next_position,
+            )
+            messages.success(request, f'Saved view "{clone.name}" created.')
+        elif action == "pin":
+            saved_view.is_pinned = not saved_view.is_pinned
+            saved_view.save(update_fields=["is_pinned", "updated_at"])
+            messages.success(
+                request,
+                f'{"Pinned" if saved_view.is_pinned else "Unpinned"} "{saved_view.name}".',
+            )
+        elif action in {"move_up", "move_down"}:
+            views = list(_company_saved_views_queryset(request.user))
+            positions = {view.pk: idx for idx, view in enumerate(views)}
+            current_index = positions.get(saved_view.pk)
+            if current_index is not None:
+                swap_index = current_index - 1 if action == "move_up" else current_index + 1
+                if 0 <= swap_index < len(views):
+                    swap_view = views[swap_index]
+                    saved_view.position, swap_view.position = swap_view.position, saved_view.position
+                    saved_view.save(update_fields=["position", "updated_at"])
+                    swap_view.save(update_fields=["position", "updated_at"])
+            messages.success(request, f'Reordered "{saved_view.name}".')
+        elif action == "archive":
+            if saved_view.is_default:
+                CompanySavedView.objects.filter(pk=saved_view.pk).update(is_default=False)
+            saved_view.archived_at = timezone.now()
+            saved_view.save(update_fields=["archived_at", "is_default", "updated_at"])
+            messages.success(request, f'Archived "{saved_view.name}".')
+        else:
+            messages.error(request, "Unsupported saved view action.")
+
+        return redirect(next_url)
+
+
+class CompanyQuickActionView(LoginRequiredMixin, UserPassesTestMixin, View):
+    def test_func(self):
+        u = self.request.user
+        return u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE)
+
+    def post(self, request, pk, *args, **kwargs):
+        company = get_object_or_404(Company, pk=pk)
+        action = (request.POST.get("action") or "").strip()
+
+        if action == "mark_review":
+            company.needs_review = True
+            company.save(update_fields=["needs_review", "updated_at"])
+            payload = {"ok": True, "action": action, "label": "Marked for review"}
+        elif action == "blacklist":
+            reason = (request.POST.get("reason") or "").strip()
+            company.is_blacklisted = True
+            if reason:
+                company.blacklist_reason = reason
+            company.save(update_fields=["is_blacklisted", "blacklist_reason", "updated_at"])
+            payload = {"ok": True, "action": action, "label": "Blocked company"}
+        elif action == "unblacklist":
+            company.is_blacklisted = False
+            company.blacklist_reason = ""
+            company.save(update_fields=["is_blacklisted", "blacklist_reason", "updated_at"])
+            payload = {"ok": True, "action": action, "label": "Unblocked company"}
+        else:
+            payload = {"ok": False, "error": "Unsupported company action."}
+
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JsonResponse(payload, status=200 if payload.get("ok") else 400)
+        if payload.get("ok"):
+            messages.success(request, payload["label"])
+        else:
+            messages.error(request, payload["error"])
+        return redirect(reverse("company-detail", kwargs={"pk": company.pk}))
+
+
+class CompanyBulkActionView(LoginRequiredMixin, UserPassesTestMixin, View):
+    def test_func(self):
+        u = self.request.user
+        return u.is_superuser or u.role in (User.Role.ADMIN, User.Role.EMPLOYEE)
+
+    def post(self, request, *args, **kwargs):
+        ids_raw = request.POST.get("ids", "").strip()
+        action = request.POST.get("action", "").strip()
+        scope = request.POST.get("scope", "selected").strip()
+        query = request.POST.get("query", "").strip()
+        next_url = request.POST.get("next", "").strip() or reverse("company-list")
+        count = 0
+
+        if scope == "view":
+            params = _company_query_params_from_string(query)
+            if not _company_params_have_actionable_scope(params):
+                messages.error(request, "Apply a saved view or filters before running a queue action.")
+                return redirect(next_url)
+            company_ids = list(
+                _get_company_list_queryset(request, params=params)
+                .values_list("pk", flat=True)
+                .distinct()
+            )
+            if not company_ids:
+                messages.error(request, "No companies matched the current view.")
+                return redirect(next_url)
+            companies = Company.objects.filter(pk__in=company_ids)
+            count = len(company_ids)
+        else:
+            ids = []
+            for value in ids_raw.split(","):
+                value = value.strip()
+                if not value:
+                    continue
+                try:
+                    ids.append(int(value))
+                except ValueError:
+                    continue
+
+            if not ids:
+                messages.error(request, "Select at least one company.")
+                return redirect(next_url)
+
+            companies = Company.objects.filter(pk__in=ids)
+            count = companies.count()
+            if not count:
+                messages.error(request, "Selected companies were not found.")
+                return redirect(next_url)
+
+        if action == "mark_review":
+            companies.update(needs_review=True)
+            messages.success(
+                request,
+                f"Marked {count} {'companies in the current view' if scope == 'view' else 'companies'} for review.",
+            )
+        elif action == "blacklist":
+            companies.update(is_blacklisted=True)
+            messages.success(
+                request,
+                f"Blocked {count} {'companies in the current view' if scope == 'view' else 'companies'}.",
+            )
+        elif action == "unblacklist":
+            companies.update(is_blacklisted=False, blacklist_reason="")
+            messages.success(
+                request,
+                f"Unblocked {count} {'companies in the current view' if scope == 'view' else 'companies'}.",
+            )
+        else:
+            messages.error(request, "Unsupported bulk action.")
+
+        return redirect(next_url)
 
 
 class CompanyDuplicateReviewView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
