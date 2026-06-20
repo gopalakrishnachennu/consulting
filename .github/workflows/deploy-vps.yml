@@ -11,7 +11,7 @@ on:
         required: false
         default: ""
   workflow_run:
-    workflows: ["Build & publish Docker image"]
+    workflows: ["CI"]
     types: [completed]
     branches: [main]
 
@@ -80,7 +80,7 @@ jobs:
 
           # Use only the latest check-run result per name so old failed attempts
           # do not permanently block deploy after a successful rerun.
-          for i in $(seq 1 30); do
+          for i in $(seq 1 12); do
             LATEST_CHECKS=$(gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" \
               --jq '[.check_runs[]
                 | select(.name | startswith("Smoke") or startswith("Tests"))
@@ -127,15 +127,19 @@ jobs:
           SHA="${{ steps.target.outputs.short_sha }}"
           echo "Looking for image with SHA tag: sha-$SHA"
 
-          # Check GHCR for image
-          STATUS=$(gh api "repos/$REPO/packages/container/$(basename $REPO)/versions" \
-            --jq "[.[] | .metadata.container.tags[] | select(. == \"sha-$SHA\")] | length" 2>/dev/null || echo "0")
+          for i in $(seq 1 30); do
+            STATUS=$(gh api "repos/$REPO/packages/container/$(basename $REPO)/versions" \
+              --jq "[.[] | .metadata.container.tags[] | select(. == \"sha-$SHA\")] | length" 2>/dev/null || echo "0")
+            if [ "$STATUS" != "0" ]; then
+              echo "✅ Image sha-$SHA found in GHCR"
+              exit 0
+            fi
+            echo "Waiting for image sha-$SHA to appear in GHCR ($i/30)..."
+            sleep 10
+          done
 
-          if [ "$STATUS" = "0" ]; then
-            echo "⚠️  Could not verify image SHA tag — proceeding with :main tag"
-          else
-            echo "✅ Image sha-$SHA found in GHCR"
-          fi
+          echo "❌ Timed out waiting for image sha-$SHA in GHCR"
+          exit 1
 
   # ── Item 7: Deploy pinned image SHA ───────────────────────────────────────
   deploy:
