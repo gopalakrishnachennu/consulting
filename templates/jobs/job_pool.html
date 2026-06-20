@@ -191,7 +191,7 @@
 
     <!-- JOB TABLE -->
     <div class="card-table table-scroll">
-        <table class="w-full text-sm">
+        <table class="min-w-[1180px] w-full text-sm">
             <thead class="tbl-head">
                 <tr>
                     <th class="tbl-th w-8"></th>
@@ -199,12 +199,12 @@
                     <th class="tbl-th">Score</th>
                     <th class="tbl-th">Posting</th>
                     <th class="tbl-th hidden md:table-cell">Issues</th>
-                    <th class="tbl-th-right">Actions</th>
+                    <th class="tbl-th-right sticky right-0 z-20 min-w-[260px] bg-slate-50 shadow-[-1px_0_0_#e2e8f0]">Actions</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-100">
                 {% for job in jobs %}
-                <tr x-data="{ open: false }" class="tbl-row">
+                <tr x-data="{ open: false }" class="tbl-row group">
                     <!-- Checkbox -->
                     <td class="tbl-td">
                         <input type="checkbox" name="job_ids" value="{{ job.pk }}"
@@ -341,8 +341,8 @@
                     </td>
 
                     <!-- Actions -->
-                    <td class="tbl-td-right">
-                        <div class="flex items-center justify-end gap-2">
+                    <td class="tbl-td-right sticky right-0 z-10 bg-white shadow-[-1px_0_0_#e2e8f0] group-hover:bg-gray-50">
+                        <div class="flex items-center justify-end gap-2 whitespace-nowrap">
                             {% if job.original_link %}
                             <a href="{{ job.original_link }}" target="_blank" rel="noopener noreferrer"
                                 title="Open original job posting"

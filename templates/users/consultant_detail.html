@@ -476,10 +476,10 @@
       <div class="px-5 py-3 border-b border-gray-100">
         <h2 class="text-xs font-bold text-gray-600 uppercase tracking-wider">Resume Drafts ({{ total_resume_drafts }})</h2>
       </div>
-      <div class="overflow-x-auto">
-        <table class="w-full text-xs">
+      <div class="table-scroll">
+        <table class="min-w-[1120px] w-full text-xs">
           <thead><tr class="text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-100">
-            <th class="px-5 py-2">Job</th><th class="py-2">Ver</th><th class="py-2">ATS</th><th class="py-2">Status</th><th class="py-2">Tokens</th><th class="py-2">Created</th><th class="py-2 text-right">Actions</th>
+            <th class="px-5 py-2 min-w-[360px]">Job</th><th class="py-2">Ver</th><th class="py-2">ATS</th><th class="py-2">Status</th><th class="py-2">Tokens</th><th class="py-2">Created</th><th class="sticky right-0 z-20 min-w-[220px] bg-white px-5 py-2 text-right whitespace-nowrap shadow-[-1px_0_0_#f3f4f6]">Actions</th>
           </tr></thead>
           <tbody class="divide-y divide-gray-50">
             {% for draft in resume_drafts %}
@@ -502,8 +502,8 @@
               </td>
               <td class="py-2.5 text-gray-500">{{ draft.tokens_used|default:"-"|intcomma }}</td>
               <td class="py-2.5 text-gray-400">{{ draft.created_at|date:"M j, H:i" }}</td>
-              <td class="py-2.5 text-right">
-                <div class="flex items-center justify-end gap-2 flex-wrap">
+              <td class="sticky right-0 z-10 bg-white px-5 py-2.5 text-right shadow-[-1px_0_0_#f3f4f6] group-hover:bg-gray-50">
+                <div class="flex items-center justify-end gap-3 whitespace-nowrap">
                   {% if draft.status == 'DRAFT' or draft.status == 'FINAL' or draft.status == 'REVIEW' %}
                   <a href="{% url 'draft-detail' draft.pk %}" class="text-indigo-600 hover:text-indigo-800 text-[10px] font-bold">View</a>
                   {% if draft.content %}<a href="{% url 'draft-download' draft.pk %}" class="text-emerald-600 hover:text-emerald-800 text-[10px] font-bold">DL</a>{% endif %}

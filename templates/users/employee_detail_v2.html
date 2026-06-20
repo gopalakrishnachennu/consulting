@@ -240,20 +240,20 @@
       <div class="px-5 py-3 border-b border-gray-100">
         <h2 class="text-xs font-bold text-gray-600 uppercase tracking-wider">All Submissions ({{ total_submissions }})</h2>
       </div>
-      <div class="overflow-x-auto">
-        <table class="w-full text-xs">
+      <div class="table-scroll">
+        <table class="min-w-[900px] w-full text-xs">
           <thead><tr class="text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-100">
-            <th class="px-5 py-2">Job</th><th class="py-2">Consultant</th><th class="py-2">Status</th><th class="py-2">Submitted</th><th class="py-2"></th>
+            <th class="px-5 py-2">Job</th><th class="py-2">Consultant</th><th class="py-2">Status</th><th class="py-2">Submitted</th><th class="sticky right-0 z-20 min-w-[120px] bg-white px-5 py-2 text-right whitespace-nowrap shadow-[-1px_0_0_#f3f4f6]">Actions</th>
           </tr></thead>
           <tbody class="divide-y divide-gray-50">
             {% for sub in submissions %}
-            <tr class="hover:bg-gray-50 transition">
+            <tr class="group hover:bg-gray-50 transition">
               <td class="px-5 py-2.5"><a href="{% url 'submission-detail' sub.pk %}" class="font-semibold text-gray-800 hover:text-indigo-700">{{ sub.job.title|truncatechars:40 }}</a></td>
               <td class="py-2.5"><a href="{% url 'consultant-detail' sub.consultant.user.pk %}" class="text-gray-600 hover:text-indigo-700">{{ sub.consultant.user.get_full_name|truncatechars:25 }}</a></td>
               <td class="py-2.5"><span class="px-2 py-0.5 rounded text-[9px] font-bold
                 {% if sub.status == 'APPLIED' %}bg-blue-50 text-blue-700{% elif sub.status == 'INTERVIEW' %}bg-violet-50 text-violet-700{% elif sub.status == 'OFFER' %}bg-emerald-50 text-emerald-700{% elif sub.status == 'PLACED' %}bg-green-50 text-green-700{% elif sub.status == 'REJECTED' %}bg-red-50 text-red-600{% else %}bg-gray-100 text-gray-500{% endif %}">{{ sub.get_status_display }}</span></td>
               <td class="py-2.5 text-gray-400">{{ sub.created_at|date:"M j, Y" }}</td>
-              <td class="py-2.5"><a href="{% url 'submission-detail' sub.pk %}" class="text-indigo-600 hover:text-indigo-800 font-bold">View</a></td>
+              <td class="sticky right-0 z-10 bg-white px-5 py-2.5 text-right shadow-[-1px_0_0_#f3f4f6] group-hover:bg-gray-50"><a href="{% url 'submission-detail' sub.pk %}" class="font-bold text-indigo-600 hover:text-indigo-800 whitespace-nowrap">View</a></td>
             </tr>
             {% empty %}
             <tr><td colspan="5" class="px-5 py-8 text-center text-gray-400">No submissions created by this employee</td></tr>
@@ -269,21 +269,21 @@
       <div class="px-5 py-3 border-b border-gray-100">
         <h2 class="text-xs font-bold text-gray-600 uppercase tracking-wider">Resume Drafts Generated ({{ total_drafts }})</h2>
       </div>
-      <div class="overflow-x-auto">
-        <table class="w-full text-xs">
+      <div class="table-scroll">
+        <table class="min-w-[980px] w-full text-xs">
           <thead><tr class="text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-100">
-            <th class="px-5 py-2">Job</th><th class="py-2">Consultant</th><th class="py-2">Status</th><th class="py-2">ATS</th><th class="py-2">Created</th><th class="py-2"></th>
+            <th class="px-5 py-2">Job</th><th class="py-2">Consultant</th><th class="py-2">Status</th><th class="py-2">ATS</th><th class="py-2">Created</th><th class="sticky right-0 z-20 min-w-[120px] bg-white px-5 py-2 text-right whitespace-nowrap shadow-[-1px_0_0_#f3f4f6]">Actions</th>
           </tr></thead>
           <tbody class="divide-y divide-gray-50">
             {% for draft in resume_drafts %}
-            <tr class="hover:bg-gray-50 transition">
+            <tr class="group hover:bg-gray-50 transition">
               <td class="px-5 py-2.5 font-semibold text-gray-800">{{ draft.job.title|truncatechars:35 }}</td>
               <td class="py-2.5 text-gray-500">{{ draft.consultant.user.get_full_name|truncatechars:20 }}</td>
               <td class="py-2.5"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold
                 {% if draft.status == 'FINAL' %}bg-emerald-100 text-emerald-700{% elif draft.status == 'REVIEW' %}bg-amber-100 text-amber-700{% elif draft.status == 'ERROR' %}bg-red-100 text-red-700{% else %}bg-blue-100 text-blue-700{% endif %}">{{ draft.status }}</span></td>
               <td class="py-2.5">{% if draft.ats_score %}<span class="font-bold {% if draft.ats_score >= 80 %}text-emerald-600{% elif draft.ats_score >= 60 %}text-amber-600{% else %}text-red-500{% endif %}">{{ draft.ats_score }}%</span>{% else %}<span class="text-gray-300">&mdash;</span>{% endif %}</td>
               <td class="py-2.5 text-gray-400">{{ draft.created_at|date:"M j" }}</td>
-              <td class="py-2.5"><a href="{% url 'draft-detail' draft.pk %}" class="text-indigo-600 hover:text-indigo-800 font-bold">View</a></td>
+              <td class="sticky right-0 z-10 bg-white px-5 py-2.5 text-right shadow-[-1px_0_0_#f3f4f6] group-hover:bg-gray-50"><a href="{% url 'draft-detail' draft.pk %}" class="font-bold text-indigo-600 hover:text-indigo-800 whitespace-nowrap">View</a></td>
             </tr>
             {% endfor %}
           </tbody>

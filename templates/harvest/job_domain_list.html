@@ -201,7 +201,7 @@
   </div>
 
   <div class="card-table table-scroll">
-    <table class="w-full text-sm">
+    <table class="min-w-[1180px] w-full text-sm">
       <thead class="tbl-head">
         <tr>
           <th class="tbl-th w-16" title="Lower = matched first. Edit inline.">Priority</th>
@@ -211,12 +211,12 @@
           <th class="tbl-th">Pattern</th>
           <th class="tbl-th">Usage</th>
           <th class="tbl-th">Status</th>
-          <th class="tbl-th-right">Actions</th>
+          <th class="tbl-th-right sticky right-0 z-20 min-w-[160px] bg-slate-50 shadow-[-1px_0_0_#e2e8f0]">Actions</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100">
         {% for d in domains %}
-        <tr class="tbl-row" id="domain-row-{{ d.pk }}" data-active="{{ d.is_active|yesno:'1,0' }}">
+        <tr class="tbl-row group" id="domain-row-{{ d.pk }}" data-active="{{ d.is_active|yesno:'1,0' }}">
           <td class="tbl-td">
             <input type="number" value="{{ d.priority }}" min="1" max="9999" step="10"
                    onchange="quickPriority({{ d.pk }}, this)"
@@ -267,7 +267,7 @@
               <span class="js-status-hint text-[10px] opacity-60">{% if d.is_active %}pause{% else %}activate{% endif %}</span>
             </button>
           </td>
-          <td class="tbl-td-right whitespace-nowrap space-x-2">
+          <td class="tbl-td-right sticky right-0 z-10 bg-white whitespace-nowrap shadow-[-1px_0_0_#e2e8f0] group-hover:bg-gray-50">
             <a href="{% url 'harvest-job-domain-edit' pk=d.pk %}" class="link-action">Edit</a>
             <a href="{% url 'harvest-job-domain-delete' pk=d.pk %}"
                class="text-red-600 hover:underline text-sm font-medium">Delete</a>
