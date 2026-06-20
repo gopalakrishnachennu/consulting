@@ -66,6 +66,8 @@ HARVEST_SAFE_DUPLICATE_LIMIT = 1000
 BACKFILL_MAX_PARALLEL = 1
 OPS_SINGLETON_STALE_MINUTES = 30
 OPS_SINGLETON_CACHE_TTL_SECONDS = 45 * 60
+JD_GATE_AUTO_QUEUE_CACHE_KEY = "harvest:jd-gate:auto-queue"
+JD_GATE_AUTO_QUEUE_TTL_SECONDS = 60
 
 
 def _ops_singleton_cache_key(operation: str) -> str:
@@ -158,6 +160,43 @@ def _invalidate_rawjobs_dashboard_cache() -> None:
         pass
 
 
+def _queue_auto_jd_gate_run(cfg, *, reason: str = "", force: bool = False) -> bool:
+    """Queue one Tier-2 JD gate run, throttled so harvest batches cannot flood it."""
+    if not getattr(cfg, "jd_gate_enabled", False):
+        return False
+
+    lock_acquired = force or cache.add(
+        JD_GATE_AUTO_QUEUE_CACHE_KEY,
+        reason or "auto",
+        JD_GATE_AUTO_QUEUE_TTL_SECONDS,
+    )
+    if not lock_acquired:
+        return False
+
+    try:
+        run_jd_gate_task.apply_async(
+            kwargs={
+                "batch_size": max(1, int(getattr(cfg, "jd_gate_batch_size", 20) or 20)),
+                "scope": getattr(cfg, "jd_gate_scope", "ambiguous_only") or "ambiguous_only",
+                "trigger_backfill": True,
+            },
+            countdown=20,
+            queue="harvest",
+        )
+        logger.info(
+            "Auto JD gate queued: reason=%s batch_size=%s scope=%s",
+            reason or "auto",
+            getattr(cfg, "jd_gate_batch_size", 20),
+            getattr(cfg, "jd_gate_scope", "ambiguous_only"),
+        )
+        return True
+    except Exception:
+        logger.warning("Failed to queue auto JD gate run", exc_info=True)
+        if not force:
+            cache.delete(JD_GATE_AUTO_QUEUE_CACHE_KEY)
+        return False
+
+
 def _company_snapshot_fields(company) -> dict:
     """Denormalized company fields copied onto RawJob for fast filtering."""
     if not company:
@@ -223,6 +262,16 @@ def _backfill_eligible_queryset(platform_slug: str | None, include_cold: bool = 
         q = RawJob.objects.missing_jd(stale_minutes=stale_mins).filter(
             is_priority=True,
         )
+    try:
+        cfg = require_harvest_engine_config("_backfill_eligible_queryset")
+        if getattr(cfg, "jd_gate_enabled", False) and not getattr(cfg, "jd_gate_audit_mode", True):
+            q = q.filter(
+                Q(title_gate_decision__isnull=True)
+                | ~Q(title_gate_decision="AMBIGUOUS")
+                | Q(jd_gate_decision="CONFIRMED")
+            )
+    except Exception:
+        logger.debug("JD gate backfill filter fallback failed", exc_info=True)
     if platform_slug:
         q = q.filter(platform_slug=platform_slug)
     return q
@@ -324,7 +373,7 @@ def run_jd_gate_task(
     """
     Tier-2 JD content gate — runs on AMBIGUOUS jobs after the title gate.
 
-    Picks up jobs with title_gate_decision=PENDING (AMBIGUOUS) or legacy POSSIBLE
+    Picks up jobs with title_gate_decision=AMBIGUOUS or legacy POSSIBLE
     filter_decision, fetches a JD snippet, and calls the LLM binary YES/NO gate.
 
     Results:
@@ -1401,7 +1450,17 @@ def fetch_raw_jobs_for_company_task(
 
     total_jobs = len(raw_jobs)
     from .enrichments import clean_job_content, clean_job_text, extract_enrichments
-    from .role_filter import COLD, NO_MATCH, POSSIBLE, STRONG, UNKNOWN, ClassifyResult, classify_title
+    from .role_filter import (
+        AMBIGUOUS,
+        COLD,
+        NO_MATCH,
+        POSSIBLE,
+        STRONG,
+        UNKNOWN,
+        ClassifyResult,
+        classify_title,
+        classify_title_v2,
+    )
     for idx, job_dict in enumerate(raw_jobs, start=1):
         try:
             original_url = (job_dict.get("original_url") or "").strip()
@@ -1444,6 +1503,7 @@ def fetch_raw_jobs_for_company_task(
                 reason="selective filter disabled",
                 snapshot_id=None,
             )
+            title_gate_result = None
             if filter_enabled and filter_snapshot_id:
                 if getattr(label.platform, "title_in_list", False):
                     filter_result = classify_title(
@@ -1453,6 +1513,15 @@ def fetch_raw_jobs_for_company_task(
                         hard_negatives=filter_hard_negatives,
                         custom_phrases=label.custom_include_phrases or [],
                         snapshot_id=filter_snapshot_id,
+                    )
+                    title_gate_result = classify_title_v2(
+                        title=job_dict.get("title") or "",
+                        department=job_dict.get("department") or "",
+                        categories=filter_categories,
+                        hard_negatives=filter_hard_negatives,
+                        custom_phrases=label.custom_include_phrases or [],
+                        snapshot_id=filter_snapshot_id,
+                        hard_yes_threshold=float(getattr(_cfg, "title_hard_yes_confidence", 0.80) or 0.80),
                     )
                 else:
                     filter_result = ClassifyResult(
@@ -1538,6 +1607,15 @@ def fetch_raw_jobs_for_company_task(
                         reason=f"post-fetch classification: {post_fetch_result.reason}",
                         snapshot_id=post_fetch_result.snapshot_id,
                         confidence=post_fetch_result.confidence,  # MUST forward: pre-storage gate uses this to distinguish HARD_NO (conf<0.2) from AMBIGUOUS (conf≥0.2)
+                    )
+                    title_gate_result = classify_title_v2(
+                        title=job_dict.get("title") or "",
+                        department=job_dict.get("department") or "",
+                        categories=filter_categories,
+                        hard_negatives=filter_hard_negatives,
+                        custom_phrases=label.custom_include_phrases or [],
+                        snapshot_id=filter_snapshot_id,
+                        hard_yes_threshold=float(getattr(_cfg, "title_hard_yes_confidence", 0.80) or 0.80),
                     )
                     should_skip_jd = False
 
@@ -1657,6 +1735,23 @@ def fetch_raw_jobs_for_company_task(
                 "filter_decision": filter_result.decision if filter_enabled else None,
                 "filter_reason": filter_result.reason if filter_enabled else None,
                 "filter_snapshot_id": filter_result.snapshot_id if filter_enabled else None,
+                "title_gate_decision": (
+                    title_gate_result.gate_decision
+                    if filter_enabled and title_gate_result is not None
+                    else None
+                ),
+                "title_gate_confidence": (
+                    title_gate_result.gate_confidence
+                    if filter_enabled and title_gate_result is not None
+                    else None
+                ),
+                "jd_gate_decision": (
+                    "PENDING"
+                    if filter_enabled
+                    and title_gate_result is not None
+                    and title_gate_result.gate_decision == AMBIGUOUS
+                    else None
+                ),
                 "is_cold": bool(filter_blocks_pool),
                 "jd_fetch_skipped": bool(should_skip_jd),
                 "is_test_run": bool(is_test_run),
@@ -2003,6 +2098,12 @@ def fetch_raw_jobs_for_company_task(
             new_jobs = list(
                 RawJob.objects.filter(pk__in=new_raw_job_pks).select_related("company")
             )
+            ambiguous_pending_jobs = [
+                job
+                for job in new_jobs
+                if (job.title_gate_decision or "") == "AMBIGUOUS"
+                and (job.jd_gate_decision or "") == "PENDING"
+            ]
 
             # ── Scope every new RawJob before any gated work ────────────────
             # This must run even when auto-enrichment is disabled; otherwise
@@ -2073,13 +2174,30 @@ def fetch_raw_jobs_for_company_task(
                 label_pk, len(new_jobs), enriched,
             )
 
+            if ambiguous_pending_jobs and _pipe_cfg.jd_gate_enabled:
+                _queue_auto_jd_gate_run(
+                    _pipe_cfg,
+                    reason=f"label:{label_pk}:ambiguous:{len(ambiguous_pending_jobs)}",
+                )
+
             # ── Background JD backfill — scoped to this platform, fires once ─
             # This queues a SINGLE background task for the platform just harvested.
             # The backfill task controls its own parallelism and rate limits so it
             # never spikes CPU.  Only queued if there are new jobs without descriptions.
             platform_s = (label.platform.slug if label and label.platform else "") or ""
             if _pipe_cfg.auto_backfill_jd:
-                needs_jd_count = sum(1 for j in new_jobs if j.is_priority and not (j.description or "").strip())
+                gate_enforced = bool(_pipe_cfg.jd_gate_enabled and not _pipe_cfg.jd_gate_audit_mode)
+                needs_jd_count = sum(
+                    1
+                    for j in new_jobs
+                    if j.is_priority
+                    and not (j.description or "").strip()
+                    and (
+                        not gate_enforced
+                        or (j.title_gate_decision or "") != "AMBIGUOUS"
+                        or (j.jd_gate_decision or "") == "CONFIRMED"
+                    )
+                )
                 if needs_jd_count > 0:
                     backfill_descriptions_task.apply_async(
                         kwargs={
@@ -2093,6 +2211,12 @@ def fetch_raw_jobs_for_company_task(
                     logger.info(
                         "JD backfill queued for %d new %s jobs (bg task, 1 worker)",
                         needs_jd_count, platform_s or "all",
+                    )
+                elif gate_enforced and ambiguous_pending_jobs:
+                    logger.info(
+                        "JD backfill deferred for %d ambiguous %s jobs until JD gate confirms them",
+                        len(ambiguous_pending_jobs),
+                        platform_s or "all",
                     )
 
         except SoftTimeLimitExceeded:
@@ -2121,6 +2245,12 @@ def fetch_raw_jobs_for_company_task(
                 countdown=15,
             )
             logger.info("Auto URL validation queued before sync (batch #%s)", batch.pk)
+            if _sync_cfg.jd_gate_enabled:
+                _queue_auto_jd_gate_run(
+                    _sync_cfg,
+                    reason=f"batch:{batch.pk}:complete",
+                    force=True,
+                )
             if _sync_cfg.auto_sync_to_pool:
                 sync_harvested_to_pool_task.apply_async(
                     kwargs={"max_jobs": HARVEST_SAFE_SYNC_MAX_JOBS},
@@ -5979,7 +6109,7 @@ def reclassify_stale_rawjobs_task(self, batch_size: int = 1000):
     phrase bank — queued from the Selective Filter page's 'Apply to existing'
     button so phrase edits take effect without a shell."""
     from django.core.management import call_command
-    from .models import HarvestOpsRun
+    from .models import HarvestEngineConfig, HarvestOpsRun, RawJob
     from .ops_audit import begin_ops_run, finish_ops_run
 
     run = begin_ops_run(
@@ -5989,8 +6119,27 @@ def reclassify_stale_rawjobs_task(self, batch_size: int = 1000):
     )
     try:
         call_command("reclassify_stale_rawjobs", batch_size=batch_size)
-        finish_ops_run(run, HarvestOpsRun.Status.SUCCESS, {"batch_size": batch_size})
-        return {"ok": True}
+        cfg = HarvestEngineConfig.get()
+        pending_jd_gate = RawJob.objects.filter(
+            is_active=True,
+            is_test_run=False,
+            title_gate_decision="AMBIGUOUS",
+            jd_gate_decision="PENDING",
+        ).count()
+        queued_jd_gate = False
+        if pending_jd_gate:
+            queued_jd_gate = _queue_auto_jd_gate_run(
+                cfg,
+                reason="role_studio_apply:post_reclassify",
+                force=True,
+            )
+        completion = {
+            "batch_size": batch_size,
+            "pending_jd_gate": pending_jd_gate,
+            "queued_jd_gate": queued_jd_gate,
+        }
+        finish_ops_run(run, HarvestOpsRun.Status.SUCCESS, completion)
+        return {"ok": True, **completion}
     except Exception as e:
         finish_ops_run(run, HarvestOpsRun.Status.FAILED, {"error": str(e)[:300]})
         raise

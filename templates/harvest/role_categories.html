@@ -34,6 +34,75 @@
     {% endfor %}
   {% endif %}
 
+  <section class="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div>
+        <h2 class="text-sm font-semibold text-slate-950">Automation Status</h2>
+        <p class="mt-1 text-xs text-slate-500">This is the live title-classification path the harvest worker is using right now.</p>
+      </div>
+      <div class="flex flex-wrap gap-2 text-xs">
+        <a href="{{ automation_summary.settings_url }}" class="btn-secondary !px-3 !py-1.5">Open routing controls</a>
+        <a href="{{ automation_summary.engine_url }}" class="btn-secondary !px-3 !py-1.5">Open engine config</a>
+      </div>
+    </div>
+    <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-8">
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <p class="text-[11px] uppercase tracking-wide text-slate-400">Title Gate</p>
+        <p class="mt-2 text-lg font-semibold {% if automation_summary.title_gate_live %}text-emerald-700{% elif automation_summary.title_gate_audit %}text-amber-700{% else %}text-slate-900{% endif %}">
+          {% if automation_summary.title_gate_live %}Enforcing{% elif automation_summary.title_gate_audit %}Audit only{% else %}Off{% endif %}
+        </p>
+        <p class="mt-1 text-xs text-slate-500">HARD_YES at {{ automation_summary.title_hard_yes_threshold|floatformat:2 }}</p>
+      </div>
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <p class="text-[11px] uppercase tracking-wide text-slate-400">JD Gate</p>
+        <p class="mt-2 text-lg font-semibold {% if automation_summary.jd_gate_live %}text-emerald-700{% elif automation_summary.jd_gate_audit %}text-amber-700{% else %}text-slate-900{% endif %}">
+          {% if automation_summary.jd_gate_live %}Enforcing{% elif automation_summary.jd_gate_audit %}Audit only{% else %}Off{% endif %}
+        </p>
+        <p class="mt-1 text-xs text-slate-500">{{ automation_summary.jd_gate_scope }} · {{ automation_summary.jd_gate_threshold|floatformat:2 }}</p>
+      </div>
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <p class="text-[11px] uppercase tracking-wide text-slate-400">Pre-storage Drop</p>
+        <p class="mt-2 text-lg font-semibold {% if automation_summary.pre_storage_live %}text-emerald-700{% else %}text-slate-900{% endif %}">
+          {% if automation_summary.pre_storage_live %}Live{% else %}Off{% endif %}
+        </p>
+        <p class="mt-1 text-xs text-slate-500">Only definitive hard-no rows are dropped.</p>
+      </div>
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <p class="text-[11px] uppercase tracking-wide text-slate-400">HARD_YES 7d</p>
+        <p class="mt-2 text-2xl font-semibold text-slate-950">{{ automation_summary.hard_yes_7d }}</p>
+      </div>
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <p class="text-[11px] uppercase tracking-wide text-slate-400">AMBIGUOUS 7d</p>
+        <p class="mt-2 text-2xl font-semibold text-slate-950">{{ automation_summary.ambiguous_7d }}</p>
+      </div>
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <p class="text-[11px] uppercase tracking-wide text-slate-400">JD Gate Pending</p>
+        <p class="mt-2 text-2xl font-semibold text-slate-950">{{ automation_summary.pending_jd_gate }}</p>
+        <p class="mt-1 text-xs text-slate-500">Backlog waiting for LLM confirmation.</p>
+      </div>
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <p class="text-[11px] uppercase tracking-wide text-slate-400">Stale Pending</p>
+        <p class="mt-2 text-2xl font-semibold {% if automation_summary.stale_pending_jd_gate %}text-red-600{% else %}text-slate-950{% endif %}">{{ automation_summary.stale_pending_jd_gate }}</p>
+        <p class="mt-1 text-xs text-slate-500">Older than 4h and still waiting on JD gate.</p>
+      </div>
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <p class="text-[11px] uppercase tracking-wide text-slate-400">Missing Title State</p>
+        <p class="mt-2 text-2xl font-semibold {% if automation_summary.missing_title_gate_rows %}text-amber-600{% else %}text-slate-950{% endif %}">{{ automation_summary.missing_title_gate_rows }}</p>
+        <p class="mt-1 text-xs text-slate-500">Historical rows still missing persisted title-gate data.</p>
+      </div>
+    </div>
+    {% if automation_summary.alerts %}
+    <div class="mt-4 grid gap-3 lg:grid-cols-2">
+      {% for alert in automation_summary.alerts %}
+      <div class="rounded-xl border px-4 py-3 text-sm {% if alert.tone == 'red' %}border-red-200 bg-red-50 text-red-700{% else %}border-amber-200 bg-amber-50 text-amber-700{% endif %}">
+        <p class="font-semibold">{{ alert.title }}</p>
+        <p class="mt-1 text-xs opacity-90">{{ alert.body }}</p>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
   <section class="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
     <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Active Categories</p>

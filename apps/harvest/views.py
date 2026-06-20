@@ -76,6 +76,7 @@ logger = logging.getLogger(__name__)
 
 _FULL_CRAWL_COOLDOWN_HOURS = 2  # fallback; actual value from HarvestEngineConfig
 _FULL_CRAWL_LOCK_KEY = "harvest:full_crawl:cooldown_lock"  # cache-layer enforcement
+_TITLE_GATE_HISTORY_AUTO_QUEUE_KEY = "harvest:title-gate-history:auto-queue"
 
 
 def _contains_non_ascii(value: str) -> bool:
@@ -285,6 +286,87 @@ def _selective_ops_summary() -> dict:
     }
 
 
+def _selective_automation_summary() -> dict:
+    cfg = HarvestEngineConfig.get()
+    recent_since = timezone.now() - timedelta(days=7)
+    prev_since = recent_since - timedelta(days=7)
+    base_qs = RawJob.objects.filter(is_active=True, is_test_run=False)
+    recent_rows = base_qs.filter(fetched_at__gte=recent_since)
+    prev_rows = base_qs.filter(fetched_at__gte=prev_since, fetched_at__lt=recent_since)
+    pending_jd_gate = RawJob.objects.filter(
+        is_active=True,
+        is_test_run=False,
+        title_gate_decision="AMBIGUOUS",
+        jd_gate_decision="PENDING",
+    ).count()
+    stale_pending_jd_gate = RawJob.objects.filter(
+        is_active=True,
+        is_test_run=False,
+        title_gate_decision="AMBIGUOUS",
+        jd_gate_decision="PENDING",
+        fetched_at__lt=timezone.now() - timedelta(hours=4),
+    ).count()
+    missing_title_gate_rows = base_qs.filter(title_gate_decision__isnull=True).count()
+    recent_total = recent_rows.count()
+    prev_total = prev_rows.count()
+    hard_yes_7d = recent_rows.filter(title_gate_decision="HARD_YES").count()
+    ambiguous_7d = recent_rows.filter(title_gate_decision="AMBIGUOUS").count()
+    hard_no_7d = recent_rows.filter(title_gate_decision="HARD_NO").count()
+    prev_ambiguous = prev_rows.filter(title_gate_decision="AMBIGUOUS").count()
+    prev_hard_no = prev_rows.filter(title_gate_decision="HARD_NO").count()
+
+    alerts: list[dict] = []
+    if missing_title_gate_rows:
+        alerts.append({
+            "tone": "amber",
+            "title": "Historical rows still missing title-gate state",
+            "body": f"{missing_title_gate_rows:,} existing RawJobs have no persisted title-gate decision yet.",
+        })
+    if stale_pending_jd_gate:
+        alerts.append({
+            "tone": "red",
+            "title": "JD gate backlog is aging",
+            "body": f"{stale_pending_jd_gate:,} ambiguous rows have been pending more than 4 hours.",
+        })
+    ambiguous_ratio = (ambiguous_7d / recent_total) if recent_total else 0.0
+    prev_ambiguous_ratio = (prev_ambiguous / prev_total) if prev_total else 0.0
+    if recent_total >= 50 and prev_total >= 50 and ambiguous_ratio > max(prev_ambiguous_ratio * 1.5, prev_ambiguous_ratio + 0.10):
+        alerts.append({
+            "tone": "amber",
+            "title": "Ambiguous title share spiked",
+            "body": f"Last 7d ambiguous rate is {ambiguous_ratio:.0%} vs {prev_ambiguous_ratio:.0%} in the previous 7d window.",
+        })
+    hard_no_ratio = (hard_no_7d / recent_total) if recent_total else 0.0
+    prev_hard_no_ratio = (prev_hard_no / prev_total) if prev_total else 0.0
+    if recent_total >= 50 and prev_total >= 50 and hard_no_ratio > max(prev_hard_no_ratio * 1.5, prev_hard_no_ratio + 0.10):
+        alerts.append({
+            "tone": "amber",
+            "title": "Hard-no rejection share spiked",
+            "body": f"Last 7d hard-no rate is {hard_no_ratio:.0%} vs {prev_hard_no_ratio:.0%} in the previous 7d window.",
+        })
+    return {
+        "title_gate_live": bool(cfg.selective_filter_enabled and not cfg.filter_audit_mode),
+        "title_gate_audit": bool(cfg.selective_filter_enabled and cfg.filter_audit_mode),
+        "jd_gate_live": bool(cfg.jd_gate_enabled and not cfg.jd_gate_audit_mode),
+        "jd_gate_audit": bool(cfg.jd_gate_enabled and cfg.jd_gate_audit_mode),
+        "title_hard_yes_threshold": float(getattr(cfg, "title_hard_yes_confidence", 0.80) or 0.80),
+        "jd_gate_threshold": float(getattr(cfg, "jd_gate_confidence_threshold", 0.65) or 0.65),
+        "jd_gate_scope": getattr(cfg, "jd_gate_scope", "ambiguous_only") or "ambiguous_only",
+        "pre_storage_live": bool(cfg.pre_storage_filter_enabled and not cfg.filter_audit_mode),
+        "pending_jd_gate": pending_jd_gate,
+        "stale_pending_jd_gate": stale_pending_jd_gate,
+        "missing_title_gate_rows": missing_title_gate_rows,
+        "hard_yes_7d": hard_yes_7d,
+        "ambiguous_7d": ambiguous_7d,
+        "hard_no_7d": hard_no_7d,
+        "recent_total": recent_total,
+        "prev_total": prev_total,
+        "alerts": alerts,
+        "settings_url": reverse("harvest-vet-gate-config"),
+        "engine_url": reverse("harvest-engine-config"),
+    }
+
+
 def _selective_recent_phrase_changes(limit: int = 6) -> list[HarvestOpsRun]:
     rows: list[HarvestOpsRun] = []
     for run in HarvestOpsRun.objects.filter(operation=HarvestOpsRun.Operation.CLASSIFY).order_by("-created_at")[: max(limit * 6, 18)]:
@@ -309,7 +391,7 @@ def _selective_apply_preview() -> dict:
     stale_snapshot_ids = set(
         HarvestFilterSnapshot.objects.exclude(phrase_hash=current_hash).values_list("snapshot_id", flat=True)
     )
-    stale_q = Q(filter_snapshot_id__in=stale_snapshot_ids)
+    stale_q = Q(filter_snapshot_id__in=stale_snapshot_ids) | Q(title_gate_decision__isnull=True)
     stale_rows = RawJob.objects.filter(stale_q, is_test_run=False)
     unclassified_q = Q(filter_snapshot_id__isnull=True) | Q(filter_decision__isnull=True)
     unclassified_rows = RawJob.objects.filter(unclassified_q, is_test_run=False)
@@ -321,6 +403,7 @@ def _selective_apply_preview() -> dict:
         "synced_jobs_to_refresh": stale_rows.filter(sync_status=RawJob.SyncStatus.SYNCED).count(),
         "jobs_with_descriptions": stale_rows.filter(has_description=True).count(),
         "unclassified_rows": unclassified_rows.count(),
+        "missing_title_gate_rows": RawJob.objects.filter(is_test_run=False, title_gate_decision__isnull=True).count(),
         "sample_titles": list(stale_rows.order_by("-fetched_at").values_list("title", flat=True)[:5]),
     }
 
@@ -4804,6 +4887,7 @@ class EngineConfigView(SuperuserRequiredMixin, View):
             "country_options": country_options,
             "selected_countries": selected_countries,
             "geocoding_stats": geocoding_stats,
+            "automation_summary": _selective_automation_summary(),
             # Backwards-compat for existing template fragments:
             "provider_monthly_used": geocoding_stats["provider_monthly_used"],
             **_full_crawl_cooldown_ctx(),
@@ -4930,6 +5014,7 @@ class SelectiveRoleCategoryListView(SuperuserRequiredMixin, TemplateView):
         review_summary = _build_selective_review_summary(days=14, limit=8)
         company_summary = _selective_company_exception_summary(limit=6)
         ops_summary = _selective_ops_summary()
+        automation_summary = _selective_automation_summary()
         apply_preview = _selective_apply_preview()
         phrase_change_log = _selective_recent_phrase_changes(limit=6)
         ctx["categories"] = categories
@@ -4938,6 +5023,7 @@ class SelectiveRoleCategoryListView(SuperuserRequiredMixin, TemplateView):
         ctx["missed_titles"] = review_summary["top_titles"][:5]
         ctx["company_exception_summary"] = company_summary
         ctx["ops_summary"] = ops_summary
+        ctx["automation_summary"] = automation_summary
         ctx["apply_preview"] = apply_preview
         ctx["phrase_change_log"] = phrase_change_log
         ctx["latest_snapshot"] = latest_snapshot
@@ -6304,10 +6390,15 @@ class VetGateConfigView(SuperuserRequiredMixin, View):
         cfg = VetGateConfig.get()
         engine_cfg = HarvestEngineConfig.get()
         preview = _vet_gate_preview_count(cfg)
+        automation_summary = _selective_automation_summary()
         ctx = {
             "cfg": cfg,
             "preview": preview,
             "active_tab": "engine",
+            "automation_summary": automation_summary,
+            "ops_summary": _selective_ops_summary(),
+            "apply_preview": _selective_apply_preview(),
+            "role_apply_url": reverse("harvest-role-apply"),
         }
         ctx.update(_vet_gate_engine_context(engine_cfg))
         return render(request, self.template_name, ctx)
@@ -6395,6 +6486,21 @@ class VetGateConfigView(SuperuserRequiredMixin, View):
             if line.strip()
         ]
         engine_cfg.save()
+
+        automation_summary = _selective_automation_summary()
+        if (
+            engine_cfg.selective_filter_enabled
+            and automation_summary["missing_title_gate_rows"] > 0
+            and not _selective_ops_summary()["active_run"]
+            and cache.add(_TITLE_GATE_HISTORY_AUTO_QUEUE_KEY, "1", 300)
+        ):
+            from .tasks import reclassify_stale_rawjobs_task
+            task = reclassify_stale_rawjobs_task.delay()
+            messages.info(
+                request,
+                f"Historical title-gate backfill queued automatically ({task.id[:8]}…) for "
+                f"{automation_summary['missing_title_gate_rows']:,} existing rows.",
+            )
 
         messages.success(request, "Vet Gate Config saved.")
         return redirect("harvest-vet-gate-config")
@@ -6665,7 +6771,8 @@ class RoleReclassifyApplyView(SuperuserRequiredMixin, View):
         task = reclassify_stale_rawjobs_task.delay()
         messages.success(
             request,
-            f"Re-classification queued (Task {task.id[:8]}…) for {preview['raw_jobs_to_reclassify']} stale RawJobs and "
-            f"{preview['synced_jobs_to_refresh']} synced rows. Watch the Live Ops Monitor.",
+            f"Re-classification queued (Task {task.id[:8]}…) for {preview['raw_jobs_to_reclassify']} stale or missing-title-gate RawJobs, "
+            f"{preview['synced_jobs_to_refresh']} synced rows, and {preview['missing_title_gate_rows']} historical rows missing title-gate state. "
+            f"Watch the Live Ops Monitor.",
         )
         return redirect(request.POST.get("next") or "harvest-role-categories")

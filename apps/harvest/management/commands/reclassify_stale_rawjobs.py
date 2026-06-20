@@ -5,7 +5,7 @@ from django.db import transaction
 from django.db.models import Q
 
 from harvest.models import HarvestFilterSnapshot, RawJob
-from harvest.role_filter import COLD, NO_MATCH, classify_title
+from harvest.role_filter import AMBIGUOUS, COLD, NO_MATCH, classify_title, classify_title_v2
 
 
 class Command(BaseCommand):
@@ -28,13 +28,15 @@ class Command(BaseCommand):
         current = HarvestFilterSnapshot.create_snapshot(notes="reclassify_stale_rawjobs")
         categories = current.get_categories()
         hard_negatives = current.get_hard_negatives()
+        from harvest.models import HarvestEngineConfig
+        engine_cfg = HarvestEngineConfig.get()
 
         current_hash = current.phrase_hash
         stale_snapshot_ids = set(
             HarvestFilterSnapshot.objects.exclude(phrase_hash=current_hash)
             .values_list("snapshot_id", flat=True)
         )
-        stale_q = Q(filter_snapshot_id__in=stale_snapshot_ids)
+        stale_q = Q(filter_snapshot_id__in=stale_snapshot_ids) | Q(title_gate_decision__isnull=True)
         if options["include_unclassified"]:
             stale_q |= Q(filter_snapshot_id__isnull=True) | Q(filter_decision__isnull=True)
         qs = RawJob.objects.select_related("platform_label").filter(stale_q).order_by("pk")
@@ -55,6 +57,15 @@ class Command(BaseCommand):
                 custom_phrases=(label.custom_include_phrases if label else []) or [],
                 snapshot_id=str(current.snapshot_id),
             )
+            title_gate = classify_title_v2(
+                title=raw_job.title,
+                department=raw_job.department,
+                categories=categories,
+                hard_negatives=hard_negatives,
+                custom_phrases=(label.custom_include_phrases if label else []) or [],
+                snapshot_id=str(current.snapshot_id),
+                hard_yes_threshold=float(getattr(engine_cfg, "title_hard_yes_confidence", 0.80) or 0.80),
+            )
             counts[result.decision] = counts.get(result.decision, 0) + 1
             if dry_run:
                 continue
@@ -67,6 +78,13 @@ class Command(BaseCommand):
                 result.decision in {COLD, NO_MATCH}
                 and not raw_job.has_description
             )
+            raw_job.title_gate_decision = title_gate.gate_decision
+            raw_job.title_gate_confidence = title_gate.gate_confidence
+            if title_gate.gate_decision == AMBIGUOUS and getattr(engine_cfg, "jd_gate_enabled", False):
+                if raw_job.jd_gate_decision not in {"CONFIRMED", "REJECTED", "UNCERTAIN"}:
+                    raw_job.jd_gate_decision = "PENDING"
+            elif raw_job.jd_gate_decision == "PENDING" and title_gate.gate_decision != AMBIGUOUS:
+                raw_job.jd_gate_decision = None
             updates.append(raw_job)
             if len(updates) >= batch_size:
                 self._flush(updates)
@@ -89,5 +107,8 @@ class Command(BaseCommand):
                     "filter_snapshot_id",
                     "is_cold",
                     "jd_fetch_skipped",
+                    "title_gate_decision",
+                    "title_gate_confidence",
+                    "jd_gate_decision",
                 ],
             )

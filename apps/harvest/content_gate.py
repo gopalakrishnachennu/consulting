@@ -191,14 +191,14 @@ def _load_pending_jobs(batch_size: int, scope: str = "ambiguous_only"):
     ).select_related("company__platform_label__platform")
 
     if scope == "ambiguous_only":
-        qs = qs.filter(title_gate_decision=GATE_PENDING)
+        qs = qs.filter(title_gate_decision="AMBIGUOUS")
         # Also pick up older jobs that have POSSIBLE filter_decision but no title_gate set
         from django.db.models import Q
         qs = RawJob.objects.filter(
             is_active=True,
             is_test_run=False,
         ).filter(
-            Q(title_gate_decision=GATE_PENDING) |
+            Q(title_gate_decision="AMBIGUOUS") |
             Q(title_gate_decision__isnull=True, filter_decision="POSSIBLE")
         ).exclude(
             jd_gate_decision__in=[GATE_CONFIRMED, GATE_REJECTED, GATE_UNCERTAIN],
@@ -207,7 +207,7 @@ def _load_pending_jobs(batch_size: int, scope: str = "ambiguous_only"):
     elif scope == "all_possible":
         from django.db.models import Q
         qs = qs.filter(
-            Q(title_gate_decision=GATE_PENDING) |
+            Q(title_gate_decision="AMBIGUOUS") |
             Q(title_gate_decision__isnull=True, filter_decision__in=["POSSIBLE", "STRONG"])
         )
     else:  # all_non_hard_no

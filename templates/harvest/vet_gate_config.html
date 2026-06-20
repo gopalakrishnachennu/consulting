@@ -68,6 +68,75 @@
   </div>
 </div>
 
+<div class="mb-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+  <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+    <div>
+      <h2 class="text-sm font-bold text-slate-900">Selective Automation Control</h2>
+      <p class="mt-1 text-xs text-slate-500">This is the live title and JD gate path. Use this page as the main control surface; the engine page keeps legacy quick-edit fields only.</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <a href="{% url 'harvest-role-categories' %}" class="btn-secondary !px-3 !py-1.5">Open Selective Filter Studio</a>
+      <form method="post" action="{{ role_apply_url }}"
+            data-gc-confirm-title="Backfill title-gate state"
+            data-gc-confirm-text="Queue backfill"
+            data-gc-confirm-variant="warning"
+            data-gc-confirm-message="This will reclassify {{ apply_preview.raw_jobs_to_reclassify }} stale or missing-title-gate RawJobs and revisit {{ apply_preview.synced_jobs_to_refresh }} synced rows.">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <button type="submit" class="btn-secondary !px-3 !py-1.5" {% if ops_summary.active_run %}disabled{% endif %}>
+          {% if ops_summary.active_run %}Selective apply running…{% else %}Apply phrases to existing jobs{% endif %}
+        </button>
+      </form>
+    </div>
+  </div>
+  <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <p class="text-[11px] uppercase tracking-wide text-slate-400">Title Gate</p>
+      <p class="mt-1 text-lg font-semibold {% if automation_summary.title_gate_live %}text-emerald-700{% elif automation_summary.title_gate_audit %}text-amber-700{% else %}text-slate-900{% endif %}">
+        {% if automation_summary.title_gate_live %}Enforcing{% elif automation_summary.title_gate_audit %}Audit only{% else %}Off{% endif %}
+      </p>
+      <p class="mt-1 text-xs text-slate-500">HARD_YES at {{ automation_summary.title_hard_yes_threshold|floatformat:2 }}</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <p class="text-[11px] uppercase tracking-wide text-slate-400">JD Gate</p>
+      <p class="mt-1 text-lg font-semibold {% if automation_summary.jd_gate_live %}text-emerald-700{% elif automation_summary.jd_gate_audit %}text-amber-700{% else %}text-slate-900{% endif %}">
+        {% if automation_summary.jd_gate_live %}Enforcing{% elif automation_summary.jd_gate_audit %}Audit only{% else %}Off{% endif %}
+      </p>
+      <p class="mt-1 text-xs text-slate-500">{{ automation_summary.jd_gate_scope }} · {{ automation_summary.jd_gate_threshold|floatformat:2 }}</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <p class="text-[11px] uppercase tracking-wide text-slate-400">AMBIGUOUS 7d</p>
+      <p class="mt-1 text-2xl font-semibold text-slate-950">{{ automation_summary.ambiguous_7d }}</p>
+      <p class="mt-1 text-xs text-slate-500">Recent rows handed to the JD gate path.</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <p class="text-[11px] uppercase tracking-wide text-slate-400">JD Pending</p>
+      <p class="mt-1 text-2xl font-semibold {% if automation_summary.pending_jd_gate %}text-slate-950{% else %}text-slate-500{% endif %}">{{ automation_summary.pending_jd_gate }}</p>
+      <p class="mt-1 text-xs text-slate-500">{{ automation_summary.stale_pending_jd_gate }} older than 4h.</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <p class="text-[11px] uppercase tracking-wide text-slate-400">Missing Title State</p>
+      <p class="mt-1 text-2xl font-semibold {% if automation_summary.missing_title_gate_rows %}text-amber-600{% else %}text-slate-950{% endif %}">{{ automation_summary.missing_title_gate_rows }}</p>
+      <p class="mt-1 text-xs text-slate-500">Historical rows still need persisted title-gate data.</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <p class="text-[11px] uppercase tracking-wide text-slate-400">Apply Scope</p>
+      <p class="mt-1 text-2xl font-semibold text-slate-950">{{ apply_preview.raw_jobs_to_reclassify }}</p>
+      <p class="mt-1 text-xs text-slate-500">{{ apply_preview.synced_jobs_to_refresh }} synced rows would be revisited.</p>
+    </div>
+  </div>
+  {% if automation_summary.alerts %}
+  <div class="mt-4 grid gap-3 lg:grid-cols-2">
+    {% for alert in automation_summary.alerts %}
+    <div class="rounded-xl border px-4 py-3 text-sm {% if alert.tone == 'red' %}border-red-200 bg-red-50 text-red-700{% else %}border-amber-200 bg-amber-50 text-amber-700{% endif %}">
+      <p class="font-semibold">{{ alert.title }}</p>
+      <p class="mt-1 text-xs opacity-90">{{ alert.body }}</p>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
 <!-- Toast -->
 <div id="save-toast" class="hidden fixed top-5 right-5 z-50 bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-xl text-sm font-semibold transition-all">
   Vet Gate Config saved.

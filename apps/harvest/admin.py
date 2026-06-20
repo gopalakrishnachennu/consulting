@@ -4,6 +4,8 @@ from django.db.models import Count
 from .models import (
     CompanyPlatformLabel,
     HarvestFilterSnapshot,
+    HarvestEngineConfig,
+    HarvestOpsRun,
     HarvestRoleCategory,
     HarvestSkippedTitle,
     JobBoardPlatform,
@@ -11,6 +13,7 @@ from .models import (
     PlatformEngineConfig,
     RawJob,
     RawJobPayloadSnapshot,
+    VetGateConfig,
 )
 
 
@@ -123,3 +126,69 @@ class LocationCacheAdmin(admin.ModelAdmin):
 class PlatformEngineConfigAdmin(admin.ModelAdmin):
     list_display = ["platform", "auto_backfill", "backfill_priority", "fetch_cadence_hours", "inter_request_delay_ms", "is_active"]
     list_filter = ["auto_backfill", "is_active"]
+
+
+@admin.register(HarvestEngineConfig)
+class HarvestEngineConfigAdmin(admin.ModelAdmin):
+    list_display = [
+        "id",
+        "selective_filter_enabled",
+        "filter_audit_mode",
+        "pre_storage_filter_enabled",
+        "jd_gate_enabled",
+        "jd_gate_audit_mode",
+        "jd_gate_scope",
+        "auto_backfill_jd",
+        "auto_sync_to_pool",
+        "updated_at",
+    ]
+    readonly_fields = ["updated_at", "updated_by"]
+
+    def has_add_permission(self, request):
+        return False
+
+
+@admin.register(VetGateConfig)
+class VetGateConfigAdmin(admin.ModelAdmin):
+    list_display = [
+        "id",
+        "allow_unknown_country",
+        "allow_possible_filter",
+        "require_description",
+        "auto_sync_after_harvest",
+        "default_chunk_size",
+    ]
+
+    def has_add_permission(self, request):
+        return False
+
+
+@admin.register(HarvestOpsRun)
+class HarvestOpsRunAdmin(admin.ModelAdmin):
+    list_display = [
+        "operation",
+        "status",
+        "progress_current",
+        "progress_total",
+        "last_heartbeat_at",
+        "created_at",
+        "finished_at",
+    ]
+    list_filter = ["operation", "status", "created_at"]
+    search_fields = ["celery_task_id", "progress_message"]
+    readonly_fields = [
+        "operation",
+        "celery_task_id",
+        "status",
+        "audit_payload",
+        "progress_current",
+        "progress_total",
+        "progress_message",
+        "last_heartbeat_at",
+        "triggered_by_user",
+        "created_at",
+        "finished_at",
+    ]
+
+    def has_add_permission(self, request):
+        return False

@@ -249,6 +249,8 @@ class PlatformSettingsViewTests(TestCase):
 class EngineConfigViewTests(TestCase):
     def setUp(self):
         from django.contrib.auth import get_user_model
+        from django.core.cache import cache
+        from harvest.views import _TITLE_GATE_HISTORY_AUTO_QUEUE_KEY
 
         self.user = get_user_model().objects.create_superuser(
             "engine-admin@example.com",
@@ -256,6 +258,7 @@ class EngineConfigViewTests(TestCase):
             "pw",
         )
         self.client.force_login(self.user)
+        cache.delete(_TITLE_GATE_HISTORY_AUTO_QUEUE_KEY)
 
     def test_engine_config_can_clear_hard_negative_phrases(self):
         from harvest.models import HarvestEngineConfig
@@ -272,6 +275,13 @@ class EngineConfigViewTests(TestCase):
         self.assertEqual(response.status_code, 302)
         cfg.refresh_from_db()
         self.assertEqual(cfg.hard_negative_phrases, [])
+
+    def test_engine_config_page_points_selective_routing_to_primary_surfaces(self):
+        response = self.client.get(reverse("harvest-engine-config"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Primary routing controls now live in Vet Gate Config and Selective Filter Studio")
+        self.assertContains(response, "Legacy quick edit")
 
 
 class HarvestUrlHashDedupeTests(SimpleTestCase):
@@ -498,8 +508,10 @@ class HarvestEngineHardeningTests(TestCase):
 class SelectiveHarvestEngineTests(TestCase):
     def setUp(self):
         from django.contrib.auth import get_user_model
+        from django.core.cache import cache
         from companies.models import Company
         from harvest.models import CompanyPlatformLabel, HarvestEngineConfig, HarvestRoleCategory, JobBoardPlatform
+        from harvest.tasks import JD_GATE_AUTO_QUEUE_CACHE_KEY
 
         self.admin = get_user_model().objects.create_superuser(
             "selective-admin@example.com",
@@ -532,6 +544,7 @@ class SelectiveHarvestEngineTests(TestCase):
         cfg = HarvestEngineConfig.get()
         cfg.hard_negative_phrases = ["registered nurse", "warehouse associate"]
         cfg.save()
+        cache.delete(JD_GATE_AUTO_QUEUE_CACHE_KEY)
 
     def _raw_job(self, **overrides):
         from harvest.models import RawJob
@@ -825,6 +838,121 @@ class SelectiveHarvestEngineTests(TestCase):
         self.assertFalse(raw.jd_fetch_skipped)
         self.assertIn("Detail was already fetched", raw.description)
 
+    def test_fetch_persists_ambiguous_title_gate_and_pending_jd_gate(self):
+        from harvest.models import HarvestEngineConfig, RawJob
+        from harvest.tasks import fetch_raw_jobs_for_company_task
+
+        cfg = HarvestEngineConfig.get()
+        cfg.selective_filter_enabled = True
+        cfg.filter_audit_mode = False
+        cfg.jd_gate_enabled = True
+        cfg.jd_gate_audit_mode = False
+        cfg.title_hard_yes_confidence = 0.80
+        cfg.save()
+        self.platform.title_in_list = True
+        self.platform.save(update_fields=["title_in_list"])
+
+        class _FakeHarvester:
+            last_total_available = 1
+            last_detail_fetched = 0
+
+            def fetch_jobs(self, *args, **kwargs):
+                return [{
+                    "original_url": "https://selective.example/jobs/ambiguous-title",
+                    "apply_url": "https://selective.example/jobs/ambiguous-title",
+                    "external_id": "ambiguous-title",
+                    "title": "Site Reliability Engineer Sales",
+                    "company_name": "Selective Co",
+                    "location_raw": "Remote - US",
+                    "description": "",
+                }]
+
+        with patch("harvest.harvesters.get_harvester", return_value=_FakeHarvester()), patch(
+            "harvest.tasks.run_jd_gate_task.apply_async",
+            return_value=SimpleNamespace(id="jd-gate-1"),
+        ), patch(
+            "harvest.tasks.backfill_descriptions_task.apply_async",
+        ):
+            fetch_raw_jobs_for_company_task.apply(kwargs={"label_pk": self.label.pk}).get()
+
+        raw = RawJob.objects.get(platform_label=self.label, external_id="ambiguous-title")
+        self.assertEqual(raw.filter_decision, "POSSIBLE")
+        self.assertEqual(raw.title_gate_decision, "AMBIGUOUS")
+        self.assertEqual(raw.jd_gate_decision, "PENDING")
+        self.assertAlmostEqual(raw.title_gate_confidence, 0.60)
+
+    def test_ambiguous_titles_queue_jd_gate_but_not_immediate_backfill(self):
+        from harvest.models import HarvestEngineConfig
+        from harvest.tasks import fetch_raw_jobs_for_company_task
+
+        cfg = HarvestEngineConfig.get()
+        cfg.selective_filter_enabled = True
+        cfg.filter_audit_mode = False
+        cfg.jd_gate_enabled = True
+        cfg.jd_gate_audit_mode = False
+        cfg.auto_backfill_jd = True
+        cfg.save()
+        self.platform.title_in_list = True
+        self.platform.save(update_fields=["title_in_list"])
+
+        class _FakeHarvester:
+            last_total_available = 1
+            last_detail_fetched = 0
+
+            def fetch_jobs(self, *args, **kwargs):
+                return [{
+                    "original_url": "https://selective.example/jobs/ambiguous-backfill",
+                    "apply_url": "https://selective.example/jobs/ambiguous-backfill",
+                    "external_id": "ambiguous-backfill",
+                    "title": "Site Reliability Engineer Sales",
+                    "company_name": "Selective Co",
+                    "location_raw": "Remote - US",
+                    "description": "",
+                }]
+
+        with patch("harvest.harvesters.get_harvester", return_value=_FakeHarvester()), patch(
+            "harvest.tasks.run_jd_gate_task.apply_async",
+            return_value=SimpleNamespace(id="jd-gate-2"),
+        ) as mocked_jd_gate, patch(
+            "harvest.tasks.backfill_descriptions_task.apply_async",
+        ) as mocked_backfill:
+            fetch_raw_jobs_for_company_task.apply(kwargs={"label_pk": self.label.pk}).get()
+
+        self.assertTrue(mocked_jd_gate.called)
+        self.assertFalse(mocked_backfill.called)
+
+    def test_backfill_queryset_holds_ambiguous_rows_until_jd_gate_confirms(self):
+        from harvest.models import HarvestEngineConfig
+        from harvest.tasks import _backfill_eligible_queryset
+
+        cfg = HarvestEngineConfig.get()
+        cfg.jd_gate_enabled = True
+        cfg.jd_gate_audit_mode = False
+        cfg.save(update_fields=["jd_gate_enabled", "jd_gate_audit_mode"])
+
+        blocked = self._raw_job(
+            url_hash="ambiguous-pending",
+            original_url="https://selective.example/jobs/ambiguous-pending",
+            title="Software Engineer",
+            title_gate_decision="AMBIGUOUS",
+            jd_gate_decision="PENDING",
+            description="",
+            has_description=False,
+        )
+        confirmed = self._raw_job(
+            url_hash="ambiguous-confirmed",
+            original_url="https://selective.example/jobs/ambiguous-confirmed",
+            title="Software Engineer",
+            title_gate_decision="AMBIGUOUS",
+            jd_gate_decision="CONFIRMED",
+            description="",
+            has_description=False,
+        )
+
+        qs = _backfill_eligible_queryset(None)
+        self.assertFalse(qs.filter(pk=blocked.pk).exists())
+        self.assertTrue(qs.filter(pk=confirmed.pk).exists())
+
     def test_manual_recovery_single_fetch_queues_company_fallback_when_single_fetch_misses(self):
         from harvest.tasks import backfill_single_rawjob_description_task
 
@@ -921,6 +1049,31 @@ class SelectiveHarvestEngineTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "already active")
         mock_delay.assert_not_called()
+
+    @patch("harvest.tasks._queue_auto_jd_gate_run", return_value=True)
+    @patch("django.core.management.call_command")
+    def test_reclassify_task_queues_jd_gate_after_historical_rows_become_ambiguous(self, mock_call_command, mock_queue):
+        from harvest.models import HarvestEngineConfig
+        from harvest.tasks import reclassify_stale_rawjobs_task
+
+        cfg = HarvestEngineConfig.get()
+        cfg.jd_gate_enabled = True
+        cfg.jd_gate_audit_mode = False
+        cfg.save()
+        self._raw_job(
+            url_hash="ambiguous-historical",
+            original_url="https://selective.example/jobs/ambiguous-historical",
+            title="ServiceNow Engineer",
+            title_gate_decision="AMBIGUOUS",
+            jd_gate_decision="PENDING",
+        )
+
+        result = reclassify_stale_rawjobs_task.run(batch_size=250)
+
+        mock_call_command.assert_called_once_with("reclassify_stale_rawjobs", batch_size=250)
+        mock_queue.assert_called_once()
+        self.assertTrue(result["queued_jd_gate"])
+        self.assertEqual(result["pending_jd_gate"], 1)
 
     def test_snapshot_detail_exposes_diff_against_previous_snapshot(self):
         from harvest.models import HarvestFilterSnapshot, HarvestRoleCategory
@@ -4573,6 +4726,8 @@ class ReEvaluateActionFixTests(TestCase):
 class VetGateConfigViewTests(TestCase):
     def setUp(self):
         from django.contrib.auth import get_user_model
+        from django.core.cache import cache
+        from harvest.views import _TITLE_GATE_HISTORY_AUTO_QUEUE_KEY
 
         self.user = get_user_model().objects.create_superuser(
             "vet-admin@example.com",
@@ -4580,6 +4735,7 @@ class VetGateConfigViewTests(TestCase):
             "pw",
         )
         self.client.force_login(self.user)
+        cache.delete(_TITLE_GATE_HISTORY_AUTO_QUEUE_KEY)
 
     def test_vet_gate_page_shows_harvest_to_vet_controls(self):
         response = self.client.get(reverse("harvest-vet-gate-config"))
@@ -4592,6 +4748,8 @@ class VetGateConfigViewTests(TestCase):
         self.assertIn("Resume / Ready / Recheck Rules", content)
         self.assertIn("Pre-storage filter", content)
         self.assertIn("Remote/no-country policy", content)
+        self.assertIn("Selective Automation Control", content)
+        self.assertIn("Apply phrases to existing jobs", content)
 
     def test_vet_gate_post_updates_vet_and_engine_config(self):
         from harvest.models import HarvestEngineConfig, VetGateConfig
@@ -4679,6 +4837,95 @@ class VetGateConfigViewTests(TestCase):
         self.assertTrue(engine_cfg.backfill_jd_include_cold)
         self.assertTrue(engine_cfg.validate_links_include_synced)
         self.assertEqual(engine_cfg.validate_links_recent_hours, 240)
+
+    @patch("harvest.tasks.reclassify_stale_rawjobs_task.delay")
+    def test_vet_gate_post_queues_historical_title_gate_backfill_when_missing_state_exists(self, mock_delay):
+        from companies.models import Company
+        from harvest.models import CompanyPlatformLabel, HarvestEngineConfig, JobBoardPlatform, RawJob
+
+        platform, _ = JobBoardPlatform.objects.update_or_create(
+            slug="vet-gate-greenhouse",
+            defaults={"name": "Vet Gate Greenhouse"},
+        )
+        company = Company.objects.create(name="Vet Queue Co")
+        label = CompanyPlatformLabel.objects.create(company=company, platform=platform, tenant_id="vet-co")
+        RawJob.objects.create(
+            company=company,
+            platform_label=label,
+            job_platform=platform,
+            platform_slug=platform.slug,
+            company_name=company.name,
+            title="ServiceNow Engineer",
+            url_hash="missing-title-gate",
+            original_url="https://vet.example/jobs/1",
+            is_active=True,
+            is_test_run=False,
+            title_gate_decision=None,
+        )
+        mock_delay.return_value = SimpleNamespace(id="task-queue-12345678")
+
+        response = self.client.post(
+            reverse("harvest-vet-gate-config"),
+            {
+                "allow_unknown_country": "on",
+                "allow_possible_filter": "on",
+                "min_word_count": "80",
+                "min_char_count": "400",
+                "auto_lane_min_vet_priority": "0.75",
+                "auto_lane_min_data_quality": "0.72",
+                "auto_lane_min_trust": "0.70",
+                "default_chunk_size": "500",
+                "selective_filter_enabled": "on",
+                "title_hard_yes_confidence": "0.80",
+                "zero_tech_threshold": "5",
+                "zero_tech_skip_ttl_days": "30",
+                "cold_no_match_sample_rate_pct": "5",
+                "remote_unknown_policy": "review",
+                "geocoding_provider": "none",
+                "jd_gate_scope": "ambiguous_only",
+                "jd_gate_model": "gpt-4o-mini",
+                "jd_gate_confidence_threshold": "0.65",
+                "jd_gate_batch_size": "20",
+                "jd_gate_snippet_chars": "800",
+                "resume_jd_min_words": "80",
+                "resume_jd_min_chars": "400",
+                "resume_jd_min_classification_confidence": "0.35",
+                "ready_stage_min_confidence": "0.55",
+                "validate_links_recent_hours": "168",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        mock_delay.assert_called_once()
+
+    def test_vet_gate_page_surfaces_automation_alert_when_title_gate_state_missing(self):
+        from companies.models import Company
+        from harvest.models import CompanyPlatformLabel, JobBoardPlatform, RawJob
+
+        platform, _ = JobBoardPlatform.objects.update_or_create(
+            slug="vet-gate-alerts",
+            defaults={"name": "Vet Gate Alerts"},
+        )
+        company = Company.objects.create(name="Alert Co")
+        label = CompanyPlatformLabel.objects.create(company=company, platform=platform, tenant_id="alert-co")
+        RawJob.objects.create(
+            company=company,
+            platform_label=label,
+            job_platform=platform,
+            platform_slug=platform.slug,
+            company_name=company.name,
+            title="ServiceNow Engineer",
+            url_hash="alert-title-gate",
+            original_url="https://vet.example/jobs/alert",
+            is_active=True,
+            is_test_run=False,
+            title_gate_decision=None,
+        )
+
+        response = self.client.get(reverse("harvest-vet-gate-config"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Historical rows still missing title-gate state")
 
 
 class RawJobManualRecheckPropagationTests(TestCase):
