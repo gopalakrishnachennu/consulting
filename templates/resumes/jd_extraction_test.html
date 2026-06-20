@@ -11,7 +11,7 @@
 
   <div class="mb-5 flex items-start justify-between gap-3 flex-wrap">
     <div>
-      <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Resume Engine</p>
+      <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">JD Routing Engine</p>
       <h1 class="mt-1 text-2xl font-bold tracking-tight text-slate-950">Test JD Extraction</h1>
       <p class="mt-1 text-sm text-slate-500">Runs the <strong>active prompt</strong> on a real job. Results are not saved — this is for tuning.</p>
     </div>
@@ -62,6 +62,27 @@
       {% for s in result.diff.new_skills_found_by_llm %}
       <span class="rounded bg-white/70 px-2 py-0.5 text-xs font-mono text-indigo-800">{{ s }}</span>
       {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if result.routing %}
+  <div class="grid gap-3 md:grid-cols-4 mb-4">
+    <div class="rounded-lg border border-slate-200 bg-white p-4">
+      <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Role Family</div>
+      <div class="mt-1 text-sm font-semibold text-slate-900">{{ result.routing.role_family|default:"—" }}</div>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white p-4">
+      <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Seniority</div>
+      <div class="mt-1 text-sm font-semibold text-slate-900">{{ result.routing.seniority_primary|default:"—" }}</div>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white p-4">
+      <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Countries</div>
+      <div class="mt-1 text-sm font-semibold text-slate-900">{% if result.routing.country_codes %}{{ result.routing.country_codes|join:", " }}{% else %}&mdash;{% endif %}</div>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white p-4">
+      <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Routing Confidence</div>
+      <div class="mt-1 text-sm font-semibold text-slate-900">{{ result.routing.confidence|default:0|floatformat:2 }}</div>
     </div>
   </div>
   {% endif %}

@@ -44,6 +44,9 @@ HARD RULES
 - Detect mixed roles: set primary_role_family and any secondary_role_families with weights.
 - Capture explicit resume instructions (graduation date, availability, portfolio, clearance,
   work authorization, GPA, relocation) in `special_resume_requirements`.
+- Fill `routing_profile` for staffing workflow decisions. This is the compact output the
+  vetting / routing system will persist on the Job row. If a routing field is unclear,
+  use null / [] / "unknown" and add a warning instead of guessing.
 - Provide a confidence (0..1) on extracted groups and an overall extraction confidence.
 
 OUTPUT SHAPE (fill what the JD supports; use [] / null / "unknown" when absent):
@@ -71,6 +74,17 @@ OUTPUT SHAPE (fill what the JD supports; use [] / null / "unknown" when absent):
   "ats_keywords": [{"keyword": "", "category": "technical|role_title|domain|soft_skill|responsibility|tool|platform", "importance": "high|medium|low", "should_use_in_resume": true, "max_recommended_repetitions": 2}],
   "soft_skills": [{"skill": "", "importance": "high|medium|low", "evidence_text": "", "confidence": 0.0}],
   "special_resume_requirements": [{"requirement": "graduation_date|availability|portfolio|github|gpa|work_authorization|relocation|security_clearance|certification|other", "required": true, "resume_section": "Header|Education|Summary|Certifications|Projects|Other", "evidence_text": "", "confidence": 0.0}],
+  "routing_profile": {
+    "role_family": "", "secondary_role_families": [],
+    "seniority_primary": "unknown", "seniority_secondary": null, "seniority_confidence": 0.0,
+    "years_min": null, "years_max": null,
+    "country_mode": "single|multi|regional|remote_global|unknown",
+    "country_codes": ["string"], "country_labels": ["string"], "location_text": null,
+    "work_mode": "remote|hybrid|onsite|unknown",
+    "visa_sponsorship": null, "work_authorization": "",
+    "employment_type": null, "contract_constraints": ["string"],
+    "clearance_required": false, "clearance_level": null,
+    "evidence_spans": ["string"], "confidence": 0.0},
   "ignored_sections": [{"section_name": "Benefits|Pay Transparency|Diversity|Legal Notice|Company Marketing|Accommodation|Other", "reason": "", "content_summary": ""}],
   "exact_phrase_controls": [{"phrase": "", "use_in_resume": true, "max_repetitions": 2, "reason": ""}],
   "hidden_priorities": [{"priority": "", "evidence_text": "", "resume_relevance": "high|medium|low", "confidence": 0.0}],
@@ -157,7 +171,35 @@ def validate_parsed_jd(data) -> dict:
     if eq.get("overall_extraction_confidence") is None:
         errors.append("VAL_009: extraction_quality.overall_extraction_confidence missing")
 
+    # VAL_009b — routing_profile shape is advisory but important for staffing workflow
+    routing = data.get("routing_profile") or {}
+    if routing and not isinstance(routing, dict):
+        errors.append("VAL_009b: routing_profile is not an object")
+    elif routing:
+        if not (routing.get("role_family") or "").strip():
+            warnings.append("VAL_009b: routing_profile.role_family missing")
+        confidence = routing.get("confidence")
+        if confidence is None:
+            warnings.append("VAL_009b: routing_profile.confidence missing")
+        country_codes = routing.get("country_codes")
+        if country_codes is not None and not isinstance(country_codes, list):
+            errors.append("VAL_009b: routing_profile.country_codes must be a list")
+
     # VAL_010 — handled in jd_extractor (parser_metadata is attached there)
 
     ok = not errors
     return {"ok": ok, "needs_retry": not ok, "errors": errors, "warnings": warnings}
+
+
+def prompt_contract_errors(prompt_text: str) -> list[str]:
+    text = (prompt_text or "").strip()
+    if not text:
+        return ["Prompt is empty."]
+    lowered = text.lower()
+    checks = [
+        ("strict json", "Prompt must explicitly require strict JSON output."),
+        ("role_classification", "Prompt must preserve the role_classification contract."),
+        ("routing_profile", "Prompt must preserve the routing_profile contract."),
+        ("evidence_text", "Prompt must require evidence_text for important fields."),
+    ]
+    return [message for needle, message in checks if needle not in lowered]

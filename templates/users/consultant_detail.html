@@ -123,6 +123,49 @@
     </div>
   </div>
 
+  {% if routing_metrics %}
+  <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
+    <div class="bg-white rounded-xl border border-gray-200 p-3 text-center">
+      <p class="text-xl font-extrabold text-slate-900">{{ routing_metrics.role_scoped_jobs|default:"0" }}</p>
+      <p class="text-[10px] font-semibold text-gray-400 uppercase">Role Scope</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-3 text-center">
+      <p class="text-xl font-extrabold text-blue-600">{{ routing_metrics.country_fit_jobs|default:"0" }}</p>
+      <p class="text-[10px] font-semibold text-gray-400 uppercase">Country Fit</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-3 text-center">
+      <p class="text-xl font-extrabold text-violet-600">{{ routing_metrics.seniority_fit_jobs|default:"0" }}</p>
+      <p class="text-[10px] font-semibold text-gray-400 uppercase">Seniority Fit</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-3 text-center">
+      <p class="text-xl font-extrabold text-emerald-600">{{ routing_metrics.eligible_jobs|default:"0" }}</p>
+      <p class="text-[10px] font-semibold text-gray-400 uppercase">Routed Jobs</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-3 text-center">
+      <p class="text-xl font-extrabold {% if routing_metrics.routing_review_jobs %}text-amber-600{% else %}text-gray-300{% endif %}">{{ routing_metrics.routing_review_jobs|default:"0" }}</p>
+      <p class="text-[10px] font-semibold text-gray-400 uppercase">Need Review</p>
+    </div>
+  </div>
+  <div class="mt-3 grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div class="bg-white rounded-xl border border-gray-200 p-3 text-center">
+      <p class="text-xl font-extrabold text-cyan-600">{{ routing_metrics.work_auth_fit_jobs|default:"0" }}</p>
+      <p class="text-[10px] font-semibold text-gray-400 uppercase">Work Auth Fit</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-3 text-center">
+      <p class="text-xl font-extrabold text-fuchsia-600">{{ routing_metrics.employment_fit_jobs|default:"0" }}</p>
+      <p class="text-[10px] font-semibold text-gray-400 uppercase">Employment Fit</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-3 text-center">
+      <p class="text-xl font-extrabold text-teal-600">{{ routing_metrics.work_mode_fit_jobs|default:"0" }}</p>
+      <p class="text-[10px] font-semibold text-gray-400 uppercase">Work Mode Fit</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-3 text-center">
+      <p class="text-xl font-extrabold text-slate-900">{{ routing_metrics.clearance_fit_jobs|default:"0" }}</p>
+      <p class="text-[10px] font-semibold text-gray-400 uppercase">Clearance Fit</p>
+    </div>
+  </div>
+  {% endif %}
+
   {# ━━ TAB NAV ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
   <div class="flex items-center gap-1 bg-white rounded-xl border border-gray-200 p-1 overflow-x-auto">
     <button @click="tab='overview'" :class="tab==='overview' ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'" class="px-4 py-2 rounded-lg text-sm font-semibold transition whitespace-nowrap">Overview</button>
@@ -310,17 +353,62 @@
         </div>
         {% endif %}
 
-        {# Matched Jobs #}
-        {% if matched_jobs %}
+        {# Routing Audit #}
+        {% if routing_eligible_rows %}
         <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-          <div class="px-5 py-3 border-b border-gray-100">
-            <h2 class="text-xs font-bold text-gray-600 uppercase tracking-wider">Matched Jobs</h2>
+          <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+            <h2 class="text-xs font-bold text-gray-600 uppercase tracking-wider">Routing Eligible</h2>
+            <span class="text-[10px] text-gray-400">Top {{ routing_eligible_rows|length }}</span>
           </div>
           <div class="divide-y divide-gray-50">
-            {% for job in matched_jobs %}
-            <a href="{% url 'job-detail' job.pk %}" class="block px-5 py-2.5 hover:bg-gray-50 transition">
-              <p class="text-xs font-semibold text-gray-800 truncate">{{ job.title }}</p>
-              <p class="text-[10px] text-gray-400">{{ job.company }} {% if job.match_score %}&middot; {{ job.match_score }}% match{% endif %}</p>
+            {% for row in routing_eligible_rows %}
+            <a href="{% url 'job-detail' row.job.pk %}" class="block px-5 py-3 hover:bg-gray-50 transition">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="text-xs font-semibold text-gray-800 truncate">{{ row.job.title }}</p>
+                  <p class="text-[10px] text-gray-400">{{ row.job.company }}</p>
+                  <div class="mt-1 flex flex-wrap gap-1">
+                    {% for code in row.passed_checks|slice:":4" %}
+                    <span class="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-semibold text-emerald-700">{{ code }}</span>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="shrink-0 text-right">
+                  <div class="text-sm font-bold text-emerald-600">{{ row.match_pct }}%</div>
+                  <div class="text-[9px] text-gray-400">{{ row.raw_score }} raw</div>
+                </div>
+              </div>
+            </a>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        {% if routing_blocked_summary or routing_blocked_rows %}
+        <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+          <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+            <h2 class="text-xs font-bold text-gray-600 uppercase tracking-wider">Routing Misses</h2>
+            <span class="text-[10px] text-gray-400">{{ routing_metrics.blocked_jobs|default:"0" }} blocked</span>
+          </div>
+          {% if routing_blocked_summary %}
+          <div class="px-5 py-3 border-b border-gray-100">
+            <div class="flex flex-wrap gap-1.5">
+              {% for item in routing_blocked_summary %}
+              <span class="rounded-full bg-amber-50 px-2 py-1 text-[9px] font-semibold text-amber-700">{{ item.code }} · {{ item.count }}</span>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+          <div class="divide-y divide-gray-50">
+            {% for row in routing_blocked_rows %}
+            <a href="{% url 'job-detail' row.job.pk %}" class="block px-5 py-3 hover:bg-gray-50 transition">
+              <p class="text-xs font-semibold text-gray-800 truncate">{{ row.job.title }}</p>
+              <p class="text-[10px] text-gray-400">{{ row.job.company }}</p>
+              <div class="mt-1 flex flex-wrap gap-1">
+                {% for reason in row.blocked_reasons|slice:":3" %}
+                <span class="rounded-full bg-rose-50 px-2 py-0.5 text-[9px] font-semibold text-rose-700">{{ reason.code }}</span>
+                {% endfor %}
+              </div>
             </a>
             {% endfor %}
           </div>
@@ -702,8 +790,29 @@
           <div class="flex justify-between"><span class="text-gray-500">Work Countries</span>
             <span class="font-semibold text-gray-700">{% for c in profile.work_countries %}{{ c }}{% if not forloop.last %}, {% endif %}{% empty %}&mdash;{% endfor %}</span>
           </div>
+          <div class="flex justify-between"><span class="text-gray-500">Work Authorization</span>
+            <span class="font-semibold text-gray-700">{% for c in profile.work_authorization_countries %}{{ c }}{% if not forloop.last %}, {% endif %}{% empty %}&mdash;{% endfor %}</span>
+          </div>
+          <div class="flex justify-between"><span class="text-gray-500">Citizenship</span>
+            <span class="font-semibold text-gray-700">{% for c in profile.citizenship_countries %}{{ c }}{% if not forloop.last %}, {% endif %}{% empty %}&mdash;{% endfor %}</span>
+          </div>
           <div class="flex justify-between"><span class="text-gray-500">Seniority Levels</span>
             <span class="font-semibold text-gray-700">{% for s in profile.preferred_seniority_levels %}{{ s }}{% if not forloop.last %}, {% endif %}{% empty %}&mdash;{% endfor %}</span>
+          </div>
+          <div class="flex justify-between"><span class="text-gray-500">Employment Prefs</span>
+            <span class="font-semibold text-gray-700">{% for s in profile.employment_preferences %}{{ s }}{% if not forloop.last %}, {% endif %}{% empty %}&mdash;{% endfor %}</span>
+          </div>
+          <div class="flex justify-between"><span class="text-gray-500">Work Modes</span>
+            <span class="font-semibold text-gray-700">{% for s in profile.preferred_work_modes %}{{ s }}{% if not forloop.last %}, {% endif %}{% empty %}&mdash;{% endfor %}</span>
+          </div>
+          <div class="flex justify-between"><span class="text-gray-500">Visa Sponsorship</span>
+            <span class="font-semibold">{% if profile.requires_visa_sponsorship == True %}Required{% elif profile.requires_visa_sponsorship == False %}Not required{% else %}Unknown{% endif %}</span>
+          </div>
+          <div class="flex justify-between"><span class="text-gray-500">Visa Status</span>
+            <span class="font-semibold text-gray-700">{{ profile.visa_status|default:"—" }}</span>
+          </div>
+          <div class="flex justify-between"><span class="text-gray-500">Clearance Eligible</span>
+            <span class="font-semibold">{% if profile.clearance_eligible %}Yes{% else %}No{% endif %}</span>
           </div>
           <div class="flex justify-between"><span class="text-gray-500">Match JD Title Override</span>
             <span class="font-semibold">{% if profile.match_jd_title_override == True %}On{% elif profile.match_jd_title_override == False %}Off{% else %}Default{% endif %}</span>

@@ -43,6 +43,13 @@ class Job(models.Model):
         HUMAN = 'HUMAN', _('Human Review Lane')
         BLOCKED = 'BLOCKED', _('Blocked Lane')
 
+    class RoutingStatus(models.TextChoices):
+        PENDING = 'PENDING', _('Pending')
+        READY = 'READY', _('Ready')
+        REVIEW = 'REVIEW', _('Needs Review')
+        FAILED = 'FAILED', _('Failed')
+        OVERRIDDEN = 'OVERRIDDEN', _('Overridden')
+
     title = models.CharField(max_length=200)
     company = models.CharField(max_length=200, help_text="Legacy company name (will be kept for compatibility).")
     company_obj = models.ForeignKey(
@@ -221,6 +228,35 @@ class Job(models.Model):
     parsed_jd_model = models.CharField(max_length=100, blank=True)
     parsed_jd_prompt_version = models.CharField(max_length=40, blank=True)
     parsed_jd_schema_version = models.CharField(max_length=40, blank=True)
+    routing_profile = models.JSONField(default=dict, blank=True)
+    routing_status = models.CharField(
+        max_length=12,
+        choices=RoutingStatus.choices,
+        default=RoutingStatus.PENDING,
+        db_index=True,
+    )
+    routing_confidence = models.FloatField(null=True, blank=True)
+    routing_source = models.CharField(max_length=32, blank=True)
+    routing_role_family = models.CharField(max_length=80, blank=True, db_index=True)
+    routing_seniority = models.CharField(max_length=20, blank=True, db_index=True)
+    routing_years_min = models.PositiveSmallIntegerField(null=True, blank=True)
+    routing_years_max = models.PositiveSmallIntegerField(null=True, blank=True)
+    routing_country_mode = models.CharField(max_length=20, blank=True, db_index=True)
+    routing_country_codes = models.JSONField(default=list, blank=True)
+    routing_work_mode = models.CharField(max_length=20, blank=True)
+    routing_visa_sponsorship = models.BooleanField(null=True, blank=True)
+    routing_work_authorization = models.CharField(max_length=160, blank=True)
+    routing_work_auth_category = models.CharField(max_length=40, blank=True, db_index=True)
+    routing_employment_terms = models.JSONField(default=list, blank=True)
+    routing_clearance_required = models.BooleanField(default=False)
+    routing_warnings = models.JSONField(default=list, blank=True)
+    routing_hash = models.CharField(max_length=64, blank=True, db_index=True)
+    routing_model = models.CharField(max_length=100, blank=True)
+    routing_prompt_version = models.CharField(max_length=40, blank=True)
+    routing_schema_version = models.CharField(max_length=40, blank=True)
+    routing_extracted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    routing_override = models.JSONField(default=dict, blank=True)
+    routing_override_updated_at = models.DateTimeField(null=True, blank=True)
 
     # Phase 5: Job source tracking
     job_source = models.CharField(
@@ -281,8 +317,12 @@ class Job(models.Model):
             self.company = self.company_obj.name
         # Flag stale classification when title or location changes
         if self.pk:
-            changed = Job.objects.filter(pk=self.pk).values("title", "location").first()
-            if changed and (changed["title"] != self.title or changed["location"] != self.location):
+            changed = Job.objects.filter(pk=self.pk).values("title", "location", "description").first()
+            if changed and (
+                changed["title"] != self.title
+                or changed["location"] != self.location
+                or changed["description"] != self.description
+            ):
                 self.needs_reclassification = True
         super().save(*args, **kwargs)
 

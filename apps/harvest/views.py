@@ -69,8 +69,6 @@ def _safe_return_url(request, fallback_viewname: str, *, pk: int | None = None) 
         return target
     kwargs = {"pk": pk} if pk is not None else None
     return reverse(fallback_viewname, kwargs=kwargs)
-from .services.job_descriptions import job_description_for_sync
-
 logger = logging.getLogger(__name__)
 
 
@@ -693,21 +691,9 @@ def _ready_stage_q(min_conf: float | None = None) -> Q:
 
 def _find_existing_live_job_for_rawjob(raw_job):
     """Find existing non-archived Job mapped to a RawJob URL hash/link."""
-    from jobs.dedup import find_existing_job_by_url
-    from jobs.models import Job
+    from .services.pool_job_sync import find_existing_active_job_for_raw_job
 
-    if raw_job.url_hash:
-        by_hash = Job.objects.filter(url_hash=raw_job.url_hash, is_archived=False).first()
-        if by_hash:
-            return by_hash
-    if raw_job.original_url:
-        by_url = find_existing_job_by_url(raw_job.original_url)
-        if by_url and not by_url.is_archived:
-            return by_url
-        by_link = Job.objects.filter(original_link=raw_job.original_url, is_archived=False).first()
-        if by_link:
-            return by_link
-    return None
+    return find_existing_active_job_for_raw_job(raw_job)
 
 
 def _build_rawjob_ops_timeline(raw_job: RawJob) -> list[dict]:
@@ -833,13 +819,13 @@ def _sync_rawjob_to_pool(raw_job, *, posted_by):
     """
     from django.utils import timezone as _tz
     from jobs.link_health import JOB_LINK_HEALTH_UPDATE_FIELDS, apply_link_health_payload_to_job
-    from jobs.models import Job
     from jobs.quality import compute_quality_score
     from jobs.gating import apply_gate_result_to_job, evaluate_raw_job_gate
     from jobs.tasks import _department_sync_value
     from jobs.dual_classification.audit import build_job_dual_classification_meta
     from jobs.dual_classification.effective import effective_raw_job_classification
     from jobs.dual_classification.policy import sync_block_reason as dual_classification_sync_block_reason
+    from .services.pool_job_sync import create_or_get_vetting_job_from_raw_job
     from .url_health import build_link_health_payload, check_job_posting_live, link_health_state
 
     existing = _find_existing_live_job_for_rawjob(raw_job)
@@ -879,36 +865,29 @@ def _sync_rawjob_to_pool(raw_job, *, posted_by):
     if dual_classification_block:
         raise ValueError(f"Cannot promote to vet queue: {dual_classification_block}")
 
-    platform_slug = raw_job.platform_slug or (raw_job.job_platform.slug if raw_job.job_platform else "")
     effective = effective_raw_job_classification(raw_job)
     snapshot = getattr(raw_job, "classification_snapshot", None)
     job_location = " | ".join(raw_job.location_candidates or []) or raw_job.location_raw or ""
     job_country = effective["country"] or ""
     mapped_department = _department_sync_value(effective["department_normalized"] or "")
+    job, created_new, locked_raw = create_or_get_vetting_job_from_raw_job(
+        raw_job,
+        posted_by=posted_by,
+        job_location=job_location,
+        job_country=job_country,
+        mapped_department=mapped_department,
+    )
+    if not created_new:
+        if locked_raw.sync_status != "SYNCED":
+            locked_raw.sync_status = "SKIPPED"
+            locked_raw.save(update_fields=["sync_status", "updated_at"])
+            _invalidate_rawjobs_dashboard_cache()
+        return job, False
+
     with transaction.atomic():
-        job = Job.objects.create(
-            title=raw_job.title,
-            company=raw_job.company_name or (raw_job.company.name if raw_job.company else ""),
-            company_obj=raw_job.company,
-            location=job_location,
-            description=job_description_for_sync(raw_job),
-            original_link=raw_job.original_url,
-            salary_range=raw_job.salary_raw or "",
-            job_type=raw_job.employment_type if raw_job.employment_type != "UNKNOWN" else "FULL_TIME",
-            status="POOL",
-            stage=Job.Stage.VETTED,
-            stage_changed_at=_tz.now(),
-            url_hash=raw_job.url_hash or "",
-            job_source=f"HARVESTED_{platform_slug.upper()}" if platform_slug else "HARVESTED",
-            posted_by=posted_by,
-            source_raw_job=raw_job,
-            queue_entered_at=_tz.now(),
-            country=job_country,
-            department=mapped_department,
-        )
         apply_link_health_payload_to_job(
             job,
-            ((raw_job.raw_payload or {}).get("link_health") or {}),
+            ((locked_raw.raw_payload or {}).get("link_health") or {}),
         )
         apply_gate_result_to_job(job, gate)
         job.quality_score = compute_quality_score(job)
@@ -956,15 +935,15 @@ def _sync_rawjob_to_pool(raw_job, *, posted_by):
             "job_id": job.pk,
             "checked_at": _tz.now().isoformat(),
             "classification_source": (
-                getattr(getattr(raw_job, "classification_snapshot", None), "approved_source", "") or "raw_job"
+                getattr(getattr(locked_raw, "classification_snapshot", None), "approved_source", "") or "raw_job"
             ),
         }
         from jobs.marketing_role_routing import assign_marketing_roles_to_job
 
-        assign_marketing_roles_to_job(job, raw_job=raw_job)
-        raw_job.sync_status = "SYNCED"
-        raw_job.raw_payload = payload
-        raw_job.save(update_fields=["sync_status", "raw_payload", "updated_at"])
+        assign_marketing_roles_to_job(job, raw_job=locked_raw)
+        locked_raw.sync_status = "SYNCED"
+        locked_raw.raw_payload = payload
+        locked_raw.save(update_fields=["sync_status", "raw_payload", "updated_at"])
     _invalidate_rawjobs_dashboard_cache()
     return job, True
 
@@ -1572,6 +1551,23 @@ class RunCleanupNowView(SuperuserRequiredMixin, View):
         task = cleanup_harvested_jobs_task.delay()
         messages.success(request, f"Cleanup started (Task: {task.id[:8]}...)")
         return redirect_with_task_progress("ops-center", task.id, "Harvest cleanup")
+
+
+class RunVetLiveIntegrityCleanupView(SuperuserRequiredMixin, View):
+    def post(self, request):
+        from .tasks import enforce_active_job_integrity_task
+
+        task = enforce_active_job_integrity_task.delay()
+        messages.success(
+            request,
+            "Vet/live integrity cleanup started. Active jobs will be repaired from RawJob JD where possible, "
+            f"and unrecoverable or duplicate rows will be archived (task {task.id[:8]}...).",
+        )
+        return redirect_with_task_progress(
+            "harvest-vet-gate-config",
+            task.id,
+            "Vet/live integrity cleanup",
+        )
 
 
 class RunBackfillNowView(SuperuserRequiredMixin, View):
@@ -2806,7 +2802,7 @@ class RerunOpsRunView(SuperuserRequiredMixin, View):
       BACKFILL_ROLES  → backfill_job_marketing_roles_task
       SYNC_POOL       → sync_harvested_to_pool_task
       VALIDATE_URLS   → validate_raw_job_urls_task
-      CLEANUP         → cleanup_harvested_jobs_task
+      CLEANUP         → cleanup_harvested_jobs_task / enforce_active_job_integrity_task
     Other operations redirect back with an error message.
     """
 
@@ -2819,6 +2815,7 @@ class RerunOpsRunView(SuperuserRequiredMixin, View):
         HarvestOpsRun.Operation.SYNC_POOL: "sync_harvested_to_pool_task",
         HarvestOpsRun.Operation.VALIDATE_URLS: "validate_raw_job_urls_task",
         HarvestOpsRun.Operation.CLEANUP: "cleanup_harvested_jobs_task",
+        HarvestOpsRun.Operation.ENFORCE_JOB_INTEGRITY: "enforce_active_job_integrity_task",
         HarvestOpsRun.Operation.BACKFILL_ROLES: "backfill_job_marketing_roles_task",
     }
 

@@ -62,6 +62,123 @@
       </div>
     </div>
 
+    <div>
+      <h2 class="text-sm font-bold text-slate-900">Routing Readiness</h2>
+      <div class="mt-4 grid gap-4 md:grid-cols-2">
+        <div>
+          <label for="{{ form.routing_ready_confidence_threshold.id_for_label }}" class="mb-1 block text-sm font-medium text-slate-700">READY confidence threshold</label>
+          {{ form.routing_ready_confidence_threshold }}
+          <div class="mt-1 text-sm text-slate-500">Jobs below this confidence stay in review.</div>
+          <div class="mt-1 text-sm text-red-600">{{ form.routing_ready_confidence_threshold.errors }}</div>
+        </div>
+        <div>
+          <label for="{{ form.routing_backfill_batch_size.id_for_label }}" class="mb-1 block text-sm font-medium text-slate-700">Routing backfill batch size</label>
+          {{ form.routing_backfill_batch_size }}
+          <div class="mt-1 text-sm text-slate-500">Used by the active-job routing refresh action.</div>
+          <div class="mt-1 text-sm text-red-600">{{ form.routing_backfill_batch_size.errors }}</div>
+        </div>
+      </div>
+      <div class="mt-4 space-y-4">
+        <label class="flex items-start gap-3">
+          {{ form.routing_require_country }}
+          <span>
+            <span class="block text-sm font-medium text-slate-900">Require country for READY</span>
+            <span class="block text-sm text-slate-500">Keep jobs in review until a country is extracted.</span>
+          </span>
+        </label>
+        <label class="flex items-start gap-3">
+          {{ form.routing_require_seniority }}
+          <span>
+            <span class="block text-sm font-medium text-slate-900">Require seniority for READY</span>
+            <span class="block text-sm text-slate-500">Use review when seniority could not be extracted cleanly.</span>
+          </span>
+        </label>
+        <label class="flex items-start gap-3">
+          {{ form.routing_require_work_authorization }}
+          <span>
+            <span class="block text-sm font-medium text-slate-900">Require work authorization evidence for READY</span>
+            <span class="block text-sm text-slate-500">Protect visa-sensitive roles from auto-routing with missing evidence.</span>
+          </span>
+        </label>
+        <label class="flex items-start gap-3">
+          {{ form.routing_require_parsed_jd_for_pool }}
+          <span>
+            <span class="block text-sm font-medium text-slate-900">Require parsed JD before vetting sync</span>
+            <span class="block text-sm text-slate-500">Keep harvested jobs out of the vetting pool until JD extraction succeeds.</span>
+          </span>
+        </label>
+        <label class="flex items-start gap-3">
+          {{ form.routing_require_ready_for_pool }}
+          <span>
+            <span class="block text-sm font-medium text-slate-900">Require routing READY before vetting sync</span>
+            <span class="block text-sm text-slate-500">Prevent REVIEW and FAILED routing rows from entering the pool automatically.</span>
+          </span>
+        </label>
+      </div>
+    </div>
+
+    <div>
+      <h2 class="text-sm font-bold text-slate-900">Consultant Match Enforcement</h2>
+      <div class="mt-4 space-y-4">
+        <label class="flex items-start gap-3">
+          {{ form.routing_enforce_country_match }}
+          <span>
+            <span class="block text-sm font-medium text-slate-900">Enforce consultant country preferences</span>
+            <span class="block text-sm text-slate-500">Role match is not enough when the country does not fit.</span>
+          </span>
+        </label>
+        <label class="flex items-start gap-3">
+          {{ form.routing_enforce_seniority_match }}
+          <span>
+            <span class="block text-sm font-medium text-slate-900">Enforce consultant seniority preferences</span>
+            <span class="block text-sm text-slate-500">Use consultant seniority bands as a hard filter.</span>
+          </span>
+        </label>
+        <label class="flex items-start gap-3">
+          {{ form.routing_enforce_work_authorization }}
+          <span>
+            <span class="block text-sm font-medium text-slate-900">Enforce visa and work authorization rules</span>
+            <span class="block text-sm text-slate-500">Block jobs that conflict with consultant sponsorship or country eligibility.</span>
+          </span>
+        </label>
+        <label class="flex items-start gap-3">
+          {{ form.routing_enforce_employment_preferences }}
+          <span>
+            <span class="block text-sm font-medium text-slate-900">Enforce employment preferences</span>
+            <span class="block text-sm text-slate-500">Respect W2, C2C, 1099, contract, and full-time constraints.</span>
+          </span>
+        </label>
+        <label class="flex items-start gap-3">
+          {{ form.routing_enforce_work_mode }}
+          <span>
+            <span class="block text-sm font-medium text-slate-900">Enforce work mode preferences</span>
+            <span class="block text-sm text-slate-500">Filter remote, hybrid, and onsite jobs against consultant preferences.</span>
+          </span>
+        </label>
+        <label class="flex items-start gap-3">
+          {{ form.routing_enforce_clearance }}
+          <span>
+            <span class="block text-sm font-medium text-slate-900">Enforce clearance eligibility</span>
+            <span class="block text-sm text-slate-500">Keep clearance-required jobs away from consultants who are not eligible.</span>
+          </span>
+        </label>
+        <label class="flex items-start gap-3">
+          {{ form.routing_require_parsed_jd_for_live }}
+          <span>
+            <span class="block text-sm font-medium text-slate-900">Require parsed JD before live approval</span>
+            <span class="block text-sm text-slate-500">Block pool approval when a job never produced a usable parsed JD.</span>
+          </span>
+        </label>
+        <label class="flex items-start gap-3">
+          {{ form.routing_require_ready_for_live }}
+          <span>
+            <span class="block text-sm font-medium text-slate-900">Require routing READY before live approval</span>
+            <span class="block text-sm text-slate-500">Only READY or manually OVERRIDDEN jobs can move from pool to live.</span>
+          </span>
+        </label>
+      </div>
+    </div>
+
     <div class="flex flex-wrap items-center gap-3">
       <button type="submit" class="btn-primary">Save Classification Settings</button>
       <a href="{% url 'platform-config' %}#tab-job-pool" class="btn-secondary">Legacy setup</a>

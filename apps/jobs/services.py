@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections import Counter
 from typing import List
 
 from django.utils import timezone
+from django.db.models import Count, Min, Q
 
 from .models import Job
 from resumes.services import LLMService
@@ -14,6 +16,7 @@ from django.db.models import Q
 from submissions.models import ApplicationSubmission
 from harvest.enrichments import infer_country_from_location
 from resumes.prompt_strings import JD_PARSER_SYSTEM_PROMPT, JD_PARSER_USER_PROMPT
+from .routing import effective_routing_profile
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +54,10 @@ _ACTIVE_SUBMISSION_STATUSES = {
 
 
 def _job_country(job: Job) -> str:
+    routing = effective_routing_profile(job)
+    country_labels = routing.get("country_labels") or []
+    if country_labels:
+        return str(country_labels[0]).strip()
     direct = (getattr(job, "country", "") or "").strip()
     if direct:
         return direct
@@ -58,6 +65,10 @@ def _job_country(job: Job) -> str:
 
 
 def _job_seniority_bucket(job: Job) -> str:
+    routing = effective_routing_profile(job)
+    routed = (routing.get("seniority_primary") or getattr(job, "routing_seniority", "") or "").strip().lower()
+    if routed and routed != "unknown":
+        return routed
     title = (job.title or "").lower()
     if re.search(r"\b(intern|entry\s*level|junior|jr\.?)\b", title):
         return "junior"
@@ -70,6 +81,290 @@ def _job_seniority_bucket(job: Job) -> str:
     return "mid"
 
 
+def _job_country_match(job: Job, consultant: ConsultantProfile) -> bool:
+    work_countries = {str(c).strip().lower() for c in (consultant.work_countries or []) if str(c).strip()}
+    if not work_countries:
+        return True
+    routing = effective_routing_profile(job)
+    country_labels = {str(c).strip().lower() for c in (routing.get("country_labels") or []) if str(c).strip()}
+    country_codes = {str(c).strip().lower() for c in (routing.get("country_codes") or []) if str(c).strip()}
+    job_country = (_job_country(job) or "").strip().lower()
+    if job_country:
+        country_labels.add(job_country)
+    normalized_country_tokens = set(country_labels) | set(country_codes)
+    return not normalized_country_tokens or bool(work_countries & normalized_country_tokens)
+
+
+def _routing_config():
+    from core.models import PlatformConfig
+
+    return PlatformConfig.load()
+
+
+def _consultant_country_tokens(values) -> set[str]:
+    return {str(c).strip().lower() for c in (values or []) if str(c).strip()}
+
+
+def _job_routing_country_tokens(job: Job) -> set[str]:
+    routing = effective_routing_profile(job)
+    country_labels = {str(c).strip().lower() for c in (routing.get("country_labels") or []) if str(c).strip()}
+    country_codes = {str(c).strip().lower() for c in (routing.get("country_codes") or []) if str(c).strip()}
+    job_country = (_job_country(job) or "").strip().lower()
+    if job_country:
+        country_labels.add(job_country)
+    return country_labels | country_codes
+
+
+def _job_work_authorization_match(job: Job, consultant: ConsultantProfile) -> bool:
+    cfg = _routing_config()
+    if not getattr(cfg, "routing_enforce_work_authorization", True):
+        return True
+
+    routing = effective_routing_profile(job)
+    requires_sponsorship = getattr(consultant, "requires_visa_sponsorship", None)
+    if routing.get("visa_sponsorship") is False and requires_sponsorship is True:
+        return False
+
+    work_auth_category = str(routing.get("work_auth_category") or getattr(job, "routing_work_auth_category", "")).strip().lower()
+    visa_status = str(getattr(consultant, "visa_status", "") or "").strip().lower()
+    if work_auth_category == "citizen_only" and not any(token in visa_status for token in {"citizen", "usc", "us citizen"}):
+        return False
+    if work_auth_category == "gc_or_citizen" and not any(
+        token in visa_status for token in {"citizen", "green card", "permanent resident", "gc"}
+    ):
+        return False
+    if work_auth_category == "opt_only" and "opt" not in visa_status:
+        return False
+    if work_auth_category == "h1b_transfer" and "h1b" not in visa_status:
+        return False
+
+    job_country_tokens = _job_routing_country_tokens(job)
+    consultant_auth_tokens = _consultant_country_tokens(getattr(consultant, "work_authorization_countries", []))
+    consultant_citizenship_tokens = _consultant_country_tokens(getattr(consultant, "citizenship_countries", []))
+    eligible_country_tokens = consultant_auth_tokens | consultant_citizenship_tokens
+    if job_country_tokens and eligible_country_tokens and not (job_country_tokens & eligible_country_tokens):
+        return False
+
+    return True
+
+
+def _employment_preferences_match(job: Job, consultant: ConsultantProfile) -> bool:
+    cfg = _routing_config()
+    if not getattr(cfg, "routing_enforce_employment_preferences", True):
+        return True
+
+    preferences = {
+        str(value).strip().lower().replace(" ", "_")
+        for value in (getattr(consultant, "employment_preferences", []) or [])
+        if str(value).strip()
+    }
+    if not preferences:
+        return True
+
+    routing = effective_routing_profile(job)
+    employment_type = str(routing.get("employment_type") or "").strip().lower().replace(" ", "_")
+    constraints = {str(value).strip().lower() for value in (routing.get("contract_constraints") or []) if str(value).strip()}
+    employment_terms = {
+        str(value).strip().lower().replace(" ", "_")
+        for value in (routing.get("employment_terms") or getattr(job, "routing_employment_terms", []) or [])
+        if str(value).strip()
+    }
+
+    if "w2 only" in constraints and "w2" not in preferences:
+        return False
+    if "no c2c" in constraints and preferences == {"c2c"}:
+        return False
+    if "no third party" in constraints and preferences <= {"c2c", "1099"}:
+        return False
+    if employment_type and employment_type not in {"unknown", ""}:
+        normalized_map = {
+            "full_time": {"full_time", "permanent", "fte"},
+            "contract": {"contract", "c2c", "1099", "w2"},
+            "full-time": {"full_time", "permanent", "fte"},
+        }
+        accepted = normalized_map.get(employment_type, {employment_type})
+        if preferences.isdisjoint(accepted):
+            return False
+    if employment_terms and preferences.isdisjoint(employment_terms) and "contract" not in employment_terms:
+        return False
+
+    return True
+
+
+def _work_mode_match(job: Job, consultant: ConsultantProfile) -> bool:
+    cfg = _routing_config()
+    if not getattr(cfg, "routing_enforce_work_mode", False):
+        return True
+
+    preferred_work_modes = {
+        str(value).strip().lower()
+        for value in (getattr(consultant, "preferred_work_modes", []) or [])
+        if str(value).strip()
+    }
+    if not preferred_work_modes:
+        return True
+
+    work_mode = str((effective_routing_profile(job).get("work_mode") or "")).strip().lower()
+    return not work_mode or work_mode == "unknown" or work_mode in preferred_work_modes
+
+
+def _clearance_match(job: Job, consultant: ConsultantProfile) -> bool:
+    cfg = _routing_config()
+    if not getattr(cfg, "routing_enforce_clearance", True):
+        return True
+    routing = effective_routing_profile(job)
+    return not bool(routing.get("clearance_required")) or bool(getattr(consultant, "clearance_eligible", False))
+
+
+def consultant_job_routing_audit(job: Job, consultant: ConsultantProfile) -> dict:
+    consultant_roles = set(consultant.marketing_roles.values_list("id", flat=True))
+    job_roles = set(job.marketing_roles.values_list("id", flat=True))
+    preferred_seniority = {
+        str(level).strip().lower()
+        for level in (consultant.preferred_seniority_levels or [])
+        if str(level).strip()
+    }
+    cfg = _routing_config()
+    routing_status = (getattr(job, "routing_status", "") or "").strip()
+    parsed_jd_ok = bool(getattr(job, "parsed_jd", None)) and (getattr(job, "parsed_jd_status", "") or "").upper() == "OK"
+
+    checks = [
+        ("role", bool(consultant_roles and job_roles and consultant_roles & job_roles), "Marketing role overlap missing."),
+        ("country", (not getattr(cfg, "routing_enforce_country_match", True)) or _job_country_match(job, consultant), "Country preference mismatch."),
+        ("seniority", (not getattr(cfg, "routing_enforce_seniority_match", True)) or (not preferred_seniority) or (_job_seniority_bucket(job) in preferred_seniority), "Seniority preference mismatch."),
+        ("work_auth", _job_work_authorization_match(job, consultant), "Visa or work authorization mismatch."),
+        ("employment", _employment_preferences_match(job, consultant), "Employment preference mismatch."),
+        ("work_mode", _work_mode_match(job, consultant), "Work mode mismatch."),
+        ("clearance", _clearance_match(job, consultant), "Clearance requirement mismatch."),
+        ("claimed", not _job_claimed_by_other(job, consultant), "Job is already claimed by another active submission."),
+        ("routing", routing_status not in {Job.RoutingStatus.REVIEW, Job.RoutingStatus.FAILED, Job.RoutingStatus.PENDING}, "Job routing still needs review."),
+        ("parsed_jd", parsed_jd_ok, "Parsed JD is missing or failed."),
+    ]
+    passed = [code for code, ok, _msg in checks if ok]
+    blocked = [{"code": code, "message": msg} for code, ok, msg in checks if not ok]
+    detail = consultant_job_match_detail(job, consultant) if not blocked else {
+        "raw_score": 0,
+        "match_pct": 0,
+        "matched_required": 0,
+        "total_required": 0,
+        "required_skills": [],
+    }
+    return {
+        "job": job,
+        "eligible": not blocked,
+        "passed_checks": passed,
+        "blocked_reasons": blocked,
+        **detail,
+    }
+
+
+def consultant_job_routing_audit_rows(
+    consultant: ConsultantProfile,
+    *,
+    limit_eligible: int = 8,
+    limit_blocked: int = 8,
+    scan_limit: int = 200,
+):
+    consultant_role_ids = list(consultant.marketing_roles.values_list("id", flat=True))
+    if not consultant_role_ids:
+        return [], [], []
+    qs = (
+        Job.objects.filter(status=Job.Status.OPEN, is_archived=False, marketing_roles__in=consultant_role_ids)
+        .distinct()
+        .prefetch_related("marketing_roles")
+        .order_by("-created_at")[: max(scan_limit, limit_eligible + limit_blocked)]
+    )
+    eligible_rows: list[dict] = []
+    blocked_rows: list[dict] = []
+    reason_counts: Counter[str] = Counter()
+    for job in qs:
+        audit = consultant_job_routing_audit(job, consultant)
+        if audit["eligible"]:
+            eligible_rows.append(audit)
+        else:
+            blocked_rows.append(audit)
+            for reason in audit["blocked_reasons"]:
+                reason_counts[reason["code"]] += 1
+    eligible_rows.sort(key=lambda row: (-row["match_pct"], -row["raw_score"], -(row["job"].pk or 0)))
+    blocked_rows.sort(key=lambda row: (-len(row["blocked_reasons"]), -(row["job"].pk or 0)))
+    summary = [{"code": code, "count": count} for code, count in reason_counts.most_common(6)]
+    return eligible_rows[:limit_eligible], blocked_rows[:limit_blocked], summary
+
+
+def active_job_identity_conflicts(limit: int = 10) -> list[dict]:
+    groups: list[dict] = []
+    url_groups = (
+        Job.objects.filter(is_archived=False)
+        .exclude(url_hash="")
+        .values("url_hash")
+        .annotate(count=Count("id"), first_created=Min("created_at"))
+        .filter(count__gt=1)
+        .order_by("-count", "first_created")[:limit]
+    )
+    for row in url_groups:
+        jobs = list(Job.objects.filter(is_archived=False, url_hash=row["url_hash"]).order_by("status", "created_at", "id"))
+        groups.append({
+            "group_type": "url_hash",
+            "group_key": row["url_hash"],
+            "count": row["count"],
+            "jobs": jobs,
+            "survivor": _pick_conflict_survivor(jobs),
+        })
+    if len(groups) < limit:
+        src_groups = (
+            Job.objects.filter(is_archived=False, source_raw_job__isnull=False)
+            .values("source_raw_job_id")
+            .annotate(count=Count("id"), first_created=Min("created_at"))
+            .filter(count__gt=1)
+            .order_by("-count", "first_created")[: max(0, limit - len(groups))]
+        )
+        for row in src_groups:
+            jobs = list(Job.objects.filter(is_archived=False, source_raw_job_id=row["source_raw_job_id"]).order_by("status", "created_at", "id"))
+            groups.append({
+                "group_type": "source_raw_job",
+                "group_key": str(row["source_raw_job_id"]),
+                "count": row["count"],
+                "jobs": jobs,
+                "survivor": _pick_conflict_survivor(jobs),
+            })
+    return groups[:limit]
+
+
+def _pick_conflict_survivor(jobs: list[Job]) -> Job | None:
+    if not jobs:
+        return None
+    return sorted(
+        jobs,
+        key=lambda job: (
+            0 if job.status == Job.Status.OPEN else 1,
+            0 if getattr(job, "vet_approved_at", None) else 1,
+            job.created_at or timezone.now(),
+            job.pk or 0,
+        ),
+    )[0]
+
+
+def archive_identity_conflict(group_type: str, group_key: str, *, actor=None) -> dict:
+    if group_type == "url_hash":
+        jobs = list(Job.objects.filter(is_archived=False, url_hash=group_key).order_by("status", "created_at", "id"))
+    elif group_type == "source_raw_job":
+        jobs = list(Job.objects.filter(is_archived=False, source_raw_job_id=group_key).order_by("status", "created_at", "id"))
+    else:
+        return {"archived": 0, "survivor": None}
+    survivor = _pick_conflict_survivor(jobs)
+    archived = 0
+    now = timezone.now()
+    for job in jobs:
+        if not survivor or job.pk == survivor.pk:
+            continue
+        job.is_archived = True
+        job.archived_at = now
+        job.archived_by = actor
+        job.save(update_fields=["is_archived", "archived_at", "archived_by", "updated_at"])
+        archived += 1
+    return {"archived": archived, "survivor": survivor}
+
+
 def _job_claimed_by_other(job: Job, consultant: ConsultantProfile) -> bool:
     return ApplicationSubmission.objects.filter(
         job=job,
@@ -79,21 +374,33 @@ def _job_claimed_by_other(job: Job, consultant: ConsultantProfile) -> bool:
 
 
 def _job_matches_consultant_preferences(job: Job, consultant: ConsultantProfile) -> bool:
+    cfg = _routing_config()
     consultant_roles = set(consultant.marketing_roles.values_list("id", flat=True))
     job_roles = set(job.marketing_roles.values_list("id", flat=True))
-    if consultant_roles and job_roles and not (consultant_roles & job_roles):
+    if not consultant_roles or not job_roles:
+        return False
+    if not (consultant_roles & job_roles):
         return False
 
-    work_countries = {str(c).strip().lower() for c in (consultant.work_countries or []) if str(c).strip()}
-    if work_countries:
-        job_country = (_job_country(job) or "").strip().lower()
-        if job_country and job_country not in work_countries:
-            return False
+    if getattr(cfg, "routing_enforce_country_match", True) and not _job_country_match(job, consultant):
+        return False
 
     preferred_seniority = {str(level).strip().lower() for level in (consultant.preferred_seniority_levels or []) if str(level).strip()}
-    if preferred_seniority:
+    if getattr(cfg, "routing_enforce_seniority_match", True) and preferred_seniority:
         if _job_seniority_bucket(job) not in preferred_seniority:
             return False
+
+    if not _job_work_authorization_match(job, consultant):
+        return False
+
+    if not _employment_preferences_match(job, consultant):
+        return False
+
+    if not _work_mode_match(job, consultant):
+        return False
+
+    if not _clearance_match(job, consultant):
+        return False
 
     if _job_claimed_by_other(job, consultant):
         return False
@@ -211,10 +518,21 @@ class JDParserService:
     def parse_job(job: Job, actor=None):
         """
         Parse JD into structured JSON and persist it on the Job.
-        Rules-first (no tokens). Uses LLM only if rules parsing finds nothing AND LLM is configured.
+        Uses the shared JD extraction engine first so routing fields and parsed_jd
+        stay in sync. Falls back to the legacy parser path only if the extractor
+        itself fails unexpectedly.
         """
         if not job or not job.description:
             return False, "Missing job description"
+        try:
+            from resumes.pipeline.jd_extractor import extract_jd
+
+            data = extract_jd(job, force=True, save=True)
+            status = getattr(job, "parsed_jd_status", "") or ((data.get("parser_metadata") or {}).get("status") if isinstance(data, dict) else "")
+            if status and "FAILED" not in status:
+                return True, ""
+        except Exception:
+            logger.exception("JD extractor pipeline failed for job %s; falling back to legacy parser", getattr(job, "pk", None))
 
         # 1) Rules-first parse
         data = rule_parse_jd(job.description)
@@ -541,8 +859,10 @@ def match_jobs_for_consultant(
     """
     Return a list of best matching OPEN jobs for a consultant.
     """
-    qs = Job.objects.filter(status=Job.Status.OPEN)
+    qs = Job.objects.filter(status=Job.Status.OPEN, is_archived=False)
     consultant_role_ids = list(consultant.marketing_roles.values_list("id", flat=True))
+    if not consultant_role_ids:
+        return []
     if consultant_role_ids:
         qs = qs.filter(marketing_roles__in=consultant_role_ids).distinct()
     scores = []
@@ -554,6 +874,84 @@ def match_jobs_for_consultant(
             scores.append((s, job))
     scores.sort(key=lambda x: x[0], reverse=True)
     return [job for _, job in scores[:limit]]
+
+
+def eligible_jobs_for_consultant(consultant: ConsultantProfile, *, limit: int | None = None):
+    qs = Job.objects.filter(status=Job.Status.OPEN, is_archived=False)
+    consultant_role_ids = list(consultant.marketing_roles.values_list("id", flat=True))
+    if not consultant_role_ids:
+        return []
+    if consultant_role_ids:
+        qs = qs.filter(marketing_roles__in=consultant_role_ids).distinct()
+    jobs = [job for job in qs.prefetch_related("marketing_roles") if _job_matches_consultant_preferences(job, consultant)]
+    if limit:
+        return jobs[:limit]
+    return jobs
+
+
+def consultant_routing_metrics(consultant: ConsultantProfile) -> dict:
+    qs = Job.objects.filter(status=Job.Status.OPEN, is_archived=False)
+    consultant_role_ids = list(consultant.marketing_roles.values_list("id", flat=True))
+    if not consultant_role_ids:
+        return {
+            "role_scoped_jobs": 0,
+            "country_fit_jobs": 0,
+            "seniority_fit_jobs": 0,
+            "work_auth_fit_jobs": 0,
+            "employment_fit_jobs": 0,
+            "work_mode_fit_jobs": 0,
+            "clearance_fit_jobs": 0,
+            "eligible_jobs": 0,
+            "routing_review_jobs": 0,
+            "blocked_jobs": 0,
+        }
+    if consultant_role_ids:
+        role_qs = qs.filter(marketing_roles__in=consultant_role_ids).distinct()
+    else:
+        role_qs = Job.objects.none()
+
+    role_jobs = list(role_qs.prefetch_related("marketing_roles"))
+    country_fit = 0
+    seniority_fit = 0
+    work_auth_fit = 0
+    employment_fit = 0
+    work_mode_fit = 0
+    clearance_fit = 0
+    fully_eligible = 0
+    review_jobs = 0
+    blocked_jobs = 0
+    for job in role_jobs:
+        if _job_country_match(job, consultant):
+            country_fit += 1
+        preferred_seniority = {str(level).strip().lower() for level in (consultant.preferred_seniority_levels or []) if str(level).strip()}
+        if not preferred_seniority or _job_seniority_bucket(job) in preferred_seniority:
+            seniority_fit += 1
+        if _job_work_authorization_match(job, consultant):
+            work_auth_fit += 1
+        if _employment_preferences_match(job, consultant):
+            employment_fit += 1
+        if _work_mode_match(job, consultant):
+            work_mode_fit += 1
+        if _clearance_match(job, consultant):
+            clearance_fit += 1
+        if _job_matches_consultant_preferences(job, consultant):
+            fully_eligible += 1
+        else:
+            blocked_jobs += 1
+        if (getattr(job, "routing_status", "") or "") in {Job.RoutingStatus.REVIEW, Job.RoutingStatus.FAILED, Job.RoutingStatus.PENDING}:
+            review_jobs += 1
+    return {
+        "role_scoped_jobs": len(role_jobs),
+        "country_fit_jobs": country_fit,
+        "seniority_fit_jobs": seniority_fit,
+        "work_auth_fit_jobs": work_auth_fit,
+        "employment_fit_jobs": employment_fit,
+        "work_mode_fit_jobs": work_mode_fit,
+        "clearance_fit_jobs": clearance_fit,
+        "eligible_jobs": fully_eligible,
+        "routing_review_jobs": review_jobs,
+        "blocked_jobs": blocked_jobs,
+    }
 
 
 def match_consultants_for_job(

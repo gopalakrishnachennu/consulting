@@ -31,6 +31,71 @@ _JOB_DEPARTMENT_SYNC_ALIASES: dict[str, str] = {
 }
 
 
+@shared_task(
+    bind=True,
+    name="jobs.backfill_job_routing",
+    queue=DUAL_CLASSIFICATION_BACKFILL_QUEUE,
+)
+def backfill_job_routing_task(
+    self,
+    *,
+    job_ids: list[int] | None = None,
+    only_active: bool = True,
+    force: bool = False,
+    limit: int = 500,
+):
+    """
+    Re-run JD extraction for active jobs so parsed_jd and routing fields stay aligned.
+    Uses the shared extractor cache, so unchanged jobs are cheap to skip.
+    """
+    from resumes.pipeline.jd_extractor import extract_jd
+
+    qs = Job.objects.exclude(description="").exclude(description__isnull=True).order_by("-updated_at", "-id")
+    if only_active:
+        qs = qs.filter(is_archived=False, status__in=[Job.Status.POOL, Job.Status.OPEN])
+    if job_ids:
+        qs = qs.filter(pk__in=job_ids)
+
+    jobs = list(qs[: max(1, min(int(limit or 500), 5000))])
+    total = len(jobs)
+    processed = 0
+    ready = 0
+    review = 0
+    failed = 0
+
+    for job in jobs:
+        processed += 1
+        if getattr(getattr(self, "request", None), "id", None):
+            update_task_progress(
+                self,
+                current=processed,
+                total=total,
+                message=f"Refreshing job routing ({processed}/{total})",
+                detail={"ready": ready, "review": review, "failed": failed},
+            )
+        try:
+            extract_jd(job, force=force, save=True)
+            job.refresh_from_db(fields=["routing_status"])
+            if job.routing_status == Job.RoutingStatus.READY:
+                ready += 1
+            elif job.routing_status in {Job.RoutingStatus.REVIEW, Job.RoutingStatus.OVERRIDDEN}:
+                review += 1
+            else:
+                failed += 1
+        except Exception:
+            logger.exception("backfill_job_routing failed for job %s", job.pk)
+            failed += 1
+
+    return {
+        "processed": processed,
+        "ready": ready,
+        "review": review,
+        "failed": failed,
+        "force": force,
+        "only_active": only_active,
+    }
+
+
 def _department_sync_value(raw_department: str | None) -> str:
     """
     Convert RawJob.department_normalized/freeform category labels to Job.department

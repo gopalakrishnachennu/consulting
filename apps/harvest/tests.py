@@ -2029,6 +2029,10 @@ class SyncRawJobsToPoolTests(TestCase):
         )
         config = PlatformConfig.load()
         config.dual_classification_require_approval_for_sync = False
+        config.routing_require_parsed_jd_for_pool = False
+        config.routing_require_ready_for_pool = False
+        config.routing_require_parsed_jd_for_live = False
+        config.routing_require_ready_for_live = False
         config.save()
 
     def test_pool_sync_creates_job_from_raw_job(self):
@@ -2149,6 +2153,48 @@ class SyncRawJobsToPoolTests(TestCase):
         sync_harvested_to_pool_task.apply(kwargs={"max_jobs": 10}).get()
         raw.refresh_from_db()
         self.assertEqual(raw.sync_status, "SKIPPED")
+
+    def test_pool_sync_skips_when_job_already_linked_to_same_source_raw_job(self):
+        import hashlib
+        from harvest.models import RawJob
+        from harvest.tasks import sync_harvested_to_pool_task
+        from jobs.models import Job
+
+        url = "https://example.com/careers/sync-existing-source-link"
+        h = hashlib.sha256(url.strip().encode()).hexdigest()
+        raw = RawJob.objects.create(
+            company=self.company,
+            title="Platform Engineer",
+            url_hash=h,
+            original_url=url,
+            description=(
+                "Build internal platforms, CI/CD, cloud automation, observability, "
+                "incident response, and infrastructure guardrails for engineering teams."
+            ),
+            sync_status="PENDING",
+            is_priority=True,
+            scope_status=RawJob.ScopeStatus.PRIORITY_TARGET,
+            country_code="US",
+            country_codes=["US"],
+        )
+        Job.objects.create(
+            title=raw.title,
+            company=self.company.name,
+            company_obj=self.company,
+            description="Existing linked vetting job",
+            original_link=url,
+            posted_by=self.user,
+            source_raw_job=raw,
+            url_hash=raw.url_hash,
+            status="POOL",
+            stage="VETTED",
+        )
+
+        sync_harvested_to_pool_task.apply(kwargs={"max_jobs": 10}).get()
+        raw.refresh_from_db()
+
+        self.assertEqual(raw.sync_status, "SKIPPED")
+        self.assertEqual(Job.objects.filter(source_raw_job=raw).count(), 1)
 
     @patch("jobs.gating.apply_gate_result_to_job")
     @patch("jobs.gating.evaluate_raw_job_gate")
@@ -2285,6 +2331,65 @@ class SyncRawJobsToPoolTests(TestCase):
         self.assertEqual(dual_meta.get("approved_values", {}).get("job_domain"), "servicenow-developer")
         self.assertEqual(dual_meta.get("approved_values", {}).get("country"), "Canada")
         self.assertIn("field_provenance", dual_meta)
+
+    @patch("jobs.services.ensure_parsed_jd")
+    @patch("jobs.gating.apply_gate_result_to_job")
+    @patch("jobs.gating.evaluate_raw_job_gate")
+    def test_pool_sync_skips_when_routing_ready_required_and_job_not_ready(self, mock_gate, _mock_apply, mock_ensure_parsed):
+        import hashlib
+        from harvest.models import RawJob
+        from harvest.tasks import sync_harvested_to_pool_task
+        from jobs.models import Job
+        from core.models import PlatformConfig
+
+        config = PlatformConfig.load()
+        config.routing_require_parsed_jd_for_pool = True
+        config.routing_require_ready_for_pool = True
+        config.save()
+
+        mock_gate.return_value = SimpleNamespace(
+            passed=True,
+            lane="READY",
+            status="eligible",
+            reason_code="",
+            reasons=[],
+            checks={},
+            data_quality_score=0.9,
+            trust_score=0.9,
+            candidate_fit_score=0.9,
+            vet_priority_score=0.9,
+        )
+
+        def _fake_parse(job, actor=None):
+            job.parsed_jd = {"ok": True}
+            job.parsed_jd_status = "OK"
+            job.routing_status = Job.RoutingStatus.REVIEW
+            job.save(update_fields=["parsed_jd", "parsed_jd_status", "routing_status", "updated_at"])
+            return True, ""
+
+        mock_ensure_parsed.side_effect = _fake_parse
+
+        url = "https://example.com/careers/sync-routing-policy-block"
+        h = hashlib.sha256(url.strip().encode()).hexdigest()
+        raw = RawJob.objects.create(
+            company=self.company,
+            title="Platform Engineer",
+            url_hash=h,
+            original_url=url,
+            description="Long enough description " * 80,
+            sync_status="PENDING",
+            is_priority=True,
+            scope_status=RawJob.ScopeStatus.PRIORITY_TARGET,
+            country_code="US",
+            country_codes=["US"],
+        )
+
+        sync_harvested_to_pool_task.apply(kwargs={"max_jobs": 10}).get()
+        raw.refresh_from_db()
+
+        self.assertEqual(raw.sync_status, "SKIPPED")
+        self.assertIn("ROUTING_NOT_READY", raw.sync_skip_reason)
+        self.assertFalse(Job.objects.filter(url_hash=h, is_archived=False).exists())
 
 
 class ManualRawJobSyncRoleTests(TestCase):
@@ -4750,6 +4855,16 @@ class VetGateConfigViewTests(TestCase):
         self.assertIn("Remote/no-country policy", content)
         self.assertIn("Selective Automation Control", content)
         self.assertIn("Apply phrases to existing jobs", content)
+        self.assertIn("Clean vet/live integrity", content)
+
+    @patch("harvest.tasks.enforce_active_job_integrity_task.delay")
+    def test_vet_gate_cleanup_button_dispatches_integrity_task(self, mock_delay):
+        mock_delay.return_value = SimpleNamespace(id="12345678-cleanup")
+
+        response = self.client.post(reverse("harvest-run-vet-live-integrity-cleanup"))
+
+        self.assertEqual(response.status_code, 302)
+        mock_delay.assert_called_once_with()
 
     def test_vet_gate_post_updates_vet_and_engine_config(self):
         from harvest.models import HarvestEngineConfig, VetGateConfig
@@ -4985,3 +5100,130 @@ class RawJobManualRecheckPropagationTests(TestCase):
         self.assertFalse(self.job.original_link_is_live)
         self.assertEqual(self.job.original_link_health, "DEAD")
         self.assertEqual(self.job.original_link_reason, "http_404")
+
+
+class ActiveJobIntegrityCleanupTaskTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        from companies.models import Company
+        from harvest.models import VetGateConfig
+
+        self.user = get_user_model().objects.create_superuser(
+            "integrity-admin@example.com",
+            "integrity-admin@example.com",
+            "pw",
+        )
+        self.company = Company.objects.create(name="Integrity Co")
+        cfg = VetGateConfig.get()
+        cfg.min_word_count = 5
+        cfg.min_char_count = 20
+        cfg.save(update_fields=["min_word_count", "min_char_count"])
+
+    def test_cleanup_repairs_active_job_description_from_source_raw_job(self):
+        from harvest.models import RawJob
+        from harvest.tasks import enforce_active_job_integrity_task
+        from jobs.models import Job
+
+        raw = RawJob.objects.create(
+            company=self.company,
+            company_name=self.company.name,
+            title="Platform Engineer",
+            original_url="https://example.com/jobs/platform-1",
+            url_hash="integrity-repair-1",
+            description_clean="Build platform tooling with automation, CI pipelines, cloud security, and observability ownership.",
+            is_active=True,
+        )
+        job = Job.objects.create(
+            title=raw.title,
+            company=self.company.name,
+            company_obj=self.company,
+            description=raw.title,
+            original_link=raw.original_url,
+            posted_by=self.user,
+            status=Job.Status.POOL,
+            stage=Job.Stage.VETTED,
+            source_raw_job=raw,
+            url_hash=raw.url_hash,
+        )
+
+        result = enforce_active_job_integrity_task.apply().get()
+        job.refresh_from_db()
+
+        self.assertEqual(job.description, raw.description_clean)
+        self.assertFalse(job.is_archived)
+        self.assertEqual(result["jd_repaired"], 1)
+        self.assertEqual(result["jd_archived"], 0)
+
+    def test_cleanup_archives_active_job_without_repairable_jd(self):
+        from harvest.tasks import enforce_active_job_integrity_task
+        from jobs.models import Job
+
+        job = Job.objects.create(
+            title="Civil Engineer",
+            company=self.company.name,
+            company_obj=self.company,
+            description="Civil Engineer",
+            original_link="https://example.com/jobs/civil-archive",
+            posted_by=self.user,
+            status=Job.Status.OPEN,
+            stage=Job.Stage.LIVE,
+        )
+
+        result = enforce_active_job_integrity_task.apply().get()
+        job.refresh_from_db()
+
+        self.assertTrue(job.is_archived)
+        self.assertEqual(job.status, Job.Status.CLOSED)
+        self.assertEqual(job.stage, Job.Stage.ARCHIVED)
+        self.assertEqual(job.pipeline_reason_code, "JD_REQUIRED_CLEANUP")
+        self.assertEqual(result["jd_archived"], 1)
+
+    def test_cleanup_archives_duplicate_active_job_and_keeps_live_survivor(self):
+        from harvest.models import RawJob
+        from harvest.tasks import enforce_active_job_integrity_task
+        from jobs.models import Job
+
+        raw = RawJob.objects.create(
+            company=self.company,
+            company_name=self.company.name,
+            title="Data Engineer",
+            original_url="https://example.com/jobs/data-dup",
+            url_hash="integrity-dup-1",
+            description_clean="Own pipelines, warehousing, orchestration, monitoring, and stakeholder delivery across the data platform.",
+            is_active=True,
+        )
+        winner = Job.objects.create(
+            title=raw.title,
+            company=self.company.name,
+            company_obj=self.company,
+            description=raw.description_clean,
+            original_link=raw.original_url,
+            posted_by=self.user,
+            status=Job.Status.OPEN,
+            stage=Job.Stage.LIVE,
+            source_raw_job=raw,
+            url_hash=raw.url_hash,
+            hard_gate_passed=True,
+        )
+        loser = Job.objects.create(
+            title=raw.title,
+            company=self.company.name,
+            company_obj=self.company,
+            description=raw.description_clean,
+            original_link=raw.original_url,
+            posted_by=self.user,
+            status=Job.Status.POOL,
+            stage=Job.Stage.VETTED,
+            source_raw_job=raw,
+            url_hash=raw.url_hash,
+        )
+
+        result = enforce_active_job_integrity_task.apply().get()
+        winner.refresh_from_db()
+        loser.refresh_from_db()
+
+        self.assertFalse(winner.is_archived)
+        self.assertTrue(loser.is_archived)
+        self.assertEqual(loser.pipeline_reason_code, "DUPLICATE_SUPERSEDED")
+        self.assertEqual(result["duplicate_groups"], 1)
+        self.assertEqual(result["duplicate_jobs_archived"], 1)

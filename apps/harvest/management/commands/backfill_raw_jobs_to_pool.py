@@ -10,9 +10,7 @@ Usage:
     python manage.py backfill_raw_jobs_to_pool --dry-run
 """
 from django.core.management.base import BaseCommand
-from django.db import transaction
 from django.db.models.functions import Greatest, Length
-from django.utils import timezone
 
 
 class Command(BaseCommand):
@@ -26,11 +24,9 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         from harvest.models import RawJob
-        from jobs.models import Job
         from jobs.marketing_role_routing import assign_marketing_roles_to_job
-        from jobs.dedup import find_existing_job_by_url
         from jobs.quality import compute_quality_score
-        from harvest.services.job_descriptions import job_description_for_sync
+        from harvest.services.pool_job_sync import create_or_get_vetting_job_from_raw_job
         from django.contrib.auth import get_user_model
 
         User = get_user_model()
@@ -69,42 +65,27 @@ class Command(BaseCommand):
                 if processed >= max_total:
                     break
                 processed += 1
-                existing = (
-                    (Job.objects.filter(url_hash=rj.url_hash, is_archived=False).first() if rj.url_hash else None)
-                    or find_existing_job_by_url(rj.original_url)
-                    or Job.objects.filter(original_link=rj.original_url).first()
-                )
-                if existing:
-                    RawJob.objects.filter(pk=rj.pk).update(sync_status="SKIPPED")
-                    skipped += 1
-                    continue
                 try:
-                    platform_slug = rj.platform_slug or (rj.job_platform.slug if rj.job_platform else "")
-                    with transaction.atomic():
-                        job = Job.objects.create(
-                            title=rj.title,
-                            company=rj.company_name or (rj.company.name if rj.company else ""),
-                            company_obj=rj.company,
-                            location=rj.location_raw or "",
-                            description=job_description_for_sync(rj),
-                            original_link=rj.original_url,
-                            salary_range=rj.salary_raw or "",
-                            job_type=rj.employment_type if rj.employment_type != "UNKNOWN" else "FULL_TIME",
-                            status="POOL",
-                            stage=Job.Stage.VETTED,
-                            stage_changed_at=timezone.now(),
-                            url_hash=rj.url_hash or "",
-                            job_source=f"HARVESTED_{platform_slug.upper()}" if platform_slug else "HARVESTED",
-                            posted_by=system_user,
-                            source_raw_job=rj,
-                            country=rj.country or "",
-                            department=rj.department_normalized or "",
+                    job, created_new, locked_raw = create_or_get_vetting_job_from_raw_job(
+                        rj,
+                        posted_by=system_user,
+                        job_location=rj.location_raw or "",
+                        job_country=rj.country or "",
+                        mapped_department=rj.department_normalized or "",
+                    )
+                    if not created_new:
+                        RawJob.objects.filter(pk=locked_raw.pk).update(
+                            sync_status="SKIPPED",
+                            sync_skip_reason="DUPLICATE_EXISTING",
                         )
-                        job.quality_score = compute_quality_score(job)
-                        Job.objects.filter(pk=job.pk).update(quality_score=job.quality_score)
-                        assign_marketing_roles_to_job(job, raw_job=rj)
-                        RawJob.objects.filter(pk=rj.pk).update(sync_status="SYNCED")
-                        synced += 1
+                        skipped += 1
+                        continue
+
+                    job.quality_score = compute_quality_score(job)
+                    job.save(update_fields=["quality_score", "updated_at"])
+                    assign_marketing_roles_to_job(job, raw_job=locked_raw)
+                    RawJob.objects.filter(pk=locked_raw.pk).update(sync_status="SYNCED")
+                    synced += 1
                 except Exception as e:
                     RawJob.objects.filter(pk=rj.pk).update(sync_status="FAILED")
                     failed += 1

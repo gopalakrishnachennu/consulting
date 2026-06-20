@@ -660,6 +660,7 @@ class HarvestOpsRun(models.Model):
         VALIDATE_URLS = "validate_urls", "Validate live links"
         SYNC_POOL = "sync_pool", "Sync to vet pool"
         CLEANUP = "cleanup", "Cleanup harvested"
+        ENFORCE_JOB_INTEGRITY = "enforce_job_integrity", "Enforce vet/live integrity"
         CLASSIFY = "classify", "Classify raw jobs"
         CLASSIFY_DOMAINS = "classify_domains", "Classify domains"
         LLM_CLASSIFY = "llm_classify", "LLM classify (second pass)"

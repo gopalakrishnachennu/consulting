@@ -3009,6 +3009,294 @@ def cleanup_harvested_jobs_task(self):
 
 
 
+def _clean_active_job_description(value: str) -> str:
+    from harvest.enrichments import clean_job_text
+
+    return clean_job_text(value or "", max_len=50000).strip()
+
+
+def _raw_job_description_body(raw_job) -> str:
+    if raw_job is None:
+        return ""
+    for value in (
+        getattr(raw_job, "description_clean", "") or "",
+        getattr(raw_job, "description", "") or "",
+    ):
+        cleaned = _clean_active_job_description(value)
+        if cleaned:
+            return cleaned
+    return ""
+
+
+def _description_meets_active_job_requirements(
+    description: str,
+    *,
+    title: str = "",
+    min_word_count: int = 80,
+    min_char_count: int = 400,
+) -> bool:
+    text = _clean_active_job_description(description)
+    if not text:
+        return False
+    if title and text.casefold() == (title or "").strip().casefold():
+        return False
+    if len(text) < max(1, int(min_char_count)):
+        return False
+    if len([token for token in text.split() if token.strip()]) < max(1, int(min_word_count)):
+        return False
+    return True
+
+
+def _active_job_duplicate_rank(job) -> tuple:
+    description = _clean_active_job_description(getattr(job, "description", "") or "")
+    return (
+        0 if job.status == job.Status.OPEN else 1,
+        0 if _description_meets_active_job_requirements(description, title=job.title) else 1,
+        0 if getattr(job, "hard_gate_passed", False) else 1,
+        0 if getattr(job, "source_raw_job_id", None) else 1,
+        0 if getattr(job, "url_hash", "") else 1,
+        -len(description),
+        job.created_at,
+        job.pk,
+    )
+
+
+def _archive_active_job(job, *, reason_code: str, reason_detail: str, task_name: str, meta: dict | None = None) -> None:
+    from jobs.models import Job, PipelineEvent
+
+    if job.is_archived:
+        return
+    previous_stage = job.stage or (Job.Stage.LIVE if job.status == Job.Status.OPEN else Job.Stage.VETTED)
+    now = timezone.now()
+    job.status = Job.Status.CLOSED
+    job.stage = Job.Stage.ARCHIVED
+    job.stage_changed_at = now
+    job.is_archived = True
+    job.archived_at = now
+    job.gate_status = Job.GateStatus.BLOCKED
+    job.vet_lane = Job.VetLane.BLOCKED
+    job.pipeline_reason_code = reason_code[:64]
+    job.pipeline_reason_detail = reason_detail[:2000]
+    job.save(
+        update_fields=[
+            "status",
+            "stage",
+            "stage_changed_at",
+            "is_archived",
+            "archived_at",
+            "gate_status",
+            "vet_lane",
+            "pipeline_reason_code",
+            "pipeline_reason_detail",
+            "updated_at",
+        ]
+    )
+    PipelineEvent.record(
+        job=job,
+        from_stage=previous_stage,
+        to_stage=Job.Stage.ARCHIVED,
+        task_name=task_name,
+        status=PipelineEvent.Status.SUCCESS,
+        meta=meta or {},
+    )
+
+
+@shared_task(bind=True, name="harvest.enforce_active_job_integrity", max_retries=0, soft_time_limit=3600, time_limit=3900)
+def enforce_active_job_integrity_task(self):
+    """
+    One-click active-job cleanup for the vetting/live workflow.
+
+    Guarantees at task-completion time:
+      - active POOL/OPEN jobs have a substantive JD, or are archived
+      - active POOL/OPEN duplicates are collapsed to one canonical survivor
+    """
+    from jobs.dedup import url_hash_for
+    from jobs.models import Job
+    from .models import HarvestOpsRun, VetGateConfig
+    from .ops_audit import begin_ops_run, finish_ops_run
+
+    operation = HarvestOpsRun.Operation.ENFORCE_JOB_INTEGRITY
+    task_id = getattr(self.request, "id", "") or ""
+    lock_key = _acquire_ops_singleton(
+        operation,
+        task_id,
+        queue={"scope": "vet_live_integrity"},
+        stale_minutes=120,
+        cache_ttl_seconds=2 * 60 * 60,
+    )
+    if not lock_key:
+        return {"skipped": True, "reason": "duplicate_active_operation"}
+
+    cfg = VetGateConfig.get()
+    min_word_count = max(1, int(cfg.min_word_count or 80))
+    min_char_count = max(1, int(cfg.min_char_count or 400))
+    ops_run = begin_ops_run(
+        operation,
+        task_id,
+        queue={
+            "scope": "vet_live_integrity",
+            "min_word_count": min_word_count,
+            "min_char_count": min_char_count,
+        },
+    )
+    try:
+        active_qs = Job.objects.filter(
+            status__in=[Job.Status.POOL, Job.Status.OPEN],
+            is_archived=False,
+        ).select_related("source_raw_job")
+        total_active = active_qs.count()
+        total_progress = max(total_active * 3, 1)
+        progress = 0
+        tick_ops_run_progress(ops_run, progress, total_progress, "Scanning active vet/live jobs…", force=True)
+        update_task_progress(self, current=progress, total=total_progress, message="Scanning active vet/live jobs…")
+
+        stats = {
+            "active_jobs_scanned": total_active,
+            "url_hash_backfilled": 0,
+            "jd_repaired": 0,
+            "jd_archived": 0,
+            "duplicate_groups": 0,
+            "duplicate_jobs_archived": 0,
+        }
+
+        for job in active_qs.iterator(chunk_size=200):
+            changed_fields: list[str] = []
+            if not (job.url_hash or "").strip() and (job.original_link or "").strip():
+                hashed = url_hash_for(job.original_link)
+                if hashed:
+                    job.url_hash = hashed
+                    changed_fields.append("url_hash")
+                    stats["url_hash_backfilled"] += 1
+
+            description = _clean_active_job_description(job.description or "")
+            if not _description_meets_active_job_requirements(
+                description,
+                title=job.title,
+                min_word_count=min_word_count,
+                min_char_count=min_char_count,
+            ):
+                repaired = _raw_job_description_body(job.source_raw_job)
+                if repaired and repaired != description:
+                    job.description = repaired
+                    changed_fields.append("description")
+                    description = repaired
+                    stats["jd_repaired"] += 1
+
+            if changed_fields:
+                job.save(update_fields=changed_fields + ["updated_at"])
+
+            if not _description_meets_active_job_requirements(
+                description,
+                title=job.title,
+                min_word_count=min_word_count,
+                min_char_count=min_char_count,
+            ):
+                _archive_active_job(
+                    job,
+                    reason_code="JD_REQUIRED_CLEANUP",
+                    reason_detail=(
+                        "Archived by vet/live integrity cleanup because the active job "
+                        "did not have a substantive JD after repair attempts."
+                    ),
+                    task_name="harvest.enforce_active_job_integrity",
+                    meta={
+                        "reason_code": "JD_REQUIRED_CLEANUP",
+                        "source_raw_job_id": job.source_raw_job_id,
+                    },
+                )
+                stats["jd_archived"] += 1
+
+            progress += 1
+            if progress == 1 or progress % 25 == 0 or progress == total_progress:
+                message = f"Validated JD integrity for {min(progress, total_active):,} / {total_active:,} active jobs"
+                tick_ops_run_progress(ops_run, progress, total_progress, message)
+                update_task_progress(self, current=progress, total=total_progress, message=message)
+
+        duplicate_specs = [
+            (
+                "source_raw_job_id",
+                Job.objects.filter(
+                    status__in=[Job.Status.POOL, Job.Status.OPEN],
+                    is_archived=False,
+                    source_raw_job_id__isnull=False,
+                ).values("source_raw_job_id").annotate(total=Count("id")).filter(total__gt=1),
+            ),
+            (
+                "url_hash",
+                Job.objects.filter(
+                    status__in=[Job.Status.POOL, Job.Status.OPEN],
+                    is_archived=False,
+                ).exclude(url_hash="").values("url_hash").annotate(total=Count("id")).filter(total__gt=1),
+            ),
+        ]
+
+        for field_name, groups in duplicate_specs:
+            for group in groups.iterator(chunk_size=100):
+                key = group[field_name]
+                jobs = list(
+                    Job.objects.filter(
+                        status__in=[Job.Status.POOL, Job.Status.OPEN],
+                        is_archived=False,
+                        **{field_name: key},
+                    ).select_related("source_raw_job")
+                )
+                if len(jobs) < 2:
+                    progress += 1
+                    continue
+                jobs.sort(key=_active_job_duplicate_rank)
+                winner = jobs[0]
+                archived_in_group = 0
+                for loser in jobs[1:]:
+                    _archive_active_job(
+                        loser,
+                        reason_code="DUPLICATE_SUPERSEDED",
+                        reason_detail=(
+                            f"Archived by vet/live integrity cleanup because active job #{winner.pk} "
+                            f"is the canonical survivor for {field_name}={key}."
+                        ),
+                        task_name="harvest.enforce_active_job_integrity",
+                        meta={
+                            "reason_code": "DUPLICATE_SUPERSEDED",
+                            "winner_job_id": winner.pk,
+                            "duplicate_key": field_name,
+                            "duplicate_value": str(key)[:255],
+                        },
+                    )
+                    archived_in_group += 1
+                if archived_in_group:
+                    stats["duplicate_groups"] += 1
+                    stats["duplicate_jobs_archived"] += archived_in_group
+                progress += 1
+                message = (
+                    f"Collapsed duplicate groups — {stats['duplicate_groups']:,} groups, "
+                    f"{stats['duplicate_jobs_archived']:,} archived"
+                )
+                tick_ops_run_progress(ops_run, progress, total_progress, message)
+                update_task_progress(self, current=progress, total=total_progress, message=message)
+
+        stats["active_jobs_remaining"] = Job.objects.filter(
+            status__in=[Job.Status.POOL, Job.Status.OPEN],
+            is_archived=False,
+        ).count()
+        stats["pool_remaining"] = Job.objects.filter(status=Job.Status.POOL, is_archived=False).count()
+        stats["live_remaining"] = Job.objects.filter(status=Job.Status.OPEN, is_archived=False).count()
+
+        message = (
+            f"Integrity cleanup complete — repaired {stats['jd_repaired']}, "
+            f"archived {stats['jd_archived'] + stats['duplicate_jobs_archived']}"
+        )
+        tick_ops_run_progress(ops_run, total_progress, total_progress, message, force=True)
+        update_task_progress(self, current=total_progress, total=total_progress, message=message)
+        finish_ops_run(ops_run, HarvestOpsRun.Status.SUCCESS, stats)
+        return stats
+    except Exception as exc:
+        logger.exception("enforce_active_job_integrity_task failed: %s", exc)
+        finish_ops_run(ops_run, HarvestOpsRun.Status.FAILED, {"error": str(exc)[:500]})
+        raise
+    finally:
+        _release_ops_singleton(lock_key, task_id)
+
+
 def _reconcile_synced_job_locations(cap: int = 500) -> dict:
     """Propagate post-sync country corrections from RawJob → linked pool Job.
 
@@ -3069,13 +3357,14 @@ def sync_harvested_to_pool_task(
     from jobs.dual_classification.policy import sync_block_reason as dual_classification_sync_block_reason
     from jobs.dual_classification.effective import effective_raw_job_classification
     from jobs.link_health import JOB_LINK_HEALTH_UPDATE_FIELDS, apply_link_health_payload_to_job
-    from jobs.dedup import find_existing_job_by_url
     from jobs.quality import compute_quality_score
     from jobs.gating import apply_gate_result_to_job, evaluate_raw_job_gate
+    from jobs.services import ensure_parsed_jd
     from jobs.tasks import _department_sync_value
+    from core.models import PlatformConfig
     from django.contrib.auth import get_user_model
     from django.utils import timezone as _tz
-    from .services.job_descriptions import job_description_for_sync
+    from .services.pool_job_sync import create_or_get_vetting_job_from_raw_job, find_existing_active_job_for_raw_job
 
     User = get_user_model()
     system_user = User.objects.filter(is_superuser=True).first()
@@ -3096,6 +3385,7 @@ def sync_harvested_to_pool_task(
     # Load VetGateConfig singleton — all sync gate settings come from here.
     from .models import VetGateConfig as _VetGateCfg
     gate_cfg = _VetGateCfg.get()
+    platform_cfg = PlatformConfig.load()
 
     chunk_size = max(50, min(int(chunk_size or gate_cfg.default_chunk_size), 2000))
 
@@ -3219,14 +3509,7 @@ def sync_harvested_to_pool_task(
                     failed += 1
                     continue
 
-                existing = (
-                    (Job.objects.filter(url_hash=rj.url_hash, is_archived=False).first() if rj.url_hash else None)
-                    or find_existing_job_by_url(rj.original_url)
-                    # Guard: original_link is URLField(max_length=500); a query with a longer
-                    # value raises DataError in PostgreSQL and crashes the whole task since this
-                    # line is outside the per-job try/except.
-                    or (Job.objects.filter(original_link=rj.original_url).first() if rj.original_url and len(rj.original_url) <= 500 else None)
-                )
+                existing = find_existing_active_job_for_raw_job(rj)
                 if existing:
                     payload = dict(rj.raw_payload or {})
                     payload["vet_gate"] = {
@@ -3349,37 +3632,129 @@ def sync_harvested_to_pool_task(
                     continue
 
                 try:
-                    platform_slug = rj.platform_slug or (rj.job_platform.slug if rj.job_platform else "")
                     effective = effective_raw_job_classification(rj)
                     snapshot = getattr(rj, "classification_snapshot", None)
                     job_location = " | ".join(rj.location_candidates or []) or rj.location_raw or ""
                     job_country = effective["country"] or ""
                     mapped_department = _department_sync_value(effective["department_normalized"] or "")
-                    with transaction.atomic():
-                        job = Job.objects.create(
-                            title=(rj.title or "")[:200],  # Job.title max_length=200; RawJob.title up to 512
-                            company=(rj.company_name or (rj.company.name if rj.company else ""))[:200],
-                            company_obj=rj.company,
-                            location=job_location[:200],   # Job.location max_length=200
-                            description=job_description_for_sync(rj),  # Job.description is plain text
-                            original_link=(rj.original_url or "")[:500],  # Job.original_link max_length=500; RawJob up to 1024
-                            salary_range=(rj.salary_raw or "")[:100],     # Job.salary_range max_length=100
-                            job_type=(rj.employment_type if rj.employment_type and rj.employment_type != "UNKNOWN" else "FULL_TIME")[:20],  # max_length=20; guard None
-                            status="POOL",
-                            stage=Job.Stage.VETTED,
-                            stage_changed_at=_tz.now(),
-                            url_hash=rj.url_hash or "",
-                            job_source=(f"HARVESTED_{platform_slug.upper()}" if platform_slug else "HARVESTED")[:100],  # max_length=100
-                            posted_by=system_user,
-                            source_raw_job=rj,
-                            queue_entered_at=_tz.now(),
-                            # Propagate classification from RawJob if available
-                            country=job_country[:100],                    # Job.country max_length=100
-                            department=mapped_department[:20],  # Job.department max_length=20
+                    job, created_new, locked_raw = create_or_get_vetting_job_from_raw_job(
+                        rj,
+                        posted_by=system_user,
+                        job_location=job_location,
+                        job_country=job_country,
+                        mapped_department=mapped_department,
+                    )
+                    if not created_new:
+                        payload = dict(locked_raw.raw_payload or {})
+                        payload["vet_gate"] = {
+                            "status": "duplicate",
+                            "reason_code": "DUPLICATE_EXISTING",
+                            "existing_job_id": job.pk,
+                            "checked_at": _tz.now().isoformat(),
+                        }
+                        locked_raw.sync_status = "SKIPPED"
+                        locked_raw.sync_skip_reason = "DUPLICATE_EXISTING"
+                        locked_raw.raw_payload = payload
+                        locked_raw.save(update_fields=["sync_status", "sync_skip_reason", "raw_payload", "updated_at"])
+                        PipelineEvent.record(
+                            job=job,
+                            url_hash=locked_raw.url_hash or "",
+                            from_stage=getattr(job, "stage", "") or "",
+                            to_stage=getattr(job, "stage", "") or "",
+                            task_name="harvest.sync_harvested_to_pool",
+                            celery_id=getattr(self.request, "id", "") or "",
+                            status=PipelineEvent.Status.SKIPPED,
+                            meta={
+                                "raw_job_id": locked_raw.pk,
+                                "qualified_only": bool(qualified_only),
+                                "reason_code": "DUPLICATE_EXISTING",
+                            },
                         )
+                        skipped_reasons["DUPLICATE_EXISTING"] = skipped_reasons.get("DUPLICATE_EXISTING", 0) + 1
+                        skipped += 1
+                        if total_target:
+                            update_task_progress(
+                                self,
+                                current=processed,
+                                total=total_target,
+                                message=(
+                                    f"Qualified sync {processed:,}/{total_target:,}"
+                                    if qualified_only
+                                    else f"Sync {processed:,}/{total_target:,}"
+                                ),
+                        )
+                        continue
+
+                    parse_ok = True
+                    parse_error = ""
+                    if platform_cfg.routing_require_parsed_jd_for_pool or platform_cfg.routing_require_ready_for_pool:
+                        parse_ok, parse_error = ensure_parsed_jd(job, actor=system_user)
+                        job.refresh_from_db(fields=["parsed_jd_status", "routing_status", "updated_at"])
+                    routing_ready = (job.routing_status or "") in {Job.RoutingStatus.READY, Job.RoutingStatus.OVERRIDDEN}
+                    pool_policy_reason = ""
+                    if platform_cfg.routing_require_parsed_jd_for_pool and not parse_ok:
+                        pool_policy_reason = f"PARSED_JD_REQUIRED: {(parse_error or job.parsed_jd_status or 'parse_failed')}"
+                    elif platform_cfg.routing_require_ready_for_pool and not routing_ready:
+                        pool_policy_reason = f"ROUTING_NOT_READY: {job.routing_status or 'PENDING'}"
+                    if pool_policy_reason:
+                        payload = dict(locked_raw.raw_payload or {})
+                        payload["vet_gate"] = {
+                            "status": "blocked",
+                            "reason_code": pool_policy_reason.split(":", 1)[0],
+                            "detail": pool_policy_reason,
+                            "job_id": job.pk,
+                            "checked_at": _tz.now().isoformat(),
+                        }
+                        locked_raw.sync_status = "SKIPPED"
+                        locked_raw.sync_skip_reason = pool_policy_reason[:255]
+                        locked_raw.raw_payload = payload
+                        locked_raw.save(update_fields=["sync_status", "sync_skip_reason", "raw_payload", "updated_at"])
+                        job.is_archived = True
+                        job.archived_at = _tz.now()
+                        job.archived_by = system_user
+                        job.status = Job.Status.CLOSED
+                        job.stage = Job.Stage.ARCHIVED
+                        job.stage_changed_at = _tz.now()
+                        job.pipeline_reason_code = pool_policy_reason.split(":", 1)[0]
+                        job.pipeline_reason_detail = pool_policy_reason
+                        job.save(update_fields=[
+                            "is_archived", "archived_at", "archived_by",
+                            "status", "stage", "stage_changed_at",
+                            "pipeline_reason_code", "pipeline_reason_detail", "updated_at",
+                        ])
+                        PipelineEvent.record(
+                            job=job,
+                            url_hash=locked_raw.url_hash or "",
+                            from_stage=Job.Stage.ENRICHED,
+                            to_stage=Job.Stage.ARCHIVED,
+                            task_name="harvest.sync_harvested_to_pool",
+                            celery_id=getattr(self.request, "id", "") or "",
+                            status=PipelineEvent.Status.SKIPPED,
+                            meta={
+                                "raw_job_id": locked_raw.pk,
+                                "reason_code": pool_policy_reason.split(":", 1)[0],
+                                "detail": pool_policy_reason,
+                            },
+                        )
+                        skipped_reasons[pool_policy_reason.split(":", 1)[0]] = skipped_reasons.get(pool_policy_reason.split(":", 1)[0], 0) + 1
+                        skipped += 1
+                        if total_target:
+                            update_task_progress(
+                                self,
+                                current=processed,
+                                total=total_target,
+                                message=(
+                                    f"Qualified sync {processed:,}/{total_target:,}"
+                                    if qualified_only
+                                    else f"Sync {processed:,}/{total_target:,}"
+                                ),
+                            )
+                        continue
+
+                    with transaction.atomic():
                         apply_link_health_payload_to_job(
                             job,
-                            ((rj.raw_payload or {}).get("link_health") or {}),
+                            ((locked_raw.raw_payload or {}).get("link_health") or {}),
                         )
                         apply_gate_result_to_job(job, gate)
                         job.quality_score = compute_quality_score(job)
@@ -3427,21 +3802,21 @@ def sync_harvested_to_pool_task(
                             "job_id": job.pk,
                             "checked_at": _tz.now().isoformat(),
                             "classification_source": (
-                                getattr(getattr(rj, "classification_snapshot", None), "approved_source", "") or "raw_job"
+                                getattr(getattr(locked_raw, "classification_snapshot", None), "approved_source", "") or "raw_job"
                             ),
                         }
                         try:
                             from jobs.marketing_role_routing import assign_marketing_roles_to_job
 
-                            assign_marketing_roles_to_job(job, raw_job=rj)
+                            assign_marketing_roles_to_job(job, raw_job=locked_raw)
                         except Exception as _mr_exc:
                             logger.warning(
                                 "Could not assign marketing roles to job %s from raw job %s: %s",
-                                job.pk, rj.pk, _mr_exc,
+                                job.pk, locked_raw.pk, _mr_exc,
                             )
-                        rj.sync_status = "SYNCED"
-                        rj.raw_payload = payload
-                        rj.save(update_fields=["sync_status", "raw_payload", "updated_at"])
+                        locked_raw.sync_status = "SYNCED"
+                        locked_raw.raw_payload = payload
+                        locked_raw.save(update_fields=["sync_status", "raw_payload", "updated_at"])
                         PipelineEvent.record(
                             job=job,
                             from_stage=Job.Stage.ENRICHED,
@@ -3450,7 +3825,7 @@ def sync_harvested_to_pool_task(
                             celery_id=getattr(self.request, "id", "") or "",
                             status=PipelineEvent.Status.SUCCESS,
                             meta={
-                                "raw_job_id": rj.pk,
+                                "raw_job_id": locked_raw.pk,
                                 "qualified_only": bool(qualified_only),
                                 "gate_status": gate.status,
                                 "lane": gate.lane,

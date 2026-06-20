@@ -267,6 +267,156 @@
         </div>
       </div>
 
+      {% if routing_profile %}
+      <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden" x-data="{ routingRaw: false, routingOverride: false }">
+        <div class="px-6 sm:px-8 py-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
+              <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              Routing Summary
+            </h2>
+            <p class="mt-1 text-xs text-gray-500">Persisted job routing used for consultant matching and vetting visibility.</p>
+          </div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="px-2.5 py-1 rounded-full text-xs font-semibold {% if routing_profile.status == 'READY' %}bg-emerald-100 text-emerald-700{% elif routing_profile.status == 'OVERRIDDEN' %}bg-violet-100 text-violet-700{% elif routing_profile.status == 'REVIEW' %}bg-amber-100 text-amber-700{% else %}bg-red-100 text-red-700{% endif %}">
+              {{ routing_profile.status|default:"PENDING" }}
+            </span>
+            <span class="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold">confidence {{ routing_profile.confidence|default:0|floatformat:2 }}</span>
+          </div>
+        </div>
+        <div class="px-6 sm:px-8 py-5 space-y-4">
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div class="rounded-lg bg-slate-50 p-3">
+              <div class="text-[10px] text-slate-400 uppercase tracking-wider mb-1">Role Family</div>
+              <div class="text-sm font-bold text-slate-900">{{ routing_profile.role_family|default:"—" }}</div>
+            </div>
+            <div class="rounded-lg bg-slate-50 p-3">
+              <div class="text-[10px] text-slate-400 uppercase tracking-wider mb-1">Seniority</div>
+              <div class="text-sm font-bold text-slate-900">{{ routing_profile.seniority_primary|default:"—" }}</div>
+            </div>
+            <div class="rounded-lg bg-slate-50 p-3">
+              <div class="text-[10px] text-slate-400 uppercase tracking-wider mb-1">Countries</div>
+              <div class="text-sm font-bold text-slate-900">{% if routing_profile.country_codes %}{{ routing_profile.country_codes|join:", " }}{% else %}&mdash;{% endif %}</div>
+            </div>
+            <div class="rounded-lg bg-slate-50 p-3">
+              <div class="text-[10px] text-slate-400 uppercase tracking-wider mb-1">Work Mode</div>
+              <div class="text-sm font-bold text-slate-900">{{ routing_profile.work_mode|default:"—" }}</div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="rounded-lg border border-slate-200 p-4">
+              <div class="text-[10px] text-slate-400 uppercase tracking-wider mb-2">Eligibility Signals</div>
+              <dl class="space-y-2 text-sm">
+                <div class="flex items-start justify-between gap-3"><dt class="text-slate-500">Years</dt><dd class="font-semibold text-slate-900">{% if routing_profile.years_min %}{{ routing_profile.years_min }}{% if routing_profile.years_max %}–{{ routing_profile.years_max }}{% endif %}{% else %}—{% endif %}</dd></div>
+                <div class="flex items-start justify-between gap-3"><dt class="text-slate-500">Visa sponsorship</dt><dd class="font-semibold text-slate-900">{% if routing_profile.visa_sponsorship %}Yes{% elif routing_profile.visa_sponsorship == False %}No{% else %}Unknown{% endif %}</dd></div>
+                <div class="flex items-start justify-between gap-3"><dt class="text-slate-500">Work authorization</dt><dd class="font-semibold text-slate-900 text-right">{{ routing_profile.work_authorization|default:"—" }}</dd></div>
+                <div class="flex items-start justify-between gap-3"><dt class="text-slate-500">Auth category</dt><dd class="font-semibold text-slate-900 text-right">{{ routing_profile.work_auth_category|default:"—" }}</dd></div>
+                <div class="flex items-start justify-between gap-3"><dt class="text-slate-500">Employment terms</dt><dd class="font-semibold text-slate-900 text-right">{% if routing_profile.employment_terms %}{{ routing_profile.employment_terms|join:", " }}{% else %}—{% endif %}</dd></div>
+                <div class="flex items-start justify-between gap-3"><dt class="text-slate-500">Clearance</dt><dd class="font-semibold text-slate-900">{% if routing_profile.clearance_required %}Required{% else %}Not stated{% endif %}</dd></div>
+              </dl>
+            </div>
+            <div class="rounded-lg border border-slate-200 p-4">
+              <div class="text-[10px] text-slate-400 uppercase tracking-wider mb-2">Metadata</div>
+              <dl class="space-y-2 text-sm">
+                <div class="flex items-start justify-between gap-3"><dt class="text-slate-500">Source</dt><dd class="font-semibold text-slate-900">{{ routing_profile.source|default:"—" }}</dd></div>
+                <div class="flex items-start justify-between gap-3"><dt class="text-slate-500">Prompt version</dt><dd class="font-mono text-slate-900 text-right">{{ routing_profile.prompt_version|default:"—" }}</dd></div>
+                <div class="flex items-start justify-between gap-3"><dt class="text-slate-500">Schema</dt><dd class="font-mono text-slate-900 text-right">{{ routing_profile.schema_version|default:"—" }}</dd></div>
+                <div class="flex items-start justify-between gap-3"><dt class="text-slate-500">Model</dt><dd class="font-mono text-slate-900 text-right">{{ routing_profile.extractor_model|default:"—" }}</dd></div>
+              </dl>
+            </div>
+          </div>
+
+          {% if routing_profile.warnings %}
+          <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+            <div class="text-[10px] font-semibold uppercase tracking-wide text-amber-700 mb-2">Routing Warnings</div>
+            <ul class="space-y-1 text-sm text-amber-900">
+              {% for warning in routing_profile.warnings %}
+              <li>{{ warning }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+
+          <div class="flex items-center gap-3 flex-wrap">
+            <button @click="routingRaw = !routingRaw" class="text-xs font-semibold text-slate-500 hover:text-slate-700" x-text="routingRaw ? 'Hide routing JSON' : 'Show routing JSON'"></button>
+            {% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}
+            <button @click="routingOverride = !routingOverride" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800" x-text="routingOverride ? 'Hide override form' : 'Edit routing override'"></button>
+            {% endif %}
+          </div>
+
+          <pre x-show="routingRaw" x-transition class="text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 overflow-x-auto max-h-72" x-cloak>{{ routing_profile_json }}</pre>
+
+          {% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}
+          <div x-show="routingOverride" x-transition x-cloak class="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <form method="post" action="{% url 'job-routing-override' object.pk %}" class="space-y-4">
+              {% csrf_token %}
+              <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div>
+                  <label class="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Seniority</label>
+                  <input name="seniority_primary" value="{{ object.routing_override.seniority_primary|default:routing_profile.seniority_primary }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                </div>
+                <div>
+                  <label class="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Years Min</label>
+                  <input name="years_min" value="{{ object.routing_override.years_min|default:routing_profile.years_min }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                </div>
+                <div>
+                  <label class="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Years Max</label>
+                  <input name="years_max" value="{{ object.routing_override.years_max|default:routing_profile.years_max }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                </div>
+                <div>
+                  <label class="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Country Codes</label>
+                  <input name="country_codes" value="{% if object.routing_override.country_codes %}{{ object.routing_override.country_codes|join:', ' }}{% else %}{{ routing_profile.country_codes|join:', ' }}{% endif %}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                </div>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div>
+                  <label class="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Country Mode</label>
+                  <input name="country_mode" value="{{ object.routing_override.country_mode|default:routing_profile.country_mode }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                </div>
+                <div>
+                  <label class="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Work Mode</label>
+                  <input name="work_mode" value="{{ object.routing_override.work_mode|default:routing_profile.work_mode }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                </div>
+                <div>
+                  <label class="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Visa Sponsorship</label>
+                  <select name="visa_sponsorship" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    <option value="">Unknown</option>
+                    <option value="true" {% if object.routing_override.visa_sponsorship == True or routing_profile.visa_sponsorship == True %}selected{% endif %}>Yes</option>
+                    <option value="false" {% if object.routing_override.visa_sponsorship == False or routing_profile.visa_sponsorship == False %}selected{% endif %}>No</option>
+                  </select>
+                </div>
+                <div class="flex items-end">
+                  <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+                    <input type="checkbox" name="clearance_required" value="1" {% if object.routing_override.clearance_required or routing_profile.clearance_required %}checked{% endif %} class="rounded border-slate-300 text-indigo-600">
+                    Clearance required
+                  </label>
+                </div>
+              </div>
+              <div>
+                <label class="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Work Authorization</label>
+                <input name="work_authorization" value="{{ object.routing_override.work_authorization|default:routing_profile.work_authorization }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              </div>
+              <div class="flex items-center justify-between gap-3 flex-wrap">
+                <p class="text-xs text-slate-500">Manual override survives extractor reruns until you clear it.</p>
+                <div class="flex items-center gap-2">
+                  <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">Save override</button>
+                </div>
+              </div>
+            </form>
+            {% if object.routing_override %}
+            <form method="post" action="{% url 'job-routing-override' object.pk %}" class="mt-3">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="clear">
+              <button type="submit" class="text-xs font-semibold text-rose-600 hover:text-rose-800">Clear override</button>
+            </form>
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+
       {# Parsed JD — Skills & Analysis #}
       {% if parsed_jd_json %}
       <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden" x-data="{ expanded: true }">

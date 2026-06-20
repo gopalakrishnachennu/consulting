@@ -1411,17 +1411,26 @@ class JDExtractorPromptEditView(AdminOrEmployeeMixin, View):
     def get(self, request):
         from .models import JDExtractorPrompt
         from .pipeline.jd_extractor_schemas import EXTRACTOR_SYSTEM_PROMPT, SCHEMA_VERSION
+        from core.models import LLMConfig
+        from jobs.models import Job
+
         active = JDExtractorPrompt.get_active()
+        llm_cfg = LLMConfig.load()
         return render(request, self.template_name, {
             "active": active,
             "prompt_text": (active.prompt_text if active else EXTRACTOR_SYSTEM_PROMPT),
             "using_default": active is None,
             "versions": list(JDExtractorPrompt.objects.all()[:30]),
             "schema_version": SCHEMA_VERSION,
+            "active_model": (llm_cfg.validation_model or llm_cfg.active_model or "gpt-4o-mini"),
+            "routing_ready_jobs": Job.objects.filter(routing_status=Job.RoutingStatus.READY).count(),
+            "routing_review_jobs": Job.objects.filter(routing_status=Job.RoutingStatus.REVIEW).count(),
+            "routing_overridden_jobs": Job.objects.filter(routing_status=Job.RoutingStatus.OVERRIDDEN).count(),
         })
 
     def post(self, request):
         from .models import JDExtractorPrompt
+        from .pipeline.jd_extractor_schemas import prompt_contract_errors
         action = (request.POST.get("action") or "save").strip()
         if action == "activate":
             obj = JDExtractorPrompt.objects.filter(pk=request.POST.get("pk")).first()
@@ -1429,11 +1438,22 @@ class JDExtractorPromptEditView(AdminOrEmployeeMixin, View):
                 obj.is_active = True
                 obj.save()
                 messages.success(request, f'Activated "{obj.name}". New jobs re-parse with it.')
+        elif action == "queue_backfill":
+            from jobs.tasks import backfill_job_routing_task
+
+            force = request.POST.get("force") == "1"
+            try:
+                task = backfill_job_routing_task.delay(force=force, only_active=True, limit=1000)
+                messages.success(request, f"Queued active-job routing refresh ({task.id}).")
+            except Exception as exc:
+                messages.error(request, f"Could not queue routing refresh: {exc}")
         else:
             text = (request.POST.get("prompt_text") or "").strip()
             name = (request.POST.get("name") or "").strip() or f"v{JDExtractorPrompt.objects.count() + 1}"
             if not text:
                 messages.error(request, "Prompt text is empty — nothing saved.")
+            elif prompt_contract_errors(text):
+                messages.error(request, "Prompt rejected: " + " ".join(prompt_contract_errors(text)))
             else:
                 JDExtractorPrompt.objects.create(
                     name=name, prompt_text=text, notes=(request.POST.get("notes") or "").strip(),
@@ -1465,6 +1485,7 @@ class JDExtractionTestView(AdminOrEmployeeMixin, View):
         from .pipeline.jd_extractor import extract_jd
         from .pipeline.parser_diff import diff_parsers
         from jobs.services import rule_parse_jd
+        from jobs.routing import build_routing_profile
 
         job = Job.objects.filter(pk=(request.POST.get("job_id") or "").strip()).first()
         if not job:
@@ -1487,5 +1508,6 @@ class JDExtractionTestView(AdminOrEmployeeMixin, View):
                 "json": _json.dumps(data, indent=2, default=str),
                 "meta": meta,
                 "diff": diff,
+                "routing": build_routing_profile(job, parsed_jd=data),
             },
         })

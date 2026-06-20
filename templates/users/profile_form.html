@@ -88,7 +88,7 @@
                 {% render_field field class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition" rows="4" %}
                 {% if field.errors %}<p class="text-red-500 text-xs mt-1">{{ field.errors.0 }}</p>{% endif %}
               </div>
-              {% elif field.name == 'hourly_rate' or field.name == 'phone' or field.name == 'preferred_location' or field.name == 'match_jd_title_override' %}
+              {% elif field.name == 'hourly_rate' or field.name == 'phone' or field.name == 'preferred_location' or field.name == 'match_jd_title_override' or field.name == 'requires_visa_sponsorship' or field.name == 'visa_status' or field.name == 'clearance_eligible' %}
               <div>
                 <label for="{{ field.id_for_label }}" class="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">{{ field.label }}</label>
                 {% render_field field class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition" %}
@@ -109,7 +109,7 @@
           <div class="p-5">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               {% for field in profile_form %}
-              {% if field.name == 'skills_text' or field.name == 'work_countries_text' or field.name == 'preferred_seniority_text' %}
+              {% if field.name == 'skills_text' or field.name == 'work_countries_text' or field.name == 'preferred_seniority_text' or field.name == 'citizenship_countries_text' or field.name == 'work_authorization_countries_text' or field.name == 'employment_preferences_text' or field.name == 'preferred_work_modes_text' %}
               <div {% if field.name == 'skills_text' %}class="md:col-span-2"{% endif %}>
                 <label for="{{ field.id_for_label }}" class="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">{{ field.label }}</label>
                 {% render_field field class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition" %}

@@ -4,6 +4,7 @@ from django.utils import timezone
 
 from jobs.models import Job
 from submissions.models import ApplicationSubmission
+from .forms import ConsultantProfileEditForm
 from .models import User, ConsultantProfile, EmployeeProfile, Department
 from .journey_utils import compute_consultant_readiness, at_risk_submissions_queryset
 
@@ -157,3 +158,52 @@ class ConsultantJourneyTests(TestCase):
         )
         qs = at_risk_submissions_queryset(self.profile)
         self.assertEqual(qs.count(), 1)
+
+
+class ConsultantRoutingProfileFormTests(TestCase):
+    def test_edit_form_persists_structured_routing_preferences(self):
+        admin = User.objects.create_superuser("consultant_admin", "consultant-admin@example.com", "pass")
+        consultant_user = User.objects.create_user(
+            username="routing_profile_consultant",
+            password="testpass",
+            role=User.Role.CONSULTANT,
+        )
+        profile = ConsultantProfile.objects.create(user=consultant_user, bio="base")
+
+        form = ConsultantProfileEditForm(
+            data={
+                "bio": "updated",
+                "base_resume_text": "",
+                "hourly_rate": "125",
+                "phone": "",
+                "preferred_location": "Austin, TX",
+                "match_jd_title_override": "",
+                "requires_visa_sponsorship": "true",
+                "visa_status": "OPT",
+                "clearance_eligible": "on",
+                "skills_text": "Python, AWS",
+                "work_countries_text": "United States, Canada",
+                "preferred_seniority_text": "senior, lead",
+                "citizenship_countries_text": "India",
+                "work_authorization_countries_text": "United States",
+                "employment_preferences_text": "w2, full_time",
+                "preferred_work_modes_text": "remote, hybrid",
+                "status": ConsultantProfile.Status.ACTIVE,
+                "notice_period": "2 weeks",
+            },
+            instance=profile,
+            user=admin,
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        saved = form.save()
+
+        self.assertEqual(saved.work_countries, ["United States", "Canada"])
+        self.assertEqual(saved.preferred_seniority_levels, ["senior", "lead"])
+        self.assertEqual(saved.citizenship_countries, ["India"])
+        self.assertEqual(saved.work_authorization_countries, ["United States"])
+        self.assertEqual(saved.employment_preferences, ["w2", "full_time"])
+        self.assertEqual(saved.preferred_work_modes, ["remote", "hybrid"])
+        self.assertTrue(saved.requires_visa_sponsorship)
+        self.assertEqual(saved.visa_status, "OPT")
+        self.assertTrue(saved.clearance_eligible)

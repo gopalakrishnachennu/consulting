@@ -76,6 +76,16 @@
     </div>
     <div class="flex flex-wrap gap-2">
       <a href="{% url 'harvest-role-categories' %}" class="btn-secondary !px-3 !py-1.5">Open Selective Filter Studio</a>
+      <form method="post" action="{% url 'harvest-run-vet-live-integrity-cleanup' %}"
+            data-gc-confirm-title="Clean active vet/live jobs"
+            data-gc-confirm-text="Run cleanup"
+            data-gc-confirm-variant="warning"
+            data-gc-confirm-message="This will repair active vet/live jobs from RawJob JD where possible, archive active jobs that still fail JD requirements, and archive duplicate active jobs while keeping one canonical survivor.">
+        {% csrf_token %}
+        <button type="submit" class="btn-secondary !px-3 !py-1.5">
+          Clean vet/live integrity
+        </button>
+      </form>
       <form method="post" action="{{ role_apply_url }}"
             data-gc-confirm-title="Backfill title-gate state"
             data-gc-confirm-text="Queue backfill"
@@ -124,6 +134,10 @@
       <p class="mt-1 text-2xl font-semibold text-slate-950">{{ apply_preview.raw_jobs_to_reclassify }}</p>
       <p class="mt-1 text-xs text-slate-500">{{ apply_preview.synced_jobs_to_refresh }} synced rows would be revisited.</p>
     </div>
+  </div>
+  <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+    Active-job cleanup enforces the strict workflow invariant for vetting and live jobs:
+    every active row must have a substantive JD, and each active identity keeps only one survivor.
   </div>
   {% if automation_summary.alerts %}
   <div class="mt-4 grid gap-3 lg:grid-cols-2">

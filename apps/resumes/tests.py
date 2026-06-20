@@ -326,7 +326,32 @@ class JDExtractorEngineTests(TestCase):
         self.assertEqual(data["role_classification"]["primary_role_family"], "data_engineer")
         self.assertIn("parser_metadata", data)
         self.assertTrue(self.job.parsed_jd_hash)
+        self.assertEqual(self.job.routing_role_family, "data_engineer")
+        self.assertEqual(self.job.routing_seniority, "mid")
+        self.assertEqual(self.job.routing_status, Job.RoutingStatus.READY)
+        self.assertTrue(self.job.routing_hash)
         self.assertEqual(fake._calls["n"], 1)
+
+    def test_routing_policy_can_force_review_when_country_missing(self):
+        from core.models import PlatformConfig
+        from resumes.pipeline.jd_extractor import extract_jd
+
+        config = PlatformConfig.load()
+        config.routing_require_country = True
+        config.routing_ready_confidence_threshold = 0.55
+        config.save()
+
+        parsed = _valid_parsed_jd()
+        parsed.setdefault("routing_profile", {})
+        parsed["routing_profile"]["country_codes"] = []
+        parsed["job_metadata"]["location"] = ""
+        fake = self._patch_llm([_json.dumps(parsed)])
+        with patch("resumes.pipeline.llm_client.PipelineLLMClient", return_value=fake):
+            extract_jd(self.job)
+
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.routing_status, Job.RoutingStatus.REVIEW)
+        self.assertIn("country", self.job.routing_profile.get("missing_readiness_signals", []))
 
     def test_cache_hit_skips_llm(self):
         from resumes.pipeline.jd_extractor import extract_jd

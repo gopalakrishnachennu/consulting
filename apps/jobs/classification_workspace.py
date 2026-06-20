@@ -14,6 +14,7 @@ from users.models import User
 
 from .dual_classification.effective import effective_raw_job_classification
 from .models import (
+    Job,
     RawJobClassificationConflict,
     RawJobClassificationSnapshot,
     RawJobClassifierRun,
@@ -23,6 +24,7 @@ from .rollout import (
     classification_settings_v2_enabled,
     classification_workspace_v2_enabled,
 )
+from .services import active_job_identity_conflicts
 
 
 def _dc_nested_get(payload: dict | None, *path):
@@ -495,6 +497,7 @@ class ClassificationSettingsV2View(ClassificationSettingsRequiredMixin, UpdateVi
 
         context = super().get_context_data(**kwargs)
         llm_config = LLMConfig.load()
+        routing_qs = Job.objects.filter(is_archived=False)
         context.update(
             {
                 "settings_metrics": {
@@ -507,6 +510,14 @@ class ClassificationSettingsV2View(ClassificationSettingsRequiredMixin, UpdateVi
                         pushed_to_vetting_with_warnings=True
                     ).count(),
                     "total_snapshots": RawJobClassificationSnapshot.objects.count(),
+                },
+                "routing_metrics": {
+                    "ready": routing_qs.filter(routing_status=Job.RoutingStatus.READY).count(),
+                    "review": routing_qs.filter(routing_status=Job.RoutingStatus.REVIEW).count(),
+                    "failed": routing_qs.filter(routing_status=Job.RoutingStatus.FAILED).count(),
+                    "overridden": routing_qs.filter(routing_status=Job.RoutingStatus.OVERRIDDEN).count(),
+                    "missing_country": routing_qs.filter(Q(routing_country_codes=[]) | Q(routing_country_codes__isnull=True)).count(),
+                    "missing_work_auth": routing_qs.filter(routing_work_authorization="").count(),
                 },
                 "secondary_runtime_model": (llm_config.validation_model or llm_config.active_model or "").strip(),
                 "classification_metrics_v2": classification_metrics_v2_enabled(self.request.user),
@@ -604,6 +615,12 @@ class ClassificationMetricsV2View(LoginRequiredMixin, ClassificationMetricsRequi
             .order_by("-date_done", "-date_created")[:8]
         )
         for task_result in dual_backfill_runs:
+            task_result.result_payload = _parse_task_result_payload(task_result)
+        routing_backfill_runs = list(
+            TaskResult.objects.filter(task_name="jobs.backfill_job_routing")
+            .order_by("-date_done", "-date_created")[:8]
+        )
+        for task_result in routing_backfill_runs:
             task_result.result_payload = _parse_task_result_payload(task_result)
 
         queue_counts = {
@@ -711,14 +728,31 @@ class ClassificationMetricsV2View(LoginRequiredMixin, ClassificationMetricsRequi
                 "recent_failures": recent_failures,
                 "recent_ops": recent_ops,
                 "dual_backfill_runs": dual_backfill_runs,
+                "routing_backfill_runs": routing_backfill_runs,
+                "identity_conflicts": active_job_identity_conflicts(limit=6),
+                "routing_gate_metrics": {
+                    "parsed_jd_missing": Job.objects.filter(
+                        is_archived=False, status__in=[Job.Status.POOL, Job.Status.OPEN]
+                    ).filter(Q(parsed_jd={}) | Q(parsed_jd__isnull=True) | ~Q(parsed_jd_status="OK")).count(),
+                    "routing_not_ready": Job.objects.filter(
+                        is_archived=False,
+                        status__in=[Job.Status.POOL, Job.Status.OPEN],
+                        routing_status__in=[Job.RoutingStatus.PENDING, Job.RoutingStatus.REVIEW, Job.RoutingStatus.FAILED],
+                    ).count(),
+                },
                 "runtime_health": {
                     "shadow_enabled": platform_config.dual_classification_shadow_enabled,
                     "secondary_runtime_enabled": platform_config.dual_classification_secondary_runtime_enabled,
                     "default_provider": platform_config.dual_classification_secondary_provider_default or "—",
                     "prompt_version": platform_config.dual_classification_secondary_prompt_version or "—",
                     "backfill_batch_size": platform_config.dual_classification_backfill_batch_size,
+                    "routing_backfill_batch_size": platform_config.routing_backfill_batch_size,
                     "require_approval_for_sync": platform_config.dual_classification_require_approval_for_sync,
                     "allow_push_with_warnings": platform_config.dual_classification_allow_push_with_warnings,
+                    "require_parsed_jd_for_pool": platform_config.routing_require_parsed_jd_for_pool,
+                    "require_ready_for_pool": platform_config.routing_require_ready_for_pool,
+                    "require_parsed_jd_for_live": platform_config.routing_require_parsed_jd_for_live,
+                    "require_ready_for_live": platform_config.routing_require_ready_for_live,
                     "llm_provider": llm_config.get_provider_display(),
                     "llm_base_url": llm_config.effective_base_url() or "OpenAI default",
                     "llm_model": (llm_config.validation_model or llm_config.active_model or "").strip() or "Not configured",
@@ -727,6 +761,7 @@ class ClassificationMetricsV2View(LoginRequiredMixin, ClassificationMetricsRequi
                     "classification_settings_url": reverse("jobs-classification-settings"),
                     "llm_config_url": reverse("llm-config"),
                     "run_backfill_url": reverse("harvest-run-classification-backfill"),
+                    "run_routing_backfill_url": reverse("jd-extractor-prompt"),
                 },
             }
         )

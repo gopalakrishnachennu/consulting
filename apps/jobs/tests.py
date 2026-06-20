@@ -1616,6 +1616,19 @@ class ClassificationSettingsV2ViewTests(TestCase):
                 "dual_classification_backfill_batch_size": "333",
                 "dual_classification_secondary_provider_default": "codex",
                 "dual_classification_secondary_prompt_version": "runtime_v3",
+                "routing_ready_confidence_threshold": "0.72",
+                "routing_require_country": "on",
+                "routing_require_work_authorization": "on",
+                "routing_require_parsed_jd_for_pool": "on",
+                "routing_require_ready_for_pool": "on",
+                "routing_require_parsed_jd_for_live": "on",
+                "routing_require_ready_for_live": "on",
+                "routing_backfill_batch_size": "777",
+                "routing_enforce_country_match": "on",
+                "routing_enforce_seniority_match": "on",
+                "routing_enforce_work_authorization": "on",
+                "routing_enforce_employment_preferences": "on",
+                "routing_enforce_clearance": "on",
             },
         )
 
@@ -1628,6 +1641,17 @@ class ClassificationSettingsV2ViewTests(TestCase):
         self.assertEqual(config.dual_classification_backfill_batch_size, 333)
         self.assertEqual(config.dual_classification_secondary_provider_default, "codex")
         self.assertEqual(config.dual_classification_secondary_prompt_version, "runtime_v3")
+        self.assertEqual(config.routing_ready_confidence_threshold, 0.72)
+        self.assertTrue(config.routing_require_country)
+        self.assertTrue(config.routing_require_work_authorization)
+        self.assertTrue(config.routing_require_parsed_jd_for_pool)
+        self.assertTrue(config.routing_require_ready_for_pool)
+        self.assertTrue(config.routing_require_parsed_jd_for_live)
+        self.assertTrue(config.routing_require_ready_for_live)
+        self.assertEqual(config.routing_backfill_batch_size, 777)
+        self.assertTrue(config.routing_enforce_work_authorization)
+        self.assertTrue(config.routing_enforce_employment_preferences)
+        self.assertTrue(config.routing_enforce_clearance)
 
 
 class ClassificationMetricsV2ViewTests(TestCase):
@@ -1947,6 +1971,138 @@ class MarketingRoleRoutingTests(TestCase):
         matches = match_jobs_for_consultant(consultant, limit=10)
         self.assertEqual([job.pk for job in matches], [eligible.pk])
 
+
+    def test_match_jobs_uses_persisted_routing_profile_over_title_regex(self):
+        role = MarketingRole.objects.get(slug="devops-cloud")
+        consultant_user = User.objects.create_user(
+            username="consultant_match_routing", password="testpass", role=User.Role.CONSULTANT
+        )
+        consultant = ConsultantProfile.objects.create(
+            user=consultant_user,
+            bio="Platform consultant",
+            work_countries=["united states"],
+            preferred_seniority_levels=["senior"],
+        )
+        consultant.marketing_roles.add(role)
+
+        eligible = Job.objects.create(
+            title="Platform Engineer",
+            company="Acme",
+            posted_by=self.employee,
+            status=Job.Status.OPEN,
+            description="Build and own platform reliability",
+            routing_profile={
+                "role_family": "platform_engineering",
+                "seniority_primary": "senior",
+                "country_codes": ["US"],
+                "country_labels": ["United States"],
+                "confidence": 0.88,
+                "status": Job.RoutingStatus.READY,
+            },
+            routing_status=Job.RoutingStatus.READY,
+            routing_seniority="senior",
+            routing_country_codes=["US"],
+        )
+        eligible.marketing_roles.add(role)
+
+        wrong = Job.objects.create(
+            title="Senior Platform Engineer",
+            company="Globex",
+            posted_by=self.employee,
+            status=Job.Status.OPEN,
+            description="Build and own platform reliability",
+            routing_profile={
+                "role_family": "platform_engineering",
+                "seniority_primary": "junior",
+                "country_codes": ["CA"],
+                "country_labels": ["Canada"],
+                "confidence": 0.88,
+                "status": Job.RoutingStatus.READY,
+            },
+            routing_status=Job.RoutingStatus.READY,
+            routing_seniority="junior",
+            routing_country_codes=["CA"],
+        )
+        wrong.marketing_roles.add(role)
+
+        matches = match_jobs_for_consultant(consultant, limit=10)
+        self.assertEqual([job.pk for job in matches], [eligible.pk])
+
+    def test_match_jobs_respects_work_auth_employment_and_clearance(self):
+        config = PlatformConfig.load()
+        config.routing_enforce_work_authorization = True
+        config.routing_enforce_employment_preferences = True
+        config.routing_enforce_work_mode = True
+        config.routing_enforce_clearance = True
+        config.save()
+
+        role = MarketingRole.objects.get(slug="devops-cloud")
+        consultant_user = User.objects.create_user(
+            username="consultant_match_constraints", password="testpass", role=User.Role.CONSULTANT
+        )
+        consultant = ConsultantProfile.objects.create(
+            user=consultant_user,
+            bio="Secure platform consultant",
+            work_countries=["United States"],
+            work_authorization_countries=["United States"],
+            preferred_seniority_levels=["senior"],
+            employment_preferences=["w2"],
+            preferred_work_modes=["remote"],
+            requires_visa_sponsorship=False,
+            clearance_eligible=True,
+        )
+        consultant.marketing_roles.add(role)
+
+        eligible = Job.objects.create(
+            title="Senior DevOps Engineer",
+            company="Acme",
+            posted_by=self.employee,
+            status=Job.Status.OPEN,
+            description="Remote senior role for US candidates.",
+            routing_profile={
+                "seniority_primary": "senior",
+                "country_codes": ["US"],
+                "country_labels": ["United States"],
+                "work_mode": "remote",
+                "employment_type": "w2",
+                "visa_sponsorship": False,
+                "clearance_required": True,
+                "confidence": 0.9,
+                "status": Job.RoutingStatus.READY,
+            },
+            routing_status=Job.RoutingStatus.READY,
+            routing_seniority="senior",
+            routing_country_codes=["US"],
+        )
+        eligible.marketing_roles.add(role)
+
+        blocked = Job.objects.create(
+            title="Senior DevOps Engineer",
+            company="Globex",
+            posted_by=self.employee,
+            status=Job.Status.OPEN,
+            description="Hybrid contract, Canada only, clearance required.",
+            routing_profile={
+                "seniority_primary": "senior",
+                "country_codes": ["CA"],
+                "country_labels": ["Canada"],
+                "work_mode": "hybrid",
+                "employment_type": "contract",
+                "contract_constraints": ["No C2C"],
+                "visa_sponsorship": False,
+                "clearance_required": True,
+                "confidence": 0.9,
+                "status": Job.RoutingStatus.READY,
+            },
+            routing_status=Job.RoutingStatus.READY,
+            routing_seniority="senior",
+            routing_country_codes=["CA"],
+        )
+        blocked.marketing_roles.add(role)
+
+        matches = match_jobs_for_consultant(consultant, limit=10)
+        self.assertEqual([job.pk for job in matches], [eligible.pk])
+
     def test_classify_task_backfills_taxonomy_and_synced_job_roles(self):
         company = Company.objects.create(name="RouteCo")
         raw = RawJob.objects.create(
@@ -2064,6 +2220,92 @@ class MarketingRoleRoutingTests(TestCase):
         self.assertTrue(result["active_only"])
         self.assertIn("servicenow-developer", list(active_job.marketing_roles.values_list("slug", flat=True)))
         self.assertCountEqual(list(closed_job.marketing_roles.values_list("slug", flat=True)), ["software-developer"])
+
+
+class JobRoutingGateAndRepairTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.admin = User.objects.create_superuser(
+            username="routing_gate_admin",
+            email="routing-gate@example.com",
+            password="testpass123",
+        )
+        from core.models import FeatureFlag
+
+        FeatureFlag.objects.update_or_create(
+            key="employee_job_pool",
+            defaults={
+                "label": "Job Pool",
+                "category": "EMPLOYEE",
+                "applies_to": "EMPLOYEE",
+                "is_enabled": True,
+                "enabled_for_employees": True,
+                "enabled_for_consultants": False,
+            },
+        )
+
+    def test_pool_approve_blocks_when_live_routing_policy_not_met(self):
+        config = PlatformConfig.load()
+        config.routing_require_parsed_jd_for_live = True
+        config.routing_require_ready_for_live = True
+        config.save()
+
+        company = Company.objects.create(name="Gate Co")
+        job = Job.objects.create(
+            title="Platform Engineer",
+            company=company.name,
+            company_obj=company,
+            description="This is a long enough JD " * 40,
+            original_link="https://example.com/jobs/gate-co",
+            posted_by=self.admin,
+            status=Job.Status.POOL,
+            stage=Job.Stage.VETTED,
+            parsed_jd={},
+            parsed_jd_status="",
+            routing_status=Job.RoutingStatus.REVIEW,
+            url_hash="gate-co-hash",
+        )
+
+        self.client.force_login(self.admin)
+        response = self.client.post(reverse("job-approve", kwargs={"pk": job.pk}))
+        self.assertEqual(response.status_code, 302)
+        job.refresh_from_db()
+        self.assertEqual(job.status, Job.Status.POOL)
+        self.assertEqual(job.pipeline_reason_code, "PARSED_JD_MISSING")
+
+    def test_identity_repair_archives_newer_duplicates(self):
+        company = Company.objects.create(name="Repair Co")
+        survivor = Job.objects.create(
+            title="Data Engineer",
+            company=company.name,
+            company_obj=company,
+            description="JD body",
+            original_link="https://example.com/jobs/repair-1",
+            posted_by=self.admin,
+            status=Job.Status.OPEN,
+            url_hash="repair-hash",
+        )
+        duplicate = Job.objects.create(
+            title="Data Engineer Copy",
+            company=company.name,
+            company_obj=company,
+            description="JD body copy",
+            original_link="https://example.com/jobs/repair-1-copy",
+            posted_by=self.admin,
+            status=Job.Status.POOL,
+            url_hash="repair-hash",
+        )
+
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse("job-identity-repair"),
+            {"group_type": "url_hash", "group_key": "repair-hash"},
+        )
+        self.assertEqual(response.status_code, 302)
+        survivor.refresh_from_db()
+        duplicate.refresh_from_db()
+        self.assertFalse(survivor.is_archived)
+        self.assertTrue(duplicate.is_archived)
 
 
 @patch("jobs.tasks.run_job_validation.delay")

@@ -49,6 +49,36 @@
       <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Historical Backfill Batch Size</div>
       <div class="mt-1 text-xl font-bold text-slate-900">{{ runtime_health.backfill_batch_size }}</div>
     </div>
+    <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Routing Refresh Batch Size</div>
+      <div class="mt-1 text-xl font-bold text-slate-900">{{ runtime_health.routing_backfill_batch_size }}</div>
+    </div>
+    <div class="grid gap-3 sm:grid-cols-2">
+      <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Pool Gate</div>
+        <div class="mt-1 text-sm font-semibold text-slate-900">
+          JD {{ runtime_health.require_parsed_jd_for_pool|yesno:"required,optional" }} ·
+          READY {{ runtime_health.require_ready_for_pool|yesno:"required,optional" }}
+        </div>
+      </div>
+      <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Live Gate</div>
+        <div class="mt-1 text-sm font-semibold text-slate-900">
+          JD {{ runtime_health.require_parsed_jd_for_live|yesno:"required,optional" }} ·
+          READY {{ runtime_health.require_ready_for_live|yesno:"required,optional" }}
+        </div>
+      </div>
+    </div>
+    <div class="grid gap-3 sm:grid-cols-2">
+      <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Missing Parsed JD</div>
+        <div class="mt-1 text-xl font-bold text-amber-900">{{ routing_gate_metrics.parsed_jd_missing }}</div>
+      </div>
+      <div class="rounded-lg border border-rose-200 bg-rose-50 p-3">
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-rose-700">Routing Not Ready</div>
+        <div class="mt-1 text-xl font-bold text-rose-900">{{ routing_gate_metrics.routing_not_ready }}</div>
+      </div>
+    </div>
     {% if request.user.is_superuser or request.user.role == 'ADMIN' %}
     <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
       <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Ops Controls</div>
@@ -64,6 +94,61 @@
         <button type="submit" class="btn-secondary">Run backfill now</button>
         <span class="text-xs text-slate-500">Uses isolated background queue.</span>
       </form>
+      <form method="post" action="{{ runtime_health.run_routing_backfill_url }}" class="mt-3 flex flex-wrap items-center gap-2">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="queue_backfill">
+        <button type="submit" class="btn-secondary">Run routing refresh</button>
+        <span class="text-xs text-slate-500">Re-parses active jobs with current prompt and routing policy.</span>
+      </form>
+    </div>
+    {% endif %}
+
+    {% if routing_backfill_runs %}
+    <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Recent Routing Refresh Runs</div>
+      <div class="mt-3 space-y-2">
+        {% for task in routing_backfill_runs %}
+        <div class="rounded-lg border border-slate-200 bg-white px-3 py-2">
+          <div class="flex items-center justify-between gap-3 text-xs">
+            <span class="font-semibold text-slate-900">{{ task.status }}</span>
+            <span class="text-slate-500">{% if task.date_done %}{{ task.date_done|date:"M j, g:i A" }}{% else %}—{% endif %}</span>
+          </div>
+          <div class="mt-1 text-[11px] text-slate-600">
+            Processed {{ task.result_payload.processed|default:"0" }} · Ready {{ task.result_payload.ready|default:"0" }} · Review {{ task.result_payload.review|default:"0" }} · Failed {{ task.result_payload.failed|default:"0" }}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if identity_conflicts %}
+    <div class="rounded-lg border border-rose-200 bg-rose-50 p-3">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-rose-700">Active Identity Conflicts</div>
+      <div class="mt-3 space-y-3">
+        {% for conflict in identity_conflicts %}
+        <div class="rounded-lg border border-rose-200 bg-white px-3 py-3">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="text-xs font-semibold text-slate-900">{{ conflict.group_type }} · {{ conflict.count }} jobs</div>
+              <div class="mt-1 text-[11px] text-slate-500 break-all">{{ conflict.group_key }}</div>
+              <div class="mt-2 space-y-1">
+                {% for job in conflict.jobs|slice:":3" %}
+                <a href="{% url 'job-detail' job.pk %}" class="block text-[11px] text-blue-700 hover:text-blue-900">{{ job.title }} · {{ job.get_status_display }}</a>
+                {% endfor %}
+              </div>
+            </div>
+            <form method="post" action="{% url 'job-identity-repair' %}">
+              {% csrf_token %}
+              <input type="hidden" name="group_type" value="{{ conflict.group_type }}">
+              <input type="hidden" name="group_key" value="{{ conflict.group_key }}">
+              <input type="hidden" name="next" value="{{ request.get_full_path }}">
+              <button type="submit" class="btn-secondary whitespace-nowrap">Archive newer</button>
+            </form>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
     </div>
     {% endif %}
   </div>

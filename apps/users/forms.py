@@ -341,6 +341,42 @@ class ConsultantProfileEditForm(forms.ModelForm):
         help_text='Comma-separated bands, e.g. junior, mid, senior, lead',
         widget=forms.TextInput(),
     )
+    citizenship_countries_text = forms.CharField(
+        required=False,
+        label='Citizenship countries',
+        help_text='Comma-separated list, e.g. United States, Canada',
+        widget=forms.TextInput(),
+    )
+    work_authorization_countries_text = forms.CharField(
+        required=False,
+        label='Work authorization countries',
+        help_text='Countries where the consultant can legally work without new sponsorship.',
+        widget=forms.TextInput(),
+    )
+    employment_preferences_text = forms.CharField(
+        required=False,
+        label='Employment preferences',
+        help_text='Comma-separated values, e.g. w2, c2c, 1099, full_time, contract',
+        widget=forms.TextInput(),
+    )
+    preferred_work_modes_text = forms.CharField(
+        required=False,
+        label='Preferred work modes',
+        help_text='Comma-separated values, e.g. remote, hybrid, onsite',
+        widget=forms.TextInput(),
+    )
+    requires_visa_sponsorship = forms.TypedChoiceField(
+        required=False,
+        label="Requires visa sponsorship",
+        choices=(
+            ("", "Unknown"),
+            ("true", "Yes"),
+            ("false", "No"),
+        ),
+        coerce=lambda value: True if value == "true" else False if value == "false" else None,
+        empty_value=None,
+        widget=forms.Select(),
+    )
 
     class Meta:
         model = ConsultantProfile
@@ -351,6 +387,9 @@ class ConsultantProfileEditForm(forms.ModelForm):
             'phone',
             'preferred_location',
             'match_jd_title_override',
+            'requires_visa_sponsorship',
+            'visa_status',
+            'clearance_eligible',
             'marketing_roles',
             'status',
             'available_from',
@@ -370,6 +409,10 @@ class ConsultantProfileEditForm(forms.ModelForm):
             self.fields['skills_text'].initial = ', '.join(self.instance.skills or [])
             self.fields['work_countries_text'].initial = ', '.join(self.instance.work_countries or [])
             self.fields['preferred_seniority_text'].initial = ', '.join(self.instance.preferred_seniority_levels or [])
+            self.fields['citizenship_countries_text'].initial = ', '.join(self.instance.citizenship_countries or [])
+            self.fields['work_authorization_countries_text'].initial = ', '.join(self.instance.work_authorization_countries or [])
+            self.fields['employment_preferences_text'].initial = ', '.join(self.instance.employment_preferences or [])
+            self.fields['preferred_work_modes_text'].initial = ', '.join(self.instance.preferred_work_modes or [])
         
         # Marketing Roles: Admin only, as checkboxes
         is_admin = self.user and (self.user.is_superuser or self.user.role == User.Role.ADMIN)
@@ -400,6 +443,14 @@ class ConsultantProfileEditForm(forms.ModelForm):
         instance.work_countries = [s.strip() for s in work_countries.split(',') if s.strip()]
         seniority = self.cleaned_data.get('preferred_seniority_text', '')
         instance.preferred_seniority_levels = [s.strip().lower() for s in seniority.split(',') if s.strip()]
+        citizenship = self.cleaned_data.get('citizenship_countries_text', '')
+        instance.citizenship_countries = [s.strip() for s in citizenship.split(',') if s.strip()]
+        work_auth = self.cleaned_data.get('work_authorization_countries_text', '')
+        instance.work_authorization_countries = [s.strip() for s in work_auth.split(',') if s.strip()]
+        employment = self.cleaned_data.get('employment_preferences_text', '')
+        instance.employment_preferences = [s.strip().lower() for s in employment.split(',') if s.strip()]
+        work_modes = self.cleaned_data.get('preferred_work_modes_text', '')
+        instance.preferred_work_modes = [s.strip().lower() for s in work_modes.split(',') if s.strip()]
         if commit:
             instance.save()
             self.save_m2m()

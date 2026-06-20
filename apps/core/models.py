@@ -209,6 +209,68 @@ class PlatformConfig(models.Model):
             "Useful for audits and controlled prompt upgrades."
         ),
     )
+    routing_ready_confidence_threshold = models.FloatField(
+        default=0.55,
+        help_text=(
+            "Jobs at or above this routing confidence can auto-enter READY status when required signals are present."
+        ),
+    )
+    routing_require_country = models.BooleanField(
+        default=False,
+        help_text="Require at least one routed country before a job can auto-enter READY status.",
+    )
+    routing_require_seniority = models.BooleanField(
+        default=False,
+        help_text="Require routed seniority before a job can auto-enter READY status.",
+    )
+    routing_require_work_authorization = models.BooleanField(
+        default=False,
+        help_text="Require structured work authorization evidence before a job can auto-enter READY status.",
+    )
+    routing_require_parsed_jd_for_pool = models.BooleanField(
+        default=False,
+        help_text="Require a successful parsed JD before a harvested job can enter the vetting pool.",
+    )
+    routing_require_ready_for_pool = models.BooleanField(
+        default=False,
+        help_text="Require routing READY status before a harvested job can enter the vetting pool.",
+    )
+    routing_require_parsed_jd_for_live = models.BooleanField(
+        default=True,
+        help_text="Require a successful parsed JD before a pooled job can be approved live.",
+    )
+    routing_require_ready_for_live = models.BooleanField(
+        default=True,
+        help_text="Require routing READY or OVERRIDDEN status before a pooled job can be approved live.",
+    )
+    routing_backfill_batch_size = models.PositiveIntegerField(
+        default=1000,
+        help_text="Default batch size for active-job routing refresh actions.",
+    )
+    routing_enforce_country_match = models.BooleanField(
+        default=True,
+        help_text="Apply consultant country preferences during routing eligibility checks.",
+    )
+    routing_enforce_seniority_match = models.BooleanField(
+        default=True,
+        help_text="Apply consultant seniority preferences during routing eligibility checks.",
+    )
+    routing_enforce_work_authorization = models.BooleanField(
+        default=True,
+        help_text="Block consultant/job matches when visa or work authorization rules conflict.",
+    )
+    routing_enforce_employment_preferences = models.BooleanField(
+        default=True,
+        help_text="Apply consultant employment preference filters like W2/C2C/1099 during routing eligibility checks.",
+    )
+    routing_enforce_work_mode = models.BooleanField(
+        default=False,
+        help_text="Apply consultant work mode preferences such as remote, hybrid, or onsite.",
+    )
+    routing_enforce_clearance = models.BooleanField(
+        default=True,
+        help_text="Block consultant/job matches when the job requires clearance and the consultant is not eligible.",
+    )
 
     # Navigation & Appearance
     class NavLayout(models.TextChoices):

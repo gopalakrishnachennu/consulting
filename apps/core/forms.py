@@ -157,6 +157,21 @@ class ClassificationSettingsForm(forms.ModelForm):
             "dual_classification_backfill_batch_size",
             "dual_classification_secondary_provider_default",
             "dual_classification_secondary_prompt_version",
+            "routing_ready_confidence_threshold",
+            "routing_require_country",
+            "routing_require_seniority",
+            "routing_require_work_authorization",
+            "routing_require_parsed_jd_for_pool",
+            "routing_require_ready_for_pool",
+            "routing_require_parsed_jd_for_live",
+            "routing_require_ready_for_live",
+            "routing_backfill_batch_size",
+            "routing_enforce_country_match",
+            "routing_enforce_seniority_match",
+            "routing_enforce_work_authorization",
+            "routing_enforce_employment_preferences",
+            "routing_enforce_work_mode",
+            "routing_enforce_clearance",
         ]
 
     def __init__(self, *args, **kwargs):
@@ -175,6 +190,18 @@ class ClassificationSettingsForm(forms.ModelForm):
             return "runtime_v1"
         if len(value) > 40:
             raise forms.ValidationError("Secondary prompt version must be 40 characters or fewer.")
+        return value
+
+    def clean_routing_ready_confidence_threshold(self):
+        value = self.cleaned_data.get("routing_ready_confidence_threshold")
+        if value is None or value < 0 or value > 1:
+            raise forms.ValidationError("Routing ready confidence threshold must be between 0.00 and 1.00.")
+        return value
+
+    def clean_routing_backfill_batch_size(self):
+        value = self.cleaned_data.get("routing_backfill_batch_size")
+        if value is None or value < 1 or value > 5000:
+            raise forms.ValidationError("Routing backfill batch size must be between 1 and 5000.")
         return value
 
 

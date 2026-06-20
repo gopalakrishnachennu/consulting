@@ -242,5 +242,11 @@ def _store(job, data: dict, status: str, current_hash: str, model: str, prompt_v
             fields.append(attr)
     try:
         job.save(update_fields=fields)
+        try:
+            from jobs.routing import persist_routing_profile
+
+            persist_routing_profile(job, parsed_jd=data, save=True)
+        except Exception as exc:
+            logger.warning("jd_extractor: routing profile persist failed for job %s: %s", job.pk, exc)
     except Exception as exc:
         logger.warning("jd_extractor: store failed for job %s: %s", job.pk, exc)

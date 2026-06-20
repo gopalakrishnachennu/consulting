@@ -144,6 +144,11 @@ class MarketingRole(models.Model):
 
 
 class ConsultantProfile(models.Model):
+    class WorkAuthRequirement(models.TextChoices):
+        UNKNOWN = "unknown", _("Unknown")
+        AUTHORIZED = "authorized", _("Authorized without sponsorship")
+        SPONSORSHIP_REQUIRED = "sponsorship_required", _("Requires sponsorship")
+
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='consultant_profile')
     profile_slug = models.SlugField(
         max_length=80,
@@ -171,6 +176,40 @@ class ConsultantProfile(models.Model):
         default=list,
         blank=True,
         help_text=_("Preferred seniority bands for job routing, e.g. ['mid', 'senior']."),
+    )
+    citizenship_countries = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=_("Citizenship countries used for routing eligibility, e.g. ['United States']."),
+    )
+    work_authorization_countries = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=_("Countries where this consultant can legally work without new sponsorship."),
+    )
+    requires_visa_sponsorship = models.BooleanField(
+        null=True,
+        blank=True,
+        help_text=_("Whether the consultant requires visa sponsorship for routed jobs."),
+    )
+    visa_status = models.CharField(
+        max_length=80,
+        blank=True,
+        help_text=_("Structured visa/work authorization note, e.g. H1B, OPT, Citizen, PR."),
+    )
+    employment_preferences = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=_("Accepted employment arrangements, e.g. ['w2', 'c2c', '1099', 'full_time']."),
+    )
+    preferred_work_modes = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=_("Accepted work modes, e.g. ['remote', 'hybrid', 'onsite']."),
+    )
+    clearance_eligible = models.BooleanField(
+        default=False,
+        help_text=_("Whether the consultant can be routed to jobs requiring security clearance."),
     )
     marketing_roles = models.ManyToManyField(MarketingRole, blank=True, related_name='consultants')
 

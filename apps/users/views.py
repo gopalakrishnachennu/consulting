@@ -43,7 +43,12 @@ from .forms import (
     UserEmailNotificationPreferencesForm,
 )
 from jobs.models import Job
-from jobs.services import match_jobs_for_consultant
+from jobs.services import (
+    consultant_job_routing_audit_rows,
+    consultant_routing_metrics,
+    eligible_jobs_for_consultant,
+    match_jobs_for_consultant,
+)
 from config.pagination import PAGE_SIZE_OPTIONS, get_page_size, build_pagination_window
 from submissions.models import ApplicationSubmission, SubmissionResponse
 from resumes.models import ResumeDraft
@@ -605,16 +610,9 @@ class ConsultantDetailView(LoginRequiredMixin, DetailView):
 
         # Assignable jobs for resume generation (Admin/Employee only)
         if context['is_admin'] or context['is_employee']:
-            roles = profile.marketing_roles.all()
-            if roles:
-                assignable_jobs = Job.objects.filter(
-                    status='OPEN',
-                    marketing_roles__in=roles
-                ).select_related('company_obj').distinct().order_by('-created_at')
-            else:
-                assignable_jobs = Job.objects.none()
+            assignable_jobs = eligible_jobs_for_consultant(profile, limit=200)
             context['assignable_jobs'] = assignable_jobs
-            context['assignable_jobs_count'] = assignable_jobs.count()
+            context['assignable_jobs_count'] = len(assignable_jobs)
             # Track which jobs already have drafts
             drafted_job_ids = set(resume_drafts.values_list('job_id', flat=True))
             context['drafted_job_ids'] = drafted_job_ids
@@ -630,6 +628,11 @@ class ConsultantDetailView(LoginRequiredMixin, DetailView):
 
         # ── Matched Jobs ────────────────────────────────────────────────
         context['matched_jobs'] = match_jobs_for_consultant(profile, limit=8)
+        context['routing_metrics'] = consultant_routing_metrics(profile)
+        eligible_rows, blocked_rows, blocked_summary = consultant_job_routing_audit_rows(profile)
+        context['routing_eligible_rows'] = eligible_rows
+        context['routing_blocked_rows'] = blocked_rows
+        context['routing_blocked_summary'] = blocked_summary
 
         # ── Performance Metrics ─────────────────────────────────────────
         thirty_days_ago = now - timedelta(days=30)

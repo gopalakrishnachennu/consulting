@@ -44,6 +44,7 @@ from companies.models import Company
 from users.models import User, MarketingRole
 from core.feature_flags import feature_enabled_for
 from .services import (
+    archive_identity_conflict,
     JDParserService,
     match_consultants_for_job,
     ranked_consultants_for_job,
@@ -51,6 +52,7 @@ from .services import (
     ensure_parsed_jd,
     validate_job_quality,
 )
+from .routing import effective_routing_profile, persist_routing_profile
 from submissions.models import ApplicationSubmission
 
 
@@ -427,6 +429,9 @@ class JobDetailView(LoginRequiredMixin, DetailView):
         else:
             context['parsed_jd_json'] = ""
         if job:
+            context["routing_profile"] = effective_routing_profile(job)
+            context["routing_profile_json"] = json.dumps(context["routing_profile"], indent=2)
+        if job:
             context["dual_classification_audit"] = attach_job_dual_classification_audit(job)
 
         # Consultant ↔ job match scores (ranked, with % and raw score)
@@ -460,6 +465,45 @@ class JobParseJDView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         else:
             messages.error(request, f"JD parse failed: {err}")
         return redirect('job-detail', pk=pk)
+
+
+class JobRoutingOverrideView(LoginRequiredMixin, EmployeeRequiredMixin, View):
+    def post(self, request, pk):
+        job = get_object_or_404(Job, pk=pk)
+        action = (request.POST.get("action") or "save").strip()
+        if action == "clear":
+            job.routing_override = {}
+            job.routing_override_updated_at = timezone.now()
+            job.save(update_fields=["routing_override", "routing_override_updated_at"])
+            persist_routing_profile(job, save=True)
+            messages.success(request, "Routing override cleared.")
+            return redirect("job-detail", pk=pk)
+
+        visa_raw = (request.POST.get("visa_sponsorship") or "").strip().lower()
+        if visa_raw == "true":
+            visa_sponsorship = True
+        elif visa_raw == "false":
+            visa_sponsorship = False
+        else:
+            visa_sponsorship = None
+
+        override = {
+            "seniority_primary": (request.POST.get("seniority_primary") or "").strip().lower(),
+            "years_min": (request.POST.get("years_min") or "").strip(),
+            "years_max": (request.POST.get("years_max") or "").strip(),
+            "country_mode": (request.POST.get("country_mode") or "").strip(),
+            "country_codes": [c.strip().upper() for c in (request.POST.get("country_codes") or "").split(",") if c.strip()],
+            "work_mode": (request.POST.get("work_mode") or "").strip(),
+            "visa_sponsorship": visa_sponsorship,
+            "work_authorization": (request.POST.get("work_authorization") or "").strip(),
+            "clearance_required": request.POST.get("clearance_required") == "1",
+        }
+        job.routing_override = {key: value for key, value in override.items() if value not in ("", [], None)}
+        job.routing_override_updated_at = timezone.now()
+        job.save(update_fields=["routing_override", "routing_override_updated_at"])
+        persist_routing_profile(job, save=True)
+        messages.success(request, "Routing override saved.")
+        return redirect("job-detail", pk=pk)
 
 class JobCreateView(LoginRequiredMixin, EmployeeRequiredMixin, CreateView):
     model = Job
@@ -926,6 +970,22 @@ class ArchivedJobsView(LoginRequiredMixin, EmployeeRequiredMixin, ListView):
         ).order_by('-archived_at')
 
 
+class JobIdentityRepairView(LoginRequiredMixin, EmployeeRequiredMixin, View):
+    """Archive duplicate active jobs inside a known identity conflict group."""
+
+    def post(self, request):
+        group_type = (request.POST.get("group_type") or "").strip()
+        group_key = (request.POST.get("group_key") or "").strip()
+        result = archive_identity_conflict(group_type, group_key, actor=request.user)
+        if result.get("archived"):
+            survivor = result.get("survivor")
+            survivor_label = f" Survivor: #{survivor.pk} {survivor.title}." if survivor else ""
+            messages.success(request, f"Archived {result['archived']} duplicate job(s).{survivor_label}")
+        else:
+            messages.warning(request, "No duplicate jobs were archived for that conflict.")
+        return redirect(request.POST.get("next") or "jobs-classification-metrics")
+
+
 # ─── Job Pool / Validation Pipeline ──────────────────────────────────────────
 
 class JobPoolView(LoginRequiredMixin, EmployeeRequiredMixin, ListView):
@@ -1064,15 +1124,14 @@ class JobApproveView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         if job.status != Job.Status.POOL:
             messages.warning(request, f"\"{job.title}\" is not in the pool (status: {job.get_status_display()}).")
             return redirect('job-pool')
-        if job.gate_checked_at is None:
-            gate = evaluate_job_gate(job)
-            apply_gate_result_to_job(job, gate)
-            job.gate_checked_at = timezone.now()
-            job.save(update_fields=[
-                'hard_gate_passed', 'gate_status', 'vet_lane', 'pipeline_reason_code', 'pipeline_reason_detail',
-                'hard_gate_failures', 'hard_gate_checks', 'data_quality_score', 'trust_score',
-                'candidate_fit_score', 'vet_priority_score', 'gate_checked_at', 'updated_at'
-            ])
+        gate = evaluate_job_gate(job)
+        apply_gate_result_to_job(job, gate)
+        job.gate_checked_at = timezone.now()
+        job.save(update_fields=[
+            'hard_gate_passed', 'gate_status', 'vet_lane', 'pipeline_reason_code', 'pipeline_reason_detail',
+            'hard_gate_failures', 'hard_gate_checks', 'data_quality_score', 'trust_score',
+            'candidate_fit_score', 'vet_priority_score', 'gate_checked_at', 'updated_at'
+        ])
         if not job.hard_gate_passed or job.vet_lane == Job.VetLane.BLOCKED:
             messages.error(
                 request,
@@ -1183,15 +1242,14 @@ class JobBulkApproveView(LoginRequiredMixin, EmployeeRequiredMixin, View):
                 if job.company_obj and getattr(job.company_obj, 'is_blacklisted', False):
                     skipped += 1
                     continue
-                if job.gate_checked_at is None:
-                    gate = evaluate_job_gate(job)
-                    apply_gate_result_to_job(job, gate)
-                    job.gate_checked_at = now
-                    job.save(update_fields=[
-                        'hard_gate_passed', 'gate_status', 'vet_lane', 'pipeline_reason_code', 'pipeline_reason_detail',
-                        'hard_gate_failures', 'hard_gate_checks', 'data_quality_score', 'trust_score',
-                        'candidate_fit_score', 'vet_priority_score', 'gate_checked_at', 'updated_at'
-                    ])
+                gate = evaluate_job_gate(job)
+                apply_gate_result_to_job(job, gate)
+                job.gate_checked_at = now
+                job.save(update_fields=[
+                    'hard_gate_passed', 'gate_status', 'vet_lane', 'pipeline_reason_code', 'pipeline_reason_detail',
+                    'hard_gate_failures', 'hard_gate_checks', 'data_quality_score', 'trust_score',
+                    'candidate_fit_score', 'vet_priority_score', 'gate_checked_at', 'updated_at'
+                ])
                 if not job.hard_gate_passed or job.vet_lane == Job.VetLane.BLOCKED:
                     skipped += 1
                     continue

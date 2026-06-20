@@ -23,6 +23,8 @@ REASON_BLACKLISTED_COMPANY = "BLACKLISTED_COMPANY"
 REASON_COLD_SCOPE = "COLD_SCOPE"        # non-target country or no location
 REASON_UNSCOPED = "UNSCOPED"            # location never evaluated
 REASON_DOMAIN_BLOCKED = "DOMAIN_BLOCKED"  # job_domain is in the blocklist
+REASON_PARSED_JD_MISSING = "PARSED_JD_MISSING"
+REASON_ROUTING_NOT_READY = "ROUTING_NOT_READY"
 REASON_OK = "ELIGIBLE"
 
 # Default scope statuses that are allowed to proceed to the vet queue.
@@ -322,6 +324,9 @@ def apply_gate_result_to_job(job: Job, gate: GateResult) -> None:
 
 
 def evaluate_job_gate(job: Job) -> GateResult:
+    from core.models import PlatformConfig
+
+    cfg = PlatformConfig.load()
     link_health_state = (
         getattr(job, "original_link_health", "") or
         (Job.LinkHealthState.LIVE if job.original_link_is_live else Job.LinkHealthState.DEAD)
@@ -337,6 +342,8 @@ def evaluate_job_gate(job: Job) -> GateResult:
     company_ok = bool(job.company_obj_id) and not (
         job.company_obj and getattr(job.company_obj, "is_blacklisted", False)
     )
+    parsed_jd_ok = bool(getattr(job, "parsed_jd", None)) and (getattr(job, "parsed_jd_status", "") or "").upper() == "OK"
+    routing_ready = (getattr(job, "routing_status", "") or "") in {Job.RoutingStatus.READY, Job.RoutingStatus.OVERRIDDEN}
     dedupe_passed = not (
         job.url_hash
         and Job.objects.filter(url_hash=job.url_hash, is_archived=False).exclude(pk=job.pk).exists()
@@ -348,6 +355,8 @@ def evaluate_job_gate(job: Job) -> GateResult:
         "dedupe_passed": dedupe_passed,
         "clean_jd_present": has_clean_jd,
         "company_resolved": company_ok,
+        "parsed_jd_ok": parsed_jd_ok,
+        "routing_ready": routing_ready,
     }
     reasons: list[str] = []
     if not has_url:
@@ -364,6 +373,10 @@ def evaluate_job_gate(job: Job) -> GateResult:
         reasons.append(REASON_DUPLICATE_RISK)
     if not has_clean_jd:
         reasons.append(REASON_JD_TOO_WEAK)
+    if getattr(cfg, "routing_require_parsed_jd_for_live", True) and not parsed_jd_ok:
+        reasons.append(REASON_PARSED_JD_MISSING)
+    if getattr(cfg, "routing_require_ready_for_live", True) and not routing_ready:
+        reasons.append(REASON_ROUTING_NOT_READY)
 
     hard_passed = not reasons
     val = _clamp01(_as_float(job.validation_score, 0.0) / 100.0)
