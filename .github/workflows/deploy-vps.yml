@@ -10,6 +10,10 @@ on:
         description: "Optional: pin exact image SHA (e.g. sha256:abc123). Leave blank to use :main."
         required: false
         default: ""
+  workflow_run:
+    workflows: ["Build & publish Docker image"]
+    types: [completed]
+    branches: [main]
 
 concurrency:
   group: deploy-production
@@ -20,52 +24,107 @@ jobs:
   preflight:
     name: "Preflight — CI + image check"
     runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    outputs:
+      target_sha: ${{ steps.target.outputs.sha }}
+      short_sha: ${{ steps.target.outputs.short_sha }}
     permissions:
       contents: read
       actions: read
       packages: read
     steps:
+      - name: Resolve target SHA
+        id: target
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            TARGET_SHA="${{ github.event.workflow_run.head_sha }}"
+          else
+            TARGET_SHA=$(gh api repos/${{ github.repository }}/commits/main --jq '.sha')
+          fi
+          echo "sha=$TARGET_SHA" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$(printf '%s' "$TARGET_SHA" | cut -c1-7)" >> "$GITHUB_OUTPUT"
+
       - name: Confirm DEPLOY input
+        if: github.event_name == 'workflow_dispatch'
         run: |
           if [ "${{ github.event.inputs.confirm }}" != "DEPLOY" ]; then
             echo "❌ Confirmation must be exactly DEPLOY"
             exit 1
           fi
 
-      - name: Check latest CI run on main
+      - name: Ensure target SHA is still current main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           REPO="${{ github.repository }}"
-          SHA=$(gh api repos/$REPO/commits/main --jq '.sha')
-          echo "Main SHA: $SHA"
+          MAIN_SHA=$(gh api repos/$REPO/commits/main --jq '.sha')
+          TARGET_SHA="${{ steps.target.outputs.sha }}"
+          echo "Main SHA:   $MAIN_SHA"
+          echo "Target SHA: $TARGET_SHA"
+          if [ "$MAIN_SHA" != "$TARGET_SHA" ]; then
+            echo "❌ Refusing deploy for stale SHA. main moved after this build."
+            exit 1
+          fi
+
+      - name: Wait for latest CI checks on target SHA
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPO="${{ github.repository }}"
+          SHA="${{ steps.target.outputs.sha }}"
+          echo "Checking CI for SHA: $SHA"
 
           # Use only the latest check-run result per name so old failed attempts
           # do not permanently block deploy after a successful rerun.
-          LATEST_CHECKS=$(gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" \
-            --jq '[.check_runs[]
-              | select(.name | startswith("Smoke") or startswith("Tests"))
-              | {name, status, conclusion, completed_at}
-            ]
-            | sort_by(.name, .completed_at)
-            | group_by(.name)
-            | map(last)')
-          echo "Latest CI checks: $LATEST_CHECKS"
+          for i in $(seq 1 30); do
+            LATEST_CHECKS=$(gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" \
+              --jq '[.check_runs[]
+                | select(.name | startswith("Smoke") or startswith("Tests"))
+                | {name, status, conclusion, completed_at}
+              ]
+              | sort_by(.name, .completed_at)
+              | group_by(.name)
+              | map(last)')
+            echo "Latest CI checks: $LATEST_CHECKS"
 
-          BAD_CHECKS=$(printf "%s" "$LATEST_CHECKS" | jq -c '[.[] | select(.status != "completed" or .conclusion != "success")]')
-          if [ "$BAD_CHECKS" != "[]" ]; then
+            CHECK_COUNT=$(printf "%s" "$LATEST_CHECKS" | jq 'length')
+            if [ "$CHECK_COUNT" -eq 0 ]; then
+              echo "Waiting for CI checks to appear ($i/30)..."
+              sleep 10
+              continue
+            fi
+
+            BAD_CHECKS=$(printf "%s" "$LATEST_CHECKS" | jq -c '[.[] | select(.status != "completed" or .conclusion != "success")]')
+            if [ "$BAD_CHECKS" = "[]" ]; then
+              echo "✅ CI passed"
+              exit 0
+            fi
+
+            PENDING_CHECKS=$(printf "%s" "$BAD_CHECKS" | jq -c '[.[] | select(.status != "completed")]')
+            if [ "$PENDING_CHECKS" != "[]" ]; then
+              echo "Waiting for CI checks to finish ($i/30)..."
+              sleep 10
+              continue
+            fi
+
             echo "❌ Latest CI checks are not green — refusing deploy"
             echo "$BAD_CHECKS"
             exit 1
-          fi
-          echo "✅ CI passed"
+          done
 
-      - name: Check Docker image exists for main
+          echo "❌ Timed out waiting for CI checks on $SHA"
+          exit 1
+
+      - name: Check Docker image exists for target SHA
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           REPO="${{ github.repository }}"
-          SHA=$(gh api repos/$REPO/commits/main --jq '.sha' | cut -c1-7)
+          SHA="${{ steps.target.outputs.short_sha }}"
           echo "Looking for image with SHA tag: sha-$SHA"
 
           # Check GHCR for image
@@ -83,6 +142,9 @@ jobs:
     name: "Deploy"
     runs-on: ubuntu-latest
     needs: preflight
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     permissions:
       contents: read
       packages: read
@@ -95,6 +157,9 @@ jobs:
             # User-specified SHA digest (for rollback)
             IMAGE="ghcr.io/${REPO}@${{ github.event.inputs.image_sha }}"
             echo "Using pinned digest: $IMAGE"
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+            IMAGE="ghcr.io/${REPO}:sha-${{ needs.preflight.outputs.short_sha }}"
+            echo "Using auto-resolved SHA tag: $IMAGE"
           else
             # Use :main tag (always latest built image)
             IMAGE="ghcr.io/${REPO}:main"
