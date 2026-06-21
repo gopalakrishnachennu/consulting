@@ -33,6 +33,41 @@ logger = logging.getLogger(__name__)
 from .forms import JobForm, JobBulkUploadForm
 
 
+def _canonical_job_country(raw_value: str) -> tuple[str, str]:
+    """Collapse dirty country/location strings into a canonical country code + label."""
+    from harvest.enrichments import infer_country_from_location
+    from harvest.location_resolver import COUNTRY_CODE_TO_NAME, _code_for_country
+
+    raw = (raw_value or "").strip()
+    if not raw:
+        return "", ""
+
+    code = _code_for_country(raw)
+    inferred = ""
+    if not code:
+        inferred = infer_country_from_location(raw, "", "")
+        code = _code_for_country(inferred)
+    if code:
+        return code, COUNTRY_CODE_TO_NAME.get(code, inferred or raw or code)
+    return "", raw[:100]
+
+
+def _build_job_country_options():
+    canonical: dict[str, str] = {}
+    for raw_country in (
+        Job.objects.exclude(country="").exclude(country__isnull=True)
+        .values_list("country", flat=True)
+        .distinct()
+    ):
+        code, label = _canonical_job_country(raw_country)
+        if code:
+            canonical[code] = label
+    return [
+        {"value": code, "label": canonical[code]}
+        for code in sorted(canonical, key=lambda item: canonical[item])
+    ]
+
+
 def _get_require_pool_staging() -> bool:
     """Whether new jobs go to the vetting pool first (PlatformConfig)."""
     try:
@@ -268,7 +303,17 @@ def apply_job_list_filters(qs, request):
 
     country_filter = request.GET.get('country')
     if country_filter:
-        qs = qs.filter(country__iexact=country_filter)
+        canonical_code, canonical_label = _canonical_job_country(country_filter)
+        if canonical_code:
+            matching_ids = [
+                job_id
+                for job_id, raw_country in qs.exclude(country="").exclude(country__isnull=True)
+                .values_list("id", "country")
+                if _canonical_job_country(raw_country)[0] == canonical_code
+            ]
+            qs = qs.filter(pk__in=matching_ids)
+        elif canonical_label:
+            qs = qs.filter(country__iexact=canonical_label)
 
     department_filter = request.GET.get('department')
     if department_filter and department_filter in dict(Job.Department.choices):
@@ -331,14 +376,10 @@ class JobListView(LoginRequiredMixin, ListView):
         context['selected_location'] = self.request.GET.get('location', '')
         context['selected_possibly_filled'] = self.request.GET.get('possibly_filled', '')
         context['selected_link_live'] = self.request.GET.get('link_live', '')
-        context['selected_country'] = self.request.GET.get('country', '')
+        context['selected_country'] = _canonical_job_country(self.request.GET.get('country', ''))[0]
         context['selected_department'] = self.request.GET.get('department', '')
         context['department_choices'] = Job.Department.choices
-        # Top countries used (for the country dropdown — distinct + sorted)
-        context['top_countries'] = (
-            Job.objects.exclude(country='').exclude(country__isnull=True)
-            .values_list('country', flat=True).distinct().order_by('country')
-        )
+        context['country_options'] = _build_job_country_options()
         qd = self.request.GET.copy()
         qd.pop('page', None)
         context['pagination_query'] = qd.urlencode()

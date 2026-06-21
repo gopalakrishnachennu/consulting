@@ -164,13 +164,13 @@
         </div>
 
         <!-- Country Filter -->
-        {% if top_countries %}
+        {% if country_options %}
         <div class="relative w-full md:w-auto">
             <select name="country" onchange="var p=new URLSearchParams(window.location.search);if(this.value)p.set('country',this.value);else p.delete('country');p.delete('page');window.location.search=p.toString();"
                 class="w-full md:w-44 pl-4 pr-10 py-3 bg-white/80 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition appearance-none cursor-pointer">
                 <option value="">All Countries</option>
-                {% for c in top_countries %}
-                <option value="{{ c }}" {% if selected_country == c %}selected{% endif %}>{{ c }}</option>
+                {% for option in country_options %}
+                <option value="{{ option.value }}" {% if selected_country == option.value %}selected{% endif %}>{{ option.label }}</option>
                 {% endfor %}
             </select>
             <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">

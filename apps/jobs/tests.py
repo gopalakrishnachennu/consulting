@@ -343,6 +343,70 @@ class JobListUrlHealthFilterTests(TestCase):
         self.assertNotContains(resp, 'Live role')
 
 
+class JobListCountryNormalizationTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.employee = User.objects.create_user(
+            username="emp_country",
+            password="testpass",
+            role=User.Role.EMPLOYEE,
+        )
+        self.us_plain = Job.objects.create(
+            title="US plain",
+            company="Acme",
+            posted_by=self.employee,
+            status=Job.Status.OPEN,
+            description="D",
+            original_link="https://example.com/us-plain",
+            country="United States",
+        )
+        self.us_short = Job.objects.create(
+            title="US short",
+            company="Acme",
+            posted_by=self.employee,
+            status=Job.Status.OPEN,
+            description="D",
+            original_link="https://example.com/us-short",
+            country="US",
+        )
+        self.us_dirty = Job.objects.create(
+            title="US dirty",
+            company="Acme",
+            posted_by=self.employee,
+            status=Job.Status.OPEN,
+            description="D",
+            original_link="https://example.com/us-dirty",
+            country="USA - Georgia - Atlanta",
+        )
+        self.ca = Job.objects.create(
+            title="Canada role",
+            company="Maple",
+            posted_by=self.employee,
+            status=Job.Status.OPEN,
+            description="D",
+            original_link="https://example.com/ca",
+            country="Canada",
+        )
+
+    def test_country_dropdown_collapses_duplicate_us_values(self):
+        self.client.login(username="emp_country", password="testpass")
+        resp = self.client.get(reverse("job-list"))
+        self.assertEqual(resp.status_code, 200)
+        options = resp.context["country_options"]
+        us_options = [item for item in options if item["value"] == "US"]
+        self.assertEqual(len(us_options), 1)
+        self.assertEqual(us_options[0]["label"], "United States")
+
+    def test_country_filter_uses_canonical_country_code(self):
+        self.client.login(username="emp_country", password="testpass")
+        resp = self.client.get(reverse("job-list"), {"country": "US"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "US plain")
+        self.assertContains(resp, "US short")
+        self.assertContains(resp, "US dirty")
+        self.assertNotContains(resp, "Canada role")
+
+
 class MatchScoreStringTests(TestCase):
     def test_match_score_str_does_not_reference_missing_title(self):
         from .models import MatchScore
