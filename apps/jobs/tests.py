@@ -537,6 +537,26 @@ class JobListCountryNormalizationTests(TestCase):
         self.assertContains(resp, "US dirty")
         self.assertNotContains(resp, "Canada role")
 
+    @patch("harvest.location_resolver._code_for_country")
+    @patch("harvest.enrichments.infer_country_from_location", return_value="United States")
+    def test_country_canonicalizer_prefers_location_inference_for_dirty_strings(
+        self,
+        infer_country,
+        code_for_country,
+    ):
+        from jobs.views import _canonical_job_country
+
+        def fake_code_for_country(value):
+            if value == "USA - Georgia - Atlanta":
+                return "GE"
+            if value == "United States":
+                return "US"
+            return ""
+
+        code_for_country.side_effect = fake_code_for_country
+        self.assertEqual(_canonical_job_country("USA - Georgia - Atlanta"), ("US", "United States"))
+        infer_country.assert_called_once_with("USA - Georgia - Atlanta", "", "")
+
 
 class JobListBoundaryTests(TestCase):
     def setUp(self):

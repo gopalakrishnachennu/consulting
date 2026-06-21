@@ -33,6 +33,19 @@ logger = logging.getLogger(__name__)
 from .forms import JobForm, JobBulkUploadForm
 
 
+_COUNTRY_LOCATION_SEPARATOR_RE = re.compile(r"\s[-|/]\s|,")
+
+
+def _looks_like_location_string(raw_value: str) -> bool:
+    raw = (raw_value or "").strip()
+    if not raw:
+        return False
+    if _COUNTRY_LOCATION_SEPARATOR_RE.search(raw):
+        return True
+    parts = [part for part in re.split(r"[-,|/]+", raw) if part.strip()]
+    return len(parts) >= 3
+
+
 def _canonical_job_country(raw_value: str) -> tuple[str, str]:
     """Collapse dirty country/location strings into a canonical country code + label."""
     from harvest.enrichments import infer_country_from_location
@@ -42,9 +55,14 @@ def _canonical_job_country(raw_value: str) -> tuple[str, str]:
     if not raw:
         return "", ""
 
-    code = _code_for_country(raw)
+    code = ""
     inferred = ""
+    if _looks_like_location_string(raw):
+        inferred = infer_country_from_location(raw, "", "")
+        code = _code_for_country(inferred)
     if not code:
+        code = _code_for_country(raw)
+    if not code and not inferred:
         inferred = infer_country_from_location(raw, "", "")
         code = _code_for_country(inferred)
     if code:
