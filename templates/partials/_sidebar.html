@@ -82,7 +82,7 @@
                     {% with pool_count=pending_pool_count %}{% if pool_count %}<span class="ml-auto min-w-[1.1rem] h-[1.1rem] flex items-center justify-center rounded-full bg-yellow-100 text-yellow-800 text-[10px] font-bold px-0.5">{{ pool_count }}</span>{% endif %}{% endwith %}
                 </a>
                 <a href="{% url 'jobs-pipeline' %}?tab=live" class="sidebar-nav-item sidebar-nav-item--sub">Live Jobs</a>
-                <a href="{% url 'job-list' %}" class="sidebar-nav-item sidebar-nav-item--sub {% if url_name == 'job-list' %}sidebar-nav-item--active{% endif %}">All Jobs</a>
+                <a href="{% url 'jobs-pipeline' %}?tab=catalog" class="sidebar-nav-item sidebar-nav-item--sub {% if url_name == 'job-list' or url_name == 'jobs-pipeline' and request.GET.tab == 'catalog' %}sidebar-nav-item--active{% endif %}">All Jobs</a>
                 <a href="{% url 'company-list' %}" class="sidebar-nav-item sidebar-nav-item--sub {% if url_name == 'company-list' %}sidebar-nav-item--active{% endif %}">Companies</a>
                 {% if request.user.is_superuser %}
                 <a href="{% url 'harvest-platforms' %}" class="sidebar-nav-item sidebar-nav-item--sub">Source Engine</a>
@@ -229,7 +229,7 @@
                 <a href="{% url 'jobs-pipeline' %}" class="sidebar-nav-item sidebar-nav-item--sub">Command Center</a>
                 <a href="{% url 'jobs-pipeline' %}?tab=pool" class="sidebar-nav-item sidebar-nav-item--sub">Vetting Queue</a>
                 <a href="{% url 'jobs-pipeline' %}?tab=live" class="sidebar-nav-item sidebar-nav-item--sub">Live Jobs</a>
-                <a href="{% url 'job-list' %}" class="sidebar-nav-item sidebar-nav-item--sub {% if url_name == 'job-list' %}sidebar-nav-item--active{% endif %}">All Jobs</a>
+                <a href="{% url 'jobs-pipeline' %}?tab=catalog" class="sidebar-nav-item sidebar-nav-item--sub {% if url_name == 'job-list' or url_name == 'jobs-pipeline' and request.GET.tab == 'catalog' %}sidebar-nav-item--active{% endif %}">All Jobs</a>
             </div>
         </div>
 

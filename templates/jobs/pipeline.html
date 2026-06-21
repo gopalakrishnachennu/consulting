@@ -8,8 +8,14 @@
   <div class="relative z-10">
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
       <div>
-        <h1 class="text-3xl font-extrabold text-white tracking-tight">Jobs Command Center</h1>
-        <p class="text-blue-100 text-sm mt-1">Raw Intake → Vetting → Live — the full jobs pipeline in one place</p>
+        <h1 class="text-3xl font-extrabold text-white tracking-tight">{% if tab == 'catalog' %}All Jobs{% else %}Jobs Command Center{% endif %}</h1>
+        <p class="text-blue-100 text-sm mt-1">
+          {% if tab == 'catalog' %}
+            Browse posted, live, closed, and draft jobs from the unified jobs workspace.
+          {% else %}
+            Raw Intake → Vetting → Live — the full jobs pipeline in one place
+          {% endif %}
+        </p>
       </div>
       <div class="flex items-center gap-2 flex-wrap">
         {% if request.user.is_superuser %}
@@ -106,6 +112,12 @@
         <input type="hidden" name="{{ k }}" value="{{ v }}">
         {% endif %}
       {% endfor %}
+    {% elif tab == 'catalog' %}
+      {% for key, value in request.GET.items %}
+        {% if key != 'tab' and key != 'q' and key != 'search_by' and key != 'page' %}
+          <input type="hidden" name="{{ key }}" value="{{ value }}">
+        {% endif %}
+      {% endfor %}
     {% elif tab == 'pool' %}
       {% if lane_tab %}<input type="hidden" name="lane" value="{{ lane_tab }}">{% endif %}
       {% if score_tab %}<input type="hidden" name="score" value="{{ score_tab }}">{% endif %}
@@ -134,7 +146,7 @@
         <svg class="absolute left-3.5 w-4 h-4 text-gray-400 pointer-events-none shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
         </svg>
-        <input type="text" name="q" id="search-q" value="{{ q }}"
+        <input type="text" name="{% if tab == 'catalog' %}search{% else %}q{% endif %}" id="search-q" value="{% if tab == 'catalog' %}{{ request.GET.search }}{% else %}{{ q }}{% endif %}"
                placeholder="{% if search_by == 'company' %}Search by company name…{% else %}Search by job title…{% endif %}"
                autocomplete="off"
                class="w-full pl-10 pr-10 py-2.5 text-sm bg-transparent focus:outline-none text-slate-800 placeholder-slate-400">
@@ -160,14 +172,14 @@
     </div>
 
     {# ── Active search indicator ── #}
-    {% if q %}
+    {% if q or request.GET.search %}
     <div class="mt-2 flex items-center gap-1.5 text-xs text-slate-500">
       <svg class="w-3.5 h-3.5 text-indigo-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/>
       </svg>
       Filtered by <strong class="text-slate-700">{{ search_by|default:"title" }}</strong>:
       <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-medium">
-        "{{ q }}"
+        "{% if tab == 'catalog' %}{{ request.GET.search }}{% else %}{{ q }}{% endif %}"
         <a href="?tab={{ tab }}" class="hover:text-red-500 transition font-bold leading-none ml-0.5">×</a>
       </span>
     </div>
@@ -191,9 +203,128 @@
 {% endif %}
 
 <!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- TAB: JOBS CATALOG                                                         -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+{% if tab == 'catalog' %}
+
+{% if status_summary %}
+<div class="mb-3 flex flex-wrap items-center gap-2 text-xs text-gray-600">
+  <span class="font-semibold mr-1">Summary:</span>
+  <span class="status-chip status-chip-blue">
+    <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+    Open {{ status_summary.OPEN }}
+  </span>
+  <span class="status-chip status-chip-amber">
+    <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+    Draft {{ status_summary.DRAFT }}
+  </span>
+  <span class="status-chip status-chip-gray">
+    <span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
+    Closed {{ status_summary.CLOSED }}
+  </span>
+  {% if status_summary.POOL %}
+  <a href="?tab=pool" class="status-chip status-chip-yellow hover:opacity-80 transition font-semibold">
+    <span class="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>
+    {{ status_summary.POOL }} in Vetting →
+  </a>
+  {% endif %}
+</div>
+{% endif %}
+
+<form method="get" class="glass rounded-2xl px-5 py-4 mb-4">
+  <input type="hidden" name="tab" value="catalog">
+  <input type="hidden" name="search_by" value="{{ search_by|default:'title' }}">
+  {% if q %}<input type="hidden" name="search" value="{{ q }}">{% endif %}
+  <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+    <label class="block">
+      <span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Role</span>
+      <select name="role" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+        <option value="">All Roles</option>
+        {% for role in marketing_roles %}
+          <option value="{{ role.slug }}" {% if selected_role == role.slug %}selected{% endif %}>{{ role.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="block">
+      <span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Status</span>
+      <select name="status" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+        <option value="">All Statuses</option>
+        <option value="OPEN" {% if selected_status == 'OPEN' %}selected{% endif %}>Open</option>
+        <option value="CLOSED" {% if selected_status == 'CLOSED' %}selected{% endif %}>Closed</option>
+        <option value="DRAFT" {% if selected_status == 'DRAFT' %}selected{% endif %}>Draft</option>
+      </select>
+    </label>
+    <label class="block">
+      <span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Type</span>
+      <select name="job_type" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+        <option value="">All Types</option>
+        <option value="FULL_TIME" {% if selected_job_type == 'FULL_TIME' %}selected{% endif %}>Full Time</option>
+        <option value="PART_TIME" {% if selected_job_type == 'PART_TIME' %}selected{% endif %}>Part Time</option>
+        <option value="CONTRACT" {% if selected_job_type == 'CONTRACT' %}selected{% endif %}>Contract</option>
+        <option value="INTERNSHIP" {% if selected_job_type == 'INTERNSHIP' %}selected{% endif %}>Internship</option>
+      </select>
+    </label>
+    <label class="block">
+      <span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Posting status</span>
+      <select name="possibly_filled" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+        <option value="">Any</option>
+        <option value="1" {% if selected_possibly_filled == '1' %}selected{% endif %}>Possibly filled</option>
+        <option value="0" {% if selected_possibly_filled == '0' %}selected{% endif %}>Not flagged</option>
+      </select>
+    </label>
+    <label class="block">
+      <span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Link check</span>
+      <select name="link_live" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+        <option value="">Any</option>
+        <option value="1" {% if selected_link_live == '1' %}selected{% endif %}>Link looks live</option>
+        <option value="0" {% if selected_link_live == '0' %}selected{% endif %}>Link not live</option>
+      </select>
+    </label>
+    <label class="block">
+      <span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Country</span>
+      <select name="country" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+        <option value="">All Countries</option>
+        {% for option in country_options %}
+          <option value="{{ option.value }}" {% if selected_country == option.value %}selected{% endif %}>{{ option.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="block">
+      <span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Department</span>
+      <select name="department" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+        <option value="">All Departments</option>
+        {% for val, label in department_choices %}
+          <option value="{{ val }}" {% if selected_department == val %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="block">
+      <span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Records</span>
+      <select name="page_size" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+        {% for s in page_size_options %}
+          <option value="{{ s }}" {% if page_size == s %}selected{% endif %}>{{ s }}/page</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <div class="mt-3 grid gap-3 md:grid-cols-[1fr_280px_auto]">
+    <input type="text" name="search" value="{{ request.GET.search|default:q }}" placeholder="Search title, company, description…" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400">
+    <input type="text" name="location" value="{{ selected_location }}" placeholder="Location" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400">
+    <div class="flex items-end gap-2">
+      <button type="submit" class="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">Apply filters</button>
+      <a href="?tab=catalog" class="inline-flex items-center justify-center rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:border-slate-300 hover:text-slate-800">Clear</a>
+    </div>
+  </div>
+</form>
+
+<div id="job-list-results">
+  {% include 'jobs/_job_list_partial.html' %}
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
 <!-- TAB: VET QUEUE (pool)                                                     -->
 <!-- ══════════════════════════════════════════════════════════════════════════ -->
-{% if tab == 'pool' %}
+{% elif tab == 'pool' %}
 
 <form method="get" class="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
   <input type="hidden" name="tab" value="pool">
@@ -271,7 +402,7 @@
         Refresh Links
       </button>
     </form>
-    <a href="{% url 'job-list' %}" class="btn-secondary btn-sm">Open Jobs Catalog →</a>
+    <a href="{% url 'jobs-pipeline' %}?tab=catalog" class="btn-secondary btn-sm">Open Jobs Catalog →</a>
   </div>
 </div>
 
@@ -1341,7 +1472,7 @@
     <h2 class="section-title-sm">Live Jobs</h2>
     <p class="section-subtitle">Open positions visible and available to consultants</p>
   </div>
-  <a href="{% url 'job-list' %}" class="btn-secondary btn-sm">Full Job List →</a>
+  <a href="{% url 'jobs-pipeline' %}?tab=catalog" class="btn-secondary btn-sm">Jobs Catalog →</a>
 </div>
 
 {% if tab_jobs %}

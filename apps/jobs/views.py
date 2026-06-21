@@ -5,10 +5,11 @@ from django.urls import reverse, reverse_lazy
 from django.contrib import messages
 from django.utils import timezone
 from django.utils.dateparse import parse_date
-from django.db.models import Q, Count
+from django.db.models import Q, Count, Max
 from django.core.paginator import Paginator
 from django.http import HttpResponse, JsonResponse
 from django.conf import settings
+from django.core.cache import cache
 from django.template.loader import render_to_string
 import re
 import json
@@ -20,7 +21,7 @@ from urllib.parse import urlencode
 from .models import Job, PipelineEvent
 from .dual_classification.audit import build_job_dual_classification_audit
 from .dual_classification.effective import effective_raw_job_classification
-from config.pagination import PAGE_SIZE_OPTIONS, get_page_size, build_pagination_window
+from config.pagination import get_page_size, build_pagination_window
 from .classification_workspace import (
     ClassificationDetailV2View,
     ClassificationQueueV2View,
@@ -31,6 +32,8 @@ from .classification_workspace import (
 
 logger = logging.getLogger(__name__)
 from .forms import JobForm, JobBulkUploadForm
+
+JOB_PAGE_SIZE_OPTIONS = (50, 100, 170)
 
 
 _COUNTRY_LOCATION_SEPARATOR_RE = re.compile(r"\s[-|/]\s|,")
@@ -71,23 +74,52 @@ def _canonical_job_country(raw_value: str) -> tuple[str, str]:
 
 
 def _build_job_country_options():
+    return _job_country_cache_payload()["options"]
+
+
+def _job_country_cache_payload():
+    cache_key = "jobs_country_filter_options_v2"
+    source_qs = Job.objects.exclude(country="").exclude(country__isnull=True)
+    signature = source_qs.aggregate(total=Count("id"), max_id=Max("id"))
+    cached = cache.get(cache_key)
+    if cached is not None and cached.get("signature") == signature:
+        return cached
+
     canonical: dict[str, str] = {}
+    aliases: dict[str, set[str]] = {}
     for raw_country in (
-        Job.objects.exclude(country="").exclude(country__isnull=True)
+        source_qs
+        .order_by()
         .values_list("country", flat=True)
         .distinct()
     ):
         code, label = _canonical_job_country(raw_country)
-        if code:
-            canonical[code] = label
-    return [
-        {"value": code, "label": canonical[code]}
-        for code in sorted(canonical, key=lambda item: canonical[item])
-    ]
+        if not code:
+            continue
+        canonical[code] = label
+        aliases.setdefault(code, set()).add(raw_country)
+
+    payload = {
+        "signature": signature,
+        "options": [
+            {"value": code, "label": canonical[code]}
+            for code in sorted(canonical, key=lambda item: canonical[item])
+        ],
+        "aliases": {code: sorted(values) for code, values in aliases.items()},
+    }
+    cache.set(cache_key, payload, 600)
+    return payload
 
 
 def _jobs_pipeline_pool_url() -> str:
     return f"{reverse('jobs-pipeline')}?tab=pool"
+
+
+def _jobs_pipeline_catalog_url(query: str = "") -> str:
+    base = f"{reverse('jobs-pipeline')}?tab=catalog"
+    if query:
+        return f"{base}&{query}"
+    return base
 
 
 def _normalize_pool_search_by(raw_value: str, default: str = "title") -> str:
@@ -421,13 +453,11 @@ def apply_job_list_filters(qs, request):
     if country_filter:
         canonical_code, canonical_label = _canonical_job_country(country_filter)
         if canonical_code:
-            matching_ids = [
-                job_id
-                for job_id, raw_country in qs.exclude(country="").exclude(country__isnull=True)
-                .values_list("id", "country")
-                if _canonical_job_country(raw_country)[0] == canonical_code
-            ]
-            qs = qs.filter(pk__in=matching_ids)
+            aliases = _job_country_cache_payload()["aliases"].get(canonical_code, [])
+            if aliases:
+                qs = qs.filter(Q(country__in=aliases) | Q(country__iexact=canonical_label))
+            elif canonical_label:
+                qs = qs.filter(country__iexact=canonical_label)
         elif canonical_label:
             qs = qs.filter(country__iexact=canonical_label)
 
@@ -443,7 +473,7 @@ def _job_catalog_base_queryset():
     User-facing /jobs/ catalog excludes vetting/pool and archived rows.
     Vetting lives in Command Center; archived rows have their own screen.
     """
-    return Job.objects.exclude(status=Job.Status.POOL).filter(is_archived=False).order_by("-created_at")
+    return Job.objects.exclude(status=Job.Status.POOL).filter(is_archived=False)
 
 
 class EmployeeRequiredMixin(UserPassesTestMixin):
@@ -467,11 +497,16 @@ class JobListView(LoginRequiredMixin, ListView):
     ordering = ['-created_at']
 
     def get_paginate_by(self, queryset):
-        return get_page_size(self.request, default=100)
+        return get_page_size(self.request, default=100, options=JOB_PAGE_SIZE_OPTIONS)
 
     def dispatch(self, request, *args, **kwargs):
-        if request.GET.get("status") == Job.Status.POOL:
-            return redirect(f"{reverse('jobs-pipeline')}?tab=pool")
+        user = request.user
+        if user.is_authenticated and (user.is_superuser or user.role in (User.Role.EMPLOYEE, User.Role.ADMIN)):
+            qd = request.GET.copy()
+            if qd.get("status") == Job.Status.POOL:
+                return redirect(f"{reverse('jobs-pipeline')}?tab=pool")
+            qd.pop("tab", None)
+            return redirect(_jobs_pipeline_catalog_url(qd.urlencode()))
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
@@ -479,14 +514,14 @@ class JobListView(LoginRequiredMixin, ListView):
             _job_catalog_base_queryset().select_related('posted_by').prefetch_related('marketing_roles'),
             self.request,
         )
-        return qs.annotate(application_count=Count('submissions'))
+        return qs.order_by('-created_at').annotate(application_count=Count('submissions'))
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         # Status summary and totals computed from the full filtered queryset,
         # not just the current page.
         full_qs = _get_job_list_queryset(self.request)
-        status_counts = full_qs.values('status').annotate(count=Count('status'))
+        status_counts = full_qs.order_by().values('status').annotate(count=Count('status'))
         summary = {'OPEN': 0, 'CLOSED': 0, 'DRAFT': 0, 'POOL': 0}
         for row in status_counts:
             code = row['status']
@@ -513,8 +548,8 @@ class JobListView(LoginRequiredMixin, ListView):
         qd = self.request.GET.copy()
         qd.pop('page', None)
         context['pagination_query'] = qd.urlencode()
-        context['page_size'] = get_page_size(self.request, default=100)
-        context['page_size_options'] = PAGE_SIZE_OPTIONS
+        context['page_size'] = get_page_size(self.request, default=100, options=JOB_PAGE_SIZE_OPTIONS)
+        context['page_size_options'] = JOB_PAGE_SIZE_OPTIONS
         for job in context.get("jobs", []):
             attach_job_dual_classification_audit(job)
         if context.get('is_paginated'):
@@ -1421,7 +1456,7 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
     pipeline_tab_page_size = 100
 
     def _get_pipeline_paginate_by(self, request):
-        return get_page_size(request, default=self.pipeline_tab_page_size)
+        return get_page_size(request, default=self.pipeline_tab_page_size, options=JOB_PAGE_SIZE_OPTIONS)
 
     def _paginate_pipeline_queryset(self, request, qs, page_num=1):
         paginator = Paginator(qs, self._get_pipeline_paginate_by(request))
@@ -1441,23 +1476,40 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         age_24h = now - timezone.timedelta(hours=24)
         age_6h = now - timezone.timedelta(hours=6)
         age_1h = now - timezone.timedelta(hours=1)
-        pool_filtered_total = qs.count()
-        pool_high = qs.filter(validation_score__gte=80).count()
-        pool_review = qs.filter(validation_score__gte=50, validation_score__lt=80).count()
-        pool_flagged = qs.filter(validation_score__lt=50).count()
-        pool_unscored = qs.filter(validation_score__isnull=True).count()
-        pool_auto_lane = qs.filter(vet_lane=Job.VetLane.AUTO).count()
-        pool_human_lane = qs.filter(vet_lane=Job.VetLane.HUMAN).count()
-        pool_blocked_lane = qs.filter(vet_lane=Job.VetLane.BLOCKED).count()
-        pool_blocked_gate = qs.filter(gate_status=Job.GateStatus.BLOCKED).count()
-        pool_aging_lt_1h = qs.filter(queue_entered_at__gte=age_1h).count()
-        pool_aging_1_6h = qs.filter(queue_entered_at__lt=age_1h, queue_entered_at__gte=age_6h).count()
-        pool_aging_6_24h = qs.filter(queue_entered_at__lt=age_6h, queue_entered_at__gte=age_24h).count()
-        pool_aging_gt_24h = qs.filter(queue_entered_at__lt=age_24h).count()
+        pool_metrics = qs.aggregate(
+            filtered_total=Count("id"),
+            high=Count("id", filter=Q(validation_score__gte=80)),
+            review=Count("id", filter=Q(validation_score__gte=50, validation_score__lt=80)),
+            flagged=Count("id", filter=Q(validation_score__lt=50)),
+            unscored=Count("id", filter=Q(validation_score__isnull=True)),
+            auto_lane=Count("id", filter=Q(vet_lane=Job.VetLane.AUTO)),
+            human_lane=Count("id", filter=Q(vet_lane=Job.VetLane.HUMAN)),
+            blocked_lane=Count("id", filter=Q(vet_lane=Job.VetLane.BLOCKED)),
+            gate_eligible=Count("id", filter=Q(gate_status=Job.GateStatus.ELIGIBLE)),
+            gate_review=Count("id", filter=Q(gate_status=Job.GateStatus.REVIEW)),
+            gate_blocked=Count("id", filter=Q(gate_status=Job.GateStatus.BLOCKED)),
+            aging_lt_1h=Count("id", filter=Q(queue_entered_at__gte=age_1h)),
+            aging_1_6h=Count("id", filter=Q(queue_entered_at__lt=age_1h, queue_entered_at__gte=age_6h)),
+            aging_6_24h=Count("id", filter=Q(queue_entered_at__lt=age_6h, queue_entered_at__gte=age_24h)),
+            aging_gt_24h=Count("id", filter=Q(queue_entered_at__lt=age_24h)),
+        )
+        pool_filtered_total = pool_metrics["filtered_total"]
+        pool_high = pool_metrics["high"]
+        pool_review = pool_metrics["review"]
+        pool_flagged = pool_metrics["flagged"]
+        pool_unscored = pool_metrics["unscored"]
+        pool_auto_lane = pool_metrics["auto_lane"]
+        pool_human_lane = pool_metrics["human_lane"]
+        pool_blocked_lane = pool_metrics["blocked_lane"]
+        pool_blocked_gate = pool_metrics["gate_blocked"]
+        pool_aging_lt_1h = pool_metrics["aging_lt_1h"]
+        pool_aging_1_6h = pool_metrics["aging_1_6h"]
+        pool_aging_6_24h = pool_metrics["aging_6_24h"]
+        pool_aging_gt_24h = pool_metrics["aging_gt_24h"]
         pool_gate_summary = {
-            "eligible": qs.filter(gate_status=Job.GateStatus.ELIGIBLE).count(),
-            "review": qs.filter(gate_status=Job.GateStatus.REVIEW).count(),
-            "blocked": qs.filter(gate_status=Job.GateStatus.BLOCKED).count(),
+            "eligible": pool_metrics["gate_eligible"],
+            "review": pool_metrics["gate_review"],
+            "blocked": pool_metrics["gate_blocked"],
         }
         if score_tab == 'high':
             qs = qs.filter(validation_score__gte=80)
@@ -1540,7 +1592,7 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
                 'filter_date_from': request.GET.get('date_from') or '',
                 'filter_date_to': request.GET.get('date_to') or '',
                 'page_size': self._get_pipeline_paginate_by(request),
-                'page_size_options': PAGE_SIZE_OPTIONS,
+                'page_size_options': JOB_PAGE_SIZE_OPTIONS,
             },
         }
 
@@ -1570,6 +1622,50 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
             'pipeline_tab_has_next': page_obj.has_next() if page_obj else False,
             'pipeline_tab_next_page': page_obj.next_page_number() if page_obj and page_obj.has_next() else None,
             'pipeline_tab_total_filtered': paginator.count,
+        }
+
+    def _build_catalog_page_context(self, request, page_num=1):
+        qs = apply_job_list_filters(
+            _job_catalog_base_queryset().select_related('posted_by', 'company_obj').prefetch_related('marketing_roles'),
+            request,
+        ).order_by('-created_at').annotate(application_count=Count('submissions'))
+        paginator, page_obj = self._paginate_pipeline_queryset(request, qs, page_num)
+        jobs = page_obj.object_list if page_obj else []
+        full_qs = _get_job_list_queryset(request)
+        status_counts = full_qs.order_by().values('status').annotate(count=Count('status'))
+        summary = {'OPEN': 0, 'CLOSED': 0, 'DRAFT': 0, 'POOL': 0}
+        for row in status_counts:
+            code = row['status']
+            if code in summary:
+                summary[code] = row['count']
+        summary['POOL'] = Job.objects.filter(status=Job.Status.POOL, is_archived=False).count()
+        qd = request.GET.copy()
+        qd.pop('page', None)
+        pagination_query = qd.urlencode()
+        for job in jobs:
+            attach_job_dual_classification_audit(job)
+        return {
+            'jobs': jobs,
+            'tab_jobs': jobs,
+            'page_obj': page_obj,
+            'is_paginated': bool(page_obj and paginator.num_pages > 1),
+            'pagination_pages': build_pagination_window(page_obj) if page_obj and paginator.num_pages > 1 else [],
+            'pagination_query': pagination_query,
+            'status_summary': summary,
+            'total_jobs': full_qs.count(),
+            'marketing_roles': MarketingRole.objects.all(),
+            'selected_role': request.GET.get('role', ''),
+            'selected_status': request.GET.get('status', ''),
+            'selected_job_type': request.GET.get('job_type', ''),
+            'selected_location': request.GET.get('location', ''),
+            'selected_possibly_filled': request.GET.get('possibly_filled', ''),
+            'selected_link_live': request.GET.get('link_live', ''),
+            'selected_country': _canonical_job_country(request.GET.get('country', ''))[0],
+            'selected_department': request.GET.get('department', ''),
+            'department_choices': Job.Department.choices,
+            'country_options': _build_job_country_options(),
+            'page_size': self._get_pipeline_paginate_by(request),
+            'page_size_options': JOB_PAGE_SIZE_OPTIONS,
         }
 
     def _pipeline_rows_json_response(self, request, page_context, template_name):
@@ -1685,7 +1781,7 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
             legacy_subtab = (request.GET.get('_subtab', '') or '').strip().lower()
             if legacy_subtab in {"jobs", "batches", "companies", "stats", "insights"}:
                 tab = "raw"
-        if tab not in {"pool", "raw", "live", "archived"}:
+        if tab not in {"pool", "raw", "live", "archived", "catalog"}:
             tab = "pool"
         q = (request.GET.get('q') or '').strip()
         search_by = (request.GET.get('search_by') or 'title').strip()
@@ -1712,7 +1808,7 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
 
         raw_selected_stage = (request.GET.get("stage") or "").strip().upper()
 
-        # ── Summary stats (always computed) ─────────────────────────────────
+        # ── Summary stats ───────────────────────────────────────────────────
         from harvest.models import RawJob, FetchBatch
         from harvest.services.pipeline_snapshot import (
             load_rawjobs_dashboard_stats,
@@ -1730,61 +1826,87 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         from harvest.runtime_config import get_ready_stage_min_confidence
 
         raw_stats = load_rawjobs_dashboard_stats(force_refresh=False)
-        raw_insights = raw_jobs_workflow_insights()
-        raw_base_qs = production_rawjobs_queryset()
         raw_total = raw_stats.get("total", 0)
         raw_test_total = raw_stats.get("test_rows")
         if raw_test_total is None:
             raw_test_total = RawJob.objects.filter(is_test_run=True).count()
-        raw_funnel = (raw_insights or {}).get("funnel") or build_funnel_counts(raw_base_qs)
-        ready_min_conf = get_ready_stage_min_confidence()
-        raw_ready_q = ready_stage_q(min_conf=ready_min_conf)
-        raw_qualified_pending = raw_base_qs.filter(raw_ready_q, sync_status=RawJob.SyncStatus.PENDING).count()
-        raw_qualified_synced = raw_base_qs.filter(raw_ready_q, sync_status=RawJob.SyncStatus.SYNCED).count()
-        raw_pending_total = raw_stats.get("pending", 0)
-        raw_blocked_missing_jd = raw_base_qs.filter(
-            sync_status=RawJob.SyncStatus.PENDING,
-            has_description=False,
-            is_cold=False,
-            jd_fetch_skipped=False,
-        ).exclude(filter_decision__in=["COLD", "NO_MATCH"]).count()
-        raw_blocked_filtered_out = raw_base_qs.filter(
-            sync_status=RawJob.SyncStatus.PENDING,
-        ).filter(filtered_out_q()).count()
-        raw_blocked_inactive = raw_base_qs.filter(sync_status=RawJob.SyncStatus.PENDING, is_active=False).count()
-        raw_blocked_low_conf = (
-            raw_base_qs.filter(sync_status=RawJob.SyncStatus.PENDING, has_description=True, is_active=True)
-            .filter(is_cold=False, jd_fetch_skipped=False)
-            .exclude(filter_decision__in=["COLD", "NO_MATCH"])
-            .filter(effective_classification_q(min_conf=0.01))
-            .exclude(effective_classification_q(min_conf=ready_min_conf))
-            .count()
+        raw_funnel = {}
+        raw_gate_summary = {}
+        raw_country_code_options = []
+        raw_selected_country_code = (request.GET.get("country_code") or "").strip()
+        raw_selected_marketing_role = (request.GET.get("marketing_role") or "").strip()
+        raw_selected_include_test = (request.GET.get("include_test") or "").strip()
+        raw_marketing_roles = MarketingRole.objects.none()
+        if tab == "raw":
+            raw_insights = raw_jobs_workflow_insights()
+            raw_base_qs = production_rawjobs_queryset()
+            raw_funnel = (raw_insights or {}).get("funnel") or build_funnel_counts(raw_base_qs)
+            ready_min_conf = get_ready_stage_min_confidence()
+            raw_ready_q = ready_stage_q(min_conf=ready_min_conf)
+            raw_qualified_pending = raw_base_qs.filter(raw_ready_q, sync_status=RawJob.SyncStatus.PENDING).count()
+            raw_qualified_synced = raw_base_qs.filter(raw_ready_q, sync_status=RawJob.SyncStatus.SYNCED).count()
+            raw_pending_total = raw_stats.get("pending", 0)
+            raw_blocked_missing_jd = raw_base_qs.filter(
+                sync_status=RawJob.SyncStatus.PENDING,
+                has_description=False,
+                is_cold=False,
+                jd_fetch_skipped=False,
+            ).exclude(filter_decision__in=["COLD", "NO_MATCH"]).count()
+            raw_blocked_filtered_out = raw_base_qs.filter(
+                sync_status=RawJob.SyncStatus.PENDING,
+            ).filter(filtered_out_q()).count()
+            raw_blocked_inactive = raw_base_qs.filter(sync_status=RawJob.SyncStatus.PENDING, is_active=False).count()
+            raw_blocked_low_conf = (
+                raw_base_qs.filter(sync_status=RawJob.SyncStatus.PENDING, has_description=True, is_active=True)
+                .filter(is_cold=False, jd_fetch_skipped=False)
+                .exclude(filter_decision__in=["COLD", "NO_MATCH"])
+                .filter(effective_classification_q(min_conf=0.01))
+                .exclude(effective_classification_q(min_conf=ready_min_conf))
+                .count()
+            )
+            raw_duplicates_total = (raw_insights or {}).get("duplicates", {}).get("total")
+            if raw_duplicates_total is None:
+                raw_duplicates_total = raw_base_qs.filter(sync_status=RawJob.SyncStatus.SKIPPED).count()
+            raw_gate_summary = {
+                "pending_total": raw_pending_total,
+                "qualified_pending": raw_qualified_pending,
+                "qualified_synced": raw_qualified_synced,
+                "blocked_missing_jd": raw_blocked_missing_jd,
+                "blocked_filtered_out": raw_blocked_filtered_out,
+                "blocked_inactive": raw_blocked_inactive,
+                "blocked_low_conf": raw_blocked_low_conf,
+                "duplicates": raw_duplicates_total,
+                "test_rows": raw_test_total,
+            }
+            raw_country_code_options = (
+                raw_base_qs.exclude(country_code="")
+                .values_list("country_code", flat=True)
+                .distinct()
+                .order_by("country_code")
+            )
+            raw_marketing_roles = MarketingRole.objects.filter(is_active=True).order_by("name")
+
+        job_summary = Job.objects.aggregate(
+            pool_total=Count("id", filter=Q(status=Job.Status.POOL, is_archived=False)),
+            live_total=Count("id", filter=Q(status=Job.Status.OPEN, is_archived=False)),
+            archived_total=Count("id", filter=Q(is_archived=True)),
+            gate_eligible=Count("id", filter=Q(status=Job.Status.POOL, is_archived=False, gate_status=Job.GateStatus.ELIGIBLE)),
+            gate_review=Count("id", filter=Q(status=Job.Status.POOL, is_archived=False, gate_status=Job.GateStatus.REVIEW)),
+            gate_blocked=Count("id", filter=Q(status=Job.Status.POOL, is_archived=False, gate_status=Job.GateStatus.BLOCKED)),
+            lane_auto=Count("id", filter=Q(status=Job.Status.POOL, is_archived=False, vet_lane=Job.VetLane.AUTO)),
+            lane_human=Count("id", filter=Q(status=Job.Status.POOL, is_archived=False, vet_lane=Job.VetLane.HUMAN)),
+            lane_blocked=Count("id", filter=Q(status=Job.Status.POOL, is_archived=False, vet_lane=Job.VetLane.BLOCKED)),
         )
-        raw_duplicates_total = (raw_insights or {}).get("duplicates", {}).get("total")
-        if raw_duplicates_total is None:
-            raw_duplicates_total = raw_base_qs.filter(sync_status=RawJob.SyncStatus.SKIPPED).count()
-        raw_gate_summary = {
-            "pending_total": raw_pending_total,
-            "qualified_pending": raw_qualified_pending,
-            "qualified_synced": raw_qualified_synced,
-            "blocked_missing_jd": raw_blocked_missing_jd,
-            "blocked_filtered_out": raw_blocked_filtered_out,
-            "blocked_inactive": raw_blocked_inactive,
-            "blocked_low_conf": raw_blocked_low_conf,
-            "duplicates": raw_duplicates_total,
-            "test_rows": raw_test_total,
-        }
-        pool_total = Job.objects.filter(status=Job.Status.POOL, is_archived=False).count()
-        pool_qs_all = Job.objects.filter(status=Job.Status.POOL, is_archived=False)
-        live_total = Job.objects.filter(status=Job.Status.OPEN, is_archived=False).count()
-        archived_total = Job.objects.filter(is_archived=True).count()
+        pool_total = job_summary["pool_total"]
+        live_total = job_summary["live_total"]
+        archived_total = job_summary["archived_total"]
         vet_gate_summary = {
-            "eligible": pool_qs_all.filter(gate_status=Job.GateStatus.ELIGIBLE).count(),
-            "review": pool_qs_all.filter(gate_status=Job.GateStatus.REVIEW).count(),
-            "blocked": pool_qs_all.filter(gate_status=Job.GateStatus.BLOCKED).count(),
-            "auto_lane": pool_qs_all.filter(vet_lane=Job.VetLane.AUTO).count(),
-            "human_lane": pool_qs_all.filter(vet_lane=Job.VetLane.HUMAN).count(),
-            "blocked_lane": pool_qs_all.filter(vet_lane=Job.VetLane.BLOCKED).count(),
+            "eligible": job_summary["gate_eligible"],
+            "review": job_summary["gate_review"],
+            "blocked": job_summary["gate_blocked"],
+            "auto_lane": job_summary["lane_auto"],
+            "human_lane": job_summary["lane_human"],
+            "blocked_lane": job_summary["lane_blocked"],
         }
 
         # Last harvest batch info
@@ -1792,6 +1914,7 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
 
         # ── Tab-specific data ────────────────────────────────────────────────
         tab_jobs = None
+        catalog_context = {}
         tab_raw = None
         lane_tab = "all"
         score_tab = "all"
@@ -1961,6 +2084,9 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
             pipeline_tab_has_next = archived_context['pipeline_tab_has_next']
             pipeline_tab_next_page = archived_context['pipeline_tab_next_page']
             pipeline_tab_total_filtered = archived_context['pipeline_tab_total_filtered']
+        elif tab == 'catalog':
+            catalog_context = self._build_catalog_page_context(request)
+            tab_jobs = catalog_context['tab_jobs']
 
         active_filter_chips: list[tuple[str, str]] = []
         if q:
@@ -2026,6 +2152,26 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
                 elif key == "page_size":
                     display_value = f"{value}/page"
                 active_filter_chips.append((pool_filter_label_map.get(key, key.replace("_", " ").title()), display_value))
+        if tab == "catalog":
+            catalog_filter_map = {
+                "role": "Role",
+                "status": "Status",
+                "job_type": "Type",
+                "location": "Location",
+                "possibly_filled": "Posting status",
+                "link_live": "Link check",
+                "country": "Country",
+                "department": "Department",
+                "page_size": "Records",
+                "search": "Search",
+            }
+            for key in ("role", "status", "job_type", "location", "possibly_filled", "link_live", "country", "department", "page_size", "search"):
+                value = (request.GET.get(key) or "").strip()
+                if not value:
+                    continue
+                if key == "page_size":
+                    value = f"{value}/page"
+                active_filter_chips.append((catalog_filter_map[key], value))
 
         ctx = {
             'tab': tab,
@@ -2053,17 +2199,13 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
             'pipeline_tab_next_page': pipeline_tab_next_page if tab in {"pool", "live", "archived"} else None,
             'pipeline_tab_total_filtered': pipeline_tab_total_filtered if tab in {"pool", "live", "archived"} else 0,
             'vet_gate_summary': vet_gate_summary,
-            'raw_country_code_options': (
-                raw_base_qs.exclude(country_code="")
-                .values_list("country_code", flat=True)
-                .distinct()
-                .order_by("country_code")
-            ),
-            'raw_marketing_roles': MarketingRole.objects.filter(is_active=True).order_by("name"),
-            'raw_selected_country_code': (request.GET.get("country_code") or "").strip(),
-            'raw_selected_marketing_role': (request.GET.get("marketing_role") or "").strip(),
-            'raw_selected_include_test': (request.GET.get("include_test") or "").strip(),
+            'raw_country_code_options': raw_country_code_options,
+            'raw_marketing_roles': raw_marketing_roles,
+            'raw_selected_country_code': raw_selected_country_code,
+            'raw_selected_marketing_role': raw_selected_marketing_role,
+            'raw_selected_include_test': raw_selected_include_test,
         }
+        ctx.update(catalog_context)
         if tab == 'pool':
             ctx.update(pool_extra)
 

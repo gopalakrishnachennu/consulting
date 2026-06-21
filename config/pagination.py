@@ -3,11 +3,12 @@
 PAGE_SIZE_OPTIONS = (100, 300, 500, 700)
 
 
-def get_page_size(request, default=100):
+def get_page_size(request, default=100, options=None):
     raw = (request.GET.get("page_size") or "").strip()
+    choices = tuple(options or PAGE_SIZE_OPTIONS)
     if raw.isdigit():
         value = int(raw)
-        if value in PAGE_SIZE_OPTIONS:
+        if value in choices:
             return value
     return default
 

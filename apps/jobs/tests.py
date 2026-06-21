@@ -266,17 +266,17 @@ class JobsPipelinePoolParityTests(TestCase):
                 "job_type": Job.JobType.FULL_TIME,
                 "job_source": "LinkedIn",
                 "date_from": (timezone.now() - timezone.timedelta(days=1)).date().isoformat(),
-                "page_size": "300",
+                "page_size": "170",
             },
         )
 
         self.assertEqual(response.status_code, 200)
         tab_jobs = list(response.context["tab_jobs"])
         self.assertEqual([job.pk for job in tab_jobs], [keep.pk])
-        self.assertEqual(response.context["page_size"], 300)
+        self.assertEqual(response.context["page_size"], 170)
         self.assertContains(response, "Advanced vetting filters")
         self.assertContains(response, "Pool Reviewer")
-        self.assertContains(response, "300/page")
+        self.assertContains(response, "170/page")
 
 
 @patch("jobs.tasks.run_job_validation.delay")
@@ -451,7 +451,7 @@ class JobListUrlHealthFilterTests(TestCase):
 
     def test_filter_link_not_live(self):
         self.client.login(username='emp1', password='testpass')
-        url = reverse('job-list') + '?link_live=0'
+        url = reverse('jobs-pipeline') + '?tab=catalog&link_live=0'
         resp = self.client.get(url)
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, 'Dead posting')
@@ -459,7 +459,7 @@ class JobListUrlHealthFilterTests(TestCase):
 
     def test_filter_possibly_filled(self):
         self.client.login(username='emp1', password='testpass')
-        url = reverse('job-list') + '?possibly_filled=1'
+        url = reverse('jobs-pipeline') + '?tab=catalog&possibly_filled=1'
         resp = self.client.get(url)
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, 'Dead posting')
@@ -467,7 +467,7 @@ class JobListUrlHealthFilterTests(TestCase):
 
     def test_filter_combined_and_logic(self):
         self.client.login(username='emp1', password='testpass')
-        url = reverse('job-list') + '?possibly_filled=1&link_live=0'
+        url = reverse('jobs-pipeline') + '?tab=catalog&possibly_filled=1&link_live=0'
         resp = self.client.get(url)
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, 'Dead posting')
@@ -521,7 +521,7 @@ class JobListCountryNormalizationTests(TestCase):
 
     def test_country_dropdown_collapses_duplicate_us_values(self):
         self.client.login(username="emp_country", password="testpass")
-        resp = self.client.get(reverse("job-list"))
+        resp = self.client.get(reverse("jobs-pipeline"), {"tab": "catalog"})
         self.assertEqual(resp.status_code, 200)
         options = resp.context["country_options"]
         us_options = [item for item in options if item["value"] == "US"]
@@ -530,7 +530,7 @@ class JobListCountryNormalizationTests(TestCase):
 
     def test_country_filter_uses_canonical_country_code(self):
         self.client.login(username="emp_country", password="testpass")
-        resp = self.client.get(reverse("job-list"), {"country": "US"})
+        resp = self.client.get(reverse("jobs-pipeline"), {"tab": "catalog", "country": "US"})
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, "US plain")
         self.assertContains(resp, "US short")
@@ -574,19 +574,26 @@ class JobListBoundaryTests(TestCase):
             description="D",
             original_link="https://example.com/pool-role",
         )
+        self.consultant = User.objects.create_user(
+            username="consult_boundary",
+            password="testpass",
+            role=User.Role.CONSULTANT,
+        )
 
     def test_job_list_points_pool_summary_to_pipeline(self):
         self.client.login(username="emp_boundary", password="testpass")
         resp = self.client.get(reverse("job-list"))
-        self.assertEqual(resp.status_code, 200)
-        self.assertContains(resp, f'{reverse("jobs-pipeline")}?tab=pool')
-        self.assertNotContains(resp, '<option value="POOL"', html=False)
-        self.assertNotContains(resp, "Pool role")
+        self.assertRedirects(resp, f'{reverse("jobs-pipeline")}?tab=catalog', fetch_redirect_response=False)
 
     def test_job_list_redirects_legacy_pool_filter_to_pipeline(self):
         self.client.login(username="emp_boundary", password="testpass")
         resp = self.client.get(reverse("job-list"), {"status": Job.Status.POOL})
         self.assertRedirects(resp, f'{reverse("jobs-pipeline")}?tab=pool', fetch_redirect_response=False)
+
+    def test_consultant_can_still_use_job_list(self):
+        self.client.login(username="consult_boundary", password="testpass")
+        resp = self.client.get(reverse("job-list"))
+        self.assertEqual(resp.status_code, 200)
 
 
 class MatchScoreStringTests(TestCase):

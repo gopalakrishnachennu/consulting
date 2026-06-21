@@ -275,7 +275,7 @@
                             <svg class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                             Live Jobs
                         </a>
-                        <a href="{% url 'job-list' %}" @click="jobsOpen = false"
+                        <a href="{% url 'jobs-pipeline' %}?tab=catalog" @click="jobsOpen = false"
                            class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition">
                             <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
                             All Jobs
@@ -342,7 +342,7 @@
                             {% with pool_count=pending_pool_count %}{% if pool_count %}<span class="ml-auto min-w-[1.25rem] h-5 px-1 bg-yellow-100 text-yellow-800 text-[11px] font-bold rounded-full flex items-center justify-center">{{ pool_count }}</span>{% endif %}{% endwith %}
                         </a>
                         <a href="{% url 'jobs-pipeline' %}?tab=live" @click="jobsOpenEmp = false" class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-green-50 hover:text-green-800 transition">Live Jobs</a>
-                        <a href="{% url 'job-list' %}" @click="jobsOpenEmp = false" class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition">All Jobs</a>
+                        <a href="{% url 'jobs-pipeline' %}?tab=catalog" @click="jobsOpenEmp = false" class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition">All Jobs</a>
                     </div>
                 </div>
                 <a href="{% url 'submission-list' %}"
