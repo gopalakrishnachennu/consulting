@@ -17,25 +17,26 @@
 
     {% if active_tab == 'designations' %}
     {% load feature_flags %}
-    <div class="bg-white rounded-lg shadow overflow-x-auto">
+    <div class="card-table">
+        <div class="table-scroll">
         <table class="min-w-full text-sm">
-            <thead>
-                <tr class="bg-gray-50 text-left">
-                    <th class="p-3 border-b">Feature</th>
+            <thead class="tbl-head">
+                <tr>
+                    <th class="tbl-th">Feature</th>
                     {% for d in designations %}
-                    <th class="p-3 border-b text-center whitespace-nowrap" title="{{ d.slug }}">{{ d.name }}</th>
+                    <th class="tbl-th text-center whitespace-nowrap" title="{{ d.slug }}">{{ d.name }}</th>
                     {% endfor %}
                 </tr>
             </thead>
             <tbody>
                 {% for f in matrix_flags %}
-                <tr class="border-b hover:bg-gray-50">
-                    <td class="p-3">
+                <tr class="tbl-row">
+                    <td class="tbl-td">
                         <div class="font-medium text-gray-900">{{ f.label }}</div>
                         <div class="text-xs text-gray-500">{{ f.key }}</div>
                     </td>
                     {% for d in designations %}
-                    <td class="p-2 text-center align-middle">
+                    <td class="tbl-td text-center align-middle">
                         <form method="post" class="inline">
                             {% csrf_token %}
                             <input type="hidden" name="action" value="designation_matrix">
@@ -50,22 +51,23 @@
                 {% endfor %}
             </tbody>
         </table>
+        </div>
         <p class="p-4 text-xs text-gray-500">Employee access requires the master flag, &quot;enabled for employees&quot;, and this matrix checkbox for the user&apos;s designation.</p>
     </div>
     {% elif active_tab == 'consultant' %}
-    <div class="bg-white rounded-lg shadow overflow-hidden">
+    <div class="card-table">
         {% include "settings/_feature_flag_table.html" with flags=consultant_flags tab="consultant" %}
     </div>
     {% elif active_tab == 'employee' %}
-    <div class="bg-white rounded-lg shadow overflow-hidden">
+    <div class="card-table">
         {% include "settings/_feature_flag_table.html" with flags=employee_flags tab="employee" %}
     </div>
     {% elif active_tab == 'ai' %}
-    <div class="bg-white rounded-lg shadow overflow-hidden">
+    <div class="card-table">
         {% include "settings/_feature_flag_table.html" with flags=ai_flags tab="ai" %}
     </div>
     {% elif active_tab == 'system' %}
-    <div class="bg-white rounded-lg shadow overflow-hidden">
+    <div class="card-table">
         {% include "settings/_feature_flag_table.html" with flags=system_flags tab="system" %}
     </div>
     {% endif %}

@@ -82,32 +82,33 @@
     <a href="{% url 'interview-list' %}" class="px-3 py-1.5 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50">Clear</a>
 </form>
 
-<div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
+<div class="card-table">
+    <div class="table-scroll">
+        <table class="min-w-full text-sm">
+            <thead class="tbl-head">
                 <tr>
-                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Date</th>
+                    <th class="tbl-th">Date</th>
                     {% if show_candidate_column %}
-                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Candidate</th>
+                    <th class="tbl-th">Candidate</th>
                     {% endif %}
-                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Job</th>
-                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Company</th>
-                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Round</th>
-                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Status</th>
-                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Actions</th>
+                    <th class="tbl-th">Job</th>
+                    <th class="tbl-th">Company</th>
+                    <th class="tbl-th">Round</th>
+                    <th class="tbl-th">Status</th>
+                    <th class="tbl-th">Actions</th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-gray-200">
+            <tbody class="divide-y divide-gray-100">
                 {% for interview in interviews %}
-                <tr>
-                    <td class="px-4 py-3 text-sm text-gray-600">{{ interview.scheduled_at|date:"Y-m-d H:i" }}</td>
+                <tr class="tbl-row">
+                    <td class="tbl-td text-gray-600 whitespace-nowrap">{{ interview.scheduled_at|date:"Y-m-d H:i" }}</td>
                     {% if show_candidate_column %}
-                    <td class="px-4 py-3 text-sm text-gray-800">{{ interview.consultant.user.get_full_name|default:interview.consultant.user.username }}</td>
+                    <td class="tbl-td text-gray-800">{{ interview.consultant.user.get_full_name|default:interview.consultant.user.username }}</td>
                     {% endif %}
-                    <td class="px-4 py-3 text-sm font-medium text-gray-800">{{ interview.job_title }}</td>
-                    <td class="px-4 py-3 text-sm text-gray-600">{{ interview.company }}</td>
-                    <td class="px-4 py-3 text-sm text-gray-600">{{ interview.get_round_display }}</td>
-                    <td class="px-4 py-3 text-sm">
+                    <td class="tbl-td font-medium text-gray-800">{{ interview.job_title }}</td>
+                    <td class="tbl-td text-gray-600">{{ interview.company }}</td>
+                    <td class="tbl-td text-gray-600">{{ interview.get_round_display }}</td>
+                    <td class="tbl-td">
                         <span class="px-2 py-0.5 rounded-full text-xs font-semibold
                             {% if interview.status == 'SCHEDULED' or interview.status == 'RESCHEDULED' %}
                                 bg-blue-100 text-blue-800
@@ -121,14 +122,14 @@
                             {{ interview.get_status_display }}
                         </span>
                     </td>
-                    <td class="px-4 py-3 text-sm space-x-3">
+                    <td class="tbl-td space-x-3 whitespace-nowrap">
                         <a class="text-gray-700 hover:underline" href="{% url 'interview-detail' interview.pk %}">View</a>
                         <a class="text-blue-600 hover:underline" href="{% url 'interview-edit' interview.pk %}">Edit</a>
                     </td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="{% if show_candidate_column %}7{% else %}6{% endif %}" class="px-4 py-6 text-center text-gray-500">No interviews found.</td>
+                    <td colspan="{% if show_candidate_column %}7{% else %}6{% endif %}" class="tbl-empty">No interviews found.</td>
                 </tr>
                 {% endfor %}
             </tbody>

@@ -1,0 +1,15 @@
+{% for job in tab_jobs %}
+<tr class="tbl-row opacity-75 hover:opacity-100">
+  <td class="tbl-td">
+    <div class="font-medium text-gray-600">{{ job.title }}</div>
+    {% if job.location %}<div class="text-xs text-gray-400 mt-0.5">{{ job.location }}</div>{% endif %}
+  </td>
+  <td class="tbl-td hidden md:table-cell text-xs text-gray-500">{{ job.company|default:"—" }}</td>
+  <td class="tbl-td hidden lg:table-cell text-xs text-gray-400">{% if job.archived_at %}{{ job.archived_at|date:"M j, Y" }}{% else %}—{% endif %}</td>
+  <td class="tbl-td-right">
+    <form method="post" action="{% url 'job-restore' job.pk %}">{% csrf_token %}
+      <button type="submit" class="btn-secondary btn-xs" style="color:#4f46e5;border-color:#c7d2fe;">Restore</button>
+    </form>
+  </td>
+</tr>
+{% endfor %}

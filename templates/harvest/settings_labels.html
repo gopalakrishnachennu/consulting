@@ -256,23 +256,23 @@
     <!-- ── Table ──────────────────────────────────────────────────────── -->
     <div class="card-table">
       {% if labels %}
-      <div class="overflow-x-auto overflow-y-auto max-h-[72vh]">
-        <table style="width:100%;border-collapse:collapse;min-width:980px;font-size:13px;">
-          <thead style="position:sticky;top:0;z-index:10;">
+      <div class="table-scroll overflow-y-auto max-h-[72vh]">
+        <table class="min-w-[980px] w-full text-sm" style="border-collapse:collapse;">
+          <thead class="tbl-head" style="position:sticky;top:0;z-index:10;">
             <tr style="background:#1e293b;border-bottom:2px solid #334155;">
-              <th style="padding:11px 14px;text-align:left;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;white-space:nowrap;min-width:200px;position:sticky;left:0;background:#1e293b;z-index:20;">Company</th>
-              <th style="padding:11px 14px;text-align:left;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;white-space:nowrap;min-width:140px;">Platform</th>
-              <th style="padding:11px 14px;text-align:left;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;white-space:nowrap;min-width:240px;">Tenant ID</th>
-              <th style="padding:11px 14px;text-align:left;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;white-space:nowrap;min-width:260px;">Career Link</th>
-              <th style="padding:11px 14px;text-align:center;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;white-space:nowrap;min-width:110px;">Status</th>
-              <th style="padding:11px 14px;text-align:center;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;white-space:nowrap;min-width:90px;">Confidence</th>
-              <th style="padding:11px 14px;text-align:center;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;white-space:nowrap;min-width:80px;">Verified</th>
-              <th style="padding:11px 14px;text-align:center;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;white-space:nowrap;min-width:130px;">Actions</th>
+              <th class="tbl-th" style="padding:11px 14px;text-align:left;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;white-space:nowrap;min-width:200px;position:sticky;left:0;background:#1e293b;z-index:20;">Company</th>
+              <th class="tbl-th" style="padding:11px 14px;text-align:left;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;white-space:nowrap;min-width:140px;">Platform</th>
+              <th class="tbl-th" style="padding:11px 14px;text-align:left;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;white-space:nowrap;min-width:240px;">Tenant ID</th>
+              <th class="tbl-th" style="padding:11px 14px;text-align:left;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;white-space:nowrap;min-width:260px;">Career Link</th>
+              <th class="tbl-th" style="padding:11px 14px;text-align:center;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;white-space:nowrap;min-width:110px;">Status</th>
+              <th class="tbl-th" style="padding:11px 14px;text-align:center;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;white-space:nowrap;min-width:90px;">Confidence</th>
+              <th class="tbl-th" style="padding:11px 14px;text-align:center;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;white-space:nowrap;min-width:80px;">Verified</th>
+              <th class="tbl-th" style="padding:11px 14px;text-align:center;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;white-space:nowrap;min-width:130px;">Actions</th>
             </tr>
           </thead>
           <tbody id="labels-tbody">
             {% for label in labels %}
-            <tr style="border-bottom:1px solid #f1f5f9;transition:background .1s;" class="lbl-row" data-pk="{{ label.pk }}" data-platform-pk="{{ label.platform.pk|default:'' }}"
+            <tr style="border-bottom:1px solid #f1f5f9;transition:background .1s;" class="lbl-row tbl-row" data-pk="{{ label.pk }}" data-platform-pk="{{ label.platform.pk|default:'' }}"
               onmouseover="this.style.background='#f8fafc';this.querySelectorAll('.sticky-cell').forEach(function(c){c.style.background='#f8fafc';});this.querySelectorAll('.edit-btn').forEach(function(b){b.style.opacity='1';});"
               onmouseout="this.style.background='';this.querySelectorAll('.sticky-cell').forEach(function(c){c.style.background='#fff';});this.querySelectorAll('.edit-btn').forEach(function(b){b.style.opacity='0';});">
 

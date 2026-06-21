@@ -1,0 +1,33 @@
+{% for job in tab_jobs %}
+<tr class="tbl-row">
+  <td class="tbl-td">
+    <div class="font-semibold text-gray-900"><a href="{% url 'job-detail' job.pk %}" class="hover:text-indigo-600 transition">{{ job.title }}</a></div>
+    <div class="text-xs text-gray-500 mt-0.5">{{ job.company|default:"—" }}{% if job.location %} &middot; {{ job.location }}{% endif %}</div>
+    {% if job.original_link_health == 'DEAD' %}
+    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-red-100 text-red-700 border border-red-200 rounded text-[11px] font-medium mt-1"
+          title="{{ job.original_link_reason|default:'Source posting appears gone' }}">
+      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      Link gone
+    </span>
+    {% elif job.original_link_health == 'INCONCLUSIVE' %}
+    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-100 text-amber-700 border border-amber-200 rounded text-[11px] font-medium mt-1"
+          title="{{ job.original_link_reason|default:'Checker could not confirm the posting yet' }}">
+      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      Link unconfirmed
+    </span>
+    {% endif %}
+  </td>
+  <td class="tbl-td hidden md:table-cell"><span class="badge-gray">{{ job.get_job_type_display }}</span></td>
+  <td class="tbl-td hidden lg:table-cell">
+    <span class="font-semibold text-gray-800">{{ job.sub_count }}</span>
+    <span class="text-gray-400 text-xs"> submission{{ job.sub_count|pluralize }}</span>
+  </td>
+  <td class="tbl-td hidden lg:table-cell text-xs text-gray-400">{{ job.created_at|date:"M j, Y" }}</td>
+  <td class="tbl-td-right">
+    <div class="flex items-center justify-end gap-1.5">
+      {% if job.original_link %}<a href="{{ job.original_link }}" target="_blank" class="btn-icon btn-xs" title="Open original posting">↗</a>{% endif %}
+      <a href="{% url 'job-update' job.pk %}" class="btn-ghost btn-xs">Edit</a>
+    </div>
+  </td>
+</tr>
+{% endfor %}

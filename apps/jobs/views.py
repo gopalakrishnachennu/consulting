@@ -9,6 +9,7 @@ from django.db.models import Q, Count
 from django.core.paginator import Paginator
 from django.http import HttpResponse, JsonResponse
 from django.conf import settings
+from django.template.loader import render_to_string
 import re
 import json
 import csv
@@ -1337,6 +1338,152 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
     tabbed command center.
     """
     template_name = 'jobs/pipeline.html'
+    pipeline_tab_page_size = 100
+
+    def _paginate_pipeline_queryset(self, qs, page_num=1):
+        paginator = Paginator(qs, self.pipeline_tab_page_size)
+        try:
+            page_obj = paginator.page(page_num)
+        except Exception:
+            return paginator, None
+        return paginator, page_obj
+
+    def _build_pool_page_context(self, request, q, search_by, page_num=1):
+        score_tab = request.GET.get('score', 'all')
+        lane_tab = request.GET.get('lane', 'all')
+        gate_tab = request.GET.get('gate', 'all').upper()
+        qs = Job.objects.filter(status=Job.Status.POOL, is_archived=False)
+        if q:
+            if search_by == "company":
+                qs = qs.filter(Q(company__icontains=q))
+            else:
+                qs = qs.filter(Q(title__icontains=q))
+        now = timezone.now()
+        age_24h = now - timezone.timedelta(hours=24)
+        age_6h = now - timezone.timedelta(hours=6)
+        age_1h = now - timezone.timedelta(hours=1)
+        pool_high = qs.filter(validation_score__gte=80).count()
+        pool_review = qs.filter(validation_score__gte=50, validation_score__lt=80).count()
+        pool_flagged = qs.filter(validation_score__lt=50).count()
+        pool_unscored = qs.filter(validation_score__isnull=True).count()
+        pool_auto_lane = qs.filter(vet_lane=Job.VetLane.AUTO).count()
+        pool_human_lane = qs.filter(vet_lane=Job.VetLane.HUMAN).count()
+        pool_blocked_lane = qs.filter(vet_lane=Job.VetLane.BLOCKED).count()
+        pool_blocked_gate = qs.filter(gate_status=Job.GateStatus.BLOCKED).count()
+        pool_aging_lt_1h = qs.filter(queue_entered_at__gte=age_1h).count()
+        pool_aging_1_6h = qs.filter(queue_entered_at__lt=age_1h, queue_entered_at__gte=age_6h).count()
+        pool_aging_6_24h = qs.filter(queue_entered_at__lt=age_6h, queue_entered_at__gte=age_24h).count()
+        pool_aging_gt_24h = qs.filter(queue_entered_at__lt=age_24h).count()
+        if score_tab == 'high':
+            qs = qs.filter(validation_score__gte=80)
+        elif score_tab == 'review':
+            qs = qs.filter(validation_score__gte=50, validation_score__lt=80)
+        elif score_tab == 'flagged':
+            qs = qs.filter(validation_score__lt=50)
+        elif score_tab == 'unscored':
+            qs = qs.filter(validation_score__isnull=True)
+        if lane_tab == 'auto':
+            qs = qs.filter(vet_lane=Job.VetLane.AUTO)
+        elif lane_tab == 'human':
+            qs = qs.filter(vet_lane=Job.VetLane.HUMAN)
+        elif lane_tab == 'blocked':
+            qs = qs.filter(vet_lane=Job.VetLane.BLOCKED)
+        elif lane_tab == 'aging':
+            qs = qs.filter(queue_entered_at__lt=age_24h)
+        if gate_tab == Job.GateStatus.ELIGIBLE:
+            qs = qs.filter(gate_status=Job.GateStatus.ELIGIBLE)
+        elif gate_tab == Job.GateStatus.REVIEW:
+            qs = qs.filter(gate_status=Job.GateStatus.REVIEW)
+        elif gate_tab == Job.GateStatus.BLOCKED:
+            qs = qs.filter(gate_status=Job.GateStatus.BLOCKED)
+        if lane_tab == 'approved_recent':
+            result_qs = Job.objects.filter(
+                status=Job.Status.OPEN,
+                is_archived=False,
+                vet_approved_at__isnull=False,
+            )
+            if q:
+                result_qs = result_qs.filter(Q(title__icontains=q) | Q(company__icontains=q))
+            result_qs = result_qs.select_related('posted_by', 'company_obj').order_by('-vet_approved_at')
+        else:
+            result_qs = qs.select_related('posted_by', 'company_obj').order_by('-created_at')
+        paginator, page_obj = self._paginate_pipeline_queryset(result_qs, page_num)
+        tab_jobs = page_obj.object_list if page_obj else []
+        return {
+            'tab_jobs': tab_jobs,
+            'page_obj': page_obj,
+            'pipeline_tab_has_next': page_obj.has_next() if page_obj else False,
+            'pipeline_tab_next_page': page_obj.next_page_number() if page_obj and page_obj.has_next() else None,
+            'pipeline_tab_total_filtered': paginator.count,
+            'score_tab': score_tab,
+            'lane_tab': lane_tab,
+            'gate_tab': gate_tab,
+            'pool_extra': {
+                'score_tab': score_tab,
+                'lane_tab': lane_tab,
+                'gate_tab': gate_tab,
+                'pool_high': pool_high,
+                'pool_review': pool_review,
+                'pool_flagged': pool_flagged,
+                'pool_unscored': pool_unscored,
+                'pool_auto_lane': pool_auto_lane,
+                'pool_human_lane': pool_human_lane,
+                'pool_blocked_lane': pool_blocked_lane,
+                'pool_blocked_gate': pool_blocked_gate,
+                'pool_aging_lt_1h': pool_aging_lt_1h,
+                'pool_aging_1_6h': pool_aging_1_6h,
+                'pool_aging_6_24h': pool_aging_6_24h,
+                'pool_aging_gt_24h': pool_aging_gt_24h,
+            },
+        }
+
+    def _build_live_page_context(self, q, page_num=1):
+        qs = Job.objects.filter(status=Job.Status.OPEN, is_archived=False)
+        if q:
+            qs = qs.filter(Q(title__icontains=q) | Q(company__icontains=q))
+        qs = qs.select_related('posted_by', 'company_obj').annotate(sub_count=Count('submissions')).order_by('-created_at')
+        paginator, page_obj = self._paginate_pipeline_queryset(qs, page_num)
+        return {
+            'tab_jobs': page_obj.object_list if page_obj else [],
+            'page_obj': page_obj,
+            'pipeline_tab_has_next': page_obj.has_next() if page_obj else False,
+            'pipeline_tab_next_page': page_obj.next_page_number() if page_obj and page_obj.has_next() else None,
+            'pipeline_tab_total_filtered': paginator.count,
+        }
+
+    def _build_archived_page_context(self, q, page_num=1):
+        qs = Job.objects.filter(is_archived=True)
+        if q:
+            qs = qs.filter(Q(title__icontains=q) | Q(company__icontains=q))
+        qs = qs.select_related('posted_by').order_by('-archived_at')
+        paginator, page_obj = self._paginate_pipeline_queryset(qs, page_num)
+        return {
+            'tab_jobs': page_obj.object_list if page_obj else [],
+            'page_obj': page_obj,
+            'pipeline_tab_has_next': page_obj.has_next() if page_obj else False,
+            'pipeline_tab_next_page': page_obj.next_page_number() if page_obj and page_obj.has_next() else None,
+            'pipeline_tab_total_filtered': paginator.count,
+        }
+
+    def _pipeline_rows_json_response(self, request, page_context, template_name):
+        page_obj = page_context.get("page_obj")
+        if not page_obj:
+            return JsonResponse({
+                "rows_html": "",
+                "has_next": False,
+                "next_page": None,
+                "total": 0,
+                "num_pages": 0,
+            })
+        rows_html = render_to_string(template_name, page_context, request=request)
+        return JsonResponse({
+            "rows_html": rows_html,
+            "has_next": page_obj.has_next(),
+            "next_page": page_obj.next_page_number() if page_obj.has_next() else None,
+            "total": page_context.get("pipeline_tab_total_filtered", 0),
+            "num_pages": page_obj.paginator.num_pages,
+            "count": len(page_context.get("tab_jobs", [])),
+        })
 
     def _raw_json_response(self, request):
         from harvest.models import RawJob
@@ -1426,13 +1573,6 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         })
 
     def get(self, request):
-        if (
-            request.headers.get("X-Requested-With") == "XMLHttpRequest"
-            and (request.GET.get("tab") or "").strip().lower() == "raw"
-            and (request.GET.get("raw_json") or "").strip() == "1"
-        ):
-            return self._raw_json_response(request)
-
         tab = (request.GET.get('tab', '') or '').strip().lower()
         if not tab:
             legacy_subtab = (request.GET.get('_subtab', '') or '').strip().lower()
@@ -1442,6 +1582,27 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
             tab = "pool"
         q = (request.GET.get('q') or '').strip()
         search_by = (request.GET.get('search_by') or 'title').strip()
+        if (
+            request.headers.get("X-Requested-With") == "XMLHttpRequest"
+            and tab == "raw"
+            and (request.GET.get("raw_json") or "").strip() == "1"
+        ):
+            return self._raw_json_response(request)
+        if (
+            request.headers.get("X-Requested-With") == "XMLHttpRequest"
+            and (request.GET.get("pipeline_json") or "").strip() == "1"
+        ):
+            page_num = request.GET.get("page", 1)
+            if tab == "pool":
+                page_context = self._build_pool_page_context(request, q, search_by, page_num=page_num)
+                return self._pipeline_rows_json_response(request, page_context, "jobs/_pipeline_pool_rows.html")
+            if tab == "live":
+                page_context = self._build_live_page_context(q, page_num=page_num)
+                return self._pipeline_rows_json_response(request, page_context, "jobs/_pipeline_live_rows.html")
+            if tab == "archived":
+                page_context = self._build_archived_page_context(q, page_num=page_num)
+                return self._pipeline_rows_json_response(request, page_context, "jobs/_pipeline_archived_rows.html")
+
         raw_selected_stage = (request.GET.get("stage") or "").strip().upper()
 
         # ── Summary stats (always computed) ─────────────────────────────────
@@ -1528,6 +1689,9 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         lane_tab = "all"
         score_tab = "all"
         gate_tab = "all"
+        pipeline_tab_has_next = False
+        pipeline_tab_next_page = None
+        pipeline_tab_total_filtered = 0
         raw_filter_passthrough: list[tuple[str, str]] = []
         raw_stage_links: dict[str, str] = {}
         raw_blocker_links: dict[str, str] = {}
@@ -1667,91 +1831,29 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
             raw_total_filtered = raw_paginator.count
 
         elif tab == 'pool':
-            score_tab = request.GET.get('score', 'all')
-            lane_tab = request.GET.get('lane', 'all')
-            gate_tab = request.GET.get('gate', 'all').upper()
-            qs = Job.objects.filter(status=Job.Status.POOL, is_archived=False)
-            if q:
-                if search_by == "company":
-                    qs = qs.filter(Q(company__icontains=q))
-                else:
-                    qs = qs.filter(Q(title__icontains=q))
-            now = timezone.now()
-            age_24h = now - timezone.timedelta(hours=24)
-            age_6h = now - timezone.timedelta(hours=6)
-            age_1h = now - timezone.timedelta(hours=1)
-            pool_high = qs.filter(validation_score__gte=80).count()
-            pool_review = qs.filter(validation_score__gte=50, validation_score__lt=80).count()
-            pool_flagged = qs.filter(validation_score__lt=50).count()
-            pool_unscored = qs.filter(validation_score__isnull=True).count()
-            pool_auto_lane = qs.filter(vet_lane=Job.VetLane.AUTO).count()
-            pool_human_lane = qs.filter(vet_lane=Job.VetLane.HUMAN).count()
-            pool_blocked_lane = qs.filter(vet_lane=Job.VetLane.BLOCKED).count()
-            pool_blocked_gate = qs.filter(gate_status=Job.GateStatus.BLOCKED).count()
-            pool_aging_lt_1h = qs.filter(queue_entered_at__gte=age_1h).count()
-            pool_aging_1_6h = qs.filter(queue_entered_at__lt=age_1h, queue_entered_at__gte=age_6h).count()
-            pool_aging_6_24h = qs.filter(queue_entered_at__lt=age_6h, queue_entered_at__gte=age_24h).count()
-            pool_aging_gt_24h = qs.filter(queue_entered_at__lt=age_24h).count()
-            if score_tab == 'high':
-                qs = qs.filter(validation_score__gte=80)
-            elif score_tab == 'review':
-                qs = qs.filter(validation_score__gte=50, validation_score__lt=80)
-            elif score_tab == 'flagged':
-                qs = qs.filter(validation_score__lt=50)
-            elif score_tab == 'unscored':
-                qs = qs.filter(validation_score__isnull=True)
-            if lane_tab == 'auto':
-                qs = qs.filter(vet_lane=Job.VetLane.AUTO)
-            elif lane_tab == 'human':
-                qs = qs.filter(vet_lane=Job.VetLane.HUMAN)
-            elif lane_tab == 'blocked':
-                qs = qs.filter(vet_lane=Job.VetLane.BLOCKED)
-            elif lane_tab == 'aging':
-                qs = qs.filter(queue_entered_at__lt=age_24h)
-            if gate_tab == Job.GateStatus.ELIGIBLE:
-                qs = qs.filter(gate_status=Job.GateStatus.ELIGIBLE)
-            elif gate_tab == Job.GateStatus.REVIEW:
-                qs = qs.filter(gate_status=Job.GateStatus.REVIEW)
-            elif gate_tab == Job.GateStatus.BLOCKED:
-                qs = qs.filter(gate_status=Job.GateStatus.BLOCKED)
-            if lane_tab == 'approved_recent':
-                approved_qs = Job.objects.filter(status=Job.Status.OPEN, is_archived=False, vet_approved_at__isnull=False)
-                if q:
-                    approved_qs = approved_qs.filter(Q(title__icontains=q) | Q(company__icontains=q))
-                tab_jobs = approved_qs.select_related('posted_by', 'company_obj').order_by('-vet_approved_at')[:200]
-            else:
-                tab_jobs = qs.select_related('posted_by', 'company_obj').order_by('-created_at')[:200]
-            pool_extra = {
-                'score_tab': score_tab,
-                'lane_tab': lane_tab,
-                'gate_tab': gate_tab,
-                'pool_high': pool_high,
-                'pool_review': pool_review,
-                'pool_flagged': pool_flagged,
-                'pool_unscored': pool_unscored,
-                'pool_auto_lane': pool_auto_lane,
-                'pool_human_lane': pool_human_lane,
-                'pool_blocked_lane': pool_blocked_lane,
-                'pool_blocked_gate': pool_blocked_gate,
-                'pool_aging_lt_1h': pool_aging_lt_1h,
-                'pool_aging_1_6h': pool_aging_1_6h,
-                'pool_aging_6_24h': pool_aging_6_24h,
-                'pool_aging_gt_24h': pool_aging_gt_24h,
-            }
+            pool_context = self._build_pool_page_context(request, q, search_by)
+            tab_jobs = pool_context['tab_jobs']
+            score_tab = pool_context['score_tab']
+            lane_tab = pool_context['lane_tab']
+            gate_tab = pool_context['gate_tab']
+            pool_extra = pool_context['pool_extra']
+            pipeline_tab_has_next = pool_context['pipeline_tab_has_next']
+            pipeline_tab_next_page = pool_context['pipeline_tab_next_page']
+            pipeline_tab_total_filtered = pool_context['pipeline_tab_total_filtered']
 
         elif tab == 'live':
-            qs = Job.objects.filter(status=Job.Status.OPEN, is_archived=False)
-            if q:
-                qs = qs.filter(Q(title__icontains=q) | Q(company__icontains=q))
-            tab_jobs = qs.select_related('posted_by', 'company_obj').annotate(
-                sub_count=Count('submissions')
-            ).order_by('-created_at')[:200]
+            live_context = self._build_live_page_context(q)
+            tab_jobs = live_context['tab_jobs']
+            pipeline_tab_has_next = live_context['pipeline_tab_has_next']
+            pipeline_tab_next_page = live_context['pipeline_tab_next_page']
+            pipeline_tab_total_filtered = live_context['pipeline_tab_total_filtered']
 
         elif tab == 'archived':
-            qs = Job.objects.filter(is_archived=True)
-            if q:
-                qs = qs.filter(Q(title__icontains=q) | Q(company__icontains=q))
-            tab_jobs = qs.select_related('posted_by').order_by('-archived_at')[:200]
+            archived_context = self._build_archived_page_context(q)
+            tab_jobs = archived_context['tab_jobs']
+            pipeline_tab_has_next = archived_context['pipeline_tab_has_next']
+            pipeline_tab_next_page = archived_context['pipeline_tab_next_page']
+            pipeline_tab_total_filtered = archived_context['pipeline_tab_total_filtered']
 
         active_filter_chips: list[tuple[str, str]] = []
         if q:
@@ -1812,6 +1914,9 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
             'raw_has_next': raw_has_next if tab == "raw" else False,
             'raw_next_page': raw_next_page if tab == "raw" else None,
             'raw_total_filtered': raw_total_filtered if tab == "raw" else 0,
+            'pipeline_tab_has_next': pipeline_tab_has_next if tab in {"pool", "live", "archived"} else False,
+            'pipeline_tab_next_page': pipeline_tab_next_page if tab in {"pool", "live", "archived"} else None,
+            'pipeline_tab_total_filtered': pipeline_tab_total_filtered if tab in {"pool", "live", "archived"} else 0,
             'vet_gate_summary': vet_gate_summary,
             'raw_country_code_options': (
                 raw_base_qs.exclude(country_code="")

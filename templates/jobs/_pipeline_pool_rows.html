@@ -1,0 +1,72 @@
+{% load tz %}
+{% for job in tab_jobs %}
+<tr x-data="{ open: false }" class="tbl-row">
+  <td class="tbl-td">
+    {% if lane_tab != 'approved_recent' %}
+      <input type="checkbox" name="job_ids" value="{{ job.pk }}" class="pool-cb w-4 h-4 rounded border-gray-300 text-blue-600">
+    {% else %}
+      <span class="text-xs text-slate-400">{{ forloop.counter }}</span>
+    {% endif %}
+  </td>
+  <td class="tbl-td">
+    <div class="font-semibold text-gray-900"><a href="{% url 'job-detail' job.pk %}" class="hover:text-indigo-600 transition" target="_blank">{{ job.title }}</a></div>
+    <div class="text-xs text-gray-500 mt-0.5">{{ job.company|default:"—" }}{% if job.location %} &middot; {{ job.location }}{% endif %}</div>
+    <div class="text-xs text-gray-400 mt-0.5">Added {{ job.created_at|localtime|date:"M j, Y" }}</div>
+  </td>
+  <td class="tbl-td">
+    {% if job.vet_lane == 'AUTO' %}<span class="badge-green font-bold">AUTO</span>
+    {% elif job.vet_lane == 'BLOCKED' %}<span class="badge-red font-bold">BLOCKED</span>
+    {% else %}<span class="badge-blue font-bold">HUMAN</span>{% endif %}
+  </td>
+  <td class="tbl-td">
+    {% if job.vet_priority_score is not None %}
+      {% with vp=job.vet_priority_score|floatformat:2 %}
+        {% if job.vet_priority_score >= 0.82 %}<span class="badge-green font-bold">{{ vp }}</span>
+        {% elif job.vet_priority_score >= 0.60 %}<span class="badge-yellow font-bold">{{ vp }}</span>
+        {% else %}<span class="badge-red font-bold">{{ vp }}</span>{% endif %}
+      {% endwith %}
+    {% elif job.validation_score is not None %}
+      <span class="badge-gray">{{ job.validation_score }}/100</span>
+    {% else %}
+      <span class="badge-gray">Pending…</span>
+    {% endif %}
+  </td>
+  <td class="tbl-td hidden md:table-cell text-xs text-slate-600">
+    DQ: {% if job.data_quality_score is not None %}{{ job.data_quality_score|floatformat:2 }}{% else %}—{% endif %}
+    <br>Trust: {% if job.trust_score is not None %}{{ job.trust_score|floatformat:2 }}{% else %}—{% endif %}
+    <br>Fit: {% if job.candidate_fit_score is not None %}{{ job.candidate_fit_score|floatformat:2 }}{% else %}—{% endif %}
+  </td>
+  <td class="tbl-td hidden lg:table-cell text-xs text-slate-500">
+    {% if job.pipeline_reason_code %}<span class="badge-gray">{{ job.pipeline_reason_code }}</span>{% else %}—{% endif %}
+  </td>
+  <td class="tbl-td hidden md:table-cell">
+    {% if job.original_link_health == 'LIVE' %}
+    <span class="badge-green" title="Source posting confirmed live{% if job.original_link_last_checked_at %} · checked {{ job.original_link_last_checked_at|date:'M j, H:i' }}{% endif %}"><span class="w-1.5 h-1.5 rounded-full bg-green-500 inline-block"></span>Active</span>
+    {% elif job.original_link_health == 'INCONCLUSIVE' %}
+    <span class="badge-yellow" title="{{ job.original_link_reason|default:'Checker could not confirm the posting yet' }}{% if job.original_link_last_checked_at %} · checked {{ job.original_link_last_checked_at|date:'M j, H:i' }}{% endif %}"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block"></span>Unconfirmed</span>
+    {% else %}
+    <span class="badge-red" title="{{ job.original_link_reason|default:'Source posting appears gone' }}{% if job.original_link_last_checked_at %} · checked {{ job.original_link_last_checked_at|date:'M j, H:i' }}{% endif %}"><span class="w-1.5 h-1.5 rounded-full bg-red-500 inline-block"></span>Gone</span>
+    {% endif %}
+  </td>
+  <td class="tbl-td-right">
+    <div class="flex items-center justify-end gap-1.5">
+      {% if job.original_link %}<a href="{{ job.original_link }}" target="_blank" class="btn-icon btn-xs" title="Open original posting">↗</a>{% endif %}
+      {% if lane_tab != 'approved_recent' %}
+        <form method="post" action="{% url 'job-approve' job.pk %}">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{% url 'jobs-pipeline' %}?tab=pool&lane={{ lane_tab }}&gate={{ gate_tab }}&score={{ score_tab }}">
+          <button type="submit" class="btn-success btn-xs">Approve</button>
+        </form>
+        <button type="button" @click="$dispatch('open-reject-modal', { jobId: {{ job.pk }}, jobTitle: '{{ job.title|escapejs }}' })"
+            class="btn-danger-soft btn-xs">Reject</button>
+        <form method="post" action="{% url 'job-revalidate' job.pk %}">
+          {% csrf_token %}
+          <button type="submit" title="Re-score" class="btn-ghost btn-xs">↻</button>
+        </form>
+      {% else %}
+        <span class="badge-green">Approved</span>
+      {% endif %}
+    </div>
+  </td>
+</tr>
+{% endfor %}

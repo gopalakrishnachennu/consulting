@@ -59,6 +59,95 @@ class JobsPipelineRouteOwnershipTests(SimpleTestCase):
         self.assertEqual(reverse("harvest-rawjobs"), "/harvest/raw-jobs/")
 
 
+class JobsPipelineIncrementalLoadingTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.employee = User.objects.create_user(
+            username="pipeline_loader_emp",
+            password="testpass",
+            role=User.Role.EMPLOYEE,
+        )
+        self.client.login(username="pipeline_loader_emp", password="testpass")
+
+    def _make_job(self, idx, **overrides):
+        defaults = {
+            "title": f"Pipeline Job {idx:03d}",
+            "company": "Pipeline Co",
+            "location": "Austin, TX",
+            "description": "Detailed job description",
+            "original_link": f"https://example.com/jobs/{idx}",
+            "posted_by": self.employee,
+            "status": Job.Status.POOL,
+            "gate_status": Job.GateStatus.ELIGIBLE,
+            "vet_lane": Job.VetLane.HUMAN,
+        }
+        defaults.update(overrides)
+        return Job.objects.create(**defaults)
+
+    def test_pool_tab_shows_incremental_loading_controls(self):
+        for idx in range(105):
+            self._make_job(idx)
+
+        response = self.client.get(reverse("jobs-pipeline"), {"tab": "pool"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["pipeline_tab_has_next"])
+        self.assertContains(response, 'id="pipeline-jobs-load-more-btn"')
+
+    def test_pool_pipeline_json_returns_next_page_rows(self):
+        for idx in range(205):
+            self._make_job(idx)
+
+        response = self.client.get(
+            reverse("jobs-pipeline"),
+            {"tab": "pool", "pipeline_json": "1", "page": 2},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["count"], 100)
+        self.assertTrue(payload["has_next"])
+        self.assertIn("Pipeline Job", payload["rows_html"])
+
+    def test_live_pipeline_json_returns_paginated_rows(self):
+        for idx in range(125):
+            self._make_job(idx, status=Job.Status.OPEN, original_link=f"https://example.com/live/{idx}")
+
+        response = self.client.get(
+            reverse("jobs-pipeline"),
+            {"tab": "live", "pipeline_json": "1", "page": 2},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["count"], 25)
+        self.assertFalse(payload["has_next"])
+        self.assertIn("Edit", payload["rows_html"])
+
+    def test_archived_pipeline_json_returns_paginated_rows(self):
+        for idx in range(120):
+            self._make_job(
+                idx,
+                is_archived=True,
+                archived_at=timezone.now(),
+                original_link=f"https://example.com/archived/{idx}",
+            )
+
+        response = self.client.get(
+            reverse("jobs-pipeline"),
+            {"tab": "archived", "pipeline_json": "1", "page": 2},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["count"], 20)
+        self.assertFalse(payload["has_next"])
+        self.assertIn("Restore", payload["rows_html"])
+
+
 @patch("jobs.tasks.run_job_validation.delay")
 @patch("jobs.views.ensure_parsed_jd")
 class JobManualRawBridgeTests(TestCase):

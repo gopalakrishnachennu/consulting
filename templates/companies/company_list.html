@@ -641,31 +641,31 @@
                 <a href="{% url 'company-export-csv' %}?{{ pagination_query }}" class="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 font-medium text-slate-600 hover:bg-slate-100">Export view</a>
             </div>
         </div>
-        <div class="overflow-x-auto">
+        <div class="table-scroll">
         <table id="company-engine-grid" class="min-w-[1320px] w-full text-sm">
-            <thead class="bg-slate-50">
+            <thead class="tbl-head bg-slate-50">
                 <tr class="border-b border-slate-200 text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                     {% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}
-                    <th class="company-grid-sticky-left px-4 py-3 w-12" style="left:0;">
+                    <th class="tbl-th company-grid-sticky-left px-4 py-3 w-12" style="left:0;">
                         <input type="checkbox" id="selectAll" class="rounded border-gray-300">
                     </th>
                     {% endif %}
-                    <th data-company-col="company" class="company-grid-sticky-left px-4 py-3 min-w-[290px]" style="left:{% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}3.5rem{% else %}0{% endif %};">
+                    <th data-company-col="company" class="tbl-th company-grid-sticky-left px-4 py-3 min-w-[290px]" style="left:{% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}3.5rem{% else %}0{% endif %};">
                         <a href="?{{ pagination_query }}&sort={% if selected_sort == 'name' %}name_desc{% else %}name{% endif %}" class="inline-flex items-center gap-1 hover:text-blue-600">
                             Company
                             {% if selected_sort == 'name' %}<span class="text-blue-600">↑</span>{% elif selected_sort == 'name_desc' %}<span class="text-blue-600">↓</span>{% endif %}
                         </a>
                     </th>
-                    <th data-company-col="ats" class="px-4 py-3 min-w-[230px]">ATS mapping</th>
-                    <th data-company-col="health" class="px-4 py-3 min-w-[170px]">Health</th>
-                    <th data-company-col="pipeline" class="px-4 py-3 min-w-[230px]">Pipeline</th>
-                    <th data-company-col="readiness" class="px-4 py-3 min-w-[150px]">Readiness</th>
-                    <th data-company-col="actions" class="company-grid-sticky-right px-4 py-3 min-w-[240px] text-right" style="right:0;">Actions</th>
+                    <th data-company-col="ats" class="tbl-th px-4 py-3 min-w-[230px]">ATS mapping</th>
+                    <th data-company-col="health" class="tbl-th px-4 py-3 min-w-[170px]">Health</th>
+                    <th data-company-col="pipeline" class="tbl-th px-4 py-3 min-w-[230px]">Pipeline</th>
+                    <th data-company-col="readiness" class="tbl-th px-4 py-3 min-w-[150px]">Readiness</th>
+                    <th data-company-col="actions" class="tbl-th-right company-grid-sticky-right px-4 py-3 min-w-[240px] text-right" style="right:0;">Actions</th>
                 </tr>
             </thead>
             <tbody>
                 {% for company in companies %}
-                <tr class="company-grid-row border-b border-slate-100 align-top hover:bg-slate-50/70" data-company-pk="{{ company.pk }}" {% if company.platform_label %}data-label-pk="{{ company.platform_label.pk }}" data-platform-pk="{{ company.platform_label.platform.pk|default:'' }}"{% endif %}>
+                <tr class="company-grid-row tbl-row border-b border-slate-100 align-top hover:bg-slate-50/70" data-company-pk="{{ company.pk }}" {% if company.platform_label %}data-label-pk="{{ company.platform_label.pk }}" data-platform-pk="{{ company.platform_label.platform.pk|default:'' }}"{% endif %}>
                     {% if request.user.is_superuser or request.user.role == 'ADMIN' or request.user.role == 'EMPLOYEE' %}
                     <td class="company-grid-sticky-left px-4 py-4" style="left:0;">
                         <input type="checkbox" class="company-checkbox rounded border-gray-300" value="{{ company.pk }}">

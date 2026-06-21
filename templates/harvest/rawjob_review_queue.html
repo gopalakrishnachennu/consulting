@@ -136,29 +136,29 @@
         </div>
       </div>
 
-      <div class="overflow-x-auto">
-        <table class="min-w-full divide-y divide-slate-200 text-sm">
-          <thead class="bg-slate-50">
+      <div class="table-scroll">
+        <table class="min-w-full text-sm">
+          <thead class="tbl-head">
             <tr>
-              <th class="px-4 py-3 text-left"><input type="checkbox" onclick="document.querySelectorAll('.snapshot-checkbox').forEach(cb => cb.checked = this.checked)" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"></th>
-              <th class="px-4 py-3 text-left font-semibold text-slate-600">Raw Job</th>
-              <th class="px-4 py-3 text-left font-semibold text-slate-600">Status</th>
-              <th class="px-4 py-3 text-left font-semibold text-slate-600">Providers</th>
-              <th class="px-4 py-3 text-left font-semibold text-slate-600">Conflicts</th>
-              <th class="px-4 py-3 text-left font-semibold text-slate-600">Audit</th>
-              <th class="px-4 py-3 text-right font-semibold text-slate-600">Action</th>
+              <th class="tbl-th"><input type="checkbox" onclick="document.querySelectorAll('.snapshot-checkbox').forEach(cb => cb.checked = this.checked)" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"></th>
+              <th class="tbl-th">Raw Job</th>
+              <th class="tbl-th">Status</th>
+              <th class="tbl-th">Providers</th>
+              <th class="tbl-th">Conflicts</th>
+              <th class="tbl-th">Audit</th>
+              <th class="tbl-th-right">Action</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-slate-100">
+          <tbody class="divide-y divide-gray-100">
             {% for snapshot in queue_page_obj %}
-            <tr class="align-top">
-              <td class="px-4 py-4"><input type="checkbox" name="snapshot_ids" value="{{ snapshot.pk }}" class="snapshot-checkbox rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"></td>
-              <td class="px-4 py-4">
+            <tr class="tbl-row align-top">
+              <td class="tbl-td"><input type="checkbox" name="snapshot_ids" value="{{ snapshot.pk }}" class="snapshot-checkbox rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"></td>
+              <td class="tbl-td">
                 <div class="font-semibold text-slate-900">{{ snapshot.raw_job.title|default:"Untitled RawJob" }}</div>
                 <div class="text-xs text-slate-500">{{ snapshot.raw_job.company_name|default:"Unknown company" }}</div>
                 <div class="mt-1 text-xs text-slate-400">#{{ snapshot.raw_job_id }} · {{ snapshot.raw_job.platform_slug|default:"unknown" }}</div>
               </td>
-              <td class="px-4 py-4">
+              <td class="tbl-td">
                 <div class="flex flex-wrap gap-2">
                   <span class="rounded-full px-2 py-0.5 text-xs font-semibold {% if snapshot.needs_review %}bg-rose-100 text-rose-700{% elif snapshot.ready_for_vetting %}bg-emerald-100 text-emerald-700{% else %}bg-amber-100 text-amber-700{% endif %}">
                     {{ snapshot.status }}
@@ -176,7 +176,7 @@
                 <div class="mt-2 text-xs text-rose-600">{{ snapshot.review_reason }}</div>
                 {% endif %}
               </td>
-              <td class="px-4 py-4">
+              <td class="tbl-td">
                 <div class="text-xs text-slate-600">Backend: {{ snapshot.backend_run.status|default:"—" }}</div>
                 <div class="mt-1 text-xs text-slate-600">
                   Secondary:
@@ -188,13 +188,13 @@
                 </div>
                 <div class="mt-1 text-xs text-slate-400">Confidence {{ snapshot.final_confidence|floatformat:2 }}</div>
               </td>
-              <td class="px-4 py-4">
+              <td class="tbl-td">
                 <div class="text-sm font-semibold text-slate-900">{{ snapshot.conflict_count }}</div>
                 {% if snapshot.review_reason %}
                 <div class="mt-1 text-xs text-slate-500">{{ snapshot.review_reason }}</div>
                 {% endif %}
               </td>
-              <td class="px-4 py-4">
+              <td class="tbl-td">
                 {% if snapshot.pushed_to_vetting_at %}
                 <div class="text-xs text-slate-700">Job #{{ snapshot.pushed_job_id|default:"—" }}</div>
                 <div class="mt-1 text-xs text-slate-500">{{ snapshot.pushed_to_vetting_at|date:"M j, Y H:i" }}</div>
@@ -205,7 +205,7 @@
                 <div class="text-xs text-slate-400">No downstream action yet</div>
                 {% endif %}
               </td>
-              <td class="px-4 py-4 text-right">
+              <td class="tbl-td-right">
                 <a href="{% url 'harvest-rawjob-detail' snapshot.raw_job_id %}" class="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-indigo-300 hover:text-indigo-700">
                   Open RawJob
                 </a>
@@ -213,7 +213,7 @@
             </tr>
             {% empty %}
             <tr>
-              <td colspan="7" class="px-6 py-10 text-center text-sm text-slate-500">No classification snapshots match the current queue filter.</td>
+              <td colspan="7" class="tbl-empty">No classification snapshots match the current queue filter.</td>
             </tr>
             {% endfor %}
           </tbody>

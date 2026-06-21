@@ -1,46 +1,46 @@
 {% if recent_fetch_runs %}
-<div id="recent-fetch-runs" class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mt-6">
+<div id="recent-fetch-runs" class="card-table mt-6">
   <div class="px-6 py-4 border-b border-gray-100">
     <h2 class="text-sm font-bold text-gray-900 flex items-center gap-2">
       <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10m-11 8h12a2 2 0 002-2V7a2 2 0 00-2-2H6a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
       Recent Fetch Runs
     </h2>
   </div>
-  <div class="overflow-x-auto">
+  <div class="table-scroll">
     <table class="min-w-full text-sm">
-      <thead class="bg-gray-50 text-left text-[10px] uppercase tracking-wider text-gray-500">
+      <thead class="tbl-head">
         <tr>
-          <th class="px-6 py-3 font-semibold">Started</th>
-          <th class="px-4 py-3 font-semibold">Platform</th>
-          <th class="px-4 py-3 font-semibold">Batch</th>
-          <th class="px-4 py-3 font-semibold">Status</th>
-          <th class="px-4 py-3 font-semibold">Scraped</th>
-          <th class="px-4 py-3 font-semibold">New</th>
-          <th class="px-4 py-3 font-semibold">Duration</th>
-          <th class="px-4 py-3 font-semibold">Error</th>
+          <th class="tbl-th">Started</th>
+          <th class="tbl-th">Platform</th>
+          <th class="tbl-th">Batch</th>
+          <th class="tbl-th">Status</th>
+          <th class="tbl-th">Scraped</th>
+          <th class="tbl-th">New</th>
+          <th class="tbl-th">Duration</th>
+          <th class="tbl-th">Error</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100">
         {% for run in recent_fetch_runs %}
-        <tr class="hover:bg-gray-50/70">
-          <td class="px-6 py-3 text-gray-700">
+        <tr class="tbl-row">
+          <td class="tbl-td text-gray-700">
             <div class="font-medium">{{ run.started_at|date:"M d, Y H:i" }}</div>
             <div class="mt-1 text-[10px] text-gray-400">trigger: {{ run.triggered_by|default:"MANUAL" }}</div>
           </td>
-          <td class="px-4 py-3 text-gray-700">
+          <td class="tbl-td text-gray-700">
             <div class="font-medium">{{ run.label.platform.name|default:"—" }}</div>
             {% if run.label.tenant_id %}
             <div class="mt-1 font-mono text-[10px] text-gray-400">{{ run.label.tenant_id|truncatechars:26 }}</div>
             {% endif %}
           </td>
-          <td class="px-4 py-3 text-gray-700">
+          <td class="tbl-td text-gray-700">
             {% if run.batch_id %}
             <a href="{% url 'harvest-batch-detail' run.batch_id %}" class="text-blue-600 hover:underline font-medium">Batch #{{ run.batch_id }}</a>
             {% else %}
             <span class="text-gray-400">—</span>
             {% endif %}
           </td>
-          <td class="px-4 py-3">
+          <td class="tbl-td">
             <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold
                 {% if run.status == 'SUCCESS' %}bg-emerald-100 text-emerald-700
                 {% elif run.status == 'PARTIAL' %}bg-amber-100 text-amber-700
@@ -56,10 +56,10 @@
               {{ run.get_status_display }}
             </span>
           </td>
-          <td class="px-4 py-3 text-gray-700">{{ run.jobs_found }}</td>
-          <td class="px-4 py-3 text-gray-700">{{ run.jobs_new }}</td>
-          <td class="px-4 py-3 text-gray-700">{% if run.duration_seconds %}<span class="font-medium">{{ run.duration_seconds }}s</span>{% else %}—{% endif %}</td>
-          <td class="px-4 py-3 text-xs text-gray-500">
+          <td class="tbl-td text-gray-700">{{ run.jobs_found }}</td>
+          <td class="tbl-td text-gray-700">{{ run.jobs_new }}</td>
+          <td class="tbl-td text-gray-700">{% if run.duration_seconds %}<span class="font-medium">{{ run.duration_seconds }}s</span>{% else %}—{% endif %}</td>
+          <td class="tbl-td text-xs text-gray-500">
             {% if run.error_message or run.issue_code %}
             <span class="text-red-600">{{ run.error_message|default:run.issue_code|truncatechars:80 }}</span>
             {% else %}

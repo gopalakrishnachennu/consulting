@@ -343,82 +343,21 @@
           <th class="tbl-th-right">Actions</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-gray-100">
-        {% for job in tab_jobs %}
-        <tr x-data="{ open: false }" class="tbl-row">
-          <td class="tbl-td">
-            {% if lane_tab != 'approved_recent' %}
-              <input type="checkbox" name="job_ids" value="{{ job.pk }}" class="pool-cb w-4 h-4 rounded border-gray-300 text-blue-600">
-            {% else %}
-              <span class="text-xs text-slate-400">{{ forloop.counter }}</span>
-            {% endif %}
-          </td>
-          <td class="tbl-td">
-            <div class="font-semibold text-gray-900"><a href="{% url 'job-detail' job.pk %}" class="hover:text-indigo-600 transition" target="_blank">{{ job.title }}</a></div>
-            <div class="text-xs text-gray-500 mt-0.5">{{ job.company|default:"—" }}{% if job.location %} &middot; {{ job.location }}{% endif %}</div>
-            <div class="text-xs text-gray-400 mt-0.5">Added {{ job.created_at|localtime|date:"M j, Y" }}</div>
-          </td>
-          <td class="tbl-td">
-            {% if job.vet_lane == 'AUTO' %}<span class="badge-green font-bold">AUTO</span>
-            {% elif job.vet_lane == 'BLOCKED' %}<span class="badge-red font-bold">BLOCKED</span>
-            {% else %}<span class="badge-blue font-bold">HUMAN</span>{% endif %}
-          </td>
-          <td class="tbl-td">
-            {% if job.vet_priority_score is not None %}
-              {% with vp=job.vet_priority_score|floatformat:2 %}
-                {% if job.vet_priority_score >= 0.82 %}<span class="badge-green font-bold">{{ vp }}</span>
-                {% elif job.vet_priority_score >= 0.60 %}<span class="badge-yellow font-bold">{{ vp }}</span>
-                {% else %}<span class="badge-red font-bold">{{ vp }}</span>{% endif %}
-              {% endwith %}
-            {% elif job.validation_score is not None %}
-              <span class="badge-gray">{{ job.validation_score }}/100</span>
-            {% else %}
-              <span class="badge-gray">Pending…</span>
-            {% endif %}
-          </td>
-          <td class="tbl-td hidden md:table-cell text-xs text-slate-600">
-            DQ: {% if job.data_quality_score is not None %}{{ job.data_quality_score|floatformat:2 }}{% else %}—{% endif %}
-            <br>Trust: {% if job.trust_score is not None %}{{ job.trust_score|floatformat:2 }}{% else %}—{% endif %}
-            <br>Fit: {% if job.candidate_fit_score is not None %}{{ job.candidate_fit_score|floatformat:2 }}{% else %}—{% endif %}
-          </td>
-          <td class="tbl-td hidden lg:table-cell text-xs text-slate-500">
-            {% if job.pipeline_reason_code %}<span class="badge-gray">{{ job.pipeline_reason_code }}</span>{% else %}—{% endif %}
-          </td>
-          <td class="tbl-td hidden md:table-cell">
-            {% if job.original_link_health == 'LIVE' %}
-            <span class="badge-green" title="Source posting confirmed live{% if job.original_link_last_checked_at %} · checked {{ job.original_link_last_checked_at|date:'M j, H:i' }}{% endif %}"><span class="w-1.5 h-1.5 rounded-full bg-green-500 inline-block"></span>Active</span>
-            {% elif job.original_link_health == 'INCONCLUSIVE' %}
-            <span class="badge-yellow" title="{{ job.original_link_reason|default:'Checker could not confirm the posting yet' }}{% if job.original_link_last_checked_at %} · checked {{ job.original_link_last_checked_at|date:'M j, H:i' }}{% endif %}"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block"></span>Unconfirmed</span>
-            {% else %}
-            <span class="badge-red" title="{{ job.original_link_reason|default:'Source posting appears gone' }}{% if job.original_link_last_checked_at %} · checked {{ job.original_link_last_checked_at|date:'M j, H:i' }}{% endif %}"><span class="w-1.5 h-1.5 rounded-full bg-red-500 inline-block"></span>Gone</span>
-            {% endif %}
-          </td>
-          <td class="tbl-td-right">
-            <div class="flex items-center justify-end gap-1.5">
-              {% if job.original_link %}<a href="{{ job.original_link }}" target="_blank" class="btn-icon btn-xs" title="Open original posting">↗</a>{% endif %}
-              {% if lane_tab != 'approved_recent' %}
-                <form method="post" action="{% url 'job-approve' job.pk %}">
-                  {% csrf_token %}
-                  <input type="hidden" name="next" value="{% url 'jobs-pipeline' %}?tab=pool&lane={{ lane_tab }}&gate={{ gate_tab }}&score={{ score_tab }}">
-                  <button type="submit" class="btn-success btn-xs">Approve</button>
-                </form>
-                <button type="button" @click="$dispatch('open-reject-modal', { jobId: {{ job.pk }}, jobTitle: '{{ job.title|escapejs }}' })"
-                    class="btn-danger-soft btn-xs">Reject</button>
-                <form method="post" action="{% url 'job-revalidate' job.pk %}">
-                  {% csrf_token %}
-                  <button type="submit" title="Re-score" class="btn-ghost btn-xs">↻</button>
-                </form>
-              {% else %}
-                <span class="badge-green">Approved</span>
-              {% endif %}
-            </div>
-          </td>
-        </tr>
-        {% endfor %}
+      <tbody id="pipeline-jobs-tbody" class="divide-y divide-gray-100">
+        {% include "jobs/_pipeline_pool_rows.html" %}
       </tbody>
     </table>
   </div>
 </form>
+<div id="pipeline-jobs-load-status" class="mt-3 text-center text-sm text-slate-500">
+  Showing {{ tab_jobs|length }} of {{ pipeline_tab_total_filtered }} jobs{% if pipeline_tab_has_next %}. Loading more as you scroll…{% endif %}
+</div>
+{% if pipeline_tab_has_next %}
+<div class="mt-2 flex items-center justify-center">
+  <button id="pipeline-jobs-load-more-btn" type="button" class="btn-secondary btn-sm">Load more</button>
+</div>
+{% endif %}
+<div id="pipeline-jobs-scroll-sentinel" class="h-4"></div>
 
 {% else %}
 <div class="empty-state">
@@ -1352,43 +1291,20 @@
         <th class="tbl-th-right">Actions</th>
       </tr>
     </thead>
-    <tbody class="divide-y divide-gray-100">
-      {% for job in tab_jobs %}
-      <tr class="tbl-row">
-        <td class="tbl-td">
-          <div class="font-semibold text-gray-900"><a href="{% url 'job-detail' job.pk %}" class="hover:text-indigo-600 transition">{{ job.title }}</a></div>
-          <div class="text-xs text-gray-500 mt-0.5">{{ job.company|default:"—" }}{% if job.location %} &middot; {{ job.location }}{% endif %}</div>
-          {% if job.original_link_health == 'DEAD' %}
-          <span class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-red-100 text-red-700 border border-red-200 rounded text-[11px] font-medium mt-1"
-                title="{{ job.original_link_reason|default:'Source posting appears gone' }}">
-            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            Link gone
-          </span>
-          {% elif job.original_link_health == 'INCONCLUSIVE' %}
-          <span class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-100 text-amber-700 border border-amber-200 rounded text-[11px] font-medium mt-1"
-                title="{{ job.original_link_reason|default:'Checker could not confirm the posting yet' }}">
-            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            Link unconfirmed
-          </span>
-          {% endif %}
-        </td>
-        <td class="tbl-td hidden md:table-cell"><span class="badge-gray">{{ job.get_job_type_display }}</span></td>
-        <td class="tbl-td hidden lg:table-cell">
-          <span class="font-semibold text-gray-800">{{ job.sub_count }}</span>
-          <span class="text-gray-400 text-xs"> submission{{ job.sub_count|pluralize }}</span>
-        </td>
-        <td class="tbl-td hidden lg:table-cell text-xs text-gray-400">{{ job.created_at|date:"M j, Y" }}</td>
-        <td class="tbl-td-right">
-          <div class="flex items-center justify-end gap-1.5">
-            {% if job.original_link %}<a href="{{ job.original_link }}" target="_blank" class="btn-icon btn-xs" title="Open original posting">↗</a>{% endif %}
-            <a href="{% url 'job-update' job.pk %}" class="btn-ghost btn-xs">Edit</a>
-          </div>
-        </td>
-      </tr>
-      {% endfor %}
+    <tbody id="pipeline-jobs-tbody" class="divide-y divide-gray-100">
+      {% include "jobs/_pipeline_live_rows.html" %}
     </tbody>
   </table>
 </div>
+<div id="pipeline-jobs-load-status" class="mt-3 text-center text-sm text-slate-500">
+  Showing {{ tab_jobs|length }} of {{ pipeline_tab_total_filtered }} jobs{% if pipeline_tab_has_next %}. Loading more as you scroll…{% endif %}
+</div>
+{% if pipeline_tab_has_next %}
+<div class="mt-2 flex items-center justify-center">
+  <button id="pipeline-jobs-load-more-btn" type="button" class="btn-secondary btn-sm">Load more</button>
+</div>
+{% endif %}
+<div id="pipeline-jobs-scroll-sentinel" class="h-4"></div>
 {% else %}
 <div class="empty-state">
   <svg class="w-10 h-10 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
@@ -1423,25 +1339,20 @@
         <th class="tbl-th-right">Actions</th>
       </tr>
     </thead>
-    <tbody class="divide-y divide-gray-100">
-      {% for job in tab_jobs %}
-      <tr class="tbl-row opacity-75 hover:opacity-100">
-        <td class="tbl-td">
-          <div class="font-medium text-gray-600">{{ job.title }}</div>
-          {% if job.location %}<div class="text-xs text-gray-400 mt-0.5">{{ job.location }}</div>{% endif %}
-        </td>
-        <td class="tbl-td hidden md:table-cell text-xs text-gray-500">{{ job.company|default:"—" }}</td>
-        <td class="tbl-td hidden lg:table-cell text-xs text-gray-400">{% if job.archived_at %}{{ job.archived_at|date:"M j, Y" }}{% else %}—{% endif %}</td>
-        <td class="tbl-td-right">
-          <form method="post" action="{% url 'job-restore' job.pk %}">{% csrf_token %}
-            <button type="submit" class="btn-secondary btn-xs" style="color:#4f46e5;border-color:#c7d2fe;">Restore</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
+    <tbody id="pipeline-jobs-tbody" class="divide-y divide-gray-100">
+      {% include "jobs/_pipeline_archived_rows.html" %}
     </tbody>
   </table>
 </div>
+<div id="pipeline-jobs-load-status" class="mt-3 text-center text-sm text-slate-500">
+  Showing {{ tab_jobs|length }} of {{ pipeline_tab_total_filtered }} jobs{% if pipeline_tab_has_next %}. Loading more as you scroll…{% endif %}
+</div>
+{% if pipeline_tab_has_next %}
+<div class="mt-2 flex items-center justify-center">
+  <button id="pipeline-jobs-load-more-btn" type="button" class="btn-secondary btn-sm">Load more</button>
+</div>
+{% endif %}
+<div id="pipeline-jobs-scroll-sentinel" class="h-4"></div>
 {% else %}
 <div class="empty-state">
   <svg class="w-10 h-10 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg>
@@ -1676,6 +1587,103 @@
   }
   updateButton();
   loadNext();
+})();
+</script>
+{% endif %}
+{% if tab != 'raw' and pipeline_tab_has_next %}
+<script>
+(() => {
+  const tbody = document.getElementById("pipeline-jobs-tbody");
+  const sentinel = document.getElementById("pipeline-jobs-scroll-sentinel");
+  const statusEl = document.getElementById("pipeline-jobs-load-status");
+  const loadMoreBtn = document.getElementById("pipeline-jobs-load-more-btn");
+  if (!tbody || !sentinel || !statusEl) return;
+
+  const endpoint = window.location.pathname;
+  const qs = new URLSearchParams(window.location.search);
+  qs.set("tab", "{{ tab }}");
+  qs.set("pipeline_json", "1");
+  qs.delete("page");
+
+  let nextPage = {{ pipeline_tab_next_page|default:"null" }};
+  let loading = false;
+  let done = !nextPage;
+  let loadedCount = {{ tab_jobs|length }};
+  const totalCount = {{ pipeline_tab_total_filtered|default:0 }};
+
+  const updateStatus = (message = "") => {
+    if (message) {
+      statusEl.textContent = message;
+      return;
+    }
+    statusEl.textContent = done
+      ? `Showing ${loadedCount} of ${totalCount} jobs`
+      : `Showing ${loadedCount} of ${totalCount} jobs. Loading more as you scroll…`;
+  };
+
+  const appendRows = (rowsHtml) => {
+    if (!rowsHtml) return 0;
+    const temp = document.createElement("tbody");
+    temp.innerHTML = rowsHtml;
+    const rows = Array.from(temp.children);
+    const selectAll = document.getElementById("select-all-pool");
+    rows.forEach((row) => {
+      tbody.appendChild(row);
+      if (selectAll?.checked) {
+        row.querySelectorAll(".pool-cb").forEach((cb) => {
+          cb.checked = true;
+        });
+      }
+      if (window.Alpine?.initTree) {
+        window.Alpine.initTree(row);
+      }
+    });
+    return rows.length;
+  };
+
+  const loadMore = async () => {
+    if (loading || done || !nextPage) return;
+    loading = true;
+    updateStatus("Loading more jobs…");
+    if (loadMoreBtn) loadMoreBtn.disabled = true;
+    try {
+      const pageQs = new URLSearchParams(qs);
+      pageQs.set("page", nextPage);
+      const resp = await fetch(`${endpoint}?${pageQs.toString()}`, {
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+        credentials: "same-origin",
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const payload = await resp.json();
+      const appended = appendRows(payload.rows_html || "");
+      loadedCount += appended;
+      nextPage = payload.next_page;
+      done = !payload.has_next || !nextPage || appended === 0;
+      if (loadMoreBtn) {
+        loadMoreBtn.disabled = false;
+        loadMoreBtn.classList.toggle("hidden", done);
+      }
+      updateStatus();
+    } catch (error) {
+      console.error("Failed to load more pipeline rows", error);
+      if (loadMoreBtn) loadMoreBtn.disabled = false;
+      updateStatus("Could not load more jobs right now. Use the button to retry.");
+    } finally {
+      loading = false;
+    }
+  };
+
+  loadMoreBtn?.addEventListener("click", loadMore);
+  updateStatus();
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        loadMore();
+      }
+    });
+  }, { rootMargin: "400px 0px" });
+  observer.observe(sentinel);
 })();
 </script>
 {% endif %}
