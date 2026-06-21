@@ -54,13 +54,14 @@
       {% if lane_tab != 'approved_recent' %}
         <form method="post" action="{% url 'job-approve' job.pk %}">
           {% csrf_token %}
-          <input type="hidden" name="next" value="{% url 'jobs-pipeline' %}?tab=pool&lane={{ lane_tab }}&gate={{ gate_tab }}&score={{ score_tab }}">
+          <input type="hidden" name="next" value="{% url 'jobs-pipeline' %}?tab=pool&lane={{ lane_tab }}&gate={{ gate_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}">
           <button type="submit" class="btn-success btn-xs">Approve</button>
         </form>
         <button type="button" @click="$dispatch('open-reject-modal', { jobId: {{ job.pk }}, jobTitle: '{{ job.title|escapejs }}' })"
             class="btn-danger-soft btn-xs">Reject</button>
         <form method="post" action="{% url 'job-revalidate' job.pk %}">
           {% csrf_token %}
+          <input type="hidden" name="next" value="{% url 'jobs-pipeline' %}?tab=pool&lane={{ lane_tab }}&gate={{ gate_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}">
           <button type="submit" title="Re-score" class="btn-ghost btn-xs">↻</button>
         </form>
       {% else %}

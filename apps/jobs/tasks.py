@@ -411,7 +411,7 @@ def _notify_pool_review_emails(job: Job, validation_result: dict):
         except Exception:
             pool_url = reverse('jobs-pipeline') + "?tab=pool"
 
-        subject = f"[Job Pool] New job needs review: {job.title} at {job.company}"
+        subject = f"[Vetting Queue] New job needs review: {job.title} at {job.company}"
         body = (
             f"A new job has been added to the vetting pool and needs your review.\n\n"
             f"Job: {job.title}\n"

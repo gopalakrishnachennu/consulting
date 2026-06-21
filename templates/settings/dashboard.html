@@ -166,10 +166,10 @@
             </a>
         </div>
 
-        <!-- Job Pool Settings -->
+        <!-- Vetting Queue Settings -->
         <div class="bg-white rounded-lg shadow-sm p-6 border-l-4 border-yellow-500 hover:shadow-sm transition">
             <div class="flex items-center justify-between mb-4">
-                <h2 class="text-xl font-bold text-gray-800">Job Pool</h2>
+                <h2 class="text-xl font-bold text-gray-800">Vetting Queue</h2>
                 <div class="flex items-center gap-2">
                     {% if PLATFORM_CONFIG.require_pool_staging %}
                     <span class="bg-green-100 text-green-800 text-xs font-semibold px-2.5 py-0.5 rounded">Staging ON</span>
@@ -189,7 +189,7 @@
             <div class="flex gap-2">
                 <a href="{% url 'platform-config' %}#tab-job-pool"
                     class="flex-1 text-center bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded transition text-sm">
-                    Pool Settings
+                    Vetting Settings
                 </a>
                 <a href="{% url 'jobs-pipeline' %}?tab=pool"
                     class="flex-1 text-center bg-white border border-yellow-400 text-yellow-700 hover:bg-yellow-50 font-bold py-2 px-4 rounded transition text-sm">

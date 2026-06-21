@@ -148,6 +148,137 @@ class JobsPipelineIncrementalLoadingTests(TestCase):
         self.assertIn("Restore", payload["rows_html"])
 
 
+class JobsPipelinePoolParityTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.employee = User.objects.create_user(
+            username="pipeline_pool_parity_emp",
+            password="testpass",
+            role=User.Role.EMPLOYEE,
+            first_name="Pool",
+            last_name="Reviewer",
+        )
+        self.other_employee = User.objects.create_user(
+            username="pipeline_pool_other",
+            password="testpass",
+            role=User.Role.EMPLOYEE,
+        )
+        self.client.login(username="pipeline_pool_parity_emp", password="testpass")
+
+    def _make_pool_job(self, title, **overrides):
+        created_at = overrides.pop("created_at", None)
+        defaults = {
+            "company": "Parity Co",
+            "location": "Austin, TX",
+            "description": "Detailed job description",
+            "original_link": f"https://example.com/{title.lower().replace(' ', '-')}",
+            "posted_by": self.employee,
+            "status": Job.Status.POOL,
+            "job_type": Job.JobType.FULL_TIME,
+            "job_source": "LinkedIn",
+            "created_at": timezone.now(),
+            "gate_status": Job.GateStatus.ELIGIBLE,
+            "vet_lane": Job.VetLane.HUMAN,
+        }
+        defaults.update(overrides)
+        job = Job.objects.create(title=title, **defaults)
+        if created_at is not None:
+            Job.objects.filter(pk=job.pk).update(created_at=created_at)
+            job.refresh_from_db()
+        return job
+
+    def test_legacy_job_pool_redirects_to_pipeline_and_preserves_filters(self):
+        response = self.client.get(
+            reverse("job-pool"),
+            {
+                "tab": "review",
+                "q": "platform",
+                "posted_by": str(self.employee.pk),
+                "job_source": "LinkedIn",
+                "date_from": "2026-06-01",
+                "page_size": "300",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            response.url,
+            (
+                f"{reverse('jobs-pipeline')}?tab=pool&score=review&search_by=all&q=platform"
+                f"&posted_by={self.employee.pk}&job_source=LinkedIn&date_from=2026-06-01&page_size=300"
+            ),
+        )
+
+    def test_pipeline_pool_supports_legacy_pool_filters(self):
+        keep = self._make_pool_job(
+            "Platform Engineer",
+            company="Target Labs",
+            posted_by=self.employee,
+            job_type=Job.JobType.FULL_TIME,
+            job_source="LinkedIn import",
+            created_at=timezone.now(),
+        )
+        self._make_pool_job(
+            "Platform Engineer Old",
+            company="Target Labs",
+            posted_by=self.employee,
+            job_type=Job.JobType.FULL_TIME,
+            job_source="LinkedIn import",
+            created_at=timezone.now() - timezone.timedelta(days=10),
+        )
+        self._make_pool_job(
+            "Platform Engineer Other Poster",
+            company="Target Labs",
+            posted_by=self.other_employee,
+            job_type=Job.JobType.FULL_TIME,
+            job_source="LinkedIn import",
+        )
+        self._make_pool_job(
+            "Platform Engineer Wrong Type",
+            company="Target Labs",
+            posted_by=self.employee,
+            job_type=Job.JobType.CONTRACT,
+            job_source="LinkedIn import",
+        )
+        self._make_pool_job(
+            "Platform Engineer Wrong Source",
+            company="Target Labs",
+            posted_by=self.employee,
+            job_type=Job.JobType.FULL_TIME,
+            job_source="Manual import",
+        )
+        self._make_pool_job(
+            "Different Company",
+            company="Other Labs",
+            posted_by=self.employee,
+            job_type=Job.JobType.FULL_TIME,
+            job_source="LinkedIn import",
+        )
+
+        response = self.client.get(
+            reverse("jobs-pipeline"),
+            {
+                "tab": "pool",
+                "q": "Platform Engineer",
+                "search_by": "title",
+                "posted_by": str(self.employee.pk),
+                "company": "Target",
+                "job_type": Job.JobType.FULL_TIME,
+                "job_source": "LinkedIn",
+                "date_from": (timezone.now() - timezone.timedelta(days=1)).date().isoformat(),
+                "page_size": "300",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        tab_jobs = list(response.context["tab_jobs"])
+        self.assertEqual([job.pk for job in tab_jobs], [keep.pk])
+        self.assertEqual(response.context["page_size"], 300)
+        self.assertContains(response, "Advanced vetting filters")
+        self.assertContains(response, "Pool Reviewer")
+        self.assertContains(response, "300/page")
+
+
 @patch("jobs.tasks.run_job_validation.delay")
 @patch("jobs.views.ensure_parsed_jd")
 class JobManualRawBridgeTests(TestCase):
@@ -275,12 +406,12 @@ class JobDownstreamDualClassificationAuditTests(TestCase):
         self.assertContains(response, "SECONDARY")
         self.assertContains(response, "Classification provenance")
 
-    def test_job_pool_renders_compact_downstream_provenance(self):
+    def test_pipeline_pool_renders_compact_downstream_provenance(self):
         self.client.login(username="downstream_audit_emp", password="testpass")
-        response = self.client.get(reverse("job-pool"))
+        response = self.client.get(reverse("jobs-pipeline"), {"tab": "pool"})
 
         self.assertEqual(response.status_code, 200)
-        jobs = list(response.context["jobs"])
+        jobs = list(response.context["tab_jobs"])
         self.assertTrue(jobs)
         audit = getattr(jobs[0], "dual_classification_audit", {})
         self.assertTrue(audit.get("present"))

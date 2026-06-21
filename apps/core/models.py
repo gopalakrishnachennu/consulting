@@ -131,7 +131,7 @@ class PlatformConfig(models.Model):
         help_text="If enabled, OPEN jobs whose original posting URL is no longer live are closed automatically.",
     )
 
-    # Job Pool / Vetting pipeline
+    # Vetting queue / pipeline
     require_pool_staging = models.BooleanField(
         default=True,
         help_text=(

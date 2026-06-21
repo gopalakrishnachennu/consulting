@@ -12,7 +12,7 @@ from .views import (
     # Phase 5
     JobArchiveView, JobRestoreView, ArchivedJobsView,
     JobIdentityRepairView,
-    # Job Pool / Validation Pipeline
+    # Vetting Queue / Validation Pipeline
     JobPoolView, JobPoolRevalidateView, JobApproveView, JobRejectView, JobBulkApproveView, JobPoolRefreshLinksView,
     # Unified Command Center
     JobsPipelineView,
@@ -59,7 +59,7 @@ urlpatterns = [
     path('bulk-action/', JobBulkActionView.as_view(), name='job-bulk-action'),
     path('new/', JobCreateView.as_view(), name='job-create'),
     path('bulk-upload/', JobBulkUploadView.as_view(), name='job-bulk-upload'),
-    # Job Pool
+    # Legacy vetting compatibility route
     path('pool/', JobPoolView.as_view(), name='job-pool'),
     path('pool/bulk-approve/', JobBulkApproveView.as_view(), name='job-bulk-approve'),
     path('pool/refresh-links/', JobPoolRefreshLinksView.as_view(), name='job-pool-refresh-links'),

@@ -72,6 +72,100 @@ def _jobs_pipeline_pool_url() -> str:
     return f"{reverse('jobs-pipeline')}?tab=pool"
 
 
+def _normalize_pool_search_by(raw_value: str, default: str = "title") -> str:
+    value = (raw_value or default).strip().lower()
+    if value not in {"title", "company", "all"}:
+        return default
+    return value
+
+
+def _pool_filter_query_pairs(request) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+    for key in (
+        "q",
+        "search_by",
+        "posted_by",
+        "company",
+        "job_type",
+        "job_source",
+        "date_from",
+        "date_to",
+        "page_size",
+    ):
+        value = (request.GET.get(key) or "").strip()
+        if value:
+            pairs.append((key, value))
+    return pairs
+
+
+def _apply_job_pool_filters(request, qs, *, search_by: str | None = None):
+    req = request.GET
+    q = (req.get("q") or "").strip()
+    search_mode = _normalize_pool_search_by(search_by or req.get("search_by") or "title")
+    if q:
+        if search_mode == "company":
+            qs = qs.filter(company__icontains=q)
+        elif search_mode == "all":
+            qs = qs.filter(
+                Q(title__icontains=q)
+                | Q(company__icontains=q)
+                | Q(location__icontains=q)
+                | Q(description__icontains=q)
+            )
+        else:
+            qs = qs.filter(title__icontains=q)
+    posted_by = req.get("posted_by")
+    if posted_by and posted_by.isdigit():
+        qs = qs.filter(posted_by_id=int(posted_by))
+    company = (req.get("company") or "").strip()
+    if company:
+        qs = qs.filter(company__icontains=company)
+    job_type = req.get("job_type")
+    if job_type and job_type in dict(Job.JobType.choices):
+        qs = qs.filter(job_type=job_type)
+    job_source = (req.get("job_source") or "").strip()
+    if job_source:
+        qs = qs.filter(job_source__icontains=job_source)
+    df = parse_date(req.get("date_from") or "")
+    if df:
+        qs = qs.filter(created_at__date__gte=df)
+    dt = parse_date(req.get("date_to") or "")
+    if dt:
+        qs = qs.filter(created_at__date__lte=dt)
+    return qs
+
+
+def _build_job_pool_redirect_query(request) -> str:
+    query: list[tuple[str, str]] = [("tab", "pool")]
+    legacy_tab = (request.GET.get("tab") or "all").strip().lower()
+    score = (request.GET.get("score") or "").strip().lower()
+    if not score:
+        score = legacy_tab if legacy_tab in {"high", "review", "flagged", "unscored"} else "all"
+    if score:
+        query.append(("score", score))
+
+    search_by = (request.GET.get("search_by") or "").strip()
+    if search_by:
+        normalized_search_by = _normalize_pool_search_by(search_by)
+        if normalized_search_by:
+            query.append(("search_by", normalized_search_by))
+    elif (request.GET.get("q") or "").strip():
+        query.append(("search_by", "all"))
+
+    lane = (request.GET.get("lane") or "").strip().lower()
+    if lane:
+        query.append(("lane", lane))
+    gate = (request.GET.get("gate") or "").strip().upper()
+    if gate:
+        query.append(("gate", gate))
+
+    for key in ("q", "posted_by", "company", "job_type", "job_source", "date_from", "date_to", "page_size", "page"):
+        value = (request.GET.get(key) or "").strip()
+        if value:
+            query.append((key, value))
+    return urlencode(query)
+
+
 def _get_require_pool_staging() -> bool:
     """Whether new jobs go to the vetting pool first (PlatformConfig)."""
     try:
@@ -619,7 +713,7 @@ class JobCreateView(LoginRequiredMixin, EmployeeRequiredMixin, CreateView):
         if use_pool:
             messages.success(
                 self.request,
-                f"Job \"{self.object.title}\" added to the Job Pool for review. "
+                f"Job \"{self.object.title}\" added to the Vetting Queue for review. "
                 "It will be visible to consultants once approved."
             )
         else:
@@ -1033,105 +1127,14 @@ class JobIdentityRepairView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         return redirect(request.POST.get("next") or "jobs-classification-metrics")
 
 
-# ─── Job Pool / Validation Pipeline ──────────────────────────────────────────
+# ─── Vetting Queue / Validation Pipeline ─────────────────────────────────────
 
-class JobPoolView(LoginRequiredMixin, EmployeeRequiredMixin, ListView):
+class JobPoolView(LoginRequiredMixin, EmployeeRequiredMixin, View):
     employee_feature_key = 'employee_job_pool'
-    """Dashboard for jobs awaiting vetting before going live."""
-    template_name = 'jobs/job_pool.html'
-    context_object_name = 'jobs'
-    
-    def get_paginate_by(self, queryset):
-        return get_page_size(self.request, default=100)
+    """Compatibility wrapper: keep legacy /jobs/pool/ links alive."""
 
-    def _apply_pool_filters(self, qs):
-        """Apply shared non-tab filters for pool listing and counts."""
-        req = self.request.GET
-        q = (req.get('q') or '').strip()
-        if q:
-            qs = qs.filter(
-                Q(title__icontains=q)
-                | Q(company__icontains=q)
-                | Q(location__icontains=q)
-                | Q(description__icontains=q)
-            )
-        posted_by = req.get('posted_by')
-        if posted_by and posted_by.isdigit():
-            qs = qs.filter(posted_by_id=int(posted_by))
-        company = (req.get('company') or '').strip()
-        if company:
-            qs = qs.filter(company__icontains=company)
-        job_type = req.get('job_type')
-        if job_type and job_type in dict(Job.JobType.choices):
-            qs = qs.filter(job_type=job_type)
-        job_source = (req.get('job_source') or '').strip()
-        if job_source:
-            qs = qs.filter(job_source__icontains=job_source)
-        df = parse_date(req.get('date_from') or '')
-        if df:
-            qs = qs.filter(created_at__date__gte=df)
-        dt = parse_date(req.get('date_to') or '')
-        if dt:
-            qs = qs.filter(created_at__date__lte=dt)
-        return qs
-
-    def get_queryset(self):
-        qs = Job.objects.filter(status=Job.Status.POOL, is_archived=False)
-        qs = self._apply_pool_filters(qs)
-        tab = self.request.GET.get('tab', 'all')
-        if tab == 'high':
-            qs = qs.filter(validation_score__gte=80)
-        elif tab == 'review':
-            qs = qs.filter(validation_score__gte=50, validation_score__lt=80)
-        elif tab == 'flagged':
-            qs = qs.filter(validation_score__lt=50)
-        elif tab == 'unscored':
-            qs = qs.filter(validation_score__isnull=True)
-
-        return qs.select_related('posted_by', 'company_obj').prefetch_related('marketing_roles').order_by('-created_at')
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        pool_qs = self._apply_pool_filters(Job.objects.filter(status=Job.Status.POOL, is_archived=False))
-        context['tab'] = self.request.GET.get('tab', 'all')
-        context['count_all'] = pool_qs.count()
-        context['count_high'] = pool_qs.filter(validation_score__gte=80).count()
-        context['count_review'] = pool_qs.filter(validation_score__gte=50, validation_score__lt=80).count()
-        context['count_flagged'] = pool_qs.filter(validation_score__lt=50).count()
-        context['count_unscored'] = pool_qs.filter(validation_score__isnull=True).count()
-        qd = self.request.GET.copy()
-        qd.pop('page', None)
-        context['pagination_query'] = qd.urlencode()
-        qd_filters = self.request.GET.copy()
-        qd_filters.pop('page', None)
-        qd_filters.pop('tab', None)
-        context['pool_filter_query'] = qd_filters.urlencode()
-
-        req = self.request.GET
-        context['filter_q'] = (req.get('q') or '').strip()
-        context['filter_posted_by'] = req.get('posted_by') or ''
-        context['filter_company'] = (req.get('company') or '').strip()
-        context['filter_job_type'] = req.get('job_type') or ''
-        context['filter_job_source'] = (req.get('job_source') or '').strip()
-        context['filter_date_from'] = req.get('date_from') or ''
-        context['filter_date_to'] = req.get('date_to') or ''
-
-        poster_ids = (
-            Job.objects.filter(status=Job.Status.POOL, is_archived=False)
-            .values_list('posted_by_id', flat=True)
-            .distinct()
-        )
-        context['pool_posters'] = User.objects.filter(pk__in=poster_ids).order_by(
-            'first_name', 'last_name', 'username'
-        )
-        context['job_type_choices'] = Job.JobType.choices
-        context['page_size'] = get_page_size(self.request, default=100)
-        context['page_size_options'] = PAGE_SIZE_OPTIONS
-        for job in context.get('jobs', []):
-            attach_job_dual_classification_audit(job)
-        if context.get('is_paginated'):
-            context['pagination_pages'] = build_pagination_window(context['page_obj'])
-        return context
+    def get(self, request):
+        return redirect(f"{reverse('jobs-pipeline')}?{_build_job_pool_redirect_query(request)}")
 
 
 class JobPoolRevalidateView(LoginRequiredMixin, EmployeeRequiredMixin, View):
@@ -1158,7 +1161,7 @@ class JobPoolRevalidateView(LoginRequiredMixin, EmployeeRequiredMixin, View):
 
         if request.POST.get('redirect_to') == 'job-detail':
             return redirect('job-detail', pk=job.pk)
-        return redirect(_jobs_pipeline_pool_url())
+        return redirect(request.POST.get('next') or _jobs_pipeline_pool_url())
 
 
 class JobApproveView(LoginRequiredMixin, EmployeeRequiredMixin, View):
@@ -1266,7 +1269,7 @@ class JobRejectView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         except Exception:
             logger.exception("Rejection notification failed for job %s", pk)
         messages.success(request, f"✗ \"{job.title}\" rejected and closed.")
-        return redirect(_jobs_pipeline_pool_url())
+        return redirect(request.POST.get('next') or _jobs_pipeline_pool_url())
 
 
 class JobBulkApproveView(LoginRequiredMixin, EmployeeRequiredMixin, View):
@@ -1278,7 +1281,7 @@ class JobBulkApproveView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         job_ids = request.POST.getlist('job_ids')
         if not job_ids:
             messages.warning(request, "No jobs selected.")
-            return redirect(_jobs_pipeline_pool_url())
+            return redirect(request.POST.get('next') or _jobs_pipeline_pool_url())
         approved = 0
         skipped = 0
         now = timezone.now()
@@ -1337,7 +1340,7 @@ class JobBulkApproveView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         if skipped:
             parts.append(f"{skipped} skipped (blacklisted or not in pool)")
         messages.success(request, ". ".join(parts) + ".")
-        return redirect(_jobs_pipeline_pool_url())
+        return redirect(request.POST.get('next') or _jobs_pipeline_pool_url())
 
 
 class JobPoolRefreshLinksView(LoginRequiredMixin, EmployeeRequiredMixin, View):
@@ -1386,8 +1389,11 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
     template_name = 'jobs/pipeline.html'
     pipeline_tab_page_size = 100
 
-    def _paginate_pipeline_queryset(self, qs, page_num=1):
-        paginator = Paginator(qs, self.pipeline_tab_page_size)
+    def _get_pipeline_paginate_by(self, request):
+        return get_page_size(request, default=self.pipeline_tab_page_size)
+
+    def _paginate_pipeline_queryset(self, request, qs, page_num=1):
+        paginator = Paginator(qs, self._get_pipeline_paginate_by(request))
         try:
             page_obj = paginator.page(page_num)
         except Exception:
@@ -1395,19 +1401,16 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         return paginator, page_obj
 
     def _build_pool_page_context(self, request, q, search_by, page_num=1):
-        score_tab = request.GET.get('score', 'all')
-        lane_tab = request.GET.get('lane', 'all')
+        score_tab = (request.GET.get('score') or 'all').strip().lower()
+        lane_tab = (request.GET.get('lane') or 'all').strip().lower()
         gate_tab = request.GET.get('gate', 'all').upper()
         qs = Job.objects.filter(status=Job.Status.POOL, is_archived=False)
-        if q:
-            if search_by == "company":
-                qs = qs.filter(Q(company__icontains=q))
-            else:
-                qs = qs.filter(Q(title__icontains=q))
+        qs = _apply_job_pool_filters(request, qs, search_by=search_by)
         now = timezone.now()
         age_24h = now - timezone.timedelta(hours=24)
         age_6h = now - timezone.timedelta(hours=6)
         age_1h = now - timezone.timedelta(hours=1)
+        pool_filtered_total = qs.count()
         pool_high = qs.filter(validation_score__gte=80).count()
         pool_review = qs.filter(validation_score__gte=50, validation_score__lt=80).count()
         pool_flagged = qs.filter(validation_score__lt=50).count()
@@ -1420,6 +1423,11 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         pool_aging_1_6h = qs.filter(queue_entered_at__lt=age_1h, queue_entered_at__gte=age_6h).count()
         pool_aging_6_24h = qs.filter(queue_entered_at__lt=age_6h, queue_entered_at__gte=age_24h).count()
         pool_aging_gt_24h = qs.filter(queue_entered_at__lt=age_24h).count()
+        pool_gate_summary = {
+            "eligible": qs.filter(gate_status=Job.GateStatus.ELIGIBLE).count(),
+            "review": qs.filter(gate_status=Job.GateStatus.REVIEW).count(),
+            "blocked": qs.filter(gate_status=Job.GateStatus.BLOCKED).count(),
+        }
         if score_tab == 'high':
             qs = qs.filter(validation_score__gte=80)
         elif score_tab == 'review':
@@ -1448,13 +1456,20 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
                 is_archived=False,
                 vet_approved_at__isnull=False,
             )
-            if q:
-                result_qs = result_qs.filter(Q(title__icontains=q) | Q(company__icontains=q))
+            result_qs = _apply_job_pool_filters(request, result_qs, search_by=search_by)
             result_qs = result_qs.select_related('posted_by', 'company_obj').order_by('-vet_approved_at')
         else:
             result_qs = qs.select_related('posted_by', 'company_obj').order_by('-created_at')
-        paginator, page_obj = self._paginate_pipeline_queryset(result_qs, page_num)
+        paginator, page_obj = self._paginate_pipeline_queryset(request, result_qs, page_num)
         tab_jobs = page_obj.object_list if page_obj else []
+        for job in tab_jobs:
+            attach_job_dual_classification_audit(job)
+        pool_filter_query = urlencode(_pool_filter_query_pairs(request))
+        poster_ids = (
+            Job.objects.filter(status=Job.Status.POOL, is_archived=False)
+            .values_list('posted_by_id', flat=True)
+            .distinct()
+        )
         return {
             'tab_jobs': tab_jobs,
             'page_obj': page_obj,
@@ -1472,14 +1487,29 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
                 'pool_review': pool_review,
                 'pool_flagged': pool_flagged,
                 'pool_unscored': pool_unscored,
+                'pool_filtered_total': pool_filtered_total,
                 'pool_auto_lane': pool_auto_lane,
                 'pool_human_lane': pool_human_lane,
                 'pool_blocked_lane': pool_blocked_lane,
                 'pool_blocked_gate': pool_blocked_gate,
+                'pool_gate_summary': pool_gate_summary,
                 'pool_aging_lt_1h': pool_aging_lt_1h,
                 'pool_aging_1_6h': pool_aging_1_6h,
                 'pool_aging_6_24h': pool_aging_6_24h,
                 'pool_aging_gt_24h': pool_aging_gt_24h,
+                'pool_filter_query': pool_filter_query,
+                'pool_posters': User.objects.filter(pk__in=poster_ids).order_by(
+                    'first_name', 'last_name', 'username'
+                ),
+                'job_type_choices': Job.JobType.choices,
+                'filter_posted_by': request.GET.get('posted_by') or '',
+                'filter_company': (request.GET.get('company') or '').strip(),
+                'filter_job_type': request.GET.get('job_type') or '',
+                'filter_job_source': (request.GET.get('job_source') or '').strip(),
+                'filter_date_from': request.GET.get('date_from') or '',
+                'filter_date_to': request.GET.get('date_to') or '',
+                'page_size': self._get_pipeline_paginate_by(request),
+                'page_size_options': PAGE_SIZE_OPTIONS,
             },
         }
 
@@ -1488,7 +1518,7 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         if q:
             qs = qs.filter(Q(title__icontains=q) | Q(company__icontains=q))
         qs = qs.select_related('posted_by', 'company_obj').annotate(sub_count=Count('submissions')).order_by('-created_at')
-        paginator, page_obj = self._paginate_pipeline_queryset(qs, page_num)
+        paginator, page_obj = self._paginate_pipeline_queryset(self.request, qs, page_num)
         return {
             'tab_jobs': page_obj.object_list if page_obj else [],
             'page_obj': page_obj,
@@ -1502,7 +1532,7 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         if q:
             qs = qs.filter(Q(title__icontains=q) | Q(company__icontains=q))
         qs = qs.select_related('posted_by').order_by('-archived_at')
-        paginator, page_obj = self._paginate_pipeline_queryset(qs, page_num)
+        paginator, page_obj = self._paginate_pipeline_queryset(self.request, qs, page_num)
         return {
             'tab_jobs': page_obj.object_list if page_obj else [],
             'page_obj': page_obj,
@@ -1937,6 +1967,34 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
                 active_filter_chips.append(("Lane", lane_tab))
             if score_tab != "all":
                 active_filter_chips.append(("Score", score_tab))
+            pool_filter_label_map = {
+                "posted_by": "Posted by",
+                "company": "Company",
+                "job_type": "Job type",
+                "job_source": "Source",
+                "date_from": "From",
+                "date_to": "To",
+                "page_size": "Records",
+            }
+            poster_label_map = {
+                str(user.pk): (user.get_full_name() or user.username)
+                for user in User.objects.filter(
+                    pk__in=Job.objects.filter(status=Job.Status.POOL, is_archived=False)
+                    .values_list("posted_by_id", flat=True)
+                    .distinct()
+                )
+            }
+            for key, value in _pool_filter_query_pairs(request):
+                if key in {"q", "search_by"}:
+                    continue
+                display_value = value
+                if key == "posted_by":
+                    display_value = poster_label_map.get(value, value)
+                elif key == "job_type":
+                    display_value = dict(Job.JobType.choices).get(value, value)
+                elif key == "page_size":
+                    display_value = f"{value}/page"
+                active_filter_chips.append((pool_filter_label_map.get(key, key.replace("_", " ").title()), display_value))
 
         ctx = {
             'tab': tab,

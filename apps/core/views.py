@@ -213,7 +213,7 @@ class PlatformConfigView(AdminRequiredMixin, UpdateView):
             (form.data.get("logo_url") if form is not None and getattr(form, "is_bound", False) else None)
             or getattr(self.object, "logo_url", "")
         )
-        # Pool count for the Job Pool settings tab
+        # Pool count for the vetting settings tab
         try:
             from jobs.models import Job
             context["pool_job_count"] = Job.objects.filter(status=Job.Status.POOL, is_archived=False).count()
