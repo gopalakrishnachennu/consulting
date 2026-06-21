@@ -581,6 +581,12 @@ class JobListBoundaryTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, f'{reverse("jobs-pipeline")}?tab=pool')
         self.assertNotContains(resp, '<option value="POOL"', html=False)
+        self.assertNotContains(resp, "Pool role")
+
+    def test_job_list_redirects_legacy_pool_filter_to_pipeline(self):
+        self.client.login(username="emp_boundary", password="testpass")
+        resp = self.client.get(reverse("job-list"), {"status": Job.Status.POOL})
+        self.assertRedirects(resp, f'{reverse("jobs-pipeline")}?tab=pool', fetch_redirect_response=False)
 
 
 class MatchScoreStringTests(TestCase):

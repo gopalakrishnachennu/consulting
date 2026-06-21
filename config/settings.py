@@ -240,10 +240,10 @@ CELERY_WORKER_PREFETCH_MULTIPLIER = 1    # fair task distribution
 # by default which the worker doesn't listen to.
 CELERY_TASK_DEFAULT_QUEUE = "default"
 
-# Jarvis outbound HTTP (per worker process). Tune with load tests; multiply by Celery workers for cluster totals.
-# Higher throughput targets need higher max_global + enough worker concurrency; per-host protects 429/blocks.
-JARVIS_HTTP_MAX_GLOBAL = config('JARVIS_HTTP_MAX_GLOBAL', default=200, cast=int)
-JARVIS_HTTP_MAX_PER_HOST = config('JARVIS_HTTP_MAX_PER_HOST', default=12, cast=int)
+# Jarvis outbound HTTP (per worker process). Keep the small-VPS defaults conservative:
+# stable traffic should sit well below saturation; spikes are explicit overrides, not defaults.
+JARVIS_HTTP_MAX_GLOBAL = config('JARVIS_HTTP_MAX_GLOBAL', default=100, cast=int)
+JARVIS_HTTP_MAX_PER_HOST = config('JARVIS_HTTP_MAX_PER_HOST', default=8, cast=int)
 JARVIS_HTTP_RETRY_MAX = config('JARVIS_HTTP_RETRY_MAX', default=3, cast=int)
 JARVIS_HTTP_RETRY_BASE_SEC = config('JARVIS_HTTP_RETRY_BASE_SEC', default=0.5, cast=float)
 

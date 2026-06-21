@@ -438,6 +438,14 @@ def apply_job_list_filters(qs, request):
     return qs.distinct()
 
 
+def _job_catalog_base_queryset():
+    """
+    User-facing /jobs/ catalog excludes vetting/pool and archived rows.
+    Vetting lives in Command Center; archived rows have their own screen.
+    """
+    return Job.objects.exclude(status=Job.Status.POOL).filter(is_archived=False).order_by("-created_at")
+
+
 class EmployeeRequiredMixin(UserPassesTestMixin):
     """Staff-only; set employee_feature_key to gate with a FeatureFlag (e.g. employee_job_pool)."""
 
@@ -461,9 +469,14 @@ class JobListView(LoginRequiredMixin, ListView):
     def get_paginate_by(self, queryset):
         return get_page_size(self.request, default=100)
 
+    def dispatch(self, request, *args, **kwargs):
+        if request.GET.get("status") == Job.Status.POOL:
+            return redirect(f"{reverse('jobs-pipeline')}?tab=pool")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         qs = apply_job_list_filters(
-            super().get_queryset().select_related('posted_by').prefetch_related('marketing_roles'),
+            _job_catalog_base_queryset().select_related('posted_by').prefetch_related('marketing_roles'),
             self.request,
         )
         return qs.annotate(application_count=Count('submissions'))
@@ -494,7 +507,7 @@ class JobListView(LoginRequiredMixin, ListView):
         context['selected_link_live'] = self.request.GET.get('link_live', '')
         context['selected_country'] = _canonical_job_country(self.request.GET.get('country', ''))[0]
         context['selected_department'] = self.request.GET.get('department', '')
-        context['show_pool_redirect_hint'] = self.request.GET.get('status', '') == Job.Status.POOL
+        context['show_pool_redirect_hint'] = False
         context['department_choices'] = Job.Department.choices
         context['country_options'] = _build_job_country_options()
         qd = self.request.GET.copy()
@@ -516,7 +529,7 @@ class JobListView(LoginRequiredMixin, ListView):
 
 def _get_job_list_queryset(request):
     """Shared queryset for job list and CSV export (same filters as JobListView)."""
-    qs = Job.objects.select_related('posted_by').prefetch_related('marketing_roles').order_by('-created_at')
+    qs = _job_catalog_base_queryset().select_related('posted_by').prefetch_related('marketing_roles').order_by('-created_at')
     return apply_job_list_filters(qs, request)
 
 

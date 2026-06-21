@@ -87,7 +87,7 @@ app.conf.beat_schedule = {
     "harvest-detect-platforms-weekly": {
         "task": "harvest.detect_company_platforms",
         "schedule": crontab(hour=1, minute=0, day_of_week=1),  # Monday 01:00 UTC
-        "kwargs": {"batch_size": 200},
+        "kwargs": {"batch_size": 50},
     },
     "harvest-jobs-daily": {
         "task": "harvest.harvest_jobs",
@@ -105,7 +105,7 @@ app.conf.beat_schedule = {
     "harvest-validate-live-links-daily": {
         "task": "harvest.validate_raw_job_urls",
         "schedule": crontab(hour=3, minute=0),       # daily 03:00 UTC
-        "kwargs": {"batch_size": 300, "concurrency": 25, "pending_only": False, "recent_hours": 0},
+        "kwargs": {"batch_size": 200, "concurrency": 8, "pending_only": False, "recent_hours": 0},
         "options": {"queue": "harvest"},
     },
     "harvest-release-stale-jd-locks": {
@@ -121,7 +121,7 @@ app.conf.beat_schedule = {
     "harvest-backfill-descriptions-hourly": {
         "task": "harvest.backfill_descriptions",
         "schedule": crontab(minute=15),              # every hour at :15
-        "kwargs": {"batch_size": 500, "parallel_workers": 8},
+        "kwargs": {"batch_size": 200, "parallel_workers": 1},
     },
 
     # Tier-2 JD content gate — runs every 30 min to process AMBIGUOUS jobs.

@@ -37,7 +37,7 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
       CELERY_TASK_ALWAYS_EAGER: "0"
-      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
       WEB_TIMEOUT: ${WEB_TIMEOUT:-120}
       RUN_MIGRATIONS: ${RUN_MIGRATIONS:-1}
       HARVEST_PUSH_SECRET: ${HARVEST_PUSH_SECRET:-}
@@ -57,7 +57,7 @@ services:
     image: ${IMAGE_WORKER:-consulting-worker:local}
     command: >
       celery -A config worker -l info
-      --concurrency=${WORKER_CONCURRENCY:-2}
+      --concurrency=${WORKER_CONCURRENCY:-1}
       -Q default
       --hostname=worker@%h
     environment:
@@ -82,7 +82,7 @@ services:
     image: ${IMAGE_WORKER:-consulting-worker:local}
     command: >
       celery -A config worker -l warning
-      --concurrency=${HARVEST_CONCURRENCY:-4}
+      --concurrency=${HARVEST_CONCURRENCY:-2}
       -Q batches,harvest
       --hostname=harvest@%h
       --max-tasks-per-child=50
@@ -93,7 +93,7 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
       CELERY_TASK_ALWAYS_EAGER: "0"
-      HARVEST_CONCURRENCY: ${HARVEST_CONCURRENCY:-4}
+      HARVEST_CONCURRENCY: ${HARVEST_CONCURRENCY:-2}
     depends_on:
       - db
       - redis
