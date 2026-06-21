@@ -88,11 +88,7 @@ def create_or_get_vetting_job_from_raw_job(
     Returns (job, created_new, locked_raw_job).
     """
     with transaction.atomic():
-        locked_raw = (
-            raw_job.__class__.objects.select_for_update()
-            .select_related("company", "job_platform")
-            .get(pk=raw_job.pk)
-        )
+        locked_raw = raw_job.__class__.objects.select_for_update().get(pk=raw_job.pk)
         acquire_raw_job_sync_lock(locked_raw)
 
         existing = find_existing_active_job_for_raw_job(locked_raw)
