@@ -407,9 +407,9 @@ def _notify_pool_review_emails(job: Job, validation_result: dict):
         ) or '  None'
 
         try:
-            pool_url = settings.SITE_URL.rstrip('/') + reverse('job-pool')
+            pool_url = settings.SITE_URL.rstrip('/') + reverse('jobs-pipeline') + "?tab=pool"
         except Exception:
-            pool_url = reverse('job-pool')
+            pool_url = reverse('jobs-pipeline') + "?tab=pool"
 
         subject = f"[Job Pool] New job needs review: {job.title} at {job.company}"
         body = (

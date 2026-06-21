@@ -68,6 +68,10 @@ def _build_job_country_options():
     ]
 
 
+def _jobs_pipeline_pool_url() -> str:
+    return f"{reverse('jobs-pipeline')}?tab=pool"
+
+
 def _get_require_pool_staging() -> bool:
     """Whether new jobs go to the vetting pool first (PlatformConfig)."""
     try:
@@ -378,6 +382,7 @@ class JobListView(LoginRequiredMixin, ListView):
         context['selected_link_live'] = self.request.GET.get('link_live', '')
         context['selected_country'] = _canonical_job_country(self.request.GET.get('country', ''))[0]
         context['selected_department'] = self.request.GET.get('department', '')
+        context['show_pool_redirect_hint'] = self.request.GET.get('status', '') == Job.Status.POOL
         context['department_choices'] = Job.Department.choices
         context['country_options'] = _build_job_country_options()
         qd = self.request.GET.copy()
@@ -628,7 +633,7 @@ class JobCreateView(LoginRequiredMixin, EmployeeRequiredMixin, CreateView):
 
     def get_success_url(self):
         if self.object and self.object.status == Job.Status.POOL:
-            return reverse_lazy('job-pool')
+            return _jobs_pipeline_pool_url()
         return reverse_lazy('job-list')
 
 class JobUpdateView(LoginRequiredMixin, EmployeeRequiredMixin, UpdateView):
@@ -1153,7 +1158,7 @@ class JobPoolRevalidateView(LoginRequiredMixin, EmployeeRequiredMixin, View):
 
         if request.POST.get('redirect_to') == 'job-detail':
             return redirect('job-detail', pk=job.pk)
-        return redirect('job-pool')
+        return redirect(_jobs_pipeline_pool_url())
 
 
 class JobApproveView(LoginRequiredMixin, EmployeeRequiredMixin, View):
@@ -1165,7 +1170,7 @@ class JobApproveView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         job = get_object_or_404(Job, pk=pk)
         if job.status != Job.Status.POOL:
             messages.warning(request, f"\"{job.title}\" is not in the pool (status: {job.get_status_display()}).")
-            return redirect('job-pool')
+            return redirect(_jobs_pipeline_pool_url())
         gate = evaluate_job_gate(job)
         apply_gate_result_to_job(job, gate)
         job.gate_checked_at = timezone.now()
@@ -1180,7 +1185,7 @@ class JobApproveView(LoginRequiredMixin, EmployeeRequiredMixin, View):
                 f"\"{job.title}\" is blocked by vet gate ({job.pipeline_reason_code or 'UNKNOWN'}). "
                 "Fix quality/gate issues before approval."
             )
-            return redirect(request.POST.get('next') or 'job-pool')
+            return redirect(request.POST.get('next') or _jobs_pipeline_pool_url())
         job.status = Job.Status.OPEN
         job.stage = Job.Stage.LIVE
         job.stage_changed_at = timezone.now()
@@ -1213,7 +1218,7 @@ class JobApproveView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         except Exception:
             logger.exception("Match task dispatch failed for job %s", pk)
         messages.success(request, f"✓ \"{job.title}\" approved and is now Live.")
-        return redirect(request.POST.get('next') or 'job-pool')
+        return redirect(request.POST.get('next') or _jobs_pipeline_pool_url())
 
 
 class JobRejectView(LoginRequiredMixin, EmployeeRequiredMixin, View):
@@ -1223,11 +1228,11 @@ class JobRejectView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         job = get_object_or_404(Job, pk=pk)
         if job.status != Job.Status.POOL:
             messages.warning(request, f"\"{job.title}\" is not in the pool.")
-            return redirect('job-pool')
+            return redirect(_jobs_pipeline_pool_url())
         reason = request.POST.get('rejection_reason', '').strip()
         if not reason:
             messages.error(request, "Please provide a rejection reason.")
-            return redirect('job-pool')
+            return redirect(_jobs_pipeline_pool_url())
         job.status = Job.Status.CLOSED
         job.stage = Job.Stage.ARCHIVED
         job.stage_changed_at = timezone.now()
@@ -1261,7 +1266,7 @@ class JobRejectView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         except Exception:
             logger.exception("Rejection notification failed for job %s", pk)
         messages.success(request, f"✗ \"{job.title}\" rejected and closed.")
-        return redirect('job-pool')
+        return redirect(_jobs_pipeline_pool_url())
 
 
 class JobBulkApproveView(LoginRequiredMixin, EmployeeRequiredMixin, View):
@@ -1273,7 +1278,7 @@ class JobBulkApproveView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         job_ids = request.POST.getlist('job_ids')
         if not job_ids:
             messages.warning(request, "No jobs selected.")
-            return redirect('job-pool')
+            return redirect(_jobs_pipeline_pool_url())
         approved = 0
         skipped = 0
         now = timezone.now()
@@ -1332,7 +1337,7 @@ class JobBulkApproveView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         if skipped:
             parts.append(f"{skipped} skipped (blacklisted or not in pool)")
         messages.success(request, ". ".join(parts) + ".")
-        return redirect('job-pool')
+        return redirect(_jobs_pipeline_pool_url())
 
 
 class JobPoolRefreshLinksView(LoginRequiredMixin, EmployeeRequiredMixin, View):
@@ -1355,7 +1360,7 @@ class JobPoolRefreshLinksView(LoginRequiredMixin, EmployeeRequiredMixin, View):
                     request,
                     "Started full link-health refresh in background for manual + harvested jobs.",
                 )
-                return redirect(f"{reverse('job-pool')}?{q}")
+                return redirect(f"{_jobs_pipeline_pool_url()}&{q}")
             except Exception:
                 result = refresh_all_pool_link_health_task.apply(kwargs={"manual_batch_size": 5000, "raw_batch_size": 5000}).get()
                 messages.success(
@@ -1367,7 +1372,7 @@ class JobPoolRefreshLinksView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         except Exception:
             logger.exception("Manual pool link refresh failed")
             messages.error(request, "Could not refresh link statuses right now. Please try again.")
-        return redirect('job-pool')
+        return redirect(_jobs_pipeline_pool_url())
 
 
 # ─── Jobs Command Center — unified pipeline hub ──────────────────────────────

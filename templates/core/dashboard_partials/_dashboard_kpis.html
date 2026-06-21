@@ -14,7 +14,7 @@
       <p class="text-[11px] text-gray-400 mt-1">
         <a href="{% url 'job-list' %}?status=OPEN" class="hover:text-blue-600 hover:underline">{{ active_jobs }} active</a>
         &middot;
-        <a href="{% url 'job-pool' %}" class="hover:text-indigo-600 hover:underline">{{ job_pool|intcomma }} in pool</a>
+        <a href="{% url 'jobs-pipeline' %}?tab=pool" class="hover:text-indigo-600 hover:underline">{{ job_pool|intcomma }} in vetting</a>
       </p>
     </div>
     <div x-show="tip" x-transition.opacity.duration.150ms class="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-2 w-56 bg-gray-900 text-white rounded-lg shadow-xl p-3 text-xs pointer-events-none" x-cloak>

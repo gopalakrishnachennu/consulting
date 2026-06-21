@@ -407,6 +407,31 @@ class JobListCountryNormalizationTests(TestCase):
         self.assertNotContains(resp, "Canada role")
 
 
+class JobListBoundaryTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.employee = User.objects.create_user(
+            username="emp_boundary",
+            password="testpass",
+            role=User.Role.EMPLOYEE,
+        )
+        Job.objects.create(
+            title="Pool role",
+            company="Acme",
+            posted_by=self.employee,
+            status=Job.Status.POOL,
+            description="D",
+            original_link="https://example.com/pool-role",
+        )
+
+    def test_job_list_points_pool_summary_to_pipeline(self):
+        self.client.login(username="emp_boundary", password="testpass")
+        resp = self.client.get(reverse("job-list"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, f'{reverse("jobs-pipeline")}?tab=pool')
+        self.assertNotContains(resp, '<option value="POOL"', html=False)
+
+
 class MatchScoreStringTests(TestCase):
     def test_match_score_str_does_not_reference_missing_title(self):
         from .models import MatchScore

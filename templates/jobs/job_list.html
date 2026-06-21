@@ -20,10 +20,10 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
                         d="M4 7a2 2 0 012-2h3l1-2h4l1 2h3a2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V7z" />
                 </svg>
-                Job Listings
+                All Jobs
                 <span class="hero-count-badge">{{ total_jobs|default:0 }}</span>
             </h1>
-            <p class="text-blue-100 mt-2 text-base md:text-lg">Manage, filter, and track all roles your team is hiring for.</p>
+            <p class="text-blue-100 mt-2 text-base md:text-lg">Browse posted, live, closed, and draft jobs. Vetting stays in Command Center.</p>
         </div>
 
         <div class="flex items-center gap-3">
@@ -70,11 +70,18 @@
         Closed {{ status_summary.CLOSED }}
     </span>
     {% if status_summary.POOL %}
-    <a href="{% url 'job-pool' %}" class="status-chip status-chip-yellow hover:opacity-80 transition font-semibold">
+    <a href="{% url 'jobs-pipeline' %}?tab=pool" class="status-chip status-chip-yellow hover:opacity-80 transition font-semibold">
         <span class="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>
-        {{ status_summary.POOL }} in Pool →
+        {{ status_summary.POOL }} in Vetting →
     </a>
     {% endif %}
+</div>
+{% endif %}
+
+{% if show_pool_redirect_hint %}
+<div class="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+    Pool jobs are now owned by the Vetting Queue in Command Center.
+    <a href="{% url 'jobs-pipeline' %}?tab=pool" class="ml-1 font-semibold text-amber-900 underline hover:no-underline">Open Vetting Queue</a>
 </div>
 {% endif %}
 
@@ -103,7 +110,6 @@
             <select name="status" onchange="var p=new URLSearchParams(window.location.search);if(this.value)p.set('status',this.value);else p.delete('status');p.delete('page');window.location.search=p.toString();"
                 class="w-full md:w-40 pl-4 pr-10 py-3 bg-white/80 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition appearance-none cursor-pointer">
                 <option value="">All Statuses</option>
-                <option value="POOL" {% if selected_status == 'POOL' %}selected{% endif %}>In Pool</option>
                 <option value="OPEN" {% if selected_status == 'OPEN' %}selected{% endif %}>Open</option>
                 <option value="CLOSED" {% if selected_status == 'CLOSED' %}selected{% endif %}>Closed</option>
                 <option value="DRAFT" {% if selected_status == 'DRAFT' %}selected{% endif %}>Draft</option>

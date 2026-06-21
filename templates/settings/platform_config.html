@@ -519,8 +519,8 @@
                                 Control how new jobs flow through the review process before going live to consultants.
                             </p>
                         </div>
-                        <a href="{% url 'job-pool' %}" class="text-sm text-blue-600 hover:underline font-medium">
-                            View Job Pool →
+                        <a href="{% url 'jobs-pipeline' %}?tab=pool" class="text-sm text-blue-600 hover:underline font-medium">
+                            View Vetting Queue →
                         </a>
                     </div>
 
@@ -538,7 +538,7 @@
                                 </label>
                                 <p class="text-sm text-gray-500 mt-1">
                                     When <strong>enabled</strong>, all new jobs (created manually or via bulk upload) land in
-                                    the <strong>Job Pool</strong> for review before being visible to consultants.
+                                    the <strong>Vetting Queue</strong> for review before being visible to consultants.
                                     Disable this only if you want backward-compatible behaviour where jobs go live immediately.
                                 </p>
                                 <div class="mt-3 flex gap-6 text-xs">
@@ -602,8 +602,8 @@
                             Pool Review Notification Emails
                         </label>
                         <p class="text-sm text-gray-500 mb-3">
-                            When a new job enters the Pool, an email summary is sent to these addresses.
-                            The email includes the job title, company, validation score, and a link to the pool.
+                            When a new job enters vetting, an email summary is sent to these addresses.
+                            The email includes the job title, company, validation score, and a link to the vetting queue.
                             Leave blank to disable external notifications.
                         </p>
                         {{ form.pool_review_notify_emails }}
@@ -617,8 +617,8 @@
                         <h3 class="text-sm font-semibold text-gray-700 mb-3">Current Pool Status</h3>
                         <div class="flex gap-6 text-sm">
                             <div>
-                                <span class="text-gray-500">Jobs in Pool:</span>
-                                <a href="{% url 'job-pool' %}"
+                                <span class="text-gray-500">Jobs in Vetting:</span>
+                                <a href="{% url 'jobs-pipeline' %}?tab=pool"
                                     class="ml-1 font-bold text-indigo-600 hover:underline">
                                     {{ pool_job_count|default:"0" }}
                                 </a>
