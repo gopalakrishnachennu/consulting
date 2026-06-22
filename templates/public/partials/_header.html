@@ -12,12 +12,15 @@
             </span>
         </a>
         <nav class="hidden items-center gap-6 text-sm font-medium lg:flex" style="color:var(--muted,#8a999f);">
-            <a href="{% url 'home' %}" class="hover:text-white">Platform</a>
-            <a href="{% url 'public-careers-home' %}" class="hover:text-white">Careers</a>
-            <a href="{% url 'consultant-join' %}" class="hover:text-white">Consultants</a>
-            <a href="{% url 'employee-access-request' %}" class="hover:text-white">Employers</a>
+            <a href="{% url 'home' %}" class="cl-navlink">Platform</a>
+            <a href="{% url 'public-careers-home' %}" class="cl-navlink">Careers</a>
+            <a href="{% url 'consultant-join' %}" class="cl-navlink">Consultants</a>
+            <a href="{% url 'employee-access-request' %}" class="cl-navlink">Employers</a>
             <a href="{% url 'sign-in' %}" class="rounded-xl px-4 py-2"
                style="border:1px solid var(--border-2,rgba(255,255,255,.16)); color:var(--text,#eaf1f3);">Sign in</a>
         </nav>
+        {# Mobile: nav menu is hidden on small screens — keep Sign in reachable #}
+        <a href="{% url 'sign-in' %}" class="rounded-xl px-3.5 py-2 text-sm font-semibold lg:hidden"
+           style="border:1px solid var(--border-2,rgba(255,255,255,.16)); color:var(--text,#eaf1f3);">Sign in</a>
     </div>
 </header>
