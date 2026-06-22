@@ -413,72 +413,78 @@
 
 <!-- Consolidated vetting controls -->
 <div class="mb-4 rounded-2xl border border-slate-200 bg-white shadow-sm">
-  <div class="border-b border-slate-100 px-4 py-3">
-    <div class="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-start">
+  <div class="border-b border-slate-100 px-4 py-4">
+    <div class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
       <div>
         <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Queue controls</div>
-        <div class="mt-1 text-sm text-slate-600">Switch lanes, narrow gate status, and focus on the rows that need action first.</div>
+        <div class="mt-1 text-sm font-medium text-slate-700">Switch lanes, narrow gate status, and prioritize the rows that need action first.</div>
       </div>
-      <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-          <div class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Eligible</div>
-          <div class="mt-1 text-lg font-bold text-emerald-700">{{ pool_gate_summary.eligible }}</div>
-        </div>
-        <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-          <div class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Review</div>
-          <div class="mt-1 text-lg font-bold text-blue-700">{{ pool_gate_summary.review }}</div>
-        </div>
-        <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-          <div class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Blocked</div>
-          <div class="mt-1 text-lg font-bold text-rose-700">{{ pool_gate_summary.blocked }}</div>
-        </div>
-        <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-          <div class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Aging &gt;24h</div>
-          <div class="mt-1 text-lg font-bold text-amber-700">{{ pool_aging_gt_24h }}</div>
-        </div>
+      <div class="flex flex-wrap items-center gap-2 text-xs">
+        <span class="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 font-semibold text-emerald-700">
+          <span class="uppercase tracking-wide text-[10px] text-emerald-600">Eligible</span>
+          <strong class="text-sm">{{ pool_gate_summary.eligible }}</strong>
+        </span>
+        <span class="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 font-semibold text-blue-700">
+          <span class="uppercase tracking-wide text-[10px] text-blue-600">Review</span>
+          <strong class="text-sm">{{ pool_gate_summary.review }}</strong>
+        </span>
+        <span class="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 font-semibold text-rose-700">
+          <span class="uppercase tracking-wide text-[10px] text-rose-600">Blocked</span>
+          <strong class="text-sm">{{ pool_gate_summary.blocked }}</strong>
+        </span>
+        <span class="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 font-semibold text-amber-700">
+          <span class="uppercase tracking-wide text-[10px] text-amber-600">Aging &gt;24h</span>
+          <strong class="text-sm">{{ pool_aging_gt_24h }}</strong>
+        </span>
       </div>
     </div>
   </div>
 
-  <div class="space-y-4 px-4 py-4">
-    <div class="flex flex-wrap items-start justify-between gap-3">
-      <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Vetting lanes</div>
-      <div class="flex flex-wrap items-center gap-1.5">
-        <span class="mr-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Gate</span>
-      <a href="?tab=pool&gate=ALL&lane={{ lane_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}"
-         class="px-2 py-1 rounded-md border text-xs font-medium transition {% if gate_tab == 'ALL' or not gate_tab %}border-slate-500 bg-slate-700 text-white{% else %}border-slate-200 bg-white text-slate-600 hover:border-slate-400{% endif %}">All</a>
-      <a href="?tab=pool&gate=ELIGIBLE&lane={{ lane_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}"
-         class="px-2 py-1 rounded-md border text-xs font-medium transition {% if gate_tab == 'ELIGIBLE' %}border-emerald-500 bg-emerald-600 text-white{% else %}border-slate-200 bg-white text-slate-600 hover:border-emerald-400{% endif %}">Eligible {{ pool_gate_summary.eligible }}</a>
-      <a href="?tab=pool&gate=REVIEW&lane={{ lane_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}"
-         class="px-2 py-1 rounded-md border text-xs font-medium transition {% if gate_tab == 'REVIEW' %}border-blue-500 bg-blue-600 text-white{% else %}border-slate-200 bg-white text-slate-600 hover:border-blue-400{% endif %}">Review {{ pool_gate_summary.review }}</a>
-      <a href="?tab=pool&gate=BLOCKED&lane={{ lane_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}"
-         class="px-2 py-1 rounded-md border text-xs font-medium transition {% if gate_tab == 'BLOCKED' %}border-rose-500 bg-rose-600 text-white{% else %}border-slate-200 bg-white text-slate-600 hover:border-rose-400{% endif %}">Blocked {{ pool_gate_summary.blocked }}</a>
+  <div class="space-y-3 px-4 py-4">
+    <div class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+      <div class="min-w-0 flex-1">
+        <div class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Vetting lanes</div>
+        <div class="flex flex-wrap gap-2">
+          <a href="?tab=pool&lane=all&gate={{ gate_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}" class="{% if lane_tab == 'all' %}score-tab score-tab-active{% else %}score-tab score-tab-inactive{% endif %}" style="{% if lane_tab == 'all' %}background:#334155;{% endif %}">
+            All Queue <span class="{% if lane_tab == 'all' %}bg-white/20{% else %}bg-gray-100{% endif %} px-1.5 py-0.5 rounded-full font-bold">{{ pool_filtered_total }}</span>
+          </a>
+          <a href="?tab=pool&lane=auto&gate={{ gate_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}" class="{% if lane_tab == 'auto' %}score-tab score-tab-active{% else %}score-tab score-tab-inactive{% endif %}" style="{% if lane_tab == 'auto' %}background:#059669;{% endif %}">
+            Auto-Approve <span class="{% if lane_tab == 'auto' %}bg-white/20{% else %}bg-gray-100{% endif %} px-1.5 py-0.5 rounded-full font-bold">{{ pool_auto_lane }}</span>
+          </a>
+          <a href="?tab=pool&lane=human&gate={{ gate_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}" class="{% if lane_tab == 'human' %}score-tab score-tab-active{% else %}score-tab score-tab-inactive{% endif %}" style="{% if lane_tab == 'human' %}background:#2563eb;{% endif %}">
+            Needs Review <span class="{% if lane_tab == 'human' %}bg-white/20{% else %}bg-gray-100{% endif %} px-1.5 py-0.5 rounded-full font-bold">{{ pool_human_lane }}</span>
+          </a>
+          <a href="?tab=pool&lane=blocked&gate={{ gate_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}" class="{% if lane_tab == 'blocked' %}score-tab score-tab-active{% else %}score-tab score-tab-inactive{% endif %}" style="{% if lane_tab == 'blocked' %}background:#dc2626;{% endif %}">
+            Blocked <span class="{% if lane_tab == 'blocked' %}bg-white/20{% else %}bg-gray-100{% endif %} px-1.5 py-0.5 rounded-full font-bold">{{ pool_blocked_lane }}</span>
+          </a>
+          <a href="?tab=pool&lane=aging&gate={{ gate_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}" class="{% if lane_tab == 'aging' %}score-tab score-tab-active{% else %}score-tab score-tab-inactive{% endif %}" style="{% if lane_tab == 'aging' %}background:#a16207;{% endif %}">
+            Aging &gt;24h <span class="{% if lane_tab == 'aging' %}bg-white/20{% else %}bg-gray-100{% endif %} px-1.5 py-0.5 rounded-full font-bold">{{ pool_aging_gt_24h }}</span>
+          </a>
+          <a href="?tab=pool&lane=approved_recent&gate={{ gate_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}" class="{% if lane_tab == 'approved_recent' %}score-tab score-tab-active{% else %}score-tab score-tab-inactive{% endif %}" style="{% if lane_tab == 'approved_recent' %}background:#0f766e;{% endif %}">
+            Recently Approved
+          </a>
+        </div>
       </div>
-    </div>
-    <div class="flex flex-wrap gap-2">
-      <a href="?tab=pool&lane=all&gate={{ gate_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}" class="{% if lane_tab == 'all' %}score-tab score-tab-active{% else %}score-tab score-tab-inactive{% endif %}" style="{% if lane_tab == 'all' %}background:#334155;{% endif %}">
-        All Queue <span class="{% if lane_tab == 'all' %}bg-white/20{% else %}bg-gray-100{% endif %} px-1.5 py-0.5 rounded-full font-bold">{{ pool_filtered_total }}</span>
-      </a>
-      <a href="?tab=pool&lane=auto&gate={{ gate_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}" class="{% if lane_tab == 'auto' %}score-tab score-tab-active{% else %}score-tab score-tab-inactive{% endif %}" style="{% if lane_tab == 'auto' %}background:#059669;{% endif %}">
-        Auto-Approve <span class="{% if lane_tab == 'auto' %}bg-white/20{% else %}bg-gray-100{% endif %} px-1.5 py-0.5 rounded-full font-bold">{{ pool_auto_lane }}</span>
-      </a>
-      <a href="?tab=pool&lane=human&gate={{ gate_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}" class="{% if lane_tab == 'human' %}score-tab score-tab-active{% else %}score-tab score-tab-inactive{% endif %}" style="{% if lane_tab == 'human' %}background:#2563eb;{% endif %}">
-        Needs Review <span class="{% if lane_tab == 'human' %}bg-white/20{% else %}bg-gray-100{% endif %} px-1.5 py-0.5 rounded-full font-bold">{{ pool_human_lane }}</span>
-      </a>
-      <a href="?tab=pool&lane=blocked&gate={{ gate_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}" class="{% if lane_tab == 'blocked' %}score-tab score-tab-active{% else %}score-tab score-tab-inactive{% endif %}" style="{% if lane_tab == 'blocked' %}background:#dc2626;{% endif %}">
-        Blocked <span class="{% if lane_tab == 'blocked' %}bg-white/20{% else %}bg-gray-100{% endif %} px-1.5 py-0.5 rounded-full font-bold">{{ pool_blocked_lane }}</span>
-      </a>
-      <a href="?tab=pool&lane=aging&gate={{ gate_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}" class="{% if lane_tab == 'aging' %}score-tab score-tab-active{% else %}score-tab score-tab-inactive{% endif %}" style="{% if lane_tab == 'aging' %}background:#a16207;{% endif %}">
-        Aging &gt;24h <span class="{% if lane_tab == 'aging' %}bg-white/20{% else %}bg-gray-100{% endif %} px-1.5 py-0.5 rounded-full font-bold">{{ pool_aging_gt_24h }}</span>
-      </a>
-      <a href="?tab=pool&lane=approved_recent&gate={{ gate_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}" class="{% if lane_tab == 'approved_recent' %}score-tab score-tab-active{% else %}score-tab score-tab-inactive{% endif %}" style="{% if lane_tab == 'approved_recent' %}background:#0f766e;{% endif %}">
-        Recently Approved
-      </a>
+
+      <div class="xl:w-[360px]">
+        <div class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Gate</div>
+        <div class="flex flex-wrap gap-2 xl:justify-end">
+          <a href="?tab=pool&gate=ALL&lane={{ lane_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}"
+             class="px-2 py-1 rounded-md border text-xs font-medium transition {% if gate_tab == 'ALL' or not gate_tab %}border-slate-500 bg-slate-700 text-white{% else %}border-slate-200 bg-white text-slate-600 hover:border-slate-400{% endif %}">All</a>
+          <a href="?tab=pool&gate=ELIGIBLE&lane={{ lane_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}"
+             class="px-2 py-1 rounded-md border text-xs font-medium transition {% if gate_tab == 'ELIGIBLE' %}border-emerald-500 bg-emerald-600 text-white{% else %}border-slate-200 bg-white text-slate-600 hover:border-emerald-400{% endif %}">Eligible {{ pool_gate_summary.eligible }}</a>
+          <a href="?tab=pool&gate=REVIEW&lane={{ lane_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}"
+             class="px-2 py-1 rounded-md border text-xs font-medium transition {% if gate_tab == 'REVIEW' %}border-blue-500 bg-blue-600 text-white{% else %}border-slate-200 bg-white text-slate-600 hover:border-blue-400{% endif %}">Review {{ pool_gate_summary.review }}</a>
+          <a href="?tab=pool&gate=BLOCKED&lane={{ lane_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}"
+             class="px-2 py-1 rounded-md border text-xs font-medium transition {% if gate_tab == 'BLOCKED' %}border-rose-500 bg-rose-600 text-white{% else %}border-slate-200 bg-white text-slate-600 hover:border-rose-400{% endif %}">Blocked {{ pool_gate_summary.blocked }}</a>
+        </div>
+      </div>
     </div>
 
     <div class="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
-      <div class="mb-2 flex flex-wrap items-center gap-2">
-        <span class="mr-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Quality</span>
+      <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <div class="flex min-w-0 flex-wrap items-center gap-2">
+          <span class="mr-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Quality</span>
 
   {% if score_tab == 'all' %}
   <a href="?tab=pool&lane={{ lane_tab }}&gate={{ gate_tab }}&score=all{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}" class="score-tab score-tab-active" style="background:#4f46e5;">
@@ -523,18 +529,19 @@
     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="2"/></svg>
     Unscored <span class="{% if score_tab == 'unscored' %}bg-white/20{% else %}bg-gray-100{% endif %} px-1.5 py-0.5 rounded-full font-bold">{{ pool_unscored }}</span>
   </a>
-      </div>
-    </div>
+        </div>
 
-    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-slate-100 bg-white px-3 py-3 text-xs text-slate-500">
-      <span class="font-semibold uppercase tracking-wide text-slate-500">Queue age</span>
-      <span>&lt;1h <strong class="text-slate-900">{{ pool_aging_lt_1h }}</strong></span>
-      <span>1–6h <strong class="text-blue-700">{{ pool_aging_1_6h }}</strong></span>
-      <span>6–24h <strong class="text-amber-700">{{ pool_aging_6_24h }}</strong></span>
-      <a href="?tab=pool&lane=aging&gate={{ gate_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}"
-         class="inline-flex items-center gap-1 {% if pool_aging_gt_24h %}px-2 py-0.5 rounded-full bg-rose-50 border border-rose-200 text-rose-700 font-semibold hover:bg-rose-100{% endif %}">
-        &gt;24h <strong>{{ pool_aging_gt_24h }}</strong>{% if pool_aging_gt_24h %} — view aging →{% endif %}
-      </a>
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-500 xl:justify-end">
+          <span class="font-semibold uppercase tracking-wide text-slate-500">Queue age</span>
+          <span>&lt;1h <strong class="text-slate-900">{{ pool_aging_lt_1h }}</strong></span>
+          <span>1–6h <strong class="text-blue-700">{{ pool_aging_1_6h }}</strong></span>
+          <span>6–24h <strong class="text-amber-700">{{ pool_aging_6_24h }}</strong></span>
+          <a href="?tab=pool&lane=aging&gate={{ gate_tab }}&score={{ score_tab }}{% if pool_filter_query %}&{{ pool_filter_query }}{% endif %}"
+             class="inline-flex items-center gap-1 {% if pool_aging_gt_24h %}px-2 py-0.5 rounded-full bg-rose-50 border border-rose-200 text-rose-700 font-semibold hover:bg-rose-100{% endif %}">
+            &gt;24h <strong>{{ pool_aging_gt_24h }}</strong>{% if pool_aging_gt_24h %} — view aging →{% endif %}
+          </a>
+        </div>
+      </div>
     </div>
   </div>
 </div>
