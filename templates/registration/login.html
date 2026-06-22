@@ -10,7 +10,7 @@
             <span class="inline-flex rounded-full border border-slate-200 bg-white px-4 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-600">
                 {{ public_site_content.signin_title }}
             </span>
-            <h1 class="mt-6 text-5xl font-semibold tracking-tight text-slate-950">Sign in to the right CHENN workspace.</h1>
+            <h1 class="mt-6 text-5xl font-semibold tracking-tight text-slate-950">Sign in to the right CHENN <span class="cl-grad">workspace.</span></h1>
             <p class="mt-5 max-w-2xl text-lg leading-8 text-slate-600">{{ public_site_content.signin_body }}</p>
             <div class="mt-8 grid gap-4 sm:grid-cols-3">
                 <a href="{% url 'sign-in' %}?portal=admin" class="rounded-2xl border p-5 {% if portal == 'admin' %}border-slate-900 bg-slate-900 text-white{% else %}border-slate-200 bg-white text-slate-900{% endif %}">
