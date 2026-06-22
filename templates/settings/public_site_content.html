@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex items-end justify-between gap-4">
+        <div>
+            <h1 class="text-3xl font-semibold text-slate-900">Public site content</h1>
+            <p class="mt-2 text-sm text-slate-500">Control landing copy, careers messaging, and onboarding entry text from one admin form.</p>
+        </div>
+        <div class="flex gap-3">
+            <a href="{% url 'home' %}" class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">View landing</a>
+            <a href="{% url 'public-careers-home' %}" class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">View careers</a>
+        </div>
+    </div>
+
+    <form method="post" class="rounded-[28px] border border-slate-200 bg-white p-8 shadow-sm">
+        {% csrf_token %}
+        <div class="grid gap-8">
+            {% for field in form %}
+            <div>
+                <label class="mb-2 block text-sm font-semibold uppercase tracking-[0.14em] text-slate-500" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.help_text %}<p class="mt-2 text-xs text-slate-500">{{ field.help_text }}</p>{% endif %}
+                {% if field.errors %}<p class="mt-2 text-sm text-red-600">{{ field.errors.0 }}</p>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        <div class="mt-8 flex justify-end">
+            <button type="submit" class="rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800">Save public content</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block fullscreen_content %}
+<div class="min-h-screen bg-slate-50">
+    {% include "public/partials/_header.html" %}
+    <section class="mx-auto grid max-w-6xl gap-10 px-6 py-14 lg:grid-cols-[0.95fr_1.05fr]">
+        <div>
+            <div class="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">{{ content.consultant_onboarding_title }}</div>
+            <h1 class="mt-4 text-5xl font-semibold tracking-tight text-slate-950">Submit your consultant profile once.</h1>
+            <p class="mt-5 text-lg leading-8 text-slate-600">{{ content.consultant_onboarding_body }}</p>
+            <div class="mt-8 rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+                <div class="text-sm font-semibold text-slate-900">What this intake captures</div>
+                <ul class="mt-4 space-y-3 text-sm leading-6 text-slate-600">
+                    <li>Role focus and current title</li>
+                    <li>Resume and profile basics for admin review</li>
+                    <li>Location and preferred markets</li>
+                    <li>Enough context for the team to provision the right consultant account</li>
+                </ul>
+            </div>
+        </div>
+        <form method="post" enctype="multipart/form-data" class="rounded-[28px] border border-slate-200 bg-white p-8 shadow-sm">
+            {% csrf_token %}
+            <div class="grid gap-5">
+                {% for field in form %}
+                <div>
+                    <label class="mb-2 block text-sm font-medium text-slate-700" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.help_text %}<p class="mt-2 text-xs text-slate-500">{{ field.help_text }}</p>{% endif %}
+                    {% if field.errors %}<p class="mt-2 text-sm text-red-600">{{ field.errors.0 }}</p>{% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            <div class="mt-8 flex justify-end">
+                <button type="submit" class="rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800">Submit profile</button>
+            </div>
+        </form>
+    </section>
+    {% include "public/partials/_footer.html" %}
+</div>
+{% endblock %}

@@ -1,11 +1,22 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="max-w-lg mx-auto px-4 py-10">
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
-        <h1 class="text-2xl font-bold text-gray-900 mb-1">Welcome — set up your profile</h1>
-        <p class="text-sm text-gray-500 mb-8">Step {{ step }} of 3</p>
+<div class="mx-auto max-w-4xl px-4 py-10">
+    <div class="grid gap-6 lg:grid-cols-[0.82fr_1.18fr]">
+        <div class="rounded-[28px] border border-slate-200 bg-white p-8 shadow-sm">
+            <div class="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">{{ content.consultant_onboarding_title }}</div>
+            <h1 class="mt-3 text-3xl font-semibold text-slate-950">Configure your consultant routing profile.</h1>
+            <p class="mt-4 text-sm leading-6 text-slate-600">{{ content.consultant_onboarding_body }}</p>
+            <div class="mt-8 space-y-3">
+                <div class="rounded-2xl border px-4 py-3 text-sm {% if step == 1 %}border-slate-900 bg-slate-900 text-white{% else %}border-slate-200 bg-slate-50 text-slate-600{% endif %}">1. Summary and skills</div>
+                <div class="rounded-2xl border px-4 py-3 text-sm {% if step == 2 %}border-slate-900 bg-slate-900 text-white{% else %}border-slate-200 bg-slate-50 text-slate-600{% endif %}">2. Location and availability</div>
+                <div class="rounded-2xl border px-4 py-3 text-sm {% if step == 3 %}border-slate-900 bg-slate-900 text-white{% else %}border-slate-200 bg-slate-50 text-slate-600{% endif %}">3. Routing preferences</div>
+                <div class="rounded-2xl border px-4 py-3 text-sm {% if step == 4 %}border-slate-900 bg-slate-900 text-white{% else %}border-slate-200 bg-slate-50 text-slate-600{% endif %}">4. Finish</div>
+            </div>
+        </div>
 
+        <div class="rounded-[28px] border border-slate-200 bg-white p-8 shadow-sm">
+        <p class="mb-8 text-sm text-slate-500">Step {{ step }} of 4</p>
         {% if step == 1 %}
         <form method="post" class="space-y-4">
             {% csrf_token %}
@@ -21,12 +32,22 @@
                 {% if form1.skills_text.help_text %}<p class="text-xs text-gray-500 mt-1">{{ form1.skills_text.help_text }}</p>{% endif %}
                 {% if form1.skills_text.errors %}<p class="text-red-600 text-sm mt-1">{{ form1.skills_text.errors.0 }}</p>{% endif %}
             </div>
-            <button type="submit" class="w-full py-3 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 transition">Continue</button>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1" for="{{ form1.current_location.id_for_label }}">{{ form1.current_location.label }}</label>
+                {{ form1.current_location }}
+                {% if form1.current_location.errors %}<p class="text-red-600 text-sm mt-1">{{ form1.current_location.errors.0 }}</p>{% endif %}
+            </div>
+            <button type="submit" class="w-full py-3 rounded-xl bg-slate-950 text-white font-semibold hover:bg-slate-800 transition">Continue</button>
         </form>
         {% elif step == 2 %}
         <form method="post" class="space-y-4">
             {% csrf_token %}
             <input type="hidden" name="step" value="2" />
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1" for="{{ form2.preferred_location.id_for_label }}">Preferred location</label>
+                {{ form2.preferred_location }}
+                {% if form2.preferred_location.errors %}<p class="text-red-600 text-sm mt-1">{{ form2.preferred_location.errors.0 }}</p>{% endif %}
+            </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1" for="{{ form2.available_from.id_for_label }}">Available from</label>
                 {{ form2.available_from }}
@@ -37,16 +58,50 @@
                 {{ form2.notice_period }}
                 {% if form2.notice_period.help_text %}<p class="text-xs text-gray-500 mt-1">{{ form2.notice_period.help_text }}</p>{% endif %}
             </div>
-            <button type="submit" class="w-full py-3 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 transition">Continue</button>
+            <button type="submit" class="w-full py-3 rounded-xl bg-slate-950 text-white font-semibold hover:bg-slate-800 transition">Continue</button>
         </form>
         {% elif step == 3 %}
+        <form method="post" class="space-y-4">
+            {% csrf_token %}
+            <input type="hidden" name="step" value="3" />
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1" for="{{ form3.work_countries_text.id_for_label }}">{{ form3.work_countries_text.label }}</label>
+                {{ form3.work_countries_text }}
+                {% if form3.work_countries_text.help_text %}<p class="text-xs text-gray-500 mt-1">{{ form3.work_countries_text.help_text }}</p>{% endif %}
+                {% if form3.work_countries_text.errors %}<p class="text-red-600 text-sm mt-1">{{ form3.work_countries_text.errors.0 }}</p>{% endif %}
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1" for="{{ form3.preferred_seniority_text.id_for_label }}">{{ form3.preferred_seniority_text.label }}</label>
+                {{ form3.preferred_seniority_text }}
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1" for="{{ form3.employment_preferences_text.id_for_label }}">{{ form3.employment_preferences_text.label }}</label>
+                {{ form3.employment_preferences_text }}
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1" for="{{ form3.preferred_work_modes_text.id_for_label }}">{{ form3.preferred_work_modes_text.label }}</label>
+                {{ form3.preferred_work_modes_text }}
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1" for="{{ form3.visa_status.id_for_label }}">{{ form3.visa_status.label }}</label>
+                {{ form3.visa_status }}
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1" for="{{ form3.requires_visa_sponsorship.id_for_label }}">{{ form3.requires_visa_sponsorship.label }}</label>
+                {{ form3.requires_visa_sponsorship }}
+            </div>
+            <label class="flex items-center gap-3 text-sm text-gray-700">{{ form3.clearance_eligible }} Clearance eligible</label>
+            <button type="submit" class="w-full py-3 rounded-xl bg-slate-950 text-white font-semibold hover:bg-slate-800 transition">Continue</button>
+        </form>
+        {% elif step == 4 %}
         <p class="text-gray-700 mb-6">You’re ready to use the platform. You can change these details anytime from your profile.</p>
         <form method="post">
             {% csrf_token %}
-            <input type="hidden" name="step" value="3" />
+            <input type="hidden" name="step" value="4" />
             <button type="submit" class="w-full py-3 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 transition">Finish</button>
         </form>
         {% endif %}
+        </div>
     </div>
 </div>
 {% endblock %}

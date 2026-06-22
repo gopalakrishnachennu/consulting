@@ -3,6 +3,8 @@ from django.db import models
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from django.utils.text import slugify
+from django.utils import timezone
+from uuid import uuid4
 
 class User(AbstractUser):
     class Role(models.TextChoices):
@@ -282,10 +284,82 @@ class EmployeeProfile(models.Model):
         help_text=_('RBAC tier — controls which employee feature flags apply.'),
     )
     company_name = models.CharField(max_length=200, default="My Company")
+    phone = models.CharField(max_length=30, blank=True, default="")
+    work_location = models.CharField(max_length=160, blank=True, default="")
     can_manage_consultants = models.BooleanField(default=False, help_text="Designates whether this employee can add, edit, or delete consultants.")
+    onboarding_completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=_("Set when the employee completes the first-run onboarding flow."),
+    )
     
     def __str__(self):
         return f"{self.user.username}'s Employee Profile"
+
+
+class ConsultantLead(models.Model):
+    class Status(models.TextChoices):
+        NEW = "NEW", _("New")
+        REVIEWED = "REVIEWED", _("Reviewed")
+        CONTACTED = "CONTACTED", _("Contacted")
+        CONVERTED = "CONVERTED", _("Converted")
+        ARCHIVED = "ARCHIVED", _("Archived")
+
+    full_name = models.CharField(max_length=160)
+    email = models.EmailField()
+    phone = models.CharField(max_length=30, blank=True)
+    current_title = models.CharField(max_length=160, blank=True)
+    location = models.CharField(max_length=160, blank=True)
+    linkedin_url = models.URLField(blank=True)
+    resume = models.FileField(upload_to="consultant_leads/resumes/", blank=True, null=True)
+    resume_text = models.TextField(blank=True)
+    preferred_markets = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=_("Comma-separated role families or market interests."),
+    )
+    notes = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.NEW, db_index=True)
+    converted_user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="consultant_lead_conversions",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.full_name} <{self.email}>"
+
+
+class EmployerAccessRequest(models.Model):
+    class Status(models.TextChoices):
+        NEW = "NEW", _("New")
+        REVIEWED = "REVIEWED", _("Reviewed")
+        APPROVED = "APPROVED", _("Approved")
+        DECLINED = "DECLINED", _("Declined")
+
+    company_name = models.CharField(max_length=200)
+    contact_name = models.CharField(max_length=160)
+    work_email = models.EmailField()
+    phone = models.CharField(max_length=30, blank=True)
+    team_size = models.CharField(max_length=80, blank=True)
+    hiring_volume = models.CharField(max_length=120, blank=True)
+    message = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.NEW, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.company_name} - {self.contact_name}"
 
 
 

@@ -3,7 +3,7 @@ from django.urls import path, include
 from django.views.generic import RedirectView
 from django.http import HttpResponse
 
-from core.views import home, AdminDashboardView, EmployeeDashboardView
+from core.views import home, PublicSignInView, AdminDashboardView, EmployeeDashboardView
 from config.impersonate_views import start_impersonate, stop_impersonate
 from users.views import PublicConsultantProfileView
 
@@ -16,6 +16,8 @@ urlpatterns = [
     path('consultants/consultants/', RedirectView.as_view(url='/consultants/', permanent=True)),
     path('consultants/consultants', RedirectView.as_view(url='/consultants/', permanent=True)),
     path("__reload__/", include("django_browser_reload.urls")),
+    path("signin/", PublicSignInView.as_view(), name="sign-in"),
+    path("accounts/login/", PublicSignInView.as_view(), name="login"),
     path("accounts/", include("django.contrib.auth.urls")),
     path("jobs/", include("jobs.urls")),
     path("careers/", include("jobs.public_urls")),

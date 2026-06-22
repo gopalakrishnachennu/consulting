@@ -10,7 +10,7 @@ from django.urls import reverse
 from django.utils import timezone
 from unittest.mock import patch
 from users.models import User, UserEmailNotificationPreferences, ConsultantProfile
-from .models import PlatformConfig, LLMConfig, AuditLog, Notification, BroadcastMessage
+from .models import PlatformConfig, PublicSiteContent, LLMConfig, AuditLog, Notification, BroadcastMessage
 from .feature_flags import get_feature_flag
 from .forms import PlatformConfigForm
 from .middleware import MaintenanceModeMiddleware, PlatformSessionTimeoutMiddleware
@@ -72,6 +72,11 @@ class PlatformConfigTests(TestCase):
         config.save()
         self.assertEqual(PlatformConfig.load().color_theme, PlatformConfig.ColorTheme.ASHOKA)
 
+    def test_public_site_content_singleton_load(self):
+        content = PublicSiteContent.load()
+        self.assertEqual(content.pk, 1)
+        self.assertIn("hiring", content.hero_title.lower())
+
 
 class PlatformConfigAdminViewTests(TestCase):
     def setUp(self):
@@ -125,6 +130,29 @@ class PlatformConfigAdminViewTests(TestCase):
         self.assertContains(resp, "Terms of Service URL")
         self.assertContains(resp, "Privacy Policy URL")
         self.assertContains(resp, "Header preview")
+
+    def test_public_site_admin_page_loads(self):
+        resp = self.client.get(reverse("public-site-config"))
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Public site content")
+        self.assertContains(resp, "Hero title")
+
+
+class PublicEntryViewTests(TestCase):
+    def test_home_page_renders_public_landing_for_guests(self):
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Explore careers")
+        self.assertContains(response, "Consultant onboarding")
+
+    def test_signin_page_supports_portal_switching(self):
+        response = self.client.get(reverse("sign-in"), {"portal": "employee"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Employee login")
+        self.assertContains(response, "Need employee access for your team?")
 
 
 class ClassificationWorkspaceRolloutTests(TestCase):

@@ -18,12 +18,14 @@ from core.feature_flags import feature_enabled_for, consultant_public_feature_en
 from .models import (
     User,
     ConsultantProfile,
+    ConsultantLead,
     Experience,
     Education,
     Certification,
     SavedJob,
     MarketingRole,
     EmployeeProfile,
+    EmployerAccessRequest,
     UserEmailNotificationPreferences,
 )
 from .forms import (
@@ -38,8 +40,12 @@ from .forms import (
     ConsultantProfileEditForm,
     MarketingRoleForm,
     EmployeeCreateForm,
+    ConsultantLeadForm,
     ConsultantOnboardingStep1Form,
     ConsultantOnboardingStep2Form,
+    ConsultantOnboardingStep3Form,
+    EmployeeOnboardingForm,
+    EmployerAccessRequestForm,
     UserEmailNotificationPreferencesForm,
 )
 from jobs.models import Job
@@ -71,7 +77,7 @@ from config.constants import (
     MSG_JOB_UNSAVED,
     MSG_ONLY_CONSULTANTS_SAVE,
 )
-from core.models import PlatformConfig, LLMUsageLog
+from core.models import PlatformConfig, PublicSiteContent, LLMUsageLog
 from .journey_utils import (
     compute_consultant_readiness,
     build_journey_steps,
@@ -974,7 +980,7 @@ class ConsultantJourneyView(LoginRequiredMixin, UserPassesTestMixin, TemplateVie
 
 
 class ConsultantOnboardingView(LoginRequiredMixin, UserPassesTestMixin, View):
-    """Three-step wizard: bio/skills → availability → finish."""
+    """Four-step wizard: summary -> location/availability -> routing preferences -> finish."""
 
     template_name = 'users/consultant_onboarding.html'
 
@@ -990,18 +996,26 @@ class ConsultantOnboardingView(LoginRequiredMixin, UserPassesTestMixin, View):
             step = int(request.GET.get('step', 1))
         except ValueError:
             step = 1
-        step = max(1, min(3, step))
+        step = max(1, min(4, step))
         form1 = ConsultantOnboardingStep1Form(
             initial={
                 'bio': profile.bio,
                 'skills_text': ', '.join(profile.skills or []),
+                'current_location': profile.preferred_location,
             }
         )
         form2 = ConsultantOnboardingStep2Form(instance=profile)
+        form3 = ConsultantOnboardingStep3Form(instance=profile)
         return render(
             request,
             self.template_name,
-            {'step': step, 'form1': form1, 'form2': form2},
+            {
+                'step': step,
+                'form1': form1,
+                'form2': form2,
+                'form3': form3,
+                'content': PublicSiteContent.load(),
+            },
         )
 
     def post(self, request):
@@ -1018,13 +1032,15 @@ class ConsultantOnboardingView(LoginRequiredMixin, UserPassesTestMixin, View):
                 profile.bio = form.cleaned_data.get('bio') or ''
                 raw = form.cleaned_data.get('skills_text', '')
                 profile.skills = [s.strip() for s in raw.split(',') if s.strip()]
+                profile.preferred_location = form.cleaned_data.get('current_location') or profile.preferred_location
                 profile.save()
                 return redirect(f"{reverse('consultant-onboarding')}?step=2")
             form2 = ConsultantOnboardingStep2Form(instance=profile)
+            form3 = ConsultantOnboardingStep3Form(instance=profile)
             return render(
                 request,
                 self.template_name,
-                {'step': 1, 'form1': form, 'form2': form2},
+                {'step': 1, 'form1': form, 'form2': form2, 'form3': form3, 'content': PublicSiteContent.load()},
             )
         if step == 2:
             form = ConsultantOnboardingStep2Form(request.POST, instance=profile)
@@ -1035,19 +1051,139 @@ class ConsultantOnboardingView(LoginRequiredMixin, UserPassesTestMixin, View):
                 initial={
                     'bio': profile.bio,
                     'skills_text': ', '.join(profile.skills or []),
+                    'current_location': profile.preferred_location,
                 }
             )
+            form3 = ConsultantOnboardingStep3Form(instance=profile)
             return render(
                 request,
                 self.template_name,
-                {'step': 2, 'form1': form1, 'form2': form},
+                {'step': 2, 'form1': form1, 'form2': form, 'form3': form3, 'content': PublicSiteContent.load()},
             )
         if step == 3:
+            form = ConsultantOnboardingStep3Form(request.POST, instance=profile)
+            if form.is_valid():
+                form.save()
+                return redirect(f"{reverse('consultant-onboarding')}?step=4")
+            form1 = ConsultantOnboardingStep1Form(
+                initial={
+                    'bio': profile.bio,
+                    'skills_text': ', '.join(profile.skills or []),
+                    'current_location': profile.preferred_location,
+                }
+            )
+            form2 = ConsultantOnboardingStep2Form(instance=profile)
+            return render(
+                request,
+                self.template_name,
+                {'step': 3, 'form1': form1, 'form2': form2, 'form3': form, 'content': PublicSiteContent.load()},
+            )
+        if step == 4:
             profile.onboarding_completed_at = timezone.now()
             profile.save(update_fields=['onboarding_completed_at'])
             messages.success(request, "Your profile setup is complete.")
             return redirect('consultant-dashboard')
         return redirect('consultant-onboarding')
+
+
+class EmployeeOnboardingView(LoginRequiredMixin, UserPassesTestMixin, View):
+    template_name = "users/employee_onboarding.html"
+
+    def test_func(self):
+        return self.request.user.role == User.Role.EMPLOYEE
+
+    def get(self, request):
+        profile, _ = EmployeeProfile.objects.get_or_create(user=request.user)
+        if profile.onboarding_completed_at:
+            messages.info(request, "You’ve already completed onboarding.")
+            return redirect("employee-dashboard")
+        form = EmployeeOnboardingForm(instance=profile)
+        return render(
+            request,
+            self.template_name,
+            {"form": form, "content": PublicSiteContent.load()},
+        )
+
+    def post(self, request):
+        profile, _ = EmployeeProfile.objects.get_or_create(user=request.user)
+        form = EmployeeOnboardingForm(request.POST, instance=profile)
+        if form.is_valid():
+            profile = form.save(commit=False)
+            profile.onboarding_completed_at = timezone.now()
+            profile.save()
+            messages.success(request, "Your employee workspace is ready.")
+            return redirect("employee-dashboard")
+        return render(
+            request,
+            self.template_name,
+            {"form": form, "content": PublicSiteContent.load()},
+        )
+
+
+class ConsultantLeadCreateView(View):
+    template_name = "users/consultant_public_intake.html"
+
+    def get(self, request):
+        if not PlatformConfig.load().enable_consultant_registration:
+            raise PermissionDenied
+        return render(
+            request,
+            self.template_name,
+            {
+                "form": ConsultantLeadForm(),
+                "hide_chrome": True,
+                "content": PublicSiteContent.load(),
+            },
+        )
+
+    def post(self, request):
+        if not PlatformConfig.load().enable_consultant_registration:
+            raise PermissionDenied
+        form = ConsultantLeadForm(request.POST, request.FILES)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Your consultant profile request was submitted.")
+            return redirect("consultant-join")
+        return render(
+            request,
+            self.template_name,
+            {
+                "form": form,
+                "hide_chrome": True,
+                "content": PublicSiteContent.load(),
+            },
+        )
+
+
+class EmployerAccessRequestCreateView(View):
+    template_name = "users/employee_access_request.html"
+
+    def get(self, request):
+        return render(
+            request,
+            self.template_name,
+            {
+                "form": EmployerAccessRequestForm(),
+                "hide_chrome": True,
+                "content": PublicSiteContent.load(),
+            },
+        )
+
+    def post(self, request):
+        form = EmployerAccessRequestForm(request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Your access request was submitted.")
+            return redirect("employee-access-request")
+        return render(
+            request,
+            self.template_name,
+            {
+                "form": form,
+                "hide_chrome": True,
+                "content": PublicSiteContent.load(),
+            },
+        )
 
 
 # --- Saved Jobs ---

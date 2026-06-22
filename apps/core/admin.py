@@ -1,6 +1,7 @@
 from django.contrib import admin
 from .models import (
     PlatformConfig,
+    PublicSiteContent,
     LLMConfig,
     LLMConfigVersion,
     LLMUsageLog,
@@ -121,6 +122,75 @@ class PlatformConfigAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return not PlatformConfig.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PublicSiteContent)
+class PublicSiteContentAdmin(admin.ModelAdmin):
+    fieldsets = (
+        ("Hero", {
+            "fields": (
+                "hero_badge",
+                "hero_title",
+                "hero_body",
+                "hero_primary_label",
+                "hero_primary_url",
+                "hero_secondary_label",
+                "hero_secondary_url",
+            ),
+        }),
+        ("Proof strip", {
+            "fields": (
+                "proof_stat_1_value",
+                "proof_stat_1_label",
+                "proof_stat_2_value",
+                "proof_stat_2_label",
+                "proof_stat_3_value",
+                "proof_stat_3_label",
+            ),
+        }),
+        ("Workflow", {
+            "fields": (
+                "workflow_title",
+                "workflow_body",
+                "workflow_step_1_title",
+                "workflow_step_1_body",
+                "workflow_step_2_title",
+                "workflow_step_2_body",
+                "workflow_step_3_title",
+                "workflow_step_3_body",
+                "workflow_step_4_title",
+                "workflow_step_4_body",
+            ),
+        }),
+        ("Consultant and employer sections", {
+            "fields": (
+                "consultant_title",
+                "consultant_body",
+                "consultant_cta_label",
+                "employer_title",
+                "employer_body",
+                "employer_cta_label",
+            ),
+        }),
+        ("Careers and auth", {
+            "fields": (
+                "careers_title",
+                "careers_body",
+                "signin_title",
+                "signin_body",
+                "consultant_onboarding_title",
+                "consultant_onboarding_body",
+                "employee_onboarding_title",
+                "employee_onboarding_body",
+            ),
+        }),
+    )
+
+    def has_add_permission(self, request):
+        return not PublicSiteContent.objects.exists()
 
     def has_delete_permission(self, request, obj=None):
         return False

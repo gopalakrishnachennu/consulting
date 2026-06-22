@@ -59,6 +59,45 @@ class JobsPipelineRouteOwnershipTests(SimpleTestCase):
         self.assertEqual(reverse("harvest-rawjobs"), "/harvest/raw-jobs/")
 
 
+class PublicCareersTests(TestCase):
+    def setUp(self):
+        self.employee = User.objects.create_user(
+            username="public_jobs_employee",
+            password="testpass",
+            role=User.Role.EMPLOYEE,
+        )
+        self.open_job = Job.objects.create(
+            title="Public Platform Engineer",
+            company="Public Co",
+            location="Austin, TX",
+            country="United States",
+            department=Job.Department.DEVOPS_CLOUD,
+            description="Public role description",
+            original_link="https://example.com/public-role",
+            posted_by=self.employee,
+            status=Job.Status.OPEN,
+        )
+
+    def test_public_careers_home_loads(self):
+        response = self.client.get(reverse("public-careers-home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Featured openings")
+        self.assertContains(response, self.open_job.title)
+
+    def test_public_job_list_filters_by_country(self):
+        response = self.client.get(reverse("public-job-list"), {"country": "United States"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.open_job.title)
+
+    def test_public_apply_redirects_anonymous_users_to_signin(self):
+        response = self.client.get(reverse("public-job-apply", kwargs={"pk": self.open_job.pk}))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("sign-in"), response.url)
+
+
 class JobsPipelineIncrementalLoadingTests(TestCase):
     def setUp(self):
         self.client = Client()

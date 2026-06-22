@@ -2,76 +2,91 @@
 {% load widget_tweaks static %}
 {% block title %}Sign In - {{ PLATFORM_CONFIG.site_name|default:"Chennu" }}{% endblock %}
 
-{% block content %}
-<div class="flex items-center justify-center py-12">
-    <div class="bg-white p-8 rounded-xl shadow-sm border border-gray-200 w-full max-w-md">
-        <div class="flex flex-col items-center mb-6">
-            <div class="h-14 w-14 rounded-xl flex items-center justify-center mb-3" style="background-color:var(--brand-nav-dark, #0f172a)">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" class="w-8 h-8" aria-hidden="true">
-                    <rect x="7" y="8" width="26" height="24" rx="6" fill="#ffffff" opacity="0.14"/>
-                    <rect x="11" y="13" width="15" height="4.5" rx="1.8" fill="#ffffff"/>
-                    <rect x="29" y="13" width="4.5" height="4.5" rx="1.5" fill="#67e8f9"/>
-                    <rect x="11" y="19.5" width="22.5" height="4.5" rx="1.8" fill="#ffffff" opacity="0.9"/>
-                    <rect x="11" y="26" width="18.5" height="4.5" rx="1.8" fill="#ffffff" opacity="0.78"/>
-                </svg>
+{% block fullscreen_content %}
+<div class="min-h-screen bg-slate-50">
+    {% include "public/partials/_header.html" %}
+    <section class="mx-auto grid max-w-7xl gap-10 px-6 py-14 lg:grid-cols-[1.1fr_0.9fr]">
+        <div>
+            <span class="inline-flex rounded-full border border-slate-200 bg-white px-4 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-600">
+                {{ public_site_content.signin_title }}
+            </span>
+            <h1 class="mt-6 text-5xl font-semibold tracking-tight text-slate-950">Sign in to the right CHENN workspace.</h1>
+            <p class="mt-5 max-w-2xl text-lg leading-8 text-slate-600">{{ public_site_content.signin_body }}</p>
+            <div class="mt-8 grid gap-4 sm:grid-cols-3">
+                <a href="{% url 'sign-in' %}?portal=admin" class="rounded-2xl border p-5 {% if portal == 'admin' %}border-slate-900 bg-slate-900 text-white{% else %}border-slate-200 bg-white text-slate-900{% endif %}">
+                    <div class="text-sm font-semibold">Admin</div>
+                    <div class="mt-2 text-sm {% if portal == 'admin' %}text-white/75{% else %}text-slate-600{% endif %}">Operations, settings, automation, and control-plane access.</div>
+                </a>
+                <a href="{% url 'sign-in' %}?portal=employee" class="rounded-2xl border p-5 {% if portal == 'employee' %}border-slate-900 bg-slate-900 text-white{% else %}border-slate-200 bg-white text-slate-900{% endif %}">
+                    <div class="text-sm font-semibold">Employee</div>
+                    <div class="mt-2 text-sm {% if portal == 'employee' %}text-white/75{% else %}text-slate-600{% endif %}">Review jobs, route work, and run recruiting workflows.</div>
+                </a>
+                <a href="{% url 'sign-in' %}?portal=consultant" class="rounded-2xl border p-5 {% if portal == 'consultant' %}border-slate-900 bg-slate-900 text-white{% else %}border-slate-200 bg-white text-slate-900{% endif %}">
+                    <div class="text-sm font-semibold">Consultant</div>
+                    <div class="mt-2 text-sm {% if portal == 'consultant' %}text-white/75{% else %}text-slate-600{% endif %}">Applications, resumes, interviews, and profile routing.</div>
+                </a>
             </div>
-            <h2 class="text-2xl font-bold text-center text-gray-800">{{ MSG_LOGIN_HEADING }}</h2>
+            <div class="mt-8 rounded-[28px] border border-slate-200 bg-white p-6">
+                <div class="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">{{ portal_details.label }}</div>
+                <p class="mt-3 text-base leading-7 text-slate-600">{{ portal_details.title }}</p>
+            </div>
         </div>
 
-        <form method="post" action="{% url 'login' %}">
-            {% csrf_token %}
-
-            {% if form.errors %}
-            <div class="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm" role="alert">
-                <strong class="font-bold">Error!</strong>
-                <span class="block sm:inline">Invalid username or password.</span>
-            </div>
-            {% endif %}
-
-            <div class="mb-4">
-                <label class="block text-gray-600 text-sm font-medium mb-2" for="username">
-                    Username
-                </label>
-                {% render_field form.username class="border border-gray-300 rounded-lg w-full py-2 px-3 text-gray-700 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" %}
-            </div>
-
-            <div class="mb-6">
-                <label class="block text-gray-600 text-sm font-medium mb-2" for="password">
-                    Password
-                </label>
-                <div class="relative">
-                    {% render_field form.password class="border border-gray-300 rounded-lg w-full py-2 px-3 pr-10 text-gray-700 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" id="id_password" %}
-                    <button type="button" onclick="togglePassword('id_password', this)"
-                        class="absolute right-3 top-2.5 text-gray-500 hover:text-gray-700 focus:outline-none">
-                        <svg class="h-5 w-5 eye-open" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z">
-                            </path>
-                        </svg>
-                        <svg class="h-5 w-5 eye-closed hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21">
-                            </path>
-                        </svg>
-                    </button>
+        <div class="rounded-[28px] border border-slate-200 bg-white p-8 shadow-sm">
+            <div class="mb-6 flex items-center gap-3">
+                <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-white">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" class="h-8 w-8" aria-hidden="true">
+                        <rect x="7" y="8" width="26" height="24" rx="6" fill="#ffffff" opacity="0.14"/>
+                        <rect x="11" y="13" width="15" height="4.5" rx="1.8" fill="#ffffff"/>
+                        <rect x="29" y="13" width="4.5" height="4.5" rx="1.5" fill="#67e8f9"/>
+                        <rect x="11" y="19.5" width="22.5" height="4.5" rx="1.8" fill="#ffffff" opacity="0.9"/>
+                        <rect x="11" y="26" width="18.5" height="4.5" rx="1.8" fill="#ffffff" opacity="0.78"/>
+                    </svg>
+                </div>
+                <div>
+                    <h2 class="text-2xl font-semibold text-slate-950">{{ portal_details.label }}</h2>
+                    <p class="text-sm text-slate-500">{{ MSG_LOGIN_HEADING }}</p>
                 </div>
             </div>
 
-            <div class="flex items-center justify-between">
-                <button
-                    class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 rounded-lg w-full transition"
-                    type="submit">
-                    Sign In
-                </button>
-            </div>
+            <form method="post" action="{% url 'login' %}" class="space-y-5">
+                {% csrf_token %}
+                {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
 
-            <div class="mt-4 text-center">
-                <p class="text-sm text-gray-500">Forgot your password? Contact your administrator.</p>
+                {% if form.errors %}
+                <div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+                    Invalid username or password.
+                </div>
+                {% endif %}
+
+                <div>
+                    <label class="mb-2 block text-sm font-medium text-slate-700" for="username">Username</label>
+                    {% render_field form.username class="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 focus:border-slate-900 focus:ring-2 focus:ring-slate-200" %}
+                </div>
+
+                <div>
+                    <label class="mb-2 block text-sm font-medium text-slate-700" for="password">Password</label>
+                    <div class="relative">
+                        {% render_field form.password class="w-full rounded-xl border border-slate-300 px-4 py-3 pr-12 text-slate-900 focus:border-slate-900 focus:ring-2 focus:ring-slate-200" id="id_password" %}
+                        <button type="button" onclick="togglePassword('id_password', this)" class="absolute right-4 top-3.5 text-slate-400 hover:text-slate-700">
+                            <svg class="h-5 w-5 eye-open" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                            <svg class="hidden h-5 w-5 eye-closed" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <button class="w-full rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800" type="submit">
+                    Sign in
+                </button>
+            </form>
+
+            <div class="mt-6 grid gap-3 border-t border-slate-200 pt-6 text-sm text-slate-600">
+                <a href="{% url 'consultant-join' %}" class="rounded-xl border border-slate-200 px-4 py-3 hover:bg-slate-50">New consultant? Submit your profile.</a>
+                <a href="{% url 'employee-access-request' %}" class="rounded-xl border border-slate-200 px-4 py-3 hover:bg-slate-50">Need employee access for your team?</a>
             </div>
-        </form>
-    </div>
+        </div>
+    </section>
+    {% include "public/partials/_footer.html" %}
 </div>
 
 <script>

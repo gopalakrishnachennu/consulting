@@ -5,6 +5,7 @@ from .views import (
     ConsultantEditView, ConsultantDetailView, ConsultantDashboardView,
     ConsultantJourneyView,
     ConsultantOnboardingView,
+    ConsultantLeadCreateView,
     EmailNotificationPreferencesView,
     SaveJobView, SavedJobListView, ConsultantCreateView,
     MarketingRoleListView, MarketingRoleCreateView, MarketingRoleUpdateView, MarketingRoleDeleteView,
@@ -53,6 +54,7 @@ urlpatterns = [
 
     path('account/email-notifications/', EmailNotificationPreferencesView.as_view(), name='email-notification-preferences'),
     path('settings/', SettingsView.as_view(), name='settings-dashboard'),
+    path('join/', ConsultantLeadCreateView.as_view(), name='consultant-join'),
     
     path('', ConsultantListView.as_view(), name='consultant-list'),
     path('export/', ConsultantExportCSVView.as_view(), name='consultant-export-csv'),

@@ -1,0 +1,20 @@
+<header class="sticky top-0 z-30 border-b border-white/70 bg-white/85 backdrop-blur">
+    <div class="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+        <a href="{% url 'home' %}" class="flex items-center gap-3 text-slate-900">
+            <span class="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-sm font-semibold text-white">
+                {{ SITE_NAME|slice:":1" }}
+            </span>
+            <span>
+                <span class="block text-sm font-semibold tracking-wide">{{ SITE_NAME }}</span>
+                <span class="block text-xs text-slate-500">{{ SITE_TAGLINE }}</span>
+            </span>
+        </a>
+        <nav class="hidden items-center gap-6 text-sm font-medium text-slate-600 lg:flex">
+            <a href="{% url 'home' %}" class="hover:text-slate-900">Platform</a>
+            <a href="{% url 'public-careers-home' %}" class="hover:text-slate-900">Careers</a>
+            <a href="{% url 'consultant-join' %}" class="hover:text-slate-900">Consultants</a>
+            <a href="{% url 'employee-access-request' %}" class="hover:text-slate-900">Employers</a>
+            <a href="{% url 'sign-in' %}" class="rounded-xl border border-slate-200 px-4 py-2 text-slate-900 hover:bg-slate-50">Sign in</a>
+        </nav>
+    </div>
+</header>

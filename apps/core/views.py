@@ -1,6 +1,7 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.generic import TemplateView, UpdateView, View, ListView, DetailView, CreateView
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.contrib.auth.views import LoginView
 from django.conf import settings
 from django.core.cache import cache
 from django.db.models import Avg, Count, Max, Q, Sum
@@ -21,6 +22,7 @@ from submissions.models import ApplicationSubmission, Placement, Timesheet, Comm
 from resumes.models import ResumeDraft
 from .models import (
     PlatformConfig,
+    PublicSiteContent,
     LLMConfig,
     LLMUsageLog,
     AuditLog,
@@ -32,7 +34,7 @@ from .models import (
     EmployeeDesignation,
     ErrorLog,
 )
-from .forms import PlatformConfigForm, LLMConfigForm, BroadcastForm
+from .forms import PlatformConfigForm, PublicSiteContentForm, LLMConfigForm, BroadcastForm
 from .broadcast_utils import deliver_broadcast
 from .notification_utils import invalidate_notification_unread_cache
 from .dashboard_metrics import (
@@ -604,19 +606,106 @@ class GlobalSearchPartialView(LoginRequiredMixin, View):
         return render(request, 'core/global_search_partial.html', ctx)
 
 
-def home(request):
-    """Smart redirect: send each role to their own dashboard."""
-    if not request.user.is_authenticated:
-        return render(request, 'home.html')
+def resolve_post_login_redirect(user):
+    if user.is_superuser or user.role == User.Role.ADMIN:
+        return reverse("admin-dashboard")
+    if user.role == User.Role.EMPLOYEE:
+        profile = getattr(user, "employee_profile", None)
+        if profile and not profile.onboarding_completed_at:
+            return reverse("employee-onboarding")
+        return reverse("employee-dashboard")
+    if user.role == User.Role.CONSULTANT:
+        profile = getattr(user, "consultant_profile", None)
+        if profile and not profile.onboarding_completed_at:
+            return reverse("consultant-onboarding")
+        return reverse("consultant-dashboard")
+    return reverse("home")
 
-    role = request.user.role
-    if request.user.is_superuser or role == 'ADMIN':
-        return redirect('admin-dashboard')
-    elif role == 'EMPLOYEE':
-        return redirect('employee-dashboard')
-    elif role == 'CONSULTANT':
-        return redirect('consultant-dashboard')
-    return render(request, 'home.html')
+
+def _public_site_context():
+    from companies.models import Company
+
+    content = PublicSiteContent.load()
+    featured_jobs = (
+        Job.objects.filter(status=Job.Status.OPEN, is_archived=False)
+        .select_related("company_obj")
+        .order_by("-created_at")[:6]
+    )
+    return {
+        "hide_chrome": True,
+        "public_site_content": content,
+        "public_metrics": {
+            "open_jobs": Job.objects.filter(status=Job.Status.OPEN, is_archived=False).count(),
+            "companies": Company.objects.count(),
+            "consultants": ConsultantProfile.objects.count(),
+        },
+        "featured_jobs": featured_jobs,
+    }
+
+
+class PublicSignInView(LoginView):
+    template_name = "registration/login.html"
+    redirect_authenticated_user = True
+
+    def get_success_url(self):
+        redirect_to = self.get_redirect_url()
+        if redirect_to and url_has_allowed_host_and_scheme(
+            redirect_to,
+            allowed_hosts={self.request.get_host()},
+            require_https=self.request.is_secure(),
+        ):
+            return redirect_to
+        return resolve_post_login_redirect(self.request.user)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        portal = (self.request.GET.get("portal") or "consultant").lower()
+        if portal not in {"admin", "employee", "consultant"}:
+            portal = "consultant"
+        context.update(_public_site_context())
+        context["portal"] = portal
+        portal_copy = {
+            "admin": {
+                "label": "Admin login",
+                "title": "Access system controls, branding, automation, and production operations.",
+            },
+            "employee": {
+                "label": "Employee login",
+                "title": "Review jobs, run submissions, manage consultants, and work the hiring pipeline.",
+            },
+            "consultant": {
+                "label": "Consultant login",
+                "title": "Track matched jobs, applications, interviews, resumes, and profile routing preferences.",
+            },
+        }
+        context["portal_copy"] = portal_copy
+        context["portal_details"] = portal_copy[portal]
+        return context
+
+
+class PublicSiteContentView(AdminRequiredMixin, UpdateView):
+    form_class = PublicSiteContentForm
+    template_name = "settings/public_site_content.html"
+    success_url = reverse_lazy("public-site-config")
+
+    def get_object(self, queryset=None):
+        return PublicSiteContent.load()
+
+    def form_valid(self, form):
+        messages.success(self.request, "Public site content updated.")
+        return super().form_valid(form)
+
+    def form_invalid(self, form):
+        messages.error(self.request, "Public site content was not saved.")
+        return super().form_invalid(form)
+
+
+def home(request):
+    """Public landing for guests, role-aware redirect for authenticated users."""
+    if not request.user.is_authenticated:
+        return render(request, 'home.html', _public_site_context())
+
+    return redirect(resolve_post_login_redirect(request.user))
 
 
 # ─── Phase 6: Master Prompt Editor ────────────────────────────────────

@@ -1,6 +1,17 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import User, ConsultantProfile, EmployeeProfile, Experience, Education, Certification, Department, MarketingRole
+from .models import (
+    User,
+    ConsultantProfile,
+    EmployeeProfile,
+    ConsultantLead,
+    EmployerAccessRequest,
+    Experience,
+    Education,
+    Certification,
+    Department,
+    MarketingRole,
+)
 
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
@@ -32,7 +43,21 @@ class ConsultantProfileAdmin(admin.ModelAdmin):
 
 @admin.register(EmployeeProfile)
 class EmployeeProfileAdmin(admin.ModelAdmin):
-    list_display = ('user', 'department', 'company_name')
+    list_display = ('user', 'department', 'company_name', 'phone', 'work_location')
+
+
+@admin.register(ConsultantLead)
+class ConsultantLeadAdmin(admin.ModelAdmin):
+    list_display = ("full_name", "email", "current_title", "status", "created_at")
+    list_filter = ("status", "created_at")
+    search_fields = ("full_name", "email", "current_title", "preferred_markets")
+
+
+@admin.register(EmployerAccessRequest)
+class EmployerAccessRequestAdmin(admin.ModelAdmin):
+    list_display = ("company_name", "contact_name", "work_email", "status", "created_at")
+    list_filter = ("status", "created_at")
+    search_fields = ("company_name", "contact_name", "work_email")
 
 @admin.register(Department)
 class DepartmentAdmin(admin.ModelAdmin):

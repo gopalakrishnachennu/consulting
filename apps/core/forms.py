@@ -1,5 +1,5 @@
 from django import forms
-from .models import PlatformConfig, LLMConfig, BroadcastMessage
+from .models import PlatformConfig, PublicSiteContent, LLMConfig, BroadcastMessage
 from .security import encrypt_value, decrypt_value
 
 
@@ -144,6 +144,30 @@ class PlatformConfigForm(forms.ModelForm):
         if len(value) > 40:
             raise forms.ValidationError("Secondary prompt version must be 40 characters or fewer.")
         return value
+
+
+class PublicSiteContentForm(forms.ModelForm):
+    class Meta:
+        model = PublicSiteContent
+        fields = "__all__"
+        widgets = {
+            "hero_body": forms.Textarea(attrs={"rows": 3}),
+            "workflow_body": forms.Textarea(attrs={"rows": 3}),
+            "workflow_step_1_body": forms.Textarea(attrs={"rows": 2}),
+            "workflow_step_2_body": forms.Textarea(attrs={"rows": 2}),
+            "workflow_step_3_body": forms.Textarea(attrs={"rows": 2}),
+            "workflow_step_4_body": forms.Textarea(attrs={"rows": 2}),
+            "consultant_body": forms.Textarea(attrs={"rows": 3}),
+            "employer_body": forms.Textarea(attrs={"rows": 3}),
+            "careers_body": forms.Textarea(attrs={"rows": 3}),
+            "signin_body": forms.Textarea(attrs={"rows": 3}),
+            "consultant_onboarding_body": forms.Textarea(attrs={"rows": 3}),
+            "employee_onboarding_body": forms.Textarea(attrs={"rows": 3}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _apply_standard_widget_classes(self.fields)
 
 
 class ClassificationSettingsForm(forms.ModelForm):

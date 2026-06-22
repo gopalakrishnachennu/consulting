@@ -5,7 +5,7 @@ from django.utils import timezone
 from jobs.models import Job
 from submissions.models import ApplicationSubmission
 from .forms import ConsultantProfileEditForm
-from .models import User, ConsultantProfile, EmployeeProfile, Department
+from .models import User, ConsultantLead, ConsultantProfile, EmployeeProfile, EmployerAccessRequest, Department
 from .journey_utils import compute_consultant_readiness, at_risk_submissions_queryset
 
 
@@ -207,3 +207,100 @@ class ConsultantRoutingProfileFormTests(TestCase):
         self.assertTrue(saved.requires_visa_sponsorship)
         self.assertEqual(saved.visa_status, "OPT")
         self.assertTrue(saved.clearance_eligible)
+
+
+class PublicIntakeAndOnboardingTests(TestCase):
+    def test_consultant_public_intake_creates_lead(self):
+        response = self.client.post(
+            reverse("consultant-join"),
+            {
+                "full_name": "Asha Patel",
+                "email": "asha@example.com",
+                "phone": "1234567890",
+                "current_title": "Data Engineer",
+                "location": "Chicago, IL",
+                "linkedin_url": "https://linkedin.com/in/asha",
+                "preferred_markets": "data, cloud",
+                "notes": "Ready for contract work",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(ConsultantLead.objects.count(), 1)
+        self.assertEqual(ConsultantLead.objects.first().full_name, "Asha Patel")
+
+    def test_employer_access_request_creates_record(self):
+        response = self.client.post(
+            reverse("employee-access-request"),
+            {
+                "company_name": "Northwind",
+                "contact_name": "Hiring Lead",
+                "work_email": "lead@northwind.example",
+                "phone": "5555555555",
+                "team_size": "25",
+                "hiring_volume": "10 roles / month",
+                "message": "Need employee accounts",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(EmployerAccessRequest.objects.count(), 1)
+
+    def test_employee_onboarding_marks_profile_complete(self):
+        employee = User.objects.create_user(
+            username="emp_onboard",
+            password="testpass",
+            role=User.Role.EMPLOYEE,
+        )
+        EmployeeProfile.objects.create(user=employee)
+        self.client.login(username="emp_onboard", password="testpass")
+
+        response = self.client.post(
+            reverse("employee-onboarding"),
+            {
+                "company_name": "CHENN",
+                "phone": "5551112222",
+                "work_location": "Dallas, TX",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        employee.employee_profile.refresh_from_db()
+        self.assertIsNotNone(employee.employee_profile.onboarding_completed_at)
+
+    def test_consultant_onboarding_finishes_across_all_steps(self):
+        consultant = User.objects.create_user(
+            username="consultant_onboard",
+            password="testpass",
+            role=User.Role.CONSULTANT,
+        )
+        ConsultantProfile.objects.create(user=consultant)
+        self.client.login(username="consultant_onboard", password="testpass")
+
+        self.client.post(reverse("consultant-onboarding"), {
+            "step": "1",
+            "bio": "Platform engineer",
+            "skills_text": "AWS, Terraform",
+            "current_location": "Austin, TX",
+        })
+        self.client.post(reverse("consultant-onboarding"), {
+            "step": "2",
+            "preferred_location": "Remote",
+            "available_from": "2026-06-22",
+            "notice_period": "2 weeks",
+        })
+        self.client.post(reverse("consultant-onboarding"), {
+            "step": "3",
+            "work_countries_text": "United States",
+            "preferred_seniority_text": "senior",
+            "employment_preferences_text": "w2",
+            "preferred_work_modes_text": "remote",
+            "visa_status": "Citizen",
+            "requires_visa_sponsorship": "false",
+            "clearance_eligible": "on",
+        })
+        response = self.client.post(reverse("consultant-onboarding"), {"step": "4"})
+
+        self.assertEqual(response.status_code, 302)
+        consultant.consultant_profile.refresh_from_db()
+        self.assertIsNotNone(consultant.consultant_profile.onboarding_completed_at)

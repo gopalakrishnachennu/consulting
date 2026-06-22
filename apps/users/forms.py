@@ -5,7 +5,9 @@ from .models import (
     Education,
     Certification,
     ConsultantProfile,
+    ConsultantLead,
     EmployeeProfile,
+    EmployerAccessRequest,
     MarketingRole,
     Department,
     UserEmailNotificationPreferences,
@@ -174,6 +176,8 @@ class EmployeeCreateForm(forms.Form):
             department=data.get('department'),
             designation=data.get('designation'),
             company_name=data.get('company_name', ''),
+            phone='',
+            work_location='',
             can_manage_consultants=data.get('can_manage_consultants', False),
         )
         return user, password, generated
@@ -238,11 +242,13 @@ class EmployeeProfileForm(forms.ModelForm):
     """Edit employee-specific fields: department, designation, company_name, permissions."""
     class Meta:
         model = EmployeeProfile
-        fields = ['department', 'designation', 'company_name', 'can_manage_consultants']
+        fields = ['department', 'designation', 'company_name', 'phone', 'work_location', 'can_manage_consultants']
         widgets = {
             'department': forms.Select(attrs={'class': 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition'}),
             'designation': forms.Select(attrs={'class': 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition'}),
             'company_name': forms.TextInput(attrs={'class': 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition'}),
+            'phone': forms.TextInput(attrs={'class': 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition'}),
+            'work_location': forms.TextInput(attrs={'class': 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition'}),
             'can_manage_consultants': forms.CheckboxInput(attrs={'class': 'h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded'}),
         }
 
@@ -463,6 +469,68 @@ _ONBOARD_CTRL = (
 )
 
 
+class ConsultantLeadForm(forms.ModelForm):
+    preferred_markets = forms.CharField(
+        required=False,
+        help_text="Comma-separated role families or focus areas.",
+        widget=forms.TextInput(attrs={"class": _ONBOARD_CTRL, "placeholder": "Software development, data, cloud"}),
+    )
+
+    class Meta:
+        model = ConsultantLead
+        fields = [
+            "full_name",
+            "email",
+            "phone",
+            "current_title",
+            "location",
+            "linkedin_url",
+            "resume",
+            "preferred_markets",
+            "notes",
+        ]
+        widgets = {
+            "full_name": forms.TextInput(attrs={"class": _ONBOARD_CTRL}),
+            "email": forms.EmailInput(attrs={"class": _ONBOARD_CTRL}),
+            "phone": forms.TextInput(attrs={"class": _ONBOARD_CTRL}),
+            "current_title": forms.TextInput(attrs={"class": _ONBOARD_CTRL}),
+            "location": forms.TextInput(attrs={"class": _ONBOARD_CTRL}),
+            "linkedin_url": forms.URLInput(attrs={"class": _ONBOARD_CTRL}),
+            "notes": forms.Textarea(attrs={"class": _ONBOARD_CTRL, "rows": 4}),
+        }
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        markets = self.cleaned_data.get("preferred_markets", "").strip()
+        instance.preferred_markets = markets
+        if commit:
+            instance.save()
+        return instance
+
+
+class EmployerAccessRequestForm(forms.ModelForm):
+    class Meta:
+        model = EmployerAccessRequest
+        fields = [
+            "company_name",
+            "contact_name",
+            "work_email",
+            "phone",
+            "team_size",
+            "hiring_volume",
+            "message",
+        ]
+        widgets = {
+            "company_name": forms.TextInput(attrs={"class": _ONBOARD_CTRL}),
+            "contact_name": forms.TextInput(attrs={"class": _ONBOARD_CTRL}),
+            "work_email": forms.EmailInput(attrs={"class": _ONBOARD_CTRL}),
+            "phone": forms.TextInput(attrs={"class": _ONBOARD_CTRL}),
+            "team_size": forms.TextInput(attrs={"class": _ONBOARD_CTRL}),
+            "hiring_volume": forms.TextInput(attrs={"class": _ONBOARD_CTRL}),
+            "message": forms.Textarea(attrs={"class": _ONBOARD_CTRL, "rows": 4}),
+        }
+
+
 class ConsultantOnboardingStep1Form(forms.Form):
     bio = forms.CharField(
         required=False,
@@ -475,17 +543,109 @@ class ConsultantOnboardingStep1Form(forms.Form):
         help_text='Comma-separated list, e.g. Python, Django, AWS',
         widget=forms.TextInput(attrs={'class': _ONBOARD_CTRL}),
     )
+    current_location = forms.CharField(
+        required=False,
+        label="Current location",
+        widget=forms.TextInput(attrs={"class": _ONBOARD_CTRL, "placeholder": "e.g. Chicago, IL"}),
+    )
 
 
 class ConsultantOnboardingStep2Form(forms.ModelForm):
     class Meta:
         model = ConsultantProfile
-        fields = ['available_from', 'notice_period']
+        fields = ['preferred_location', 'available_from', 'notice_period']
         widgets = {
+            'preferred_location': forms.TextInput(
+                attrs={'class': _ONBOARD_CTRL, 'placeholder': 'e.g. Remote, Austin, TX'}
+            ),
             'available_from': forms.DateInput(attrs={'type': 'date', 'class': _ONBOARD_CTRL}),
             'notice_period': forms.TextInput(
                 attrs={'class': _ONBOARD_CTRL, 'placeholder': 'e.g. 2 weeks'}
             ),
+        }
+
+
+class ConsultantOnboardingStep3Form(forms.ModelForm):
+    work_countries_text = forms.CharField(
+        required=False,
+        label="Target countries",
+        help_text="Comma-separated countries you want routed jobs from.",
+        widget=forms.TextInput(attrs={"class": _ONBOARD_CTRL}),
+    )
+    preferred_seniority_text = forms.CharField(
+        required=False,
+        label="Preferred seniority",
+        help_text="Comma-separated values like junior, mid, senior, lead.",
+        widget=forms.TextInput(attrs={"class": _ONBOARD_CTRL}),
+    )
+    employment_preferences_text = forms.CharField(
+        required=False,
+        label="Employment preferences",
+        help_text="Comma-separated values like w2, c2c, 1099, full_time.",
+        widget=forms.TextInput(attrs={"class": _ONBOARD_CTRL}),
+    )
+    preferred_work_modes_text = forms.CharField(
+        required=False,
+        label="Work modes",
+        help_text="Comma-separated values like remote, hybrid, onsite.",
+        widget=forms.TextInput(attrs={"class": _ONBOARD_CTRL}),
+    )
+
+    class Meta:
+        model = ConsultantProfile
+        fields = [
+            "visa_status",
+            "requires_visa_sponsorship",
+            "clearance_eligible",
+        ]
+        widgets = {
+            "visa_status": forms.TextInput(attrs={"class": _ONBOARD_CTRL, "placeholder": "e.g. Citizen, OPT, H1B"}),
+            "clearance_eligible": forms.CheckboxInput(attrs={"class": "h-4 w-4 rounded border-gray-300 text-blue-600"}),
+        }
+
+    requires_visa_sponsorship = forms.TypedChoiceField(
+        required=False,
+        choices=(("", "Unknown"), ("false", "No"), ("true", "Yes")),
+        coerce=lambda value: True if value == "true" else False if value == "false" else None,
+        empty_value=None,
+        widget=forms.Select(attrs={"class": _ONBOARD_CTRL}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            self.fields["work_countries_text"].initial = ", ".join(self.instance.work_countries or [])
+            self.fields["preferred_seniority_text"].initial = ", ".join(self.instance.preferred_seniority_levels or [])
+            self.fields["employment_preferences_text"].initial = ", ".join(self.instance.employment_preferences or [])
+            self.fields["preferred_work_modes_text"].initial = ", ".join(self.instance.preferred_work_modes or [])
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.work_countries = [s.strip() for s in (self.cleaned_data.get("work_countries_text") or "").split(",") if s.strip()]
+        instance.preferred_seniority_levels = [s.strip().lower() for s in (self.cleaned_data.get("preferred_seniority_text") or "").split(",") if s.strip()]
+        instance.employment_preferences = [s.strip().lower() for s in (self.cleaned_data.get("employment_preferences_text") or "").split(",") if s.strip()]
+        instance.preferred_work_modes = [s.strip().lower() for s in (self.cleaned_data.get("preferred_work_modes_text") or "").split(",") if s.strip()]
+        if commit:
+            instance.save()
+        return instance
+
+
+class EmployeeOnboardingForm(forms.ModelForm):
+    class Meta:
+        model = EmployeeProfile
+        fields = [
+            "department",
+            "designation",
+            "company_name",
+            "phone",
+            "work_location",
+        ]
+        widgets = {
+            "department": forms.Select(attrs={"class": _ONBOARD_CTRL}),
+            "designation": forms.Select(attrs={"class": _ONBOARD_CTRL}),
+            "company_name": forms.TextInput(attrs={"class": _ONBOARD_CTRL}),
+            "phone": forms.TextInput(attrs={"class": _ONBOARD_CTRL}),
+            "work_location": forms.TextInput(attrs={"class": _ONBOARD_CTRL, "placeholder": "e.g. Dallas, TX"}),
         }
 
 

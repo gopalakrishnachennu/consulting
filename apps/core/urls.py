@@ -5,6 +5,7 @@ from .views import (
     GlobalSearchView,
     GlobalSearchPartialView,
     PlatformConfigView,
+    PublicSiteContentView,
     DataPipelineDashboardView,
     SystemStatusView,
     HealthcheckJSONView,
@@ -43,6 +44,7 @@ from .views import (
 urlpatterns = [
     path('', home, name='home'),
     path('setup/', PlatformConfigView.as_view(), name='platform-config'),
+    path('public-site/', PublicSiteContentView.as_view(), name='public-site-config'),
     path('data-pipeline/', DataPipelineDashboardView.as_view(), name='data-pipeline'),
     path('audit/', AuditLogListView.as_view(), name='audit-log'),
     path('audit/<int:pk>/', AuditLogDetailView.as_view(), name='audit-log-detail'),

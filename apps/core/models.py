@@ -342,6 +342,98 @@ class PlatformConfig(models.Model):
         return cache.get('platform_config')
 
 
+class PublicSiteContent(models.Model):
+    """Singleton copy/configuration for the marketing site, careers hub, and auth entry."""
+
+    hero_badge = models.CharField(max_length=120, default="CHENN Hiring Cloud", blank=True)
+    hero_title = models.CharField(
+        max_length=180,
+        default="The operating layer for hiring execution.",
+    )
+    hero_body = models.TextField(
+        default=(
+            "Run intake, JD classification, vetting, consultant matching, and submissions from one system "
+            "built for recruiting operations."
+        ),
+    )
+    hero_primary_label = models.CharField(max_length=60, default="Explore careers", blank=True)
+    hero_primary_url = models.CharField(max_length=255, default="/careers/", blank=True)
+    hero_secondary_label = models.CharField(max_length=60, default="Request employer access", blank=True)
+    hero_secondary_url = models.CharField(max_length=255, default="/employees/request-access/", blank=True)
+
+    proof_stat_1_value = models.CharField(max_length=40, default="Intake")
+    proof_stat_1_label = models.CharField(max_length=120, default="Raw jobs, source health, and routing controls")
+    proof_stat_2_value = models.CharField(max_length=40, default="Classify")
+    proof_stat_2_label = models.CharField(max_length=120, default="Structured JD extraction and review gates")
+    proof_stat_3_value = models.CharField(max_length=40, default="Close")
+    proof_stat_3_label = models.CharField(max_length=120, default="Consultant matching, marketing, and submission workflow")
+
+    workflow_title = models.CharField(max_length=120, default="How CHENN runs hiring")
+    workflow_body = models.TextField(
+        default=(
+            "Use one operating model from intake through placement instead of stitching together "
+            "job boards, spreadsheets, and manual review."
+        ),
+    )
+    workflow_step_1_title = models.CharField(max_length=80, default="Intake")
+    workflow_step_1_body = models.TextField(default="Capture raw jobs, normalize source signals, and protect queue quality.")
+    workflow_step_2_title = models.CharField(max_length=80, default="Classify")
+    workflow_step_2_body = models.TextField(default="Extract role family, country, seniority, and work-authorization signals from the JD.")
+    workflow_step_3_title = models.CharField(max_length=80, default="Match")
+    workflow_step_3_body = models.TextField(default="Route vetted jobs to the right consultant pool with structured controls.")
+    workflow_step_4_title = models.CharField(max_length=80, default="Market")
+    workflow_step_4_body = models.TextField(default="Move ready jobs into live workflows for resume generation, submissions, and tracking.")
+
+    consultant_title = models.CharField(max_length=120, default="Consultant onboarding")
+    consultant_body = models.TextField(
+        default="Submit your profile once, keep your routing preferences current, and receive jobs that actually fit your market."
+    )
+    consultant_cta_label = models.CharField(max_length=60, default="Submit consultant profile", blank=True)
+
+    employer_title = models.CharField(max_length=120, default="Employer access")
+    employer_body = models.TextField(
+        default="Give hiring teams one place to review incoming roles, control quality, and manage submission operations."
+    )
+    employer_cta_label = models.CharField(max_length=60, default="Request access", blank=True)
+
+    careers_title = models.CharField(max_length=120, default="Open roles at CHENN clients")
+    careers_body = models.TextField(
+        default="Browse live openings, inspect the real JD, and move into consultant workflows without losing context."
+    )
+
+    signin_title = models.CharField(max_length=120, default="Access the right CHENN workspace")
+    signin_body = models.TextField(
+        default="Use the same credentials, but start from the portal that matches your role: admin, employee, or consultant."
+    )
+
+    consultant_onboarding_title = models.CharField(max_length=120, default="Set your consultant routing profile")
+    consultant_onboarding_body = models.TextField(
+        default="Complete skills, geography, work authorization, and availability so the platform can route better-fit jobs automatically."
+    )
+    employee_onboarding_title = models.CharField(max_length=120, default="Set your employee workspace")
+    employee_onboarding_body = models.TextField(
+        default="Confirm department, role, and hiring context so the dashboard and job workflow open in the right mode."
+    )
+
+    def __str__(self):
+        return "Public Site Content"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+        cache.delete("public_site_content")
+
+    def delete(self, *args, **kwargs):
+        pass
+
+    @classmethod
+    def load(cls):
+        if cache.get("public_site_content") is None:
+            obj, _ = cls.objects.get_or_create(pk=1)
+            cache.set("public_site_content", obj)
+        return cache.get("public_site_content")
+
+
 class PipelineRunLog(models.Model):
     """
     Tracks last run of pipeline tasks for Settings UI.
