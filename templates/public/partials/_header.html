@@ -1,20 +1,23 @@
-<header class="sticky top-0 z-30 border-b border-white/70 bg-white/85 backdrop-blur">
+{% include "public/partials/_public_theme.html" %}
+<header class="sticky top-0 z-30 border-b" style="border-color:var(--border,rgba(255,255,255,.1)); background:rgba(8,11,12,.72); backdrop-filter:blur(14px);">
     <div class="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-        <a href="{% url 'home' %}" class="flex items-center gap-3 text-slate-900">
-            <span class="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-sm font-semibold text-white">
+        <a href="{% url 'home' %}" class="flex items-center gap-3" style="color:var(--text,#eaf1f3);">
+            <span class="inline-flex h-10 w-10 items-center justify-center rounded-xl text-sm font-bold"
+                  style="background:var(--accent,#5eead4); color:var(--accent-ink,#04231d); box-shadow:0 0 22px var(--accent-glow);">
                 {{ SITE_NAME|slice:":1" }}
             </span>
             <span>
                 <span class="block text-sm font-semibold tracking-wide">{{ SITE_NAME }}</span>
-                <span class="block text-xs text-slate-500">{{ SITE_TAGLINE }}</span>
+                <span class="block text-xs" style="color:var(--muted,#8a999f);">{{ SITE_TAGLINE }}</span>
             </span>
         </a>
-        <nav class="hidden items-center gap-6 text-sm font-medium text-slate-600 lg:flex">
-            <a href="{% url 'home' %}" class="hover:text-slate-900">Platform</a>
-            <a href="{% url 'public-careers-home' %}" class="hover:text-slate-900">Careers</a>
-            <a href="{% url 'consultant-join' %}" class="hover:text-slate-900">Consultants</a>
-            <a href="{% url 'employee-access-request' %}" class="hover:text-slate-900">Employers</a>
-            <a href="{% url 'sign-in' %}" class="rounded-xl border border-slate-200 px-4 py-2 text-slate-900 hover:bg-slate-50">Sign in</a>
+        <nav class="hidden items-center gap-6 text-sm font-medium lg:flex" style="color:var(--muted,#8a999f);">
+            <a href="{% url 'home' %}" class="hover:text-white">Platform</a>
+            <a href="{% url 'public-careers-home' %}" class="hover:text-white">Careers</a>
+            <a href="{% url 'consultant-join' %}" class="hover:text-white">Consultants</a>
+            <a href="{% url 'employee-access-request' %}" class="hover:text-white">Employers</a>
+            <a href="{% url 'sign-in' %}" class="rounded-xl px-4 py-2"
+               style="border:1px solid var(--border-2,rgba(255,255,255,.16)); color:var(--text,#eaf1f3);">Sign in</a>
         </nav>
     </div>
 </header>

@@ -1,0 +1,81 @@
+{# ============================================================================
+   Shared DARK public theme. Wrap a public page body in <div class="cl-public">
+   and include this once. It remaps the light Tailwind utilities those pages use
+   to dark brand tokens — scoped under .cl-public so the authenticated app and
+   global theme toggle are never affected. Accents derive from the platform
+   color theme (--brand-* from base.html), so Settings → color theme drives it.
+   ============================================================================ #}
+<style>
+  .cl-public{
+    --bg:#080b0c; --surface:#0e1417; --surface-2:rgba(255,255,255,.04);
+    --border:rgba(255,255,255,.10); --border-2:rgba(255,255,255,.16);
+    --text:#eaf1f3; --text-2:#c2cdd1; --muted:#8a999f;
+    --accent:var(--brand-300,#5eead4); --accent-2:var(--brand-500,#14b8a6);
+    --accent-ink:#04231d; --accent-glow:var(--brand-ring,rgba(94,234,212,.22));
+    position:relative; background:var(--bg)!important; color:var(--text)!important;
+    font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .cl-public::before{ content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+    background:
+      radial-gradient(56rem 38rem at 82% 4%, var(--accent-glow), transparent 60%),
+      radial-gradient(46rem 32rem at 6% 36%, color-mix(in srgb,var(--accent-2) 14%,transparent), transparent 60%);
+    opacity:.6; }
+  .cl-public > *{ position:relative; z-index:1; }
+
+  /* Surfaces */
+  .cl-public .bg-white{ background-color:var(--surface)!important; }
+  .cl-public .bg-slate-50,.cl-public .bg-gray-50,
+  .cl-public .bg-slate-100,.cl-public .bg-gray-100{ background-color:var(--surface-2)!important; }
+
+  /* Text */
+  .cl-public .text-slate-950,.cl-public .text-slate-900,.cl-public .text-gray-900,
+  .cl-public .text-black{ color:var(--text)!important; }
+  .cl-public .text-slate-800,.cl-public .text-slate-700,
+  .cl-public .text-gray-800,.cl-public .text-gray-700{ color:var(--text-2)!important; }
+  .cl-public .text-slate-600,.cl-public .text-slate-500,.cl-public .text-slate-400,
+  .cl-public .text-gray-600,.cl-public .text-gray-500,.cl-public .text-gray-400{ color:var(--muted)!important; }
+
+  /* Borders + dividers */
+  .cl-public .border,.cl-public .border-slate-200,.cl-public .border-slate-300,
+  .cl-public .border-slate-100,.cl-public .border-gray-200,.cl-public .border-gray-100,
+  .cl-public .divide-slate-200>*,.cl-public .divide-gray-200>*{ border-color:var(--border)!important; }
+
+  /* Inputs */
+  .cl-public input,.cl-public select,.cl-public textarea{
+    background-color:#0c1214!important; color:var(--text)!important; border-color:var(--border-2)!important; }
+  .cl-public input::placeholder,.cl-public textarea::placeholder{ color:var(--muted)!important; }
+  .cl-public select option{ color:#111; }
+
+  /* Primary CTAs / selected cards (dark navy → brand accent) */
+  .cl-public a.bg-slate-900,.cl-public button.bg-slate-900,.cl-public input.bg-slate-900,
+  .cl-public a.bg-slate-950,.cl-public button.bg-slate-950,.cl-public input[type="submit"],
+  .cl-public button[type="submit"]{
+    background-color:var(--accent)!important; color:var(--accent-ink)!important;
+    border-color:transparent!important; box-shadow:0 6px 22px var(--accent-glow);
+    transition:transform .18s, box-shadow .18s; }
+  .cl-public a.bg-slate-900:hover,.cl-public button.bg-slate-900:hover,
+  .cl-public a.bg-slate-950:hover,.cl-public button[type="submit"]:hover,
+  .cl-public input[type="submit"]:hover{ transform:translateY(-2px); box-shadow:0 10px 30px var(--accent-glow); }
+  .cl-public a.bg-slate-900 *,.cl-public a.bg-slate-950 *{ color:var(--accent-ink)!important; }
+
+  /* Ghost / secondary buttons that were light-bordered */
+  .cl-public a.border-slate-300,.cl-public a.border-slate-200,
+  .cl-public button.border-slate-300,.cl-public button.border-slate-200{
+    color:var(--text)!important; }
+  .cl-public .hover\:bg-slate-50:hover,.cl-public .hover\:bg-gray-50:hover{ background-color:var(--surface-2)!important; }
+
+  /* Pills / badges with light bg */
+  .cl-public .bg-emerald-50,.cl-public .bg-teal-50,.cl-public .bg-green-50{
+    background-color:color-mix(in srgb,var(--accent) 14%,transparent)!important; color:var(--accent)!important; }
+  .cl-public .text-emerald-700,.cl-public .text-emerald-600,
+  .cl-public .text-teal-700,.cl-public .text-green-700{ color:var(--accent)!important; }
+
+  /* Shadows softer on dark */
+  .cl-public .shadow,.cl-public .shadow-sm,.cl-public .shadow-md,.cl-public .shadow-lg{
+    box-shadow:0 2px 10px rgba(0,0,0,.45)!important; }
+
+  /* Eyebrow/label uppercase tracking → mono accent for brand consistency */
+  .cl-public .uppercase.tracking-\[0\.16em\],.cl-public .uppercase.tracking-\[0\.18em\]{
+    font-family:'JetBrains Mono','SF Mono',ui-monospace,monospace; color:var(--accent)!important; }
+</style>

@@ -1,29 +1,29 @@
-<footer class="border-t border-slate-200 bg-white">
+<footer class="border-t" style="border-color:var(--border,rgba(255,255,255,.1)); background:rgba(6,9,10,.6);">
     <div class="mx-auto grid max-w-7xl gap-8 px-6 py-10 lg:grid-cols-[1.6fr_1fr_1fr]">
         <div>
-            <h3 class="text-lg font-semibold text-slate-900">{{ SITE_NAME }}</h3>
-            <p class="mt-3 max-w-xl text-sm leading-6 text-slate-600">
+            <h3 class="text-lg font-semibold" style="color:var(--text,#eaf1f3);">{{ SITE_NAME }}</h3>
+            <p class="mt-3 max-w-xl text-sm leading-6" style="color:var(--muted,#8a999f);">
                 {{ SITE_TAGLINE }}
             </p>
-            <div class="mt-4 text-sm text-slate-500">
+            <div class="mt-4 text-sm" style="color:var(--muted,#8a999f);">
                 {% if COMPANY_EMAIL %}<div>{{ COMPANY_EMAIL }}</div>{% endif %}
                 {% if COMPANY_PHONE %}<div>{{ COMPANY_PHONE }}</div>{% endif %}
             </div>
         </div>
         <div>
-            <h4 class="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">Access</h4>
-            <div class="mt-4 space-y-3 text-sm text-slate-600">
-                <div><a href="{% url 'sign-in' %}?portal=admin" class="hover:text-slate-900">Admin portal</a></div>
-                <div><a href="{% url 'sign-in' %}?portal=employee" class="hover:text-slate-900">Employee portal</a></div>
-                <div><a href="{% url 'sign-in' %}?portal=consultant" class="hover:text-slate-900">Consultant portal</a></div>
+            <h4 class="text-sm font-semibold uppercase tracking-[0.16em]" style="font-family:'JetBrains Mono',ui-monospace,monospace; color:var(--accent,#5eead4);">Access</h4>
+            <div class="mt-4 space-y-3 text-sm" style="color:var(--muted,#8a999f);">
+                <div><a href="{% url 'sign-in' %}?portal=admin" class="hover:text-white">Admin portal</a></div>
+                <div><a href="{% url 'sign-in' %}?portal=employee" class="hover:text-white">Employee portal</a></div>
+                <div><a href="{% url 'sign-in' %}?portal=consultant" class="hover:text-white">Consultant portal</a></div>
             </div>
         </div>
         <div>
-            <h4 class="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">Public workflows</h4>
-            <div class="mt-4 space-y-3 text-sm text-slate-600">
-                <div><a href="{% url 'public-careers-home' %}" class="hover:text-slate-900">Open careers</a></div>
-                <div><a href="{% url 'consultant-join' %}" class="hover:text-slate-900">Consultant onboarding</a></div>
-                <div><a href="{% url 'employee-access-request' %}" class="hover:text-slate-900">Employer access request</a></div>
+            <h4 class="text-sm font-semibold uppercase tracking-[0.16em]" style="font-family:'JetBrains Mono',ui-monospace,monospace; color:var(--accent,#5eead4);">Public workflows</h4>
+            <div class="mt-4 space-y-3 text-sm" style="color:var(--muted,#8a999f);">
+                <div><a href="{% url 'public-careers-home' %}" class="hover:text-white">Open careers</a></div>
+                <div><a href="{% url 'consultant-join' %}" class="hover:text-white">Consultant onboarding</a></div>
+                <div><a href="{% url 'employee-access-request' %}" class="hover:text-white">Employer access request</a></div>
             </div>
         </div>
     </div>
