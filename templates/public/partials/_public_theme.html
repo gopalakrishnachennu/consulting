@@ -1,12 +1,12 @@
-{# ============================================================================
-   Shared DARK public theme + crafted polish. Wrap a public page body in
-   <div class="cl-public"> and include this once (auto-included via _header).
-   It (a) remaps the light Tailwind utilities those pages use to dark brand
-   tokens, and (b) layers landing-grade polish: mono terminal eyebrows, gradient
-   card surfaces, accent buttons with glow/lift, refined fields, section entrance.
-   Scoped under .cl-public so the authenticated app + theme toggle are untouched.
-   Accents derive from the platform color theme (--brand-* from base.html).
-   ============================================================================ #}
+{% comment %}
+  Shared DARK public theme + crafted polish. Wrap a public page body in
+  <div class="cl-public"> and include this once (auto-included via _header).
+  It (a) remaps the light Tailwind utilities those pages use to dark brand
+  tokens, and (b) layers landing-grade polish: mono terminal eyebrows, gradient
+  card surfaces, accent buttons with glow/lift, refined fields, section entrance.
+  Scoped under .cl-public so the authenticated app + theme toggle are untouched.
+  Accents derive from the platform color theme (--brand-* from base.html).
+{% endcomment %}
 <style>
   .cl-public{
     --bg:#080b0c; --surface:#0e1417; --surface-2:rgba(255,255,255,.04);

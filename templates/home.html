@@ -1,14 +1,12 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{# ===========================================================================
-   PUBLIC LANDING — dark "operating layer" aesthetic.
-   Self-contained: all styling is scoped under #chenn-landing so nothing here
-   touches the authenticated app. The palette below reads from PlatformConfig
-   when those fields exist (theme_*), otherwise falls back to these defaults —
-   so the colour palette is editable from platform config without a code change.
-   No live platform metrics are rendered here (no job/company/consultant counts).
-   =========================================================================== #}
+{% comment %}
+  PUBLIC LANDING — dark "operating layer" aesthetic.
+  Self-contained: all styling is scoped under #chenn-landing so nothing here
+  touches the authenticated app. Accents derive from the platform color theme
+  (--brand-* from base.html). No live platform metrics are rendered here.
+{% endcomment %}
 
 {% block extra_head %}
 <style>
