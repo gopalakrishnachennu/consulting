@@ -1,120 +1,427 @@
 {% extends 'base.html' %}
+{% load static %}
+
+{# ===========================================================================
+   PUBLIC LANDING — dark "operating layer" aesthetic.
+   Self-contained: all styling is scoped under #chenn-landing so nothing here
+   touches the authenticated app. The palette below reads from PlatformConfig
+   when those fields exist (theme_*), otherwise falls back to these defaults —
+   so the colour palette is editable from platform config without a code change.
+   No live platform metrics are rendered here (no job/company/consultant counts).
+   =========================================================================== #}
+
+{% block extra_head %}
+<style>
+  #chenn-landing{
+    /* ---- PALETTE -------------------------------------------------------
+       Accents derive from the platform brand theme (Settings → color theme,
+       CHENN default = teal) via the global --brand-* vars, so changing the
+       palette in platform config restyles this page too. Dark neutrals are
+       fixed (the brand catalogue defines accents, not dark surfaces). ----- */
+    --bg:        #080b0c;
+    --bg-elev:   #0d1315;
+    --surface:   rgba(255,255,255,.025);
+    --surface-2: rgba(255,255,255,.05);
+    --border:    rgba(255,255,255,.08);
+    --border-2:  rgba(255,255,255,.14);
+    --text:      #e8eff1;
+    --muted:     #8a999f;
+    --faint:     #5c6b70;
+    --accent:    var(--brand-300, #5eead4);
+    --accent-2:  var(--brand-500, #4f8cff);
+    --accent-glow: var(--brand-ring, rgba(94,234,212,.24));
+
+    --mono: 'JetBrains Mono','SF Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+
+    position:relative;
+    min-height:100vh;
+    background:var(--bg);
+    color:var(--text);
+    font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    overflow-x:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* ambient glows */
+  #chenn-landing::before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:
+      radial-gradient(60rem 40rem at 78% 8%, var(--accent-glow), transparent 60%),
+      radial-gradient(50rem 36rem at 8% 38%, color-mix(in srgb, var(--accent-2) 16%, transparent), transparent 60%);
+    opacity:.7;
+  }
+  #chenn-landing > *{position:relative;z-index:1;}
+
+  #chenn-landing a{color:inherit;text-decoration:none;}
+  .cl-wrap{max-width:78rem;margin:0 auto;padding:0 1.5rem;}
+  .cl-mono{font-family:var(--mono);text-transform:uppercase;letter-spacing:.16em;font-size:.7rem;color:var(--muted);}
+  .cl-accent{color:var(--accent);}
+
+  /* ---- ticker -------------------------------------------------------- */
+  .cl-ticker{border-bottom:1px solid var(--border);background:rgba(0,0,0,.25);}
+  .cl-ticker-inner{display:flex;gap:2.2rem;align-items:center;padding:.55rem 1.5rem;max-width:78rem;margin:0 auto;
+    font-family:var(--mono);font-size:.66rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);overflow:hidden;white-space:nowrap;}
+  .cl-dot{width:.45rem;height:.45rem;border-radius:50%;background:var(--accent);display:inline-block;margin-right:.5rem;
+    box-shadow:0 0 0 0 var(--accent-glow);animation:cl-pulse 2.4s infinite;}
+  @keyframes cl-pulse{0%{box-shadow:0 0 0 0 var(--accent-glow)}70%{box-shadow:0 0 0 .5rem transparent}100%{box-shadow:0 0 0 0 transparent}}
+
+  /* ---- header -------------------------------------------------------- */
+  .cl-head{position:sticky;top:0;z-index:20;backdrop-filter:blur(14px);
+    background:color-mix(in srgb, var(--bg) 72%, transparent);border-bottom:1px solid var(--border);}
+  .cl-head-inner{display:flex;align-items:center;justify-content:space-between;padding:1rem 1.5rem;max-width:78rem;margin:0 auto;}
+  .cl-logo{display:flex;align-items:center;gap:.7rem;font-weight:600;letter-spacing:.02em;}
+  .cl-logo-mark{width:1.9rem;height:1.9rem;border-radius:.5rem;display:grid;place-items:center;
+    background:var(--accent);color:#04201b;font-weight:800;box-shadow:0 0 24px var(--accent-glow);}
+  .cl-nav{display:none;gap:1.6rem;align-items:center;font-size:.85rem;color:var(--muted);}
+  .cl-nav a{transition:color .2s;}.cl-nav a:hover{color:var(--text);}
+  .cl-btn{display:inline-flex;align-items:center;gap:.4rem;border-radius:.7rem;padding:.6rem 1.05rem;font-size:.83rem;font-weight:600;
+    transition:transform .18s, box-shadow .18s, background .18s;}
+  .cl-btn-primary{background:var(--accent);color:#042521;box-shadow:0 6px 24px var(--accent-glow);}
+  .cl-btn-primary:hover{transform:translateY(-2px);box-shadow:0 10px 32px var(--accent-glow);}
+  .cl-btn-ghost{border:1px solid var(--border-2);color:var(--text);}
+  .cl-btn-ghost:hover{background:var(--surface-2);transform:translateY(-2px);}
+  @media(min-width:1024px){.cl-nav{display:flex;}}
+
+  /* ---- generic section bits ------------------------------------------ */
+  .cl-eyebrow{font-family:var(--mono);font-size:.7rem;letter-spacing:.2em;text-transform:uppercase;color:var(--accent);}
+  .cl-h1{font-size:clamp(2.6rem,6vw,4.4rem);line-height:1.02;font-weight:700;letter-spacing:-.02em;margin:1.1rem 0;}
+  .cl-h2{font-size:clamp(1.9rem,3.6vw,2.7rem);line-height:1.08;font-weight:700;letter-spacing:-.02em;}
+  .cl-lead{color:#aeb9bd;font-size:1.06rem;line-height:1.7;max-width:34rem;}
+  .cl-grad{background:linear-gradient(120deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;color:transparent;}
+
+  .cl-card{border:1px solid var(--border);border-radius:1.1rem;background:var(--surface);
+    backdrop-filter:blur(6px);transition:transform .25s, border-color .25s, box-shadow .25s;}
+  .cl-card:hover{transform:translateY(-4px);border-color:var(--border-2);box-shadow:0 18px 50px rgba(0,0,0,.45);}
+
+  /* ---- hero panel / intelligence graph ------------------------------- */
+  .cl-panel{border:1px solid var(--border);border-radius:1.4rem;background:linear-gradient(180deg,var(--bg-elev),#060a0b);
+    padding:1.4rem;overflow:hidden;}
+  .cl-graph{position:relative;width:100%;aspect-ratio:1/.86;}
+  .cl-graph svg{width:100%;height:100%;display:block;}
+  .cl-edge{stroke:var(--border-2);stroke-width:1;opacity:.5;}
+  .cl-edge.live{stroke:var(--accent);opacity:.5;stroke-dasharray:4 6;animation:cl-flow 4s linear infinite;}
+  @keyframes cl-flow{to{stroke-dashoffset:-40;}}
+  .cl-node{fill:#0b1112;stroke:var(--border-2);stroke-width:1.5;}
+  .cl-node.pulse{fill:var(--accent);stroke:var(--accent);transform-origin:center;animation:cl-glow 3s ease-in-out infinite;}
+  @keyframes cl-glow{0%,100%{filter:drop-shadow(0 0 2px var(--accent));opacity:.9}50%{filter:drop-shadow(0 0 9px var(--accent));opacity:1}}
+  .cl-chip{position:absolute;font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;color:var(--text);
+    background:rgba(8,14,15,.85);border:1px solid var(--border-2);border-radius:.5rem;padding:.4rem .55rem;backdrop-filter:blur(4px);}
+  .cl-chip .lbl{color:var(--muted);text-transform:uppercase;display:block;font-size:.52rem;}
+
+  /* ---- pipeline ------------------------------------------------------ */
+  .cl-pipe{display:grid;grid-template-columns:repeat(5,1fr);gap:.5rem;position:relative;}
+  .cl-pipe-line{position:absolute;left:6%;right:6%;top:.62rem;height:2px;background:var(--border);overflow:hidden;border-radius:2px;}
+  .cl-pipe-line span{position:absolute;inset:0;width:40%;background:linear-gradient(90deg,transparent,var(--accent),transparent);animation:cl-sweep 3.4s linear infinite;}
+  @keyframes cl-sweep{0%{transform:translateX(-100%)}100%{transform:translateX(350%)}}
+  .cl-step{text-align:center;}
+  .cl-step .knob{width:1.25rem;height:1.25rem;border-radius:50%;margin:0 auto;background:var(--bg-elev);
+    border:2px solid var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 16%, transparent);}
+  .cl-step:nth-child(n+4) .knob{border-color:var(--accent-2);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent-2) 16%, transparent);}
+  .cl-step .num{font-family:var(--mono);font-size:.6rem;color:var(--faint);margin-top:.6rem;}
+  .cl-step .t{font-weight:600;font-size:.95rem;margin-top:.15rem;}
+  .cl-step .d{color:var(--muted);font-size:.78rem;margin-top:.1rem;}
+
+  /* ---- tags (intelligence demo) -------------------------------------- */
+  .cl-tag{display:inline-block;font-family:var(--mono);font-size:.72rem;border-radius:.45rem;padding:.34rem .6rem;
+    border:1px solid var(--border-2);background:var(--surface-2);}
+  .cl-tag.g{border-color:color-mix(in srgb,var(--accent) 55%,transparent);background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent);}
+  .cl-tag.b{border-color:color-mix(in srgb,var(--accent-2) 55%,transparent);background:color-mix(in srgb,var(--accent-2) 12%,transparent);color:#9cc0ff;}
+
+  /* ---- stats --------------------------------------------------------- */
+  .cl-stat .v{font-size:clamp(2rem,4vw,3rem);font-weight:800;letter-spacing:-.03em;}
+  .cl-stat .l{font-family:var(--mono);font-size:.64rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-top:.35rem;}
+
+  /* ---- footer -------------------------------------------------------- */
+  .cl-foot{border-top:1px solid var(--border);margin-top:4rem;}
+  .cl-foot a{color:var(--muted);transition:color .2s;}.cl-foot a:hover{color:var(--text);}
+
+  /* ---- scroll reveal ------------------------------------------------- */
+  .reveal{opacity:0;transform:translateY(22px);transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1);}
+  .reveal.in{opacity:1;transform:none;}
+  @media (prefers-reduced-motion: reduce){
+    .reveal{opacity:1!important;transform:none!important;transition:none;}
+    .cl-dot,.cl-edge.live,.cl-node.pulse,.cl-pipe-line span{animation:none!important;}
+  }
+</style>
+{% endblock %}
 
 {% block fullscreen_content %}
-<div class="min-h-screen bg-slate-50">
-    {% include "public/partials/_header.html" %}
+<div id="chenn-landing">
 
-    <section class="mx-auto grid max-w-7xl gap-12 px-6 py-16 lg:grid-cols-[1.1fr_0.9fr] lg:py-24">
-        <div>
-            <span class="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-4 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                {{ public_site_content.hero_badge }}
-            </span>
-            <h1 class="mt-6 max-w-3xl text-5xl font-semibold tracking-tight text-slate-950 sm:text-6xl">
-                {{ public_site_content.hero_title }}
-            </h1>
-            <p class="mt-6 max-w-2xl text-lg leading-8 text-slate-600">
-                {{ public_site_content.hero_body }}
-            </p>
-            <div class="mt-8 flex flex-wrap gap-4">
-                <a href="{{ public_site_content.hero_primary_url|default:'/careers/' }}" class="inline-flex items-center rounded-xl bg-slate-950 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800">
-                    {{ public_site_content.hero_primary_label }}
-                </a>
-                <a href="{{ public_site_content.hero_secondary_url|default:'/employees/request-access/' }}" class="inline-flex items-center rounded-xl border border-slate-300 px-6 py-3 text-sm font-semibold text-slate-900 hover:bg-white">
-                    {{ public_site_content.hero_secondary_label }}
-                </a>
-            </div>
-            <div class="mt-10 grid gap-4 sm:grid-cols-3">
-                <div class="rounded-2xl border border-slate-200 bg-white p-5">
-                    <div class="text-sm font-semibold text-slate-500">{{ public_site_content.proof_stat_1_value }}</div>
-                    <div class="mt-2 text-sm leading-6 text-slate-700">{{ public_site_content.proof_stat_1_label }}</div>
-                </div>
-                <div class="rounded-2xl border border-slate-200 bg-white p-5">
-                    <div class="text-sm font-semibold text-slate-500">{{ public_site_content.proof_stat_2_value }}</div>
-                    <div class="mt-2 text-sm leading-6 text-slate-700">{{ public_site_content.proof_stat_2_label }}</div>
-                </div>
-                <div class="rounded-2xl border border-slate-200 bg-white p-5">
-                    <div class="text-sm font-semibold text-slate-500">{{ public_site_content.proof_stat_3_value }}</div>
-                    <div class="mt-2 text-sm leading-6 text-slate-700">{{ public_site_content.proof_stat_3_label }}</div>
-                </div>
-            </div>
-        </div>
+  {# ── status ticker (no live numbers — generic operating copy) ── #}
+  <div class="cl-ticker">
+    <div class="cl-ticker-inner">
+      <span><span class="cl-dot"></span>System online</span>
+      <span>/ Recruiting operations platform</span>
+      <span>/ Intake → Vet → Live</span>
+      <span style="margin-left:auto" class="cl-accent">{{ SITE_NAME|default:'CHENN' }} · Intelligence core</span>
+    </div>
+  </div>
 
-        <div class="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
-            <div class="rounded-3xl bg-slate-950 p-6 text-white">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <div class="text-xs uppercase tracking-[0.16em] text-white/60">Jobs command center</div>
-                        <div class="mt-2 text-3xl font-semibold">{{ public_metrics.open_jobs }}</div>
-                    </div>
-                    <div class="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-right">
-                        <div class="text-xs uppercase tracking-[0.16em] text-white/50">Live companies</div>
-                        <div class="mt-1 text-2xl font-semibold">{{ public_metrics.companies }}</div>
-                    </div>
-                </div>
-                <div class="mt-6 grid gap-3 sm:grid-cols-2">
-                    <div class="rounded-2xl border border-white/10 bg-white/5 p-4">
-                        <div class="text-xs uppercase tracking-[0.16em] text-emerald-300">Consultant network</div>
-                        <div class="mt-2 text-2xl font-semibold">{{ public_metrics.consultants }}</div>
-                        <p class="mt-2 text-sm text-white/70">Profiles, routing preferences, resumes, and submission history.</p>
-                    </div>
-                    <div class="rounded-2xl border border-white/10 bg-white/5 p-4">
-                        <div class="text-xs uppercase tracking-[0.16em] text-cyan-300">Hiring flow</div>
-                        <div class="mt-2 text-2xl font-semibold">Intake -> Vet -> Live</div>
-                        <p class="mt-2 text-sm text-white/70">One operating model across raw jobs, review, routing, and delivery.</p>
-                    </div>
-                </div>
-            </div>
-            <div class="mt-6 grid gap-4">
-                {% for job in featured_jobs|slice:":3" %}
-                <div class="rounded-2xl border border-slate-200 p-4">
-                    <div class="flex items-start justify-between gap-4">
-                        <div>
-                            <div class="text-sm font-semibold text-slate-900">{{ job.title }}</div>
-                            <div class="mt-1 text-sm text-slate-500">{{ job.company }}{% if job.location %} · {{ job.location }}{% endif %}</div>
-                        </div>
-                        <a href="{% url 'public-job-detail' job.pk %}" class="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">View</a>
-                    </div>
-                </div>
-                {% empty %}
-                <div class="rounded-2xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">
-                    Open roles will appear here as the live jobs catalog grows.
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-    </section>
+  {# ── header ── #}
+  <header class="cl-head">
+    <div class="cl-head-inner">
+      <a href="{% url 'home' %}" class="cl-logo">
+        <span class="cl-logo-mark">{{ SITE_NAME|slice:":1"|default:"C" }}</span>
+        <span>{{ SITE_NAME|default:'CHENN' }}</span>
+      </a>
+      <nav class="cl-nav">
+        <a href="{% url 'home' %}">Platform</a>
+        <a href="{% url 'public-careers-home' %}">Careers</a>
+        <a href="{% url 'consultant-join' %}">Consultants</a>
+        <a href="{% url 'employee-access-request' %}">Employers</a>
+        <a href="{% url 'sign-in' %}" style="color:var(--text)">Sign in</a>
+        <a href="{% url 'employee-access-request' %}" class="cl-btn cl-btn-primary">Request access</a>
+      </nav>
+      <a href="{% url 'sign-in' %}" class="cl-btn cl-btn-ghost" style="display:inline-flex;" >Sign in</a>
+    </div>
+  </header>
 
-    <section class="mx-auto max-w-7xl px-6 pb-8">
-        <div class="rounded-[28px] border border-slate-200 bg-white p-8 shadow-sm">
-            <div class="max-w-3xl">
-                <div class="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">{{ public_site_content.workflow_title }}</div>
-                <h2 class="mt-3 text-3xl font-semibold text-slate-950">Intake to placement with one operating model.</h2>
-                <p class="mt-4 text-base leading-7 text-slate-600">{{ public_site_content.workflow_body }}</p>
-            </div>
-            <div class="mt-8 grid gap-4 lg:grid-cols-4">
-                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-5"><div class="text-sm font-semibold text-slate-900">{{ public_site_content.workflow_step_1_title }}</div><p class="mt-2 text-sm leading-6 text-slate-600">{{ public_site_content.workflow_step_1_body }}</p></div>
-                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-5"><div class="text-sm font-semibold text-slate-900">{{ public_site_content.workflow_step_2_title }}</div><p class="mt-2 text-sm leading-6 text-slate-600">{{ public_site_content.workflow_step_2_body }}</p></div>
-                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-5"><div class="text-sm font-semibold text-slate-900">{{ public_site_content.workflow_step_3_title }}</div><p class="mt-2 text-sm leading-6 text-slate-600">{{ public_site_content.workflow_step_3_body }}</p></div>
-                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-5"><div class="text-sm font-semibold text-slate-900">{{ public_site_content.workflow_step_4_title }}</div><p class="mt-2 text-sm leading-6 text-slate-600">{{ public_site_content.workflow_step_4_body }}</p></div>
-            </div>
+  {# ── hero ── #}
+  <section class="cl-wrap" style="padding-top:4.5rem;padding-bottom:3rem;">
+    <div style="display:grid;gap:3rem;align-items:center;grid-template-columns:1fr;">
+      <div class="reveal">
+        <span class="cl-eyebrow">● {{ public_site_content.hero_badge|default:'Recruiting operations platform' }}</span>
+        <h1 class="cl-h1">
+          {{ public_site_content.hero_title|default:'The operating layer for' }}
+          <span class="cl-grad">hiring execution.</span>
+        </h1>
+        <p class="cl-lead">
+          {{ public_site_content.hero_body|default:'Sourcing, AI classification, consultant marketing, and pipeline control unified into one operational command surface — built for the people who move careers and close roles.' }}
+        </p>
+        <div style="display:flex;flex-wrap:wrap;gap:.9rem;margin-top:2rem;">
+          <a href="{{ public_site_content.hero_primary_url|default:'/employees/request-access/' }}" class="cl-btn cl-btn-primary" style="padding:.8rem 1.4rem;">
+            {{ public_site_content.hero_primary_label|default:'Request access' }}
+          </a>
+          <a href="{{ public_site_content.hero_secondary_url|default:'/careers/' }}" class="cl-btn cl-btn-ghost" style="padding:.8rem 1.4rem;">
+            {{ public_site_content.hero_secondary_label|default:'Explore careers' }}
+          </a>
         </div>
-    </section>
+        <div style="margin-top:2.4rem;display:flex;align-items:center;gap:.8rem;" class="cl-mono">
+          <span style="display:flex;">
+            <span style="width:1.3rem;height:1.3rem;border-radius:50%;background:var(--accent);"></span>
+            <span style="width:1.3rem;height:1.3rem;border-radius:50%;background:var(--accent-2);margin-left:-.5rem;"></span>
+            <span style="width:1.3rem;height:1.3rem;border-radius:50%;background:#7c83ff;margin-left:-.5rem;"></span>
+          </span>
+          Trusted by recruiting teams across global markets
+        </div>
+      </div>
 
-    <section class="mx-auto grid max-w-7xl gap-6 px-6 py-8 lg:grid-cols-2">
-        <div class="rounded-[28px] border border-slate-200 bg-white p-8 shadow-sm">
-            <div class="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">{{ public_site_content.consultant_title }}</div>
-            <h3 class="mt-3 text-2xl font-semibold text-slate-950">Consultant-facing onboarding that keeps routing clean.</h3>
-            <p class="mt-4 text-base leading-7 text-slate-600">{{ public_site_content.consultant_body }}</p>
-            <a href="{% url 'consultant-join' %}" class="mt-6 inline-flex rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800">{{ public_site_content.consultant_cta_label }}</a>
+      {# intelligence graph (decorative — no real data) #}
+      <div class="cl-panel reveal">
+        <div class="cl-mono" style="display:flex;justify-content:space-between;">
+          <span>Intelligence graph — live</span><span class="cl-accent">routing</span>
         </div>
-        <div class="rounded-[28px] border border-slate-200 bg-white p-8 shadow-sm">
-            <div class="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">{{ public_site_content.employer_title }}</div>
-            <h3 class="mt-3 text-2xl font-semibold text-slate-950">Employer access for teams that need tighter execution control.</h3>
-            <p class="mt-4 text-base leading-7 text-slate-600">{{ public_site_content.employer_body }}</p>
-            <a href="{% url 'employee-access-request' %}" class="mt-6 inline-flex rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-900 hover:bg-slate-50">{{ public_site_content.employer_cta_label }}</a>
+        <div class="cl-graph" style="margin-top:.6rem;">
+          <svg viewBox="0 0 400 340" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+            <line class="cl-edge live" x1="200" y1="180" x2="80"  y2="70"/>
+            <line class="cl-edge live" x1="200" y1="180" x2="330" y2="80"/>
+            <line class="cl-edge"      x1="200" y1="180" x2="60"  y2="200"/>
+            <line class="cl-edge"      x1="200" y1="180" x2="345" y2="200"/>
+            <line class="cl-edge live" x1="200" y1="180" x2="120" y2="300"/>
+            <line class="cl-edge"      x1="200" y1="180" x2="300" y2="300"/>
+            <line class="cl-edge"      x1="80"  y1="70"  x2="60"  y2="200"/>
+            <line class="cl-edge"      x1="330" y1="80"  x2="345" y2="200"/>
+            <circle class="cl-node pulse" cx="200" cy="180" r="11"/>
+            <circle class="cl-node" cx="80"  cy="70"  r="6"/>
+            <circle class="cl-node" cx="330" cy="80"  r="6"/>
+            <circle class="cl-node" cx="60"  cy="200" r="6"/>
+            <circle class="cl-node" cx="345" cy="200" r="6"/>
+            <circle class="cl-node" cx="120" cy="300" r="6"/>
+            <circle class="cl-node" cx="300" cy="300" r="6"/>
+          </svg>
+          <div class="cl-chip" style="top:14%;left:6%;"><span class="lbl">Classified · 0.96</span>Senior Data Engineer</div>
+          <div class="cl-chip" style="top:34%;right:4%;"><span class="lbl">Match · ready</span>3 consultants</div>
+          <div class="cl-chip" style="bottom:6%;left:8%;"><span class="lbl">Pipeline · stage 3/5</span>Final interview</div>
         </div>
-    </section>
+      </div>
+    </div>
+  </section>
 
-    {% include "public/partials/_footer.html" %}
+  {# ── one surface · feature cards ── #}
+  <section class="cl-wrap" style="padding:3rem 1.5rem;">
+    <div class="reveal" style="max-width:42rem;">
+      <span class="cl-eyebrow">01 — The surface</span>
+      <h2 class="cl-h2" style="margin-top:.9rem;">One surface for the entire hiring operation.</h2>
+      <p class="cl-lead" style="margin-top:1rem;max-width:42rem;">
+        Fragmented tools create blind spots. {{ SITE_NAME|default:'CHENN' }} collapses intake, intelligence, marketing,
+        and closing into a single operational system — every role, consultant, and company in one accountable view.
+      </p>
+    </div>
+    <div style="display:grid;gap:1rem;margin-top:2.2rem;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));">
+      {% for f in feature_cards %}
+      <div class="cl-card reveal" style="padding:1.5rem;">
+        <div class="cl-mono">/ 0{{ forloop.counter }}</div>
+        <div style="width:2.4rem;height:2.4rem;border-radius:.6rem;margin:1rem 0;display:grid;place-items:center;
+          border:1px solid color-mix(in srgb,var(--accent) 50%,transparent);background:color-mix(in srgb,var(--accent) 10%,transparent);color:var(--accent);">◫</div>
+        <div style="font-size:1.15rem;font-weight:600;">{{ f.t }}</div>
+        <p style="color:var(--muted);font-size:.92rem;line-height:1.6;margin-top:.5rem;">{{ f.d }}</p>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  {# ── pipeline ── #}
+  <section class="cl-wrap" style="padding:2rem 1.5rem;">
+    <div class="reveal" style="max-width:40rem;">
+      <span class="cl-eyebrow">02 — The flow</span>
+      <h2 class="cl-h2" style="margin-top:.9rem;">From raw role to closed hire, in one tracked line.</h2>
+      <p class="cl-mono" style="margin-top:.8rem;color:var(--muted);">Every stage is timestamped, owned, and measurable.</p>
+    </div>
+    <div class="cl-card reveal" style="padding:2rem 1.5rem;margin-top:1.8rem;">
+      <div class="cl-pipe">
+        <div class="cl-pipe-line"><span></span></div>
+        <div class="cl-step"><div class="knob"></div><div class="num">01</div><div class="t">Intake</div><div class="d">Capture &amp; dedupe</div></div>
+        <div class="cl-step"><div class="knob"></div><div class="num">02</div><div class="t">Classify</div><div class="d">AI tag &amp; score</div></div>
+        <div class="cl-step"><div class="knob"></div><div class="num">03</div><div class="t">Match</div><div class="d">Role ↔ consultant</div></div>
+        <div class="cl-step"><div class="knob"></div><div class="num">04</div><div class="t">Market</div><div class="d">Position &amp; submit</div></div>
+        <div class="cl-step"><div class="knob"></div><div class="num">05</div><div class="t">Close</div><div class="d">Offer &amp; placement</div></div>
+      </div>
+    </div>
+  </section>
+
+  {# ── intelligence demo (illustrative, generic example) ── #}
+  <section class="cl-wrap" style="padding:3rem 1.5rem;">
+    <div style="display:grid;gap:3rem;align-items:center;grid-template-columns:1fr;">
+      <div class="reveal">
+        <span class="cl-eyebrow">03 — The intelligence</span>
+        <h2 class="cl-h2" style="margin-top:.9rem;">An intelligence layer that reads every role like an operator.</h2>
+        <p class="cl-lead" style="margin-top:1rem;">
+          Paste a messy job description and {{ SITE_NAME|default:'CHENN' }} returns structured signal — seniority,
+          function, stack, and market — ready to route. No tagging by hand. No lost context.
+        </p>
+      </div>
+      <div class="cl-panel reveal">
+        <div class="cl-mono" style="display:flex;justify-content:space-between;"><span>Input · raw role</span><span class="cl-accent">parsing…</span></div>
+        <div style="border:1px solid var(--border);border-radius:.7rem;padding:.9rem;margin-top:.6rem;color:#b9c4c7;font-size:.86rem;line-height:1.5;background:rgba(0,0,0,.25);">
+          “Looking for a hands-on backend lead to own our payments platform, 8+ yrs, Go/Kafka, ideally ex-fintech, hybrid…”
+        </div>
+        <div class="cl-mono" style="margin-top:1.1rem;">Output · structured signal</div>
+        <div style="display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.7rem;">
+          <span class="cl-tag g">Seniority · Lead</span>
+          <span class="cl-tag b">Function · Backend</span>
+          <span class="cl-tag">Stack · Go / Kafka</span>
+          <span class="cl-tag">Domain · Fintech</span>
+          <span class="cl-tag b">Market · Hybrid</span>
+        </div>
+        <div class="cl-mono" style="display:flex;justify-content:space-between;margin-top:1.1rem;border-top:1px solid var(--border);padding-top:.8rem;">
+          <span>Confidence</span><span class="cl-accent">0.96 · routed to matched consultants</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {# ── two sides ── #}
+  <section class="cl-wrap" style="padding:2rem 1.5rem;">
+    <div class="reveal" style="max-width:40rem;">
+      <span class="cl-eyebrow">04 — Built for both sides</span>
+      <h2 class="cl-h2" style="margin-top:.9rem;">Two sides of the market. One system of record.</h2>
+    </div>
+    <div style="display:grid;gap:1rem;margin-top:1.8rem;grid-template-columns:repeat(auto-fit,minmax(18rem,1fr));">
+      <div class="cl-card reveal" style="padding:1.8rem;">
+        <div class="cl-mono cl-accent">For consultants</div>
+        <h3 style="font-size:1.4rem;font-weight:700;margin:.7rem 0;">{{ public_site_content.consultant_title|default:'Get marketed to the right roles, faster.' }}</h3>
+        <p style="color:var(--muted);line-height:1.6;">{{ public_site_content.consultant_body|default:'Your profile is parsed, positioned, and matched against live demand — so the roles that fit reach you, not the noise.' }}</p>
+        <a href="{% url 'consultant-join' %}" class="cl-btn cl-btn-primary" style="margin-top:1.3rem;">{{ public_site_content.consultant_cta_label|default:'Submit your profile' }} →</a>
+      </div>
+      <div class="cl-card reveal" style="padding:1.8rem;">
+        <div class="cl-mono" style="color:var(--accent-2);">For employers</div>
+        <h3 style="font-size:1.4rem;font-weight:700;margin:.7rem 0;">{{ public_site_content.employer_title|default:'Run hiring like an operation, not a guess.' }}</h3>
+        <p style="color:var(--muted);line-height:1.6;">{{ public_site_content.employer_body|default:'Submit a role and watch it move through a controlled pipeline with company intelligence, qualified consultants, and real accountability.' }}</p>
+        <a href="{% url 'employee-access-request' %}" class="cl-btn cl-btn-ghost" style="margin-top:1.3rem;">{{ public_site_content.employer_cta_label|default:'Request access' }} →</a>
+      </div>
+    </div>
+  </section>
+
+  {# ── proof stats (admin-editable copy, NOT live counts) ── #}
+  {% if public_site_content.proof_stat_1_value %}
+  <section class="cl-wrap" style="padding:2rem 1.5rem;">
+    <div class="cl-card reveal" style="padding:2.2rem 1.8rem;display:grid;gap:1.5rem;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));text-align:center;">
+      <div class="cl-stat"><div class="v cl-grad">{{ public_site_content.proof_stat_1_value }}</div><div class="l">{{ public_site_content.proof_stat_1_label }}</div></div>
+      {% if public_site_content.proof_stat_2_value %}<div class="cl-stat"><div class="v">{{ public_site_content.proof_stat_2_value }}</div><div class="l">{{ public_site_content.proof_stat_2_label }}</div></div>{% endif %}
+      {% if public_site_content.proof_stat_3_value %}<div class="cl-stat"><div class="v cl-grad">{{ public_site_content.proof_stat_3_value }}</div><div class="l">{{ public_site_content.proof_stat_3_label }}</div></div>{% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  {# ── live roles teaser (public job posts only — title/company/location) ── #}
+  {% if featured_jobs %}
+  <section class="cl-wrap" style="padding:2rem 1.5rem;">
+    <div class="reveal" style="display:flex;align-items:end;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+      <div>
+        <span class="cl-eyebrow">Open now</span>
+        <h2 class="cl-h2" style="margin-top:.7rem;font-size:1.8rem;">Roles moving through the pipeline.</h2>
+      </div>
+      <a href="{% url 'public-careers-home' %}" class="cl-btn cl-btn-ghost">View all careers →</a>
+    </div>
+    <div style="display:grid;gap:.8rem;margin-top:1.6rem;grid-template-columns:repeat(auto-fit,minmax(17rem,1fr));">
+      {% for job in featured_jobs|slice:":3" %}
+      <a href="{% url 'public-job-detail' job.pk %}" class="cl-card reveal" style="padding:1.3rem;display:block;">
+        <div style="font-weight:600;">{{ job.title }}</div>
+        <div class="cl-mono" style="margin-top:.5rem;color:var(--muted);">{{ job.company }}{% if job.location %} · {{ job.location }}{% endif %}</div>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  {# ── CTA ── #}
+  <section class="cl-wrap" style="padding:3rem 1.5rem;">
+    <div class="cl-panel reveal" style="text-align:center;padding:3rem 1.5rem;">
+      <span class="cl-eyebrow">Enter the system</span>
+      <h2 class="cl-h2" style="margin:1rem auto;max-width:30rem;">Bring your hiring operation into one surface.</h2>
+      <p style="color:var(--muted);max-width:30rem;margin:0 auto 1.8rem;">Request access as an employer, submit your profile as a consultant, or sign in to operate.</p>
+      <div style="display:flex;gap:.9rem;justify-content:center;flex-wrap:wrap;">
+        <a href="{% url 'employee-access-request' %}" class="cl-btn cl-btn-primary" style="padding:.8rem 1.4rem;">Request access</a>
+        <a href="{% url 'consultant-join' %}" class="cl-btn cl-btn-ghost" style="padding:.8rem 1.4rem;">Submit your profile</a>
+        <a href="{% url 'sign-in' %}" class="cl-btn cl-btn-ghost" style="padding:.8rem 1.4rem;">Sign in →</a>
+      </div>
+    </div>
+  </section>
+
+  {# ── footer ── #}
+  <footer class="cl-foot">
+    <div class="cl-wrap" style="display:grid;gap:2rem;padding-top:2.5rem;padding-bottom:2rem;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));">
+      <div>
+        <a href="{% url 'home' %}" class="cl-logo"><span class="cl-logo-mark">{{ SITE_NAME|slice:":1"|default:"C" }}</span><span>{{ SITE_NAME|default:'CHENN' }}</span></a>
+        <p style="color:var(--muted);font-size:.85rem;line-height:1.6;margin-top:1rem;max-width:18rem;">The operating layer for hiring execution.</p>
+      </div>
+      <div>
+        <div class="cl-mono" style="margin-bottom:.9rem;">Platform</div>
+        <div style="display:grid;gap:.6rem;font-size:.88rem;">
+          <a href="{% url 'public-careers-home' %}">Careers</a>
+          <a href="{% url 'consultant-join' %}">Consultants</a>
+          <a href="{% url 'employee-access-request' %}">Employers</a>
+        </div>
+      </div>
+      <div>
+        <div class="cl-mono" style="margin-bottom:.9rem;">Entry</div>
+        <div style="display:grid;gap:.6rem;font-size:.88rem;">
+          <a href="{% url 'sign-in' %}?portal=admin">Admin portal</a>
+          <a href="{% url 'sign-in' %}?portal=employee">Employee portal</a>
+          <a href="{% url 'sign-in' %}?portal=consultant">Consultant portal</a>
+        </div>
+      </div>
+    </div>
+    <div class="cl-wrap cl-mono" style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border);padding:1.2rem 1.5rem;flex-wrap:wrap;gap:.6rem;">
+      <span>© {% now "Y" %} {{ SITE_NAME|default:'CHENN' }}</span>
+      <span><span class="cl-dot"></span>All systems operational</span>
+    </div>
+  </footer>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function(){
+  var els = document.querySelectorAll('#chenn-landing .reveal');
+  if(!('IntersectionObserver' in window) || window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+    els.forEach(function(e){e.classList.add('in');});return;
+  }
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(en){ if(en.isIntersecting){ en.target.classList.add('in'); io.unobserve(en.target);} });
+  }, {threshold:.12, rootMargin:'0px 0px -8% 0px'});
+  els.forEach(function(e){io.observe(e);});
+})();
+</script>
 {% endblock %}

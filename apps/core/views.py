@@ -623,8 +623,10 @@ def resolve_post_login_redirect(user):
 
 
 def _public_site_context():
-    from companies.models import Company
-
+    # NOTE: We intentionally do NOT expose live platform counts (open jobs,
+    # company total, consultant count) on the public landing. Those are
+    # internal scale metrics. Public-facing proof points come from the
+    # admin-editable PublicSiteContent.proof_stat_* fields instead.
     content = PublicSiteContent.load()
     featured_jobs = (
         Job.objects.filter(status=Job.Status.OPEN, is_archived=False)
@@ -634,12 +636,18 @@ def _public_site_context():
     return {
         "hide_chrome": True,
         "public_site_content": content,
-        "public_metrics": {
-            "open_jobs": Job.objects.filter(status=Job.Status.OPEN, is_archived=False).count(),
-            "companies": Company.objects.count(),
-            "consultants": ConsultantProfile.objects.count(),
-        },
         "featured_jobs": featured_jobs,
+        "feature_cards": [
+            {"t": "Sourcing & intake",
+             "d": "Capture roles and candidates from every channel into a structured, "
+                  "deduplicated intake queue — nothing slips."},
+            {"t": "AI classification",
+             "d": "Every role and profile is parsed, scored, and tagged by seniority, "
+                  "function, and market — turning noise into signal instantly."},
+            {"t": "Pipeline control",
+             "d": "Drive every consultant through stages with accountable ownership, "
+                  "SLAs, and a live view of what's moving and what's stuck."},
+        ],
     }
 
 

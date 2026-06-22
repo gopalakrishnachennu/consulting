@@ -300,6 +300,19 @@ class PlatformConfig(models.Model):
         help_text="Primary brand color used across the entire platform.",
     )
 
+    class ThemeMode(models.TextChoices):
+        LIGHT = 'light', 'Light'
+        DARK  = 'dark',  'Dark'
+        AUTO  = 'auto',  'Auto (follow device)'
+
+    theme_mode = models.CharField(
+        max_length=10,
+        choices=ThemeMode.choices,
+        default=ThemeMode.LIGHT,
+        help_text="Default light/dark appearance. Visitors can still toggle it; "
+                  "'Auto' follows the device's system preference.",
+    )
+
     nav_layout = models.CharField(
         max_length=10,
         choices=NavLayout.choices,

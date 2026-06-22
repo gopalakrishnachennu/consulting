@@ -11,6 +11,23 @@
     <link rel="icon" type="image/svg+xml" href="{% static 'images/favicon.svg' %}">
     <link rel="icon" type="image/svg+xml" sizes="32x32" href="{% static 'images/logo-icon.svg' %}">
     <link rel="apple-touch-icon" sizes="180x180" href="{% static 'images/logo-icon.svg' %}">
+
+    {# ── No-flash theme mode: resolve light/dark BEFORE first paint ── #}
+    <script>
+    (function(){
+      try{
+        var def = "{{ PLATFORM_CONFIG.theme_mode|default:'light' }}";        // platform default
+        var saved = localStorage.getItem('chenn-theme-mode');                 // visitor override
+        var mode = saved || def || 'light';
+        var resolved = mode;
+        if(mode === 'auto'){
+          resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', resolved);
+        document.documentElement.setAttribute('data-theme-mode', mode);
+      }catch(e){ document.documentElement.setAttribute('data-theme','light'); }
+    })();
+    </script>
     {% tailwind_css %}
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/@alpinejs/collapse@3.13.3/dist/cdn.min.js" defer></script>
@@ -113,6 +130,84 @@
     .peer:checked ~ div.peer-checked\:border-violet-500 {
         border-color: var(--brand-600) !important;
     }
+    </style>
+
+    {# ═══ DARK MODE — token layer + global utility remap (opt-in via data-theme) ═══ #}
+    <style>
+    :root{
+      --app-bg:#f9fafb; --surface:#ffffff; --surface-2:#f3f4f6; --surface-3:#e5e7eb;
+      --text-1:#111827; --text-2:#374151; --text-3:#6b7280;
+      --border-1:#e5e7eb; --border-2:#d1d5db;
+      --shadow:0 1px 2px rgba(0,0,0,.06),0 1px 3px rgba(0,0,0,.1);
+    }
+    html[data-theme="dark"]{
+      --app-bg:#0b0f12; --surface:#11171b; --surface-2:#171f24; --surface-3:#1f2a30;
+      --text-1:#e7eef0; --text-2:#c2cdd2; --text-3:#8a999f;
+      --border-1:rgba(255,255,255,.08); --border-2:rgba(255,255,255,.14);
+      --shadow:0 2px 8px rgba(0,0,0,.5);
+      color-scheme:dark;
+    }
+    /* Base surface */
+    html[data-theme="dark"] body{ background:var(--app-bg)!important; color:var(--text-1)!important; }
+
+    /* Remap the common hardcoded light utilities → dark tokens.
+       Scoped under [data-theme=dark] so light mode is byte-for-byte unchanged. */
+    html[data-theme="dark"] .bg-white,
+    html[data-theme="dark"] .bg-gray-50, html[data-theme="dark"] .bg-slate-50,
+    html[data-theme="dark"] .bg-gray-100,html[data-theme="dark"] .bg-slate-100{ background-color:var(--surface)!important; }
+    html[data-theme="dark"] .bg-gray-200,html[data-theme="dark"] .bg-slate-200{ background-color:var(--surface-2)!important; }
+    html[data-theme="dark"] .bg-gray-800,html[data-theme="dark"] .bg-gray-900,
+    html[data-theme="dark"] .bg-slate-800,html[data-theme="dark"] .bg-slate-900{ background-color:#060a0c!important; }
+
+    html[data-theme="dark"] .text-gray-900,html[data-theme="dark"] .text-slate-900,
+    html[data-theme="dark"] .text-gray-800,html[data-theme="dark"] .text-slate-800,
+    html[data-theme="dark"] .text-black{ color:var(--text-1)!important; }
+    html[data-theme="dark"] .text-gray-700,html[data-theme="dark"] .text-slate-700,
+    html[data-theme="dark"] .text-gray-600,html[data-theme="dark"] .text-slate-600{ color:var(--text-2)!important; }
+    html[data-theme="dark"] .text-gray-500,html[data-theme="dark"] .text-slate-500,
+    html[data-theme="dark"] .text-gray-400,html[data-theme="dark"] .text-slate-400{ color:var(--text-3)!important; }
+
+    html[data-theme="dark"] .border-gray-200,html[data-theme="dark"] .border-slate-200,
+    html[data-theme="dark"] .border-gray-100,html[data-theme="dark"] .border-slate-100,
+    html[data-theme="dark"] .border-gray-300,html[data-theme="dark"] .border-slate-300{ border-color:var(--border-1)!important; }
+    html[data-theme="dark"] .divide-gray-200>*,html[data-theme="dark"] .divide-slate-200>*,
+    html[data-theme="dark"] .divide-gray-100>*{ border-color:var(--border-1)!important; }
+
+    /* Inputs */
+    html[data-theme="dark"] input,html[data-theme="dark"] select,html[data-theme="dark"] textarea{
+      background-color:var(--surface-2)!important; color:var(--text-1)!important; border-color:var(--border-2)!important; }
+    html[data-theme="dark"] input::placeholder,html[data-theme="dark"] textarea::placeholder{ color:var(--text-3)!important; }
+    /* Hover utilities that assume light */
+    html[data-theme="dark"] .hover\:bg-gray-50:hover,html[data-theme="dark"] .hover\:bg-slate-50:hover,
+    html[data-theme="dark"] .hover\:bg-gray-100:hover,html[data-theme="dark"] .hover\:bg-slate-100:hover{ background-color:var(--surface-2)!important; }
+    /* Soften heavy shadows in dark */
+    html[data-theme="dark"] .shadow,html[data-theme="dark"] .shadow-sm,html[data-theme="dark"] .shadow-md,
+    html[data-theme="dark"] .shadow-lg{ box-shadow:var(--shadow)!important; }
+
+    /* ═══ ANIMATION UTILITIES (light + dark, reduced-motion safe) ═══ */
+    .reveal{ opacity:0; transform:translateY(18px); transition:opacity .65s cubic-bezier(.2,.7,.2,1), transform .65s cubic-bezier(.2,.7,.2,1); }
+    .reveal.in{ opacity:1; transform:none; }
+    .reveal[data-reveal-delay="1"]{ transition-delay:.07s } .reveal[data-reveal-delay="2"]{ transition-delay:.14s }
+    .reveal[data-reveal-delay="3"]{ transition-delay:.21s } .reveal[data-reveal-delay="4"]{ transition-delay:.28s }
+    .u-lift{ transition:transform .2s ease, box-shadow .2s ease; }
+    .u-lift:hover{ transform:translateY(-3px); box-shadow:0 14px 38px rgba(0,0,0,.16); }
+    @keyframes u-fade-up{ from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:none} }
+    .u-animate-in{ animation:u-fade-up .6s cubic-bezier(.2,.7,.2,1) both; }
+    @keyframes u-bar-grow{ from{transform:scaleY(0)} to{transform:scaleY(1)} }
+    .u-bar{ transform-origin:bottom; animation:u-bar-grow .8s cubic-bezier(.2,.7,.2,1) both; }
+    @media (prefers-reduced-motion: reduce){
+      .reveal{opacity:1!important;transform:none!important;transition:none!important;}
+      .u-animate-in,.u-bar{animation:none!important;}
+      .u-lift:hover{transform:none;}
+    }
+
+    /* Floating theme toggle */
+    #theme-toggle{ position:fixed; right:1rem; bottom:1rem; z-index:90; width:2.75rem; height:2.75rem; border-radius:9999px;
+      display:grid; place-items:center; cursor:pointer; border:1px solid var(--border-2);
+      background:var(--surface); color:var(--text-2); box-shadow:var(--shadow); transition:transform .18s, color .18s, background .18s; }
+    #theme-toggle:hover{ transform:translateY(-2px) scale(1.05); color:var(--brand-600); }
+    #theme-toggle .sun{display:none} #theme-toggle .moon{display:block}
+    html[data-theme="dark"] #theme-toggle .sun{display:block} html[data-theme="dark"] #theme-toggle .moon{display:none}
     </style>
     {% block extra_head %}{% endblock %}
 </head>
@@ -527,7 +622,7 @@
 
     {% block fullscreen_content %}{% endblock %}
 
-    <div class="{% if PLATFORM_CONFIG.nav_layout == 'left' %}lg:ml-64 px-4 sm:px-6 py-4 max-w-[1600px]{% else %}w-full max-w-[1600px] mx-auto mt-4 px-4 sm:px-6{% endif %}" {% block hide_container %}{% endblock %}>
+    <div class="u-animate-in {% if PLATFORM_CONFIG.nav_layout == 'left' %}lg:ml-64 px-4 sm:px-6 py-4 max-w-[1600px]{% else %}w-full max-w-[1600px] mx-auto mt-4 px-4 sm:px-6{% endif %}" {% block hide_container %}{% endblock %}>
         {% block breadcrumbs %}{% endblock %}
 
         {% block content %}
@@ -897,6 +992,70 @@
 })();
 </script>
 {% endif %}
+
+{% if not hide_chrome %}
+{# ── Floating light/dark toggle (present on all chrome pages) ── #}
+<button id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">
+  <svg class="moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+  <svg class="sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+</button>
+{% endif %}
+
+{# ── Global UX: theme toggle, scroll-reveal, count-up (reduced-motion safe) ── #}
+<script>
+(function(){
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Theme toggle — persists visitor choice, overrides platform default.
+  var btn = document.getElementById('theme-toggle');
+  if(btn){
+    btn.addEventListener('click', function(){
+      var cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+      var next = cur === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      document.documentElement.setAttribute('data-theme-mode', next);
+      try{ localStorage.setItem('chenn-theme-mode', next); }catch(e){}
+    });
+  }
+
+  // Scroll reveal for any .reveal element.
+  var els = document.querySelectorAll('.reveal');
+  if(els.length){
+    if(reduce || !('IntersectionObserver' in window)){
+      els.forEach(function(e){ e.classList.add('in'); });
+    } else {
+      var io = new IntersectionObserver(function(entries){
+        entries.forEach(function(en){ if(en.isIntersecting){ en.target.classList.add('in'); io.unobserve(en.target); } });
+      }, {threshold:.12, rootMargin:'0px 0px -6% 0px'});
+      els.forEach(function(e){ io.observe(e); });
+    }
+  }
+
+  // Count-up for [data-countup] (target number in data-countup; respects reduced motion).
+  function countUp(el){
+    var target = parseFloat(el.getAttribute('data-countup'))||0;
+    var suffix = el.getAttribute('data-countup-suffix')||'';
+    if(reduce){ el.textContent = target.toLocaleString()+suffix; return; }
+    var start = performance.now(), dur = 1100;
+    function tick(now){
+      var p = Math.min(1,(now-start)/dur), e = 1-Math.pow(1-p,3);
+      el.textContent = Math.round(target*e).toLocaleString()+suffix;
+      if(p<1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+  var nums = document.querySelectorAll('[data-countup]');
+  if(nums.length){
+    if(!('IntersectionObserver' in window)){ nums.forEach(countUp); }
+    else{
+      var io2 = new IntersectionObserver(function(entries){
+        entries.forEach(function(en){ if(en.isIntersecting){ countUp(en.target); io2.unobserve(en.target); } });
+      }, {threshold:.5});
+      nums.forEach(function(e){ io2.observe(e); });
+    }
+  }
+})();
+</script>
 
 </body>
 
