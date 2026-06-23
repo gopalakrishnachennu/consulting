@@ -12,7 +12,7 @@
     --bg:#080b0c; --surface:#0e1417; --surface-2:rgba(255,255,255,.04);
     --panel-grad:linear-gradient(180deg,#0e1519,#0a0f11);
     --border:rgba(255,255,255,.10); --border-2:rgba(255,255,255,.16);
-    --text:#eaf1f3; --text-2:#c2cdd1; --muted:#8a999f;
+    --text:#eef4f5; --text-2:#cdd6d9; --muted:#a3b2b7;
     --accent:var(--brand-300,#5eead4); --accent-2:var(--brand-500,#14b8a6);
     --accent-ink:#04231d; --accent-glow:var(--brand-ring,rgba(94,234,212,.22));
     --mono:'JetBrains Mono','SF Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
@@ -32,6 +32,12 @@
   .cl-public .bg-slate-50,.cl-public .bg-gray-50,
   .cl-public .bg-slate-100,.cl-public .bg-gray-100{ background-color:var(--surface-2)!important; }
   .cl-public .bg-slate-950,.cl-public .bg-slate-900{ background:linear-gradient(180deg,#0f171b,#080c0e)!important; }
+  .cl-public .bg-slate-800{ background-color:#16201f!important; }
+
+  /* Error states — readable light-red on a dark-red chip (was light pink box) */
+  .cl-public .bg-red-50{ background-color:rgba(248,113,113,.10)!important; }
+  .cl-public .border-red-200{ border-color:rgba(248,113,113,.40)!important; }
+  .cl-public .text-red-700,.cl-public .text-red-600{ color:#fca5a5!important; }
 
   /* ── Text ──────────────────────────────────────────────────────────── */
   .cl-public .text-slate-950,.cl-public .text-slate-900,.cl-public .text-gray-900,
