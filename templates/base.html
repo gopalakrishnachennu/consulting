@@ -188,8 +188,8 @@
     html[data-theme="dark"] .shadow-lg{ box-shadow:var(--shadow)!important; }
 
     /* ═══ ANIMATION UTILITIES (light + dark, reduced-motion safe) ═══ */
-    html.js .reveal{ opacity:0; transform:translateY(18px); transition:opacity .65s cubic-bezier(.2,.7,.2,1), transform .65s cubic-bezier(.2,.7,.2,1); }
-    .reveal.in{ opacity:1; transform:none; }
+    .reveal{ transition:opacity .65s cubic-bezier(.2,.7,.2,1), transform .65s cubic-bezier(.2,.7,.2,1); }
+    html.js .reveal:not(.in){ opacity:0; transform:translateY(18px); }
     .reveal[data-reveal-delay="1"]{ transition-delay:.07s } .reveal[data-reveal-delay="2"]{ transition-delay:.14s }
     .reveal[data-reveal-delay="3"]{ transition-delay:.21s } .reveal[data-reveal-delay="4"]{ transition-delay:.28s }
     .u-lift{ transition:transform .2s ease, box-shadow .2s ease; }
