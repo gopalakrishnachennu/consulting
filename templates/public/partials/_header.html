@@ -16,11 +16,22 @@
             <a href="{% url 'public-careers-home' %}" class="cl-navlink">Careers</a>
             <a href="{% url 'consultant-join' %}" class="cl-navlink">Consultants</a>
             <a href="{% url 'employee-access-request' %}" class="cl-navlink">Employers</a>
-            <a href="{% url 'sign-in' %}" class="rounded-xl px-4 py-2"
-               style="border:1px solid var(--border-2,rgba(255,255,255,.16)); color:var(--text,#eaf1f3);">Sign in</a>
+            <a href="{% url 'sign-in' %}" class="cl-navlink" style="color:var(--text,#eaf1f3);">Sign in</a>
+            <a href="{% url 'employee-access-request' %}" class="cl-pubcta">Request access</a>
         </nav>
-        {# Mobile: nav menu is hidden on small screens — keep Sign in reachable #}
-        <a href="{% url 'sign-in' %}" class="rounded-xl px-3.5 py-2 text-sm font-semibold lg:hidden"
-           style="border:1px solid var(--border-2,rgba(255,255,255,.16)); color:var(--text,#eaf1f3);">Sign in</a>
+        {# mobile menu — nav is hidden under 1024px #}
+        <details class="cl-menu">
+            <summary aria-label="Menu">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+            </summary>
+            <div class="cl-menu-panel">
+                <a href="{% url 'home' %}">Platform</a>
+                <a href="{% url 'public-careers-home' %}">Careers</a>
+                <a href="{% url 'consultant-join' %}">Consultants</a>
+                <a href="{% url 'employee-access-request' %}">Employers</a>
+                <a href="{% url 'sign-in' %}">Sign in</a>
+                <a href="{% url 'employee-access-request' %}" class="cl-pubcta" style="justify-content:center;margin-top:.3rem;">Request access</a>
+            </div>
+        </details>
     </div>
 </header>

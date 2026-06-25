@@ -26,6 +26,9 @@
         document.documentElement.setAttribute('data-theme', resolved);
         document.documentElement.setAttribute('data-theme-mode', mode);
       }catch(e){ document.documentElement.setAttribute('data-theme','light'); }
+      // Mark that JS is alive — scroll-reveal only hides content when this is set,
+      // so a JS failure can never leave a page blank.
+      try{ document.documentElement.classList.add('js'); }catch(e){}
     })();
     </script>
     {% tailwind_css %}
@@ -185,7 +188,7 @@
     html[data-theme="dark"] .shadow-lg{ box-shadow:var(--shadow)!important; }
 
     /* ═══ ANIMATION UTILITIES (light + dark, reduced-motion safe) ═══ */
-    .reveal{ opacity:0; transform:translateY(18px); transition:opacity .65s cubic-bezier(.2,.7,.2,1), transform .65s cubic-bezier(.2,.7,.2,1); }
+    html.js .reveal{ opacity:0; transform:translateY(18px); transition:opacity .65s cubic-bezier(.2,.7,.2,1), transform .65s cubic-bezier(.2,.7,.2,1); }
     .reveal.in{ opacity:1; transform:none; }
     .reveal[data-reveal-delay="1"]{ transition-delay:.07s } .reveal[data-reveal-delay="2"]{ transition-delay:.14s }
     .reveal[data-reveal-delay="3"]{ transition-delay:.21s } .reveal[data-reveal-delay="4"]{ transition-delay:.28s }

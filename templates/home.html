@@ -80,6 +80,19 @@
   .cl-btn-ghost:hover{background:var(--surface-2);transform:translateY(-2px);}
   @media(min-width:1024px){.cl-nav{display:flex;}}
 
+  /* ---- mobile menu (disclosure) -------------------------------------- */
+  .cl-menu{position:relative;}
+  .cl-menu summary{list-style:none;cursor:pointer;width:2.5rem;height:2.5rem;display:grid;place-items:center;
+    border:1px solid var(--border-2);border-radius:.6rem;color:var(--text);}
+  .cl-menu summary::-webkit-details-marker{display:none;}
+  .cl-menu[open] summary{background:var(--surface-2);}
+  .cl-menu-panel{position:absolute;right:0;top:3.1rem;min-width:13rem;background:var(--bg-elev);
+    border:1px solid var(--border-2);border-radius:.85rem;padding:.5rem;display:grid;gap:.15rem;
+    box-shadow:0 20px 50px rgba(0,0,0,.55);z-index:30;}
+  .cl-menu-panel a{padding:.6rem .7rem;border-radius:.55rem;color:var(--text);font-size:.92rem;}
+  .cl-menu-panel a:hover{background:var(--surface-2);}
+  @media(min-width:1024px){.cl-menu{display:none;}}
+
   /* ---- generic section bits ------------------------------------------ */
   .cl-eyebrow{font-family:var(--mono);font-size:.7rem;letter-spacing:.2em;text-transform:uppercase;color:var(--accent);}
   .cl-h1{font-size:clamp(2.6rem,6vw,4.4rem);line-height:1.02;font-weight:700;letter-spacing:-.02em;margin:1.1rem 0;}
@@ -148,7 +161,7 @@
   .cl-foot a{color:var(--muted);transition:color .2s;}.cl-foot a:hover{color:var(--text);}
 
   /* ---- scroll reveal ------------------------------------------------- */
-  .reveal{opacity:0;transform:translateY(22px);transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1);}
+  html.js .reveal{opacity:0;transform:translateY(22px);transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1);}
   .reveal.in{opacity:1;transform:none;}
   @media (prefers-reduced-motion: reduce){
     .reveal{opacity:1!important;transform:none!important;transition:none;}
@@ -185,7 +198,20 @@
         <a href="{% url 'sign-in' %}" style="color:var(--text)">Sign in</a>
         <a href="{% url 'employee-access-request' %}" class="cl-btn cl-btn-primary">Request access</a>
       </nav>
-      <a href="{% url 'sign-in' %}" class="cl-btn cl-btn-ghost" style="display:inline-flex;" >Sign in</a>
+      {# mobile menu (nav is hidden under 1024px) #}
+      <details class="cl-menu">
+        <summary aria-label="Menu">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </summary>
+        <div class="cl-menu-panel">
+          <a href="{% url 'home' %}">Platform</a>
+          <a href="{% url 'public-careers-home' %}">Careers</a>
+          <a href="{% url 'consultant-join' %}">Consultants</a>
+          <a href="{% url 'employee-access-request' %}">Employers</a>
+          <a href="{% url 'sign-in' %}">Sign in</a>
+          <a href="{% url 'employee-access-request' %}" class="cl-btn cl-btn-primary" style="justify-content:center;margin-top:.3rem;">Request access</a>
+        </div>
+      </details>
     </div>
   </header>
 
@@ -213,7 +239,7 @@
           <span style="display:flex;">
             <span style="width:1.3rem;height:1.3rem;border-radius:50%;background:var(--accent);"></span>
             <span style="width:1.3rem;height:1.3rem;border-radius:50%;background:var(--accent-2);margin-left:-.5rem;"></span>
-            <span style="width:1.3rem;height:1.3rem;border-radius:50%;background:#7c83ff;margin-left:-.5rem;"></span>
+            <span style="width:1.3rem;height:1.3rem;border-radius:50%;background:var(--accent-2);margin-left:-.5rem;"></span>
           </span>
           Trusted by recruiting teams across global markets
         </div>
@@ -239,7 +265,7 @@
             <span class="cl-mono">Matched</span>
             <span style="display:flex;align-items:center;gap:.5rem;">
               <span class="cl-avatars">
-                <i style="background:var(--accent)"></i><i style="background:var(--accent-2)"></i><i style="background:#7c83ff"></i>
+                <i style="background:var(--accent)"></i><i style="background:var(--accent-2)"></i><i style="background:var(--accent-2)"></i>
               </span>
               <span style="font-size:.82rem;color:var(--text-2);">3 consultants ready</span>
             </span>
