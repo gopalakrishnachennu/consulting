@@ -55,7 +55,7 @@ jobs:
             [ "${{ github.event.inputs.strict }}" = "true" ] && STRICT="--strict"
             RUN="docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --no-deps web python manage.py"
             echo "==== classify backlog (dry-run) ===="
-            $RUN classify_existing_rawjobs --dry-run
+            $RUN classify_existing_rawjobs --only-unclassified --dry-run
             echo "==== pool / vetting jobs (dry-run) ===="
             $RUN purge_non_matching_jobs $STRICT
             echo "==== raw jobs (dry-run) ===="
@@ -81,7 +81,7 @@ jobs:
             [ "${{ github.event.inputs.strict }}" = "true" ] && STRICT="--strict"
             RUN="docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --no-deps web python manage.py"
             echo "==== 1) classify the un-gated backlog ===="
-            $RUN classify_existing_rawjobs
+            $RUN classify_existing_rawjobs --only-unclassified
             echo "==== 2) soft-archive off-category pool jobs (work-protected) ===="
             $RUN purge_non_matching_jobs $STRICT --apply
             echo "==== 3) soft-deactivate off-category raw jobs ===="
