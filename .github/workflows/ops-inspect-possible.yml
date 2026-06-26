@@ -1,0 +1,25 @@
+name: Ops - Inspect POSSIBLE titles (read-only)
+
+# Prints the most common POSSIBLE (tech-adjacent, no exact phrase) titles so we
+# can decide which phrases to add to the selective filter. Read-only.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Top POSSIBLE titles by frequency
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 20m
+          script_stop: true
+          script: |
+            set -e
+            cd /opt/consulting
+            RUN="docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --no-deps web python manage.py"
+            $RUN shell -c "from harvest.models import RawJob; from collections import Counter; c=Counter((t or '').strip() for t in RawJob.objects.filter(filter_decision='POSSIBLE').exclude(sync_status='SYNCED').values_list('title',flat=True) if (t or '').strip()); print('TOTAL POSSIBLE:', sum(c.values())); print(chr(10).join(str(n)+'  '+t for t,n in c.most_common(60)))"
