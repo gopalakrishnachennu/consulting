@@ -1,0 +1,25 @@
+name: Ops - Platform Health (read-only)
+
+# Per-platform fetch performance over the last 30 days: success / empty / fail
+# rates, avg jobs found, and the top non-success reasons. Read-only.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Platform performance
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 20m
+          script_stop: true
+          script: |
+            set -e
+            cd /opt/consulting
+            RUN="docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --no-deps web python manage.py"
+            $RUN shell -c "from harvest.models import CompanyFetchRun; from django.db.models import Count, Avg, Q; from django.utils import timezone; from datetime import timedelta; since=timezone.now()-timedelta(days=30); rows=list(CompanyFetchRun.objects.filter(started_at__gte=since).values('label__platform__slug').annotate(total=Count('id'),success=Count('id',filter=Q(status='SUCCESS')),empty=Count('id',filter=Q(status='EMPTY')),failed=Count('id',filter=Q(status='FAILED')),avgjobs=Avg('jobs_found')).order_by('-total')); f=lambda r: (str(r['label__platform__slug'] or '?')).ljust(13)+' runs='+str(r['total']).rjust(5)+' ok='+str(round(100*r['success']/max(r['total'],1))).rjust(3)+'%% empty='+str(round(100*r['empty']/max(r['total'],1))).rjust(3)+'%% fail='+str(round(100*r['failed']/max(r['total'],1))).rjust(3)+'%% avg='+str(round(r['avgjobs'] or 0,1)); print('=== PLATFORM PERFORMANCE last 30d ==='); print(chr(10).join(f(r) for r in rows)); errs=list(CompanyFetchRun.objects.filter(started_at__gte=since).exclude(status='SUCCESS').values('label__platform__slug','issue_code','error_type').annotate(n=Count('id')).order_by('-n')[:25]); print('=== TOP NON-SUCCESS REASONS ==='); print(chr(10).join((str(e['label__platform__slug'] or '?')).ljust(13)+' '+((e['issue_code'] or e['error_type']) or 'none').ljust(20)+' '+str(e['n']) for e in errs))"
