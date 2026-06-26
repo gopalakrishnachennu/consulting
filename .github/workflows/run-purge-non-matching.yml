@@ -54,8 +54,6 @@ jobs:
             STRICT=""
             [ "${{ github.event.inputs.strict }}" = "true" ] && STRICT="--strict"
             RUN="docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --no-deps web python manage.py"
-            echo "==== classify backlog (dry-run) ===="
-            $RUN classify_existing_rawjobs --only-unclassified --dry-run
             echo "==== pool / vetting jobs (dry-run) ===="
             $RUN purge_non_matching_jobs $STRICT
             echo "==== raw jobs (dry-run) ===="
