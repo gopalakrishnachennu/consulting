@@ -1,0 +1,34 @@
+name: Ops - Add selective-filter phrases (POSSIBLE → STRONG)
+
+# Adds specific, multi-word tech phrases mined from the POSSIBLE bucket to the
+# right categories, so those real tech roles become STRONG matches and flow in
+# even with strict mode ON. Confirm = ADD.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type ADD to apply"
+        default: ""
+        required: false
+
+jobs:
+  add:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add phrases to categories
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 20m
+          script_stop: true
+          script: |
+            set -e
+            if [ "${{ github.event.inputs.confirm }}" != "ADD" ]; then
+              echo "Refusing: confirm must be exactly ADD"; exit 1
+            fi
+            cd /opt/consulting
+            RUN="docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --no-deps web python manage.py"
+            $RUN shell -c "from harvest.models import HarvestRoleCategory as C; s=C.objects.get(slug='software'); s.include_phrases=list(dict.fromkeys(list(s.include_phrases or [])+['react engineer','react native engineer','product engineer'])); s.save(); q=C.objects.get(slug='qa'); q.include_phrases=list(dict.fromkeys(list(q.include_phrases or [])+['test engineer'])); q.save(); a=C.objects.get(slug='ai_ml'); a.include_phrases=list(dict.fromkeys(list(a.include_phrases or [])+['ai architect','ai engineering lead'])); a.save(); d=C.objects.get(slug='data'); d.include_phrases=list(dict.fromkeys(list(d.include_phrases or [])+['database administrator','kdb+ engineer'])); d.save(); p=C.objects.get(slug='product_tech'); p.include_phrases=list(dict.fromkeys(list(p.include_phrases or [])+['software engineering manager','manager software engineering'])); p.save(); sec=C.objects.get(slug='security'); sec.include_phrases=list(dict.fromkeys(list(sec.include_phrases or [])+['soc manager'])); sec.save(); print('ADDED. phrase counts -> software', len(s.include_phrases), 'qa', len(q.include_phrases), 'ai_ml', len(a.include_phrases), 'data', len(d.include_phrases), 'product_tech', len(p.include_phrases), 'security', len(sec.include_phrases))"
