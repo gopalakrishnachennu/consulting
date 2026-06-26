@@ -1667,6 +1667,34 @@ def fetch_raw_jobs_for_company_task(
                         )
                     continue  # ← skip upsert, payload archive, new_raw_job_pks entirely
 
+            # ── Strict pre-storage gate: keep ONLY STRONG category matches ─────
+            # When pre_storage_strict_strong_only is on, also drop POSSIBLE
+            # (tech-adjacent, no exact phrase) and non-ASCII UNKNOWN titles before
+            # any DB write — so only titles that match one of your category phrases
+            # are ever stored. COLD/NO_MATCH are already dropped by the block above.
+            # Blank titles are kept (fail-safe canary for scraper breakage).
+            # Title-only: location/scope is untouched (Location Review unaffected).
+            if (
+                filter_enabled
+                and not effective_filter_audit_mode
+                and getattr(_cfg, "pre_storage_filter_enabled", False)
+                and getattr(_cfg, "pre_storage_strict_strong_only", False)
+            ):
+                _strict_title = (job_dict.get("title") or "").strip()
+                if _strict_title and filter_result.decision in {POSSIBLE, UNKNOWN}:
+                    jobs_pre_filtered += 1
+                    if filter_result.decision == POSSIBLE:
+                        filter_possible += 1
+                    else:
+                        filter_unknown += 1
+                    if jobs_pre_filtered <= 5 or jobs_pre_filtered % 100 == 0:
+                        logger.debug(
+                            "pre-storage strict drop [%d]: %r decision=%s label=%s",
+                            jobs_pre_filtered, _strict_title[:80],
+                            filter_result.decision, label_pk,
+                        )
+                    continue  # ← skip upsert entirely
+
             supplied_location_candidates = job_dict.get("location_candidates")
             if not isinstance(supplied_location_candidates, list):
                 supplied_location_candidates = []

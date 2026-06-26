@@ -135,6 +135,7 @@ class HarvestEngineConfigAdmin(admin.ModelAdmin):
         "selective_filter_enabled",
         "filter_audit_mode",
         "pre_storage_filter_enabled",
+        "pre_storage_strict_strong_only",
         "jd_gate_enabled",
         "jd_gate_audit_mode",
         "jd_gate_scope",

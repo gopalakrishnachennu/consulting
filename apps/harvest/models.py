@@ -1992,6 +1992,18 @@ class HarvestEngineConfig(models.Model):
             "Enable only after verifying false-negative rate in audit mode."
         ),
     )
+    pre_storage_strict_strong_only = models.BooleanField(
+        default=False,
+        verbose_name="Pre-storage strict mode (STRONG matches only)",
+        help_text=(
+            "When True (and pre-storage filter enabled, enforcement mode), ONLY titles that "
+            "match a category phrase (STRONG) are stored. POSSIBLE (tech-adjacent but no exact "
+            "phrase) and non-ASCII UNKNOWN titles are also dropped before any DB write — not "
+            "just HARD_NO. Blank titles are kept as a fail-safe canary. This is title-only: it "
+            "does NOT touch location/scope, so the unknown-country Location Review queue is "
+            "unaffected. Verify in audit mode first."
+        ),
+    )
     filter_full_crawl = models.BooleanField(
         default=False,
         verbose_name="Enforce filter during full crawls",
