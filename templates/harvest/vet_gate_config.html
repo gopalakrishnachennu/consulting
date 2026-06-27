@@ -495,6 +495,15 @@
             </span>
           </label>
           <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3">
+            <input type="checkbox" name="pre_storage_strict_strong_only" value="1"
+                   {% if engine_cfg.pre_storage_strict_strong_only %}checked{% endif %}
+                   class="mt-1 rounded border-gray-300 text-rose-600">
+            <span>
+              <span class="block text-sm font-semibold text-gray-800">STRONG-only intake</span>
+              <span class="block text-xs text-gray-500">Keep only titles that match your selective phrase bank. Drop POSSIBLE and UNKNOWN rows too.</span>
+            </span>
+          </label>
+          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3">
             <input type="checkbox" name="filter_full_crawl" value="1"
                    {% if engine_cfg.filter_full_crawl %}checked{% endif %}
                    class="mt-1 rounded border-gray-300 text-red-600">
@@ -503,6 +512,19 @@
               <span class="block text-xs text-gray-500">Apply the same drop rules even for full-crawl harvests.</span>
             </span>
           </label>
+        </div>
+        <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          Current policy: <span class="font-semibold text-slate-900">
+            {% if engine_cfg.selective_filter_enabled and not engine_cfg.filter_audit_mode and engine_cfg.pre_storage_strict_strong_only %}
+              only STRONG phrase matches are stored in Raw Jobs
+            {% elif engine_cfg.selective_filter_enabled and not engine_cfg.filter_audit_mode and engine_cfg.pre_storage_filter_enabled %}
+              HARD_NO titles are dropped, but POSSIBLE / UNKNOWN can still be stored
+            {% elif engine_cfg.selective_filter_enabled and engine_cfg.filter_audit_mode %}
+              audit only, nothing is suppressed
+            {% else %}
+              legacy full-storage behavior
+            {% endif %}
+          </span>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-4 gap-3">

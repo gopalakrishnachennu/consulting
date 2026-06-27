@@ -881,6 +881,46 @@ class SelectiveHarvestEngineTests(TestCase):
         self.assertEqual(raw.jd_gate_decision, "PENDING")
         self.assertAlmostEqual(raw.title_gate_confidence, 0.60)
 
+    def test_strict_strong_only_drops_possible_rows_before_rawjob_write(self):
+        from harvest.models import HarvestEngineConfig, RawJob
+        from harvest.tasks import fetch_raw_jobs_for_company_task
+
+        cfg = HarvestEngineConfig.get()
+        cfg.selective_filter_enabled = True
+        cfg.filter_audit_mode = False
+        cfg.pre_storage_strict_strong_only = True
+        cfg.jd_gate_enabled = True
+        cfg.jd_gate_audit_mode = False
+        cfg.save()
+        self.platform.title_in_list = True
+        self.platform.save(update_fields=["title_in_list"])
+
+        class _FakeHarvester:
+            last_total_available = 1
+            last_detail_fetched = 0
+
+            def fetch_jobs(self, *args, **kwargs):
+                return [{
+                    "original_url": "https://selective.example/jobs/strict-drop",
+                    "apply_url": "https://selective.example/jobs/strict-drop",
+                    "external_id": "strict-drop",
+                    "title": "Civil Engineer",
+                    "company_name": "Selective Co",
+                    "location_raw": "Remote - US",
+                    "description": "",
+                }]
+
+        with patch("harvest.harvesters.get_harvester", return_value=_FakeHarvester()), patch(
+            "harvest.tasks.run_jd_gate_task.apply_async",
+        ) as mocked_jd_gate, patch(
+            "harvest.tasks.backfill_descriptions_task.apply_async",
+        ) as mocked_backfill:
+            fetch_raw_jobs_for_company_task.apply(kwargs={"label_pk": self.label.pk}).get()
+
+        self.assertFalse(RawJob.objects.filter(platform_label=self.label, external_id="strict-drop").exists())
+        self.assertFalse(mocked_jd_gate.called)
+        self.assertFalse(mocked_backfill.called)
+
     def test_ambiguous_titles_queue_jd_gate_but_not_immediate_backfill(self):
         from harvest.models import HarvestEngineConfig
         from harvest.tasks import fetch_raw_jobs_for_company_task
@@ -4888,6 +4928,7 @@ class VetGateConfigViewTests(TestCase):
                 "auto_sync_to_pool": "on",
                 "selective_filter_enabled": "on",
                 "pre_storage_filter_enabled": "on",
+                "pre_storage_strict_strong_only": "on",
                 "filter_full_crawl": "on",
                 "title_hard_yes_confidence": "0.86",
                 "zero_tech_threshold": "9",
@@ -4934,6 +4975,7 @@ class VetGateConfigViewTests(TestCase):
         self.assertTrue(engine_cfg.selective_filter_enabled)
         self.assertFalse(engine_cfg.filter_audit_mode)
         self.assertTrue(engine_cfg.pre_storage_filter_enabled)
+        self.assertTrue(engine_cfg.pre_storage_strict_strong_only)
         self.assertTrue(engine_cfg.filter_full_crawl)
         self.assertEqual(engine_cfg.target_countries, ["US", "IN", "CA"])
         self.assertEqual(engine_cfg.remote_unknown_policy, "target")

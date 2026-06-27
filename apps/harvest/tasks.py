@@ -1640,7 +1640,11 @@ def fetch_raw_jobs_for_company_task(
             # Blank titles → unknown intent → stored (fail-safe, treated as AMBIGUOUS).
             # Any exception in this block → fall through and store (never silently drop).
             # fetch_all / audit_mode paths never reach here (filter_blocks_pool=False).
-            if filter_blocks_pool and getattr(_cfg, "pre_storage_filter_enabled", False):
+            pre_storage_live = (
+                getattr(_cfg, "pre_storage_filter_enabled", False)
+                or getattr(_cfg, "pre_storage_strict_strong_only", False)
+            )
+            if filter_blocks_pool and pre_storage_live:
                 _pre_title = (job_dict.get("title") or "").strip()
                 _is_hard_no = (
                     filter_result.decision == NO_MATCH
@@ -1677,7 +1681,7 @@ def fetch_raw_jobs_for_company_task(
             if (
                 filter_enabled
                 and not effective_filter_audit_mode
-                and getattr(_cfg, "pre_storage_filter_enabled", False)
+                and pre_storage_live
                 and getattr(_cfg, "pre_storage_strict_strong_only", False)
             ):
                 _strict_title = (job_dict.get("title") or "").strip()

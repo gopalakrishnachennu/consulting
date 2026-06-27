@@ -521,6 +521,26 @@
             </span>
           </label>
 
+          <label class="flex items-start gap-3 p-3 rounded-lg border {% if cfg.pre_storage_filter_enabled %}border-red-200 bg-red-50{% else %}border-gray-200 bg-white{% endif %}">
+            <input type="checkbox" name="pre_storage_filter_enabled" value="1"
+                   {% if cfg.pre_storage_filter_enabled %}checked{% endif %}
+                   class="mt-0.5 w-4 h-4 rounded text-red-600 border-gray-300">
+            <span>
+              <span class="block text-sm font-semibold text-gray-800">Drop hard-no rows before storage</span>
+              <span class="block text-xs text-gray-500">Filters out obvious non-target jobs before they are written to Raw Jobs.</span>
+            </span>
+          </label>
+
+          <label class="flex items-start gap-3 p-3 rounded-lg border {% if cfg.pre_storage_strict_strong_only %}border-rose-200 bg-rose-50{% else %}border-gray-200 bg-white{% endif %}">
+            <input type="checkbox" name="pre_storage_strict_strong_only" value="1"
+                   {% if cfg.pre_storage_strict_strong_only %}checked{% endif %}
+                   class="mt-0.5 w-4 h-4 rounded text-rose-600 border-gray-300">
+            <span>
+              <span class="block text-sm font-semibold text-gray-800">Keep STRONG matches only</span>
+              <span class="block text-xs text-gray-500">Only titles that match your selective phrases enter the system. POSSIBLE / UNKNOWN rows are dropped too.</span>
+            </span>
+          </label>
+
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label class="form-label">Zero-tech threshold</label>

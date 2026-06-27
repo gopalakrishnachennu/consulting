@@ -2183,6 +2183,8 @@ class HarvestEngineConfig(models.Model):
         return cleaned or ["US", "IN", "CA", "GB", "AU"]
 
     def save(self, *args, **kwargs):
+        if self.pre_storage_strict_strong_only:
+            self.pre_storage_filter_enabled = True
         self.worker_concurrency = max(1, min(int(self.worker_concurrency or 1), 2))
         self.task_rate_limit = max(1, min(int(self.task_rate_limit or 1), 3))
         self.api_stagger_ms = max(int(self.api_stagger_ms or 0), 1000)

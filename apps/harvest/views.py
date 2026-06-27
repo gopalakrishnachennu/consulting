@@ -4935,6 +4935,7 @@ class EngineConfigView(SuperuserRequiredMixin, View):
             "legacy_hash_bridge_enabled",
             "rescope_on_target_country_change",
             "selective_filter_enabled", "filter_audit_mode",
+            "pre_storage_filter_enabled", "pre_storage_strict_strong_only",
         ]
         for field in bool_fields:
             setattr(cfg, field, field in request.POST)
@@ -6432,8 +6433,8 @@ class VetGateConfigView(SuperuserRequiredMixin, View):
             "process_unknown_country_with_target_domain", "rescope_on_target_country_change",
             "remote_llm_jd_scan", "geocoding_cache_enabled", "geocoding_provider_enabled",
             "selective_filter_enabled", "filter_audit_mode", "pre_storage_filter_enabled",
-            "filter_full_crawl", "jd_gate_enabled", "jd_gate_audit_mode",
-            "backfill_jd_include_cold", "validate_links_include_synced",
+            "pre_storage_strict_strong_only", "filter_full_crawl", "jd_gate_enabled",
+            "jd_gate_audit_mode", "backfill_jd_include_cold", "validate_links_include_synced",
         ]:
             setattr(engine_cfg, field, _post_bool(request, field))
 
