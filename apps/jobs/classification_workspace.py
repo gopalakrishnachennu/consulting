@@ -355,6 +355,7 @@ class ClassificationDetailV2View(LoginRequiredMixin, ClassificationWorkspaceRequ
             secondary_runtime_enabled,
         )
         from jobs.dual_classification.schema import build_raw_job_input
+        from users.models import MarketingRole
 
         context = super().get_context_data(**kwargs)
         snapshot = context["snapshot"]
@@ -471,7 +472,11 @@ class ClassificationDetailV2View(LoginRequiredMixin, ClassificationWorkspaceRequ
                     "education_required": (((effective_seed.get("requirements") or {}).get("education_required")) or raw_job.education_required or ""),
                     "skills": ", ".join(((effective_seed.get("skills") or {}).get("skills")) or raw_job.skills or []),
                     "tech_stack": ", ".join(((effective_seed.get("skills") or {}).get("tech_stack")) or raw_job.tech_stack or []),
+                    "primary_marketing_role": snapshot.approved_primary_role_slug or "",
+                    "primary_role_locked": bool(snapshot.primary_role_locked),
+                    "primary_role_override_reason": snapshot.primary_role_override_reason or "",
                 },
+                "marketing_role_choices": MarketingRole.objects.filter(is_active=True).order_by("name"),
                 "classification_metrics_v2": classification_metrics_v2_enabled(self.request.user),
             }
         )

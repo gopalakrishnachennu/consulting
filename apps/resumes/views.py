@@ -9,7 +9,9 @@ from django.contrib import messages
 from .models import ResumeDraft, LLMInputPreference, MasterPrompt
 from .services import (
     DocxService, score_ats, validate_resume,
-    extract_section, replace_section, normalize_generated_resume
+    extract_section, replace_section, normalize_generated_resume,
+    resume_generation_source_state, build_resume_draft_idempotency_key,
+    find_reusable_resume_draft,
 )
 from .engine import (
     generate_resume,
@@ -500,6 +502,34 @@ class ResumeGenerateActionView(ResumeGenerateActionAccessMixin, BaseView):
 
         raw_kw = (request.POST.get("coaching_keywords") or "").strip()
         coaching_keywords = [x.strip() for x in raw_kw.split(",") if x.strip()] if raw_kw else None
+        source_state = resume_generation_source_state(job)
+        if source_state.get("blocked"):
+            messages.error(
+                request,
+                f"Resume generation is blocked for this job: {source_state['reason']}. Fix the approved JD/classification state first.",
+            )
+            next_url = request.POST.get('next') or request.GET.get('next')
+            if next_url:
+                return redirect(next_url)
+            return redirect('resume-generate')
+
+        idempotency_key = build_resume_draft_idempotency_key(
+            consultant=cp,
+            job=job,
+            input_sections=effective,
+            coaching_keywords=coaching_keywords,
+            generation_mode="manual",
+            generation_reason="manual_generate",
+            source_state=source_state,
+        )
+        existing = find_reusable_resume_draft(
+            consultant=cp,
+            job=job,
+            idempotency_key=idempotency_key,
+        )
+        if existing:
+            messages.info(request, "Reused the existing draft for this same consultant, job, and approved JD state.")
+            return redirect('pipeline-results', pk=existing.pk)
 
         # Create draft in PROCESSING
         draft = ResumeDraft(
@@ -507,6 +537,15 @@ class ResumeGenerateActionView(ResumeGenerateActionAccessMixin, BaseView):
             job=job,
             status=ResumeDraft.Status.PROCESSING,
             created_by=request.user,
+            generation_mode="manual",
+            generation_reason="manual_generate",
+            idempotency_key=idempotency_key,
+            source_snapshot_hash=source_state.get("snapshot_hash", ""),
+            source_snapshot_source=source_state.get("snapshot_source", ""),
+            source_snapshot_approved_at=source_state.get("approved_at"),
+            source_primary_role_slug=source_state.get("primary_role_slug", ""),
+            source_prompt_version=source_state.get("prompt_version", ""),
+            source_classification_source=source_state.get("classification_source", ""),
         )
         draft.save()
 
@@ -540,6 +579,7 @@ class ResumeGenerateActionView(ResumeGenerateActionAccessMixin, BaseView):
         draft.llm_user_prompt = metadata.get('user_prompt', '')
         draft.llm_input_summary = metadata
         draft.llm_request_payload = metadata.get('totals', {})
+        draft.source_prompt_version = draft.source_prompt_version or metadata.get('pipeline_version', '')
         draft.status = ResumeDraft.Status.DRAFT
         draft.save(skip_version=True)
         if draft.review_status == 'block':

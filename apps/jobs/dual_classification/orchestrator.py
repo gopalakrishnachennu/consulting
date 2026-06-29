@@ -4,12 +4,15 @@ from django.db import transaction
 from django.utils import timezone
 
 from harvest.models import RawJob
+from harvest.services.job_descriptions import job_description_for_sync
+from users.models import MarketingRole
 
 from jobs.models import (
     RawJobClassificationConflict,
     RawJobClassificationSnapshot,
     RawJobClassifierRun,
 )
+from jobs.marketing_role_routing import infer_marketing_role_slugs
 
 from .audit import build_job_dual_classification_meta
 from .merger import merge_outputs
@@ -30,6 +33,26 @@ from .verifier import verify_output
 
 
 STALE_APPROVAL_REVIEW_REASON = "input_changed_after_approval"
+
+
+def _resolve_approved_primary_role_slug(
+    *,
+    raw_job: RawJob,
+    chosen_output: dict,
+    requested_slug: str = "",
+) -> str:
+    requested_slug = (requested_slug or "").strip()
+    if requested_slug:
+        return requested_slug
+    inferred = infer_marketing_role_slugs(
+        title=raw_job.title or "",
+        description=job_description_for_sync(raw_job),
+        job_category=((chosen_output.get("classification") or {}).get("job_category")) or "",
+        department_normalized=((chosen_output.get("classification") or {}).get("department_normalized")) or "",
+        primary_domain=((chosen_output.get("classification") or {}).get("job_domain")) or "",
+        max_roles=1,
+    )
+    return inferred[0] if inferred else ""
 
 
 def _create_run_record(raw_job: RawJob, provider_result: ProviderResult, input_hash: str, status: str, error_message: str = ""):
@@ -403,6 +426,9 @@ def approve_snapshot_for_raw_job(
     actor,
     note: str = "",
     manual_output: dict | None = None,
+    primary_role_slug: str = "",
+    lock_primary_role: bool = False,
+    primary_role_override_reason: str = "",
 ) -> dict:
     run_shadow_classification_for_raw_job(raw_job_id)
     raw_job = RawJob.objects.get(pk=raw_job_id)
@@ -436,6 +462,48 @@ def approve_snapshot_for_raw_job(
     else:
         raise ValueError("Unsupported approval source.")
 
+    primary_role_slug = (primary_role_slug or "").strip()
+    if primary_role_slug and not MarketingRole.objects.filter(slug=primary_role_slug, is_active=True).exists():
+        raise ValueError("Selected primary marketing role is not active.")
+
+    primary_role_override_reason = (primary_role_override_reason or "").strip()
+    preserved_locked_slug = ""
+    preserved_locked_source = ""
+    preserved_locked_reason = ""
+    preserved_locked_at = None
+    preserved_locked_by = None
+    if snapshot.primary_role_locked and snapshot.approved_primary_role_slug:
+        preserved_locked_slug = snapshot.approved_primary_role_slug
+        preserved_locked_source = snapshot.primary_role_source or "manual_override"
+        preserved_locked_reason = snapshot.primary_role_override_reason or ""
+        preserved_locked_at = snapshot.primary_role_overridden_at
+        preserved_locked_by = snapshot.primary_role_overridden_by
+
+    if preserved_locked_slug and not primary_role_slug and not lock_primary_role:
+        approved_primary_role_slug = preserved_locked_slug
+        primary_role_source = preserved_locked_source or "manual_override"
+        primary_role_locked = True
+        primary_role_reason = preserved_locked_reason
+        primary_role_overridden_at = preserved_locked_at
+        primary_role_overridden_by = preserved_locked_by
+    else:
+        approved_primary_role_slug = _resolve_approved_primary_role_slug(
+            raw_job=raw_job,
+            chosen_output=chosen_output,
+            requested_slug=primary_role_slug,
+        )
+        primary_role_locked = bool(lock_primary_role)
+        if primary_role_slug:
+            primary_role_source = "manual_override"
+            primary_role_reason = primary_role_override_reason or note or "Manual primary role override."
+            primary_role_overridden_at = timezone.now()
+            primary_role_overridden_by = actor
+        else:
+            primary_role_source = "approved_snapshot" if approved_primary_role_slug else ""
+            primary_role_reason = ""
+            primary_role_overridden_at = None
+            primary_role_overridden_by = None
+
     verifier_summary = verify_output(raw_job, chosen_output)
     ready_for_vetting = verifier_summary.get("status") != "fail"
     snapshot.approval_state = approval_state
@@ -444,6 +512,12 @@ def approve_snapshot_for_raw_job(
     snapshot.approval_stale_at = None
     snapshot.approved_output = chosen_output
     snapshot.approved_source = source
+    snapshot.approved_primary_role_slug = approved_primary_role_slug
+    snapshot.primary_role_source = primary_role_source
+    snapshot.primary_role_locked = primary_role_locked
+    snapshot.primary_role_override_reason = primary_role_reason
+    snapshot.primary_role_overridden_at = primary_role_overridden_at
+    snapshot.primary_role_overridden_by = primary_role_overridden_by
     snapshot.approval_note = note or ""
     snapshot.approved_at = timezone.now()
     snapshot.approved_by = actor
@@ -459,6 +533,12 @@ def approve_snapshot_for_raw_job(
             "approval_stale_at",
             "approved_output",
             "approved_source",
+            "approved_primary_role_slug",
+            "primary_role_source",
+            "primary_role_locked",
+            "primary_role_override_reason",
+            "primary_role_overridden_at",
+            "primary_role_overridden_by",
             "approval_note",
             "approved_at",
             "approved_by",
@@ -475,6 +555,7 @@ def approve_snapshot_for_raw_job(
         "approval_state": snapshot.approval_state,
         "ready_for_vetting": ready_for_vetting,
         "confidence": round(float(chosen_confidence), 3),
+        "approved_primary_role_slug": approved_primary_role_slug,
     }
 
 

@@ -11,10 +11,17 @@ class JDExtractorPromptAdmin(admin.ModelAdmin):
 
 @admin.register(ResumeDraft)
 class ResumeDraftAdmin(admin.ModelAdmin):
-    list_display = ('consultant', 'job', 'version', 'status', 'ats_score', 'tokens_used', 'created_by', 'created_at')
-    list_filter = ('status', 'created_at')
+    list_display = (
+        'consultant', 'job', 'version', 'status', 'generation_mode',
+        'source_primary_role_slug', 'ats_score', 'tokens_used', 'created_by', 'created_at',
+    )
+    list_filter = ('status', 'generation_mode', 'auto_generated', 'created_at')
     search_fields = ('consultant__user__username', 'job__title')
-    readonly_fields = ('version', 'tokens_used', 'created_at')
+    readonly_fields = (
+        'version', 'tokens_used', 'created_at', 'generation_id', 'idempotency_key',
+        'source_snapshot_hash', 'source_snapshot_source', 'source_snapshot_approved_at',
+        'source_primary_role_slug', 'source_prompt_version', 'source_classification_source',
+    )
 
 
 class SectionPromptInline(admin.TabularInline):

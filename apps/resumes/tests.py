@@ -57,6 +57,81 @@ class ResumeDraftModelTests(TestCase):
         self.assertIn("con1", str(d))
         self.assertIn("Dev", str(d))
 
+    def test_find_reusable_draft_by_idempotency_key(self):
+        from resumes.services import find_reusable_resume_draft
+
+        draft = ResumeDraft.objects.create(
+            consultant=self.profile,
+            job=self.job,
+            content="same draft",
+            idempotency_key="same-key",
+        )
+        reused = find_reusable_resume_draft(
+            consultant=self.profile,
+            job=self.job,
+            idempotency_key="same-key",
+        )
+        self.assertEqual(reused.pk, draft.pk)
+
+    def test_resume_generation_source_state_blocks_stale_snapshot(self):
+        from companies.models import Company
+        from harvest.models import RawJob
+        from jobs.models import RawJobClassificationSnapshot
+        from resumes.services import resume_generation_source_state
+
+        company = Company.objects.create(name="Snapshot Co")
+        raw = RawJob.objects.create(
+            company=company,
+            company_name="Snapshot Co",
+            title="Platform Engineer",
+            description="Operate systems.",
+            original_url="https://example.com/raw/platform",
+        )
+        self.job.source_raw_job = raw
+        self.job.save(update_fields=["source_raw_job"])
+        RawJobClassificationSnapshot.objects.create(
+            raw_job=raw,
+            approved_output={"classification": {"job_domain": "devops-cloud"}},
+            approval_input_hash="abc123",
+            approval_is_stale=True,
+            ready_for_vetting=True,
+        )
+
+        state = resume_generation_source_state(self.job)
+        self.assertTrue(state["blocked"])
+        self.assertEqual(state["reason"], "stale_approved_classification")
+
+    def test_build_idempotency_key_is_stable_for_same_snapshot(self):
+        from resumes.services import build_resume_draft_idempotency_key
+
+        key_a = build_resume_draft_idempotency_key(
+            consultant=self.profile,
+            job=self.job,
+            input_sections={"personal": True, "experience": True},
+            coaching_keywords=["Python", "AWS"],
+            generation_mode="manual",
+            generation_reason="manual_generate",
+            source_state={
+                "snapshot_hash": "hash-1",
+                "primary_role_slug": "devops-cloud",
+                "prompt_version": "runtime_v1",
+            },
+        )
+        key_b = build_resume_draft_idempotency_key(
+            consultant=self.profile,
+            job=self.job,
+            input_sections={"personal": True, "experience": True},
+            coaching_keywords=["AWS", "Python"],
+            generation_mode="manual",
+            generation_reason="manual_generate",
+            source_state={
+                "snapshot_hash": "hash-1",
+                "primary_role_slug": "devops-cloud",
+                "prompt_version": "runtime_v1",
+            },
+        )
+        self.assertEqual(key_a, key_b)
+
 
 class LLMInputPreferenceTests(TestCase):
     def setUp(self):

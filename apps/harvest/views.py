@@ -1815,6 +1815,7 @@ class RawJobDetailView(SuperuserRequiredMixin, DetailView):
             secondary_runtime_enabled,
         )
         from jobs.dual_classification.schema import build_raw_job_input
+        from users.models import MarketingRole
 
         ctx = super().get_context_data(**kwargs)
         ctx["resume_jd_gate"] = evaluate_raw_job_resume_gate(self.object)
@@ -1892,7 +1893,11 @@ class RawJobDetailView(SuperuserRequiredMixin, DetailView):
             "education_required": (((effective_seed.get("requirements") or {}).get("education_required")) or self.object.education_required or ""),
             "skills": ", ".join(((effective_seed.get("skills") or {}).get("skills")) or self.object.skills or []),
             "tech_stack": ", ".join(((effective_seed.get("skills") or {}).get("tech_stack")) or self.object.tech_stack or []),
+            "primary_marketing_role": (snapshot.approved_primary_role_slug if snapshot else "") or "",
+            "primary_role_locked": bool(snapshot.primary_role_locked) if snapshot else False,
+            "primary_role_override_reason": (snapshot.primary_role_override_reason if snapshot else "") or "",
         }
+        ctx["marketing_role_choices"] = MarketingRole.objects.filter(is_active=True).order_by("name")
         ctx["secondary_payload_seed"] = _json.dumps(
             {
                 "identity": {
@@ -2035,6 +2040,9 @@ class RawJobClassificationReviewActionView(SuperuserRequiredMixin, View):
         raw_job = get_object_or_404(RawJob, pk=pk)
         source = (request.POST.get("source") or "").strip()
         note = (request.POST.get("approval_note") or "").strip()
+        primary_role_slug = (request.POST.get("primary_marketing_role") or "").strip()
+        lock_primary_role = (request.POST.get("lock_primary_role") or "").strip().lower() in {"1", "true", "on", "yes"}
+        primary_role_override_reason = (request.POST.get("primary_role_override_reason") or "").strip()
         manual_output_raw = (request.POST.get("manual_output_json") or "").strip()
         manual_output = None
 
@@ -2100,6 +2108,9 @@ class RawJobClassificationReviewActionView(SuperuserRequiredMixin, View):
                 actor=request.user,
                 note=note,
                 manual_output=manual_output,
+                primary_role_slug=primary_role_slug,
+                lock_primary_role=lock_primary_role,
+                primary_role_override_reason=primary_role_override_reason,
             )
         except Exception as exc:
             logger.exception("Classification review action failed for raw_job=%s", raw_job.pk)

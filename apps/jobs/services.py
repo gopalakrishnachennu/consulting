@@ -53,6 +53,35 @@ _ACTIVE_SUBMISSION_STATUSES = {
 }
 
 
+def _consultant_role_ids(consultant: ConsultantProfile) -> set[int]:
+    return set(consultant.marketing_roles.values_list("id", flat=True))
+
+
+def _job_role_ids(job: Job) -> set[int]:
+    return set(job.marketing_roles.values_list("id", flat=True))
+
+
+def _job_role_overlap(job: Job, consultant: ConsultantProfile, consultant_roles: set[int] | None = None) -> bool:
+    consultant_roles = consultant_roles if consultant_roles is not None else _consultant_role_ids(consultant)
+    if not consultant_roles:
+        return False
+    primary_role_id = getattr(job, "primary_marketing_role_id", None)
+    if primary_role_id:
+        return primary_role_id in consultant_roles
+    job_roles = _job_role_ids(job)
+    return bool(job_roles and consultant_roles & job_roles)
+
+
+def _jobs_scoped_to_consultant_roles(qs, consultant: ConsultantProfile):
+    consultant_role_ids = list(consultant.marketing_roles.values_list("id", flat=True))
+    if not consultant_role_ids:
+        return Job.objects.none()
+    return qs.filter(
+        Q(primary_marketing_role_id__in=consultant_role_ids)
+        | Q(primary_marketing_role__isnull=True, marketing_roles__in=consultant_role_ids)
+    ).distinct()
+
+
 def _job_country(job: Job) -> str:
     routing = effective_routing_profile(job)
     country_labels = routing.get("country_labels") or []
@@ -217,8 +246,7 @@ def _clearance_match(job: Job, consultant: ConsultantProfile) -> bool:
 
 
 def consultant_job_routing_audit(job: Job, consultant: ConsultantProfile) -> dict:
-    consultant_roles = set(consultant.marketing_roles.values_list("id", flat=True))
-    job_roles = set(job.marketing_roles.values_list("id", flat=True))
+    consultant_roles = _consultant_role_ids(consultant)
     preferred_seniority = {
         str(level).strip().lower()
         for level in (consultant.preferred_seniority_levels or [])
@@ -229,7 +257,7 @@ def consultant_job_routing_audit(job: Job, consultant: ConsultantProfile) -> dic
     parsed_jd_ok = bool(getattr(job, "parsed_jd", None)) and (getattr(job, "parsed_jd_status", "") or "").upper() == "OK"
 
     checks = [
-        ("role", bool(consultant_roles and job_roles and consultant_roles & job_roles), "Marketing role overlap missing."),
+        ("role", _job_role_overlap(job, consultant, consultant_roles), "Marketing role overlap missing."),
         ("country", (not getattr(cfg, "routing_enforce_country_match", True)) or _job_country_match(job, consultant), "Country preference mismatch."),
         ("seniority", (not getattr(cfg, "routing_enforce_seniority_match", True)) or (not preferred_seniority) or (_job_seniority_bucket(job) in preferred_seniority), "Seniority preference mismatch."),
         ("work_auth", _job_work_authorization_match(job, consultant), "Visa or work authorization mismatch."),
@@ -265,15 +293,12 @@ def consultant_job_routing_audit_rows(
     limit_blocked: int = 8,
     scan_limit: int = 200,
 ):
-    consultant_role_ids = list(consultant.marketing_roles.values_list("id", flat=True))
-    if not consultant_role_ids:
+    if not consultant.marketing_roles.exists():
         return [], [], []
-    qs = (
-        Job.objects.filter(status=Job.Status.OPEN, is_archived=False, marketing_roles__in=consultant_role_ids)
-        .distinct()
-        .prefetch_related("marketing_roles")
-        .order_by("-created_at")[: max(scan_limit, limit_eligible + limit_blocked)]
-    )
+    qs = _jobs_scoped_to_consultant_roles(
+        Job.objects.filter(status=Job.Status.OPEN, is_archived=False),
+        consultant,
+    ).prefetch_related("marketing_roles", "primary_marketing_role").order_by("-created_at")[: max(scan_limit, limit_eligible + limit_blocked)]
     eligible_rows: list[dict] = []
     blocked_rows: list[dict] = []
     reason_counts: Counter[str] = Counter()
@@ -375,11 +400,8 @@ def _job_claimed_by_other(job: Job, consultant: ConsultantProfile) -> bool:
 
 def _job_matches_consultant_preferences(job: Job, consultant: ConsultantProfile) -> bool:
     cfg = _routing_config()
-    consultant_roles = set(consultant.marketing_roles.values_list("id", flat=True))
-    job_roles = set(job.marketing_roles.values_list("id", flat=True))
-    if not consultant_roles or not job_roles:
-        return False
-    if not (consultant_roles & job_roles):
+    consultant_roles = _consultant_role_ids(consultant)
+    if not _job_role_overlap(job, consultant, consultant_roles):
         return False
 
     if getattr(cfg, "routing_enforce_country_match", True) and not _job_country_match(job, consultant):
@@ -859,14 +881,14 @@ def match_jobs_for_consultant(
     """
     Return a list of best matching OPEN jobs for a consultant.
     """
-    qs = Job.objects.filter(status=Job.Status.OPEN, is_archived=False)
-    consultant_role_ids = list(consultant.marketing_roles.values_list("id", flat=True))
-    if not consultant_role_ids:
+    if not consultant.marketing_roles.exists():
         return []
-    if consultant_role_ids:
-        qs = qs.filter(marketing_roles__in=consultant_role_ids).distinct()
+    qs = _jobs_scoped_to_consultant_roles(
+        Job.objects.filter(status=Job.Status.OPEN, is_archived=False),
+        consultant,
+    )
     scores = []
-    for job in qs.prefetch_related("marketing_roles"):
+    for job in qs.prefetch_related("marketing_roles", "primary_marketing_role"):
         if not _job_matches_consultant_preferences(job, consultant):
             continue
         s = _score_job_for_consultant(job, consultant)
@@ -877,22 +899,20 @@ def match_jobs_for_consultant(
 
 
 def eligible_jobs_for_consultant(consultant: ConsultantProfile, *, limit: int | None = None):
-    qs = Job.objects.filter(status=Job.Status.OPEN, is_archived=False)
-    consultant_role_ids = list(consultant.marketing_roles.values_list("id", flat=True))
-    if not consultant_role_ids:
+    if not consultant.marketing_roles.exists():
         return []
-    if consultant_role_ids:
-        qs = qs.filter(marketing_roles__in=consultant_role_ids).distinct()
-    jobs = [job for job in qs.prefetch_related("marketing_roles") if _job_matches_consultant_preferences(job, consultant)]
+    qs = _jobs_scoped_to_consultant_roles(
+        Job.objects.filter(status=Job.Status.OPEN, is_archived=False),
+        consultant,
+    )
+    jobs = [job for job in qs.prefetch_related("marketing_roles", "primary_marketing_role") if _job_matches_consultant_preferences(job, consultant)]
     if limit:
         return jobs[:limit]
     return jobs
 
 
 def consultant_routing_metrics(consultant: ConsultantProfile) -> dict:
-    qs = Job.objects.filter(status=Job.Status.OPEN, is_archived=False)
-    consultant_role_ids = list(consultant.marketing_roles.values_list("id", flat=True))
-    if not consultant_role_ids:
+    if not consultant.marketing_roles.exists():
         return {
             "role_scoped_jobs": 0,
             "country_fit_jobs": 0,
@@ -905,12 +925,12 @@ def consultant_routing_metrics(consultant: ConsultantProfile) -> dict:
             "routing_review_jobs": 0,
             "blocked_jobs": 0,
         }
-    if consultant_role_ids:
-        role_qs = qs.filter(marketing_roles__in=consultant_role_ids).distinct()
-    else:
-        role_qs = Job.objects.none()
+    role_qs = _jobs_scoped_to_consultant_roles(
+        Job.objects.filter(status=Job.Status.OPEN, is_archived=False),
+        consultant,
+    )
 
-    role_jobs = list(role_qs.prefetch_related("marketing_roles"))
+    role_jobs = list(role_qs.prefetch_related("marketing_roles", "primary_marketing_role"))
     country_fit = 0
     seniority_fit = 0
     work_auth_fit = 0

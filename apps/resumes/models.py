@@ -157,6 +157,61 @@ class ResumeDraft(models.Model):
         db_index=True,
         help_text="True when created by the auto_generate_for_new_jobs pipeline (not manual).",
     )
+    generation_mode = models.CharField(
+        max_length=24,
+        blank=True,
+        default="",
+        help_text="manual, auto, regenerate, or other workflow mode.",
+    )
+    generation_reason = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="Short machine-readable reason for this draft generation.",
+    )
+    idempotency_key = models.CharField(
+        max_length=96,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Stable fingerprint for reusing an equivalent draft instead of regenerating it.",
+    )
+    source_snapshot_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Approved classification or job snapshot hash used for this draft.",
+    )
+    source_snapshot_source = models.CharField(
+        max_length=24,
+        blank=True,
+        default="",
+        help_text="approved_snapshot or job_record.",
+    )
+    source_snapshot_approved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the upstream approved classification was locked in for this draft.",
+    )
+    source_primary_role_slug = models.CharField(
+        max_length=120,
+        blank=True,
+        default="",
+        help_text="Primary marketing role used to target this draft.",
+    )
+    source_prompt_version = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="Extractor/classification prompt version that fed this draft.",
+    )
+    source_classification_source = models.CharField(
+        max_length=24,
+        blank=True,
+        default="",
+        help_text="backend, secondary, merged, manual, or empty when unavailable.",
+    )
     generation_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,

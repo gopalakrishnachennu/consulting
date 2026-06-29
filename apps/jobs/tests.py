@@ -2306,6 +2306,41 @@ class MarketingRoleRoutingTests(TestCase):
         )
         self.assertEqual(job.auto_marketing_role_slugs, ["devops-cloud"])
 
+    def test_assign_uses_locked_snapshot_primary_role(self):
+        company = Company.objects.create(name="Primary Role Co")
+        raw = RawJob.objects.create(
+            company=company,
+            company_name="Primary Role Co",
+            title="Platform Engineer",
+            description="Operate cloud infrastructure and reliability systems.",
+            original_url="https://example.com/jobs/platform-primary",
+        )
+        RawJobClassificationSnapshot.objects.create(
+            raw_job=raw,
+            approved_output={"classification": {"job_domain": "devops-cloud"}},
+            approved_primary_role_slug="data-engineer",
+            primary_role_source="manual_override",
+            primary_role_locked=True,
+        )
+        job = Job.objects.create(
+            title="Platform Engineer",
+            company="Primary Role Co",
+            posted_by=self.employee,
+            status=Job.Status.OPEN,
+            description="Operate cloud infrastructure and reliability systems.",
+        )
+
+        assign_marketing_roles_to_job(job, raw_job=raw, role_slugs=["devops-cloud"])
+        job.refresh_from_db()
+
+        self.assertEqual(job.primary_marketing_role.slug, "data-engineer")
+        self.assertTrue(job.primary_marketing_role_locked)
+        self.assertEqual(job.primary_marketing_role_source, "manual_override")
+        self.assertCountEqual(
+            list(job.marketing_roles.values_list("slug", flat=True)),
+            ["data-engineer", "devops-cloud"],
+        )
+
     def test_match_jobs_respects_country_and_seniority_preferences(self):
         role = MarketingRole.objects.get(slug="devops-cloud")
         consultant_user = User.objects.create_user(
@@ -2348,6 +2383,44 @@ class MarketingRoleRoutingTests(TestCase):
             country="United States",
         )
         wrong_seniority.marketing_roles.add(role)
+
+        matches = match_jobs_for_consultant(consultant, limit=10)
+        self.assertEqual([job.pk for job in matches], [eligible.pk])
+
+    def test_match_jobs_uses_primary_role_when_present(self):
+        devops = MarketingRole.objects.get(slug="devops-cloud")
+        data = MarketingRole.objects.get(slug="data-engineer")
+        consultant_user = User.objects.create_user(
+            username="consultant_primary_role", password="testpass", role=User.Role.CONSULTANT
+        )
+        consultant = ConsultantProfile.objects.create(
+            user=consultant_user,
+            bio="DevOps consultant",
+            work_countries=["United States"],
+        )
+        consultant.marketing_roles.add(devops)
+
+        eligible = Job.objects.create(
+            title="Platform Engineer",
+            company="Acme",
+            posted_by=self.employee,
+            status=Job.Status.OPEN,
+            description="Cloud platform role",
+            country="United States",
+            primary_marketing_role=devops,
+        )
+        eligible.marketing_roles.add(devops, data)
+
+        blocked = Job.objects.create(
+            title="Data Platform Engineer",
+            company="Globex",
+            posted_by=self.employee,
+            status=Job.Status.OPEN,
+            description="Data platform role",
+            country="United States",
+            primary_marketing_role=data,
+        )
+        blocked.marketing_roles.add(devops, data)
 
         matches = match_jobs_for_consultant(consultant, limit=10)
         self.assertEqual([job.pk for job in matches], [eligible.pk])

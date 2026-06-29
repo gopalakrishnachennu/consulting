@@ -19,6 +19,21 @@ from django.utils import timezone
 logger = logging.getLogger("apps.resumes.tasks")
 
 
+def _resume_draft_defaults(*, source_state: dict, generation_mode: str, generation_reason: str, idempotency_key: str, auto_generated: bool) -> dict:
+    return {
+        "auto_generated": auto_generated,
+        "generation_mode": generation_mode,
+        "generation_reason": generation_reason,
+        "idempotency_key": idempotency_key,
+        "source_snapshot_hash": source_state.get("snapshot_hash", ""),
+        "source_snapshot_source": source_state.get("snapshot_source", ""),
+        "source_snapshot_approved_at": source_state.get("approved_at"),
+        "source_primary_role_slug": source_state.get("primary_role_slug", ""),
+        "source_prompt_version": source_state.get("prompt_version", ""),
+        "source_classification_source": source_state.get("classification_source", ""),
+    }
+
+
 # ── Auto-match & generate for newly vetted jobs ──────────────────────────────
 
 @shared_task(
@@ -50,9 +65,15 @@ def auto_generate_for_new_jobs_task(
         dry_run:   If True, find matches but don't generate resumes
     """
     from jobs.models import Job
+    from jobs.services import consultant_job_routing_audit
     from users.models import ConsultantProfile
     from resumes.models import ResumeDraft
     from resumes.engine import generate_resume
+    from resumes.services import (
+        build_resume_draft_idempotency_key,
+        find_reusable_resume_draft,
+        resume_generation_source_state,
+    )
 
     # Step 1: Find eligible jobs
     qs = Job.objects.filter(
@@ -128,17 +149,38 @@ def auto_generate_for_new_jobs_task(
         matched_consultants = []
         for c in active_consultants:
             c_slugs = consultant_roles.get(c.pk, set())
-            if c_slugs & job_role_slugs:  # intersection
-                matched_consultants.append(c)
+            if not (c_slugs & job_role_slugs):
+                continue
+            audit = consultant_job_routing_audit(job, c)
+            if not audit.get("eligible"):
+                continue
+            source_state = resume_generation_source_state(job)
+            if source_state.get("blocked"):
+                continue
+            if getattr(job, "primary_marketing_role", None):
+                source_state.setdefault("primary_role_slug", getattr(job.primary_marketing_role, "slug", "") or "")
+            matched_consultants.append((c, source_state))
 
-        for consultant in matched_consultants:
+        for consultant, source_state in matched_consultants:
             pairs_found += 1
-
-            # Check if draft already exists for this pair
-            existing = ResumeDraft.objects.filter(
+            idempotency_key = build_resume_draft_idempotency_key(
                 consultant=consultant,
                 job=job,
-            ).first()
+                generation_mode="auto",
+                generation_reason="new_pool_job",
+                source_state=source_state,
+            )
+
+            # Check if draft already exists for this pair
+            existing = find_reusable_resume_draft(
+                consultant=consultant,
+                job=job,
+                idempotency_key=idempotency_key,
+            ) or ResumeDraft.objects.filter(
+                consultant=consultant,
+                job=job,
+                source_snapshot_hash=source_state.get("snapshot_hash", ""),
+            ).exclude(status=ResumeDraft.Status.ERROR).first()
             if existing:
                 skipped += 1
                 continue
@@ -166,7 +208,13 @@ def auto_generate_for_new_jobs_task(
                         version=1,
                         status=ResumeDraft.Status.ERROR,
                         error_message=(error or "")[:500],
-                        auto_generated=True,
+                        **_resume_draft_defaults(
+                            source_state=source_state,
+                            generation_mode="auto",
+                            generation_reason="new_pool_job",
+                            idempotency_key=idempotency_key,
+                            auto_generated=True,
+                        ),
                     )
                     logger.warning(
                         "Resume gen error for consultant %s × job %s: %s",
@@ -191,8 +239,15 @@ def auto_generate_for_new_jobs_task(
                         validation_warnings=warnings_list,
                         llm_system_prompt=metadata.get("system_prompt", ""),
                         llm_user_prompt=metadata.get("user_prompt", ""),
-                        llm_input_summary=metadata.get("input_sections", {}),
-                        auto_generated=True,
+                        llm_input_summary=metadata,
+                        llm_request_payload=metadata.get("totals", {}),
+                        **_resume_draft_defaults(
+                            source_state=source_state,
+                            generation_mode="auto",
+                            generation_reason="new_pool_job",
+                            idempotency_key=idempotency_key,
+                            auto_generated=True,
+                        ),
                     )
                     generated += 1
                     logger.info(
@@ -212,7 +267,13 @@ def auto_generate_for_new_jobs_task(
                         version=1,
                         status=ResumeDraft.Status.ERROR,
                         error_message=str(exc)[:500],
-                        auto_generated=True,
+                        **_resume_draft_defaults(
+                            source_state=source_state,
+                            generation_mode="auto",
+                            generation_reason="new_pool_job",
+                            idempotency_key=idempotency_key,
+                            auto_generated=True,
+                        ),
                     )
                 except Exception:
                     pass
@@ -264,6 +325,12 @@ def generate_for_consultant_task(
     from users.models import ConsultantProfile
     from resumes.models import ResumeDraft
     from resumes.engine import generate_resume
+    from resumes.services import (
+        build_resume_draft_idempotency_key,
+        find_reusable_resume_draft,
+        resume_generation_source_state,
+    )
+    from jobs.services import match_jobs_for_consultant
 
     try:
         consultant = ConsultantProfile.objects.prefetch_related("marketing_roles").get(pk=consultant_id)
@@ -274,20 +341,7 @@ def generate_for_consultant_task(
     if not role_slugs:
         return {"error": "Consultant has no marketing roles assigned", "consultant_id": consultant_id}
 
-    # Find POOL jobs matching consultant's roles, excluding existing drafts
-    existing_job_ids = set(
-        ResumeDraft.objects.filter(consultant=consultant).values_list("job_id", flat=True)
-    )
-    jobs = list(
-        Job.objects.filter(
-            status="POOL",
-            is_archived=False,
-            marketing_roles__slug__in=role_slugs,
-        )
-        .exclude(pk__in=existing_job_ids)
-        .distinct()
-        .order_by("-created_at")
-    )
+    jobs = [job for job in match_jobs_for_consultant(consultant, limit=max_jobs or 500) if job.status == Job.Status.OPEN]
     if max_jobs:
         jobs = jobs[:max_jobs]
 
@@ -301,13 +355,37 @@ def generate_for_consultant_task(
             continue
 
         try:
+            source_state = resume_generation_source_state(job)
+            if source_state.get("blocked"):
+                failed += 1
+                continue
+            idempotency_key = build_resume_draft_idempotency_key(
+                consultant=consultant,
+                job=job,
+                generation_mode="auto",
+                generation_reason="consultant_batch",
+                source_state=source_state,
+            )
+            existing = find_reusable_resume_draft(
+                consultant=consultant,
+                job=job,
+                idempotency_key=idempotency_key,
+            )
+            if existing:
+                continue
             content, tokens, error, metadata = generate_resume(job=job, consultant=consultant)
             if error:
                 ResumeDraft.objects.create(
                     consultant=consultant, job=job, version=1,
                     status=ResumeDraft.Status.ERROR,
                     error_message=(error or "")[:500],
-                    auto_generated=True,
+                    **_resume_draft_defaults(
+                        source_state=source_state,
+                        generation_mode="auto",
+                        generation_reason="consultant_batch",
+                        idempotency_key=idempotency_key,
+                        auto_generated=True,
+                    ),
                 )
                 failed += 1
             else:
@@ -324,8 +402,15 @@ def generate_for_consultant_task(
                     validation_warnings=warnings_list,
                     llm_system_prompt=metadata.get("system_prompt", ""),
                     llm_user_prompt=metadata.get("user_prompt", ""),
-                    llm_input_summary=metadata.get("input_sections", {}),
-                    auto_generated=True,
+                    llm_input_summary=metadata,
+                    llm_request_payload=metadata.get("totals", {}),
+                    **_resume_draft_defaults(
+                        source_state=source_state,
+                        generation_mode="auto",
+                        generation_reason="consultant_batch",
+                        idempotency_key=idempotency_key,
+                        auto_generated=True,
+                    ),
                 )
                 generated += 1
         except Exception as exc:

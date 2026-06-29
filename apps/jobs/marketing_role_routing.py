@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from typing import Iterable
 
+from django.utils import timezone
+
 from .dual_classification.effective import effective_raw_job_classification
 from users.models import MarketingRole
 
@@ -240,6 +242,20 @@ def infer_marketing_role_slugs_from_raw_job(raw_job, *, max_roles: int = _MAX_AU
     )
 
 
+def _approved_primary_role_slug(raw_job, role_map: dict[str, MarketingRole]) -> tuple[str, bool, str]:
+    snapshot = getattr(raw_job, "classification_snapshot", None)
+    if not snapshot:
+        return "", False, ""
+    slug = (getattr(snapshot, "approved_primary_role_slug", "") or "").strip()
+    if slug and slug not in role_map:
+        slug = ""
+    return (
+        slug,
+        bool(getattr(snapshot, "primary_role_locked", False)),
+        (getattr(snapshot, "primary_role_source", "") or "").strip(),
+    )
+
+
 def assign_marketing_roles_to_job(job, *, raw_job=None, role_slugs: Iterable[str] | None = None) -> list[str]:
     """
     Assign auto-detected roles without wiping manually-added roles.
@@ -268,18 +284,59 @@ def assign_marketing_roles_to_job(job, *, raw_job=None, role_slugs: Iterable[str
     current_auto = set(getattr(job, "auto_marketing_role_slugs", []) or [])
     current_slugs = set(job.marketing_roles.values_list("slug", flat=True))
     manual_slugs = current_slugs - current_auto
-    final_slugs = _dedupe_preserve_order([*manual_slugs, *auto_slugs])
+    snapshot_primary_slug = ""
+    snapshot_primary_locked = False
+    snapshot_primary_source = ""
+    if raw_job is not None:
+        snapshot_primary_slug, snapshot_primary_locked, snapshot_primary_source = _approved_primary_role_slug(raw_job, role_map)
+
+    primary_slug = ""
+    primary_source = ""
+    primary_locked = False
+
+    if getattr(job, "primary_marketing_role_locked", False) and getattr(job, "primary_marketing_role_id", None):
+        locked_slug = getattr(getattr(job, "primary_marketing_role", None), "slug", "") or ""
+        if locked_slug in role_map:
+            primary_slug = locked_slug
+            primary_source = (getattr(job, "primary_marketing_role_source", "") or "manual_override").strip() or "manual_override"
+            primary_locked = True
+    elif snapshot_primary_slug:
+        primary_slug = snapshot_primary_slug
+        primary_source = snapshot_primary_source or "approved_snapshot"
+        primary_locked = snapshot_primary_locked
+    elif auto_slugs:
+        primary_slug = auto_slugs[0]
+        primary_source = "auto"
+
+    final_slugs = _dedupe_preserve_order([*( [primary_slug] if primary_slug else [] ), *manual_slugs, *auto_slugs])
 
     job.marketing_roles.set([role_map[slug] for slug in final_slugs if slug in role_map])
 
+    update_fields: list[str] = []
     if list(getattr(job, "auto_marketing_role_slugs", []) or []) != auto_slugs:
         job.auto_marketing_role_slugs = auto_slugs
-        job.save(update_fields=["auto_marketing_role_slugs", "updated_at"])
+        update_fields.append("auto_marketing_role_slugs")
+
+    resolved_primary_role = role_map.get(primary_slug) if primary_slug else None
+    if getattr(job, "primary_marketing_role_id", None) != getattr(resolved_primary_role, "id", None):
+        job.primary_marketing_role = resolved_primary_role
+        update_fields.append("primary_marketing_role")
+    if (getattr(job, "primary_marketing_role_source", "") or "") != (primary_source or ""):
+        job.primary_marketing_role_source = primary_source or ""
+        update_fields.append("primary_marketing_role_source")
+    if bool(getattr(job, "primary_marketing_role_locked", False)) != bool(primary_locked):
+        job.primary_marketing_role_locked = bool(primary_locked)
+        update_fields.append("primary_marketing_role_locked")
+    if update_fields:
+        job.primary_marketing_role_updated_at = timezone.now()
+        update_fields.extend(["primary_marketing_role_updated_at", "updated_at"])
+        job.save(update_fields=update_fields)
 
     logger.debug(
-        "Assigned marketing roles to job %s: auto=%s final=%s",
+        "Assigned marketing roles to job %s: auto=%s primary=%s final=%s",
         getattr(job, "pk", None),
         auto_slugs,
+        primary_slug,
         final_slugs,
     )
     return auto_slugs

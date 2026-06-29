@@ -14,6 +14,7 @@ class JobAdmin(admin.ModelAdmin):
     list_display = (
         'title',
         'company',
+        'primary_marketing_role',
         'location',
         'posted_by',
         'status',
@@ -62,6 +63,7 @@ class RawJobClassificationSnapshotAdmin(admin.ModelAdmin):
         'status',
         'approval_state',
         'approved_source',
+        'approved_primary_role_slug',
         'final_confidence',
         'needs_review',
         'ready_for_vetting',
@@ -70,7 +72,11 @@ class RawJobClassificationSnapshotAdmin(admin.ModelAdmin):
     )
     list_filter = ('status', 'approval_state', 'needs_review', 'ready_for_vetting', 'pushed_to_vetting_with_warnings')
     search_fields = ('raw_job__title', 'raw_job__company_name', 'current_input_hash')
-    readonly_fields = ('created_at', 'updated_at', 'last_merged_at', 'approved_at', 'pushed_to_vetting_at')
+    readonly_fields = (
+        'created_at', 'updated_at', 'last_merged_at', 'approved_at', 'pushed_to_vetting_at',
+        'approved_primary_role_slug', 'primary_role_source', 'primary_role_locked',
+        'primary_role_override_reason', 'primary_role_overridden_at', 'primary_role_overridden_by',
+    )
 
 
 @admin.register(RawJobClassificationConflict)

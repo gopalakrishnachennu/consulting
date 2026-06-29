@@ -16,6 +16,7 @@ import re
 import json
 import logging
 import datetime
+import hashlib
 from django.utils.html import strip_tags
 from django.utils import timezone
 from django.db.models import Sum
@@ -24,7 +25,7 @@ from docx.shared import Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from io import BytesIO
-from .models import MasterPrompt
+from .models import MasterPrompt, ResumeDraft
 from .prompt_strings import (
     DEFAULT_SYSTEM_PROMPT,
     BULLETS_SYSTEM_PROMPT,
@@ -62,6 +63,126 @@ ACTION_VERBS = {
     "delivered","automated","migrated","refactored","enhanced","led","managed","supported","resolved","developed",
     "configured","deployed","monitored","troubleshot","maintained","documented","collaborated","coordinated",
 }
+
+
+def _master_prompt_version_label() -> str:
+    active = MasterPrompt.get_active()
+    if not active:
+        return "master:none"
+    stamp = getattr(active, "updated_at", None) or getattr(active, "created_at", None)
+    stamp_token = stamp.isoformat() if stamp else "na"
+    return f"master:{active.pk}:{stamp_token}"
+
+
+def resume_generation_source_state(job):
+    source_raw_job = getattr(job, "source_raw_job", None)
+    state = {
+        "blocked": False,
+        "reason": "",
+        "snapshot_source": "job_record",
+        "snapshot_hash": "",
+        "classification_source": "",
+        "primary_role_slug": getattr(getattr(job, "primary_marketing_role", None), "slug", "") or "",
+        "approved_at": None,
+        "prompt_version": (getattr(job, "parsed_jd_prompt_version", "") or "").strip(),
+    }
+    if not source_raw_job:
+        base = "|".join([
+            str(getattr(job, "pk", "") or ""),
+            getattr(job, "title", "") or "",
+            getattr(job, "company", "") or "",
+            getattr(job, "description", "") or "",
+            getattr(job, "location", "") or "",
+        ])
+        state["snapshot_hash"] = hashlib.sha256(base.encode("utf-8", errors="ignore")).hexdigest()
+        return state
+
+    snapshot = getattr(source_raw_job, "classification_snapshot", None)
+    if not snapshot:
+        state["blocked"] = True
+        state["reason"] = "missing_classification_snapshot"
+        return state
+    if not snapshot.approved_output:
+        state["blocked"] = True
+        state["reason"] = "missing_approved_classification"
+        return state
+    if snapshot.approval_is_stale:
+        state["blocked"] = True
+        state["reason"] = "stale_approved_classification"
+        return state
+    if not snapshot.ready_for_vetting:
+        state["blocked"] = True
+        state["reason"] = "classification_not_ready_for_vetting"
+        return state
+
+    state.update(
+        {
+            "snapshot_source": "approved_snapshot",
+            "snapshot_hash": (snapshot.approval_input_hash or snapshot.current_input_hash or "").strip(),
+            "classification_source": (snapshot.approved_source or "").strip(),
+            "primary_role_slug": (snapshot.approved_primary_role_slug or state["primary_role_slug"] or "").strip(),
+            "approved_at": snapshot.approved_at,
+            "prompt_version": (
+                getattr(getattr(snapshot, "secondary_run", None), "prompt_version", "")
+                or (getattr(job, "parsed_jd_prompt_version", "") or "")
+            ).strip(),
+        }
+    )
+    if not state["snapshot_hash"]:
+        state["snapshot_hash"] = hashlib.sha256(
+            json.dumps(snapshot.approved_output or {}, sort_keys=True, default=str).encode("utf-8", errors="ignore")
+        ).hexdigest()
+    return state
+
+
+def build_resume_draft_idempotency_key(
+    *,
+    consultant,
+    job,
+    input_sections=None,
+    coaching_keywords=None,
+    generation_mode: str = "",
+    generation_reason: str = "",
+    source_state: dict | None = None,
+) -> str:
+    source_state = source_state or resume_generation_source_state(job)
+    normalized_sections = input_sections or {}
+    normalized_keywords = sorted(
+        {
+            str(item).strip().lower()
+            for item in (coaching_keywords or [])
+            if str(item).strip()
+        }
+    )
+    payload = {
+        "consultant_id": getattr(consultant, "pk", None),
+        "job_id": getattr(job, "pk", None),
+        "snapshot_hash": source_state.get("snapshot_hash") or "",
+        "primary_role_slug": source_state.get("primary_role_slug") or "",
+        "prompt_version": source_state.get("prompt_version") or "",
+        "master_prompt_version": _master_prompt_version_label(),
+        "generation_mode": generation_mode or "",
+        "generation_reason": generation_reason or "",
+        "input_sections": normalized_sections,
+        "coaching_keywords": normalized_keywords,
+    }
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode("utf-8", errors="ignore")).hexdigest()
+    return digest[:96]
+
+
+def find_reusable_resume_draft(*, consultant, job, idempotency_key: str):
+    if not idempotency_key:
+        return None
+    return (
+        ResumeDraft.objects.filter(
+            consultant=consultant,
+            job=job,
+            idempotency_key=idempotency_key,
+        )
+        .exclude(status=ResumeDraft.Status.ERROR)
+        .order_by("-created_at")
+        .first()
+    )
 
 def _fill_prompt(template, **kwargs):
     """Replace {key} placeholders without interpreting other braces."""

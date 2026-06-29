@@ -199,6 +199,25 @@ class Job(models.Model):
         blank=True,
         related_name='jobs'
     )
+    primary_marketing_role = models.ForeignKey(
+        MarketingRole,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='primary_jobs',
+        help_text=_("Single downstream marketing role used for consultant routing and resume targeting."),
+    )
+    primary_marketing_role_source = models.CharField(
+        max_length=24,
+        blank=True,
+        default="",
+        help_text=_("How the primary role was chosen: auto, approved_snapshot, manual_override."),
+    )
+    primary_marketing_role_locked = models.BooleanField(
+        default=False,
+        help_text=_("When enabled, automatic refreshes cannot overwrite the primary marketing role."),
+    )
+    primary_marketing_role_updated_at = models.DateTimeField(null=True, blank=True)
     auto_marketing_role_slugs = models.JSONField(
         default=list,
         blank=True,
@@ -570,6 +589,18 @@ class RawJobClassificationSnapshot(models.Model):
     approval_stale_at = models.DateTimeField(null=True, blank=True, db_index=True)
     approved_output = models.JSONField(default=dict, blank=True)
     approved_source = models.CharField(max_length=16, blank=True)
+    approved_primary_role_slug = models.CharField(max_length=120, blank=True, db_index=True)
+    primary_role_source = models.CharField(max_length=24, blank=True, default="")
+    primary_role_locked = models.BooleanField(default=False)
+    primary_role_override_reason = models.TextField(blank=True)
+    primary_role_overridden_at = models.DateTimeField(null=True, blank=True)
+    primary_role_overridden_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="overridden_rawjob_primary_roles",
+    )
     approval_note = models.TextField(blank=True)
     approved_at = models.DateTimeField(null=True, blank=True, db_index=True)
     approved_by = models.ForeignKey(
