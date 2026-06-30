@@ -354,29 +354,54 @@
               <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <div>
                   <label class="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Seniority</label>
-                  <input name="seniority_primary" value="{{ object.routing_override.seniority_primary|default:routing_profile.seniority_primary }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                  {% with selected_seniority=object.routing_override.seniority_primary|default:routing_profile.seniority_primary %}
+                  <select name="seniority_primary" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    {% for value, label in routing_seniority_choices %}
+                    <option value="{{ value }}" {% if selected_seniority == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                  {% endwith %}
                 </div>
                 <div>
                   <label class="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Years Min</label>
-                  <input name="years_min" value="{{ object.routing_override.years_min|default:routing_profile.years_min }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                  <input type="number" min="0" max="80" name="years_min" value="{{ object.routing_override.years_min|default:routing_profile.years_min }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
                 </div>
                 <div>
                   <label class="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Years Max</label>
-                  <input name="years_max" value="{{ object.routing_override.years_max|default:routing_profile.years_max }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                  <input type="number" min="0" max="80" name="years_max" value="{{ object.routing_override.years_max|default:routing_profile.years_max }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
                 </div>
                 <div>
                   <label class="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Country Codes</label>
-                  <input name="country_codes" value="{% if object.routing_override.country_codes %}{{ object.routing_override.country_codes|join:', ' }}{% else %}{{ routing_profile.country_codes|join:', ' }}{% endif %}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                  {% with selected_codes=object.routing_override.country_codes|default:routing_profile.country_codes %}
+                  <select name="country_codes_multi" multiple size="5" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    {% for option in routing_country_choices %}
+                    <option value="{{ option.value }}" {% if option.value in selected_codes %}selected{% endif %}>{{ option.label }} ({{ option.value }})</option>
+                    {% endfor %}
+                  </select>
+                  {% endwith %}
+                  <p class="mt-1 text-[11px] text-slate-500">Use Cmd/Ctrl-click to select more than one country.</p>
                 </div>
               </div>
               <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <div>
                   <label class="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Country Mode</label>
-                  <input name="country_mode" value="{{ object.routing_override.country_mode|default:routing_profile.country_mode }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                  {% with selected_country_mode=object.routing_override.country_mode|default:routing_profile.country_mode %}
+                  <select name="country_mode" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    {% for value, label in routing_country_mode_choices %}
+                    <option value="{{ value }}" {% if selected_country_mode == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                  {% endwith %}
                 </div>
                 <div>
                   <label class="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Work Mode</label>
-                  <input name="work_mode" value="{{ object.routing_override.work_mode|default:routing_profile.work_mode }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                  {% with selected_work_mode=object.routing_override.work_mode|default:routing_profile.work_mode %}
+                  <select name="work_mode" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    {% for value, label in routing_work_mode_choices %}
+                    <option value="{{ value }}" {% if selected_work_mode == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                  {% endwith %}
                 </div>
                 <div>
                   <label class="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Visa Sponsorship</label>
@@ -393,9 +418,21 @@
                   </label>
                 </div>
               </div>
-              <div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Work Authorization Category</label>
+                  {% with selected_auth_category=object.routing_override.work_auth_category|default:routing_profile.work_auth_category %}
+                  <select name="work_auth_category" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    {% for value, label in routing_work_auth_category_choices %}
+                    <option value="{{ value }}" {% if selected_auth_category == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                  {% endwith %}
+                </div>
+                <div>
                 <label class="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Work Authorization</label>
                 <input name="work_authorization" value="{{ object.routing_override.work_authorization|default:routing_profile.work_authorization }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                </div>
               </div>
               <div class="flex items-center justify-between gap-3 flex-wrap">
                 <p class="text-xs text-slate-500">Manual override survives extractor reruns until you clear it.</p>

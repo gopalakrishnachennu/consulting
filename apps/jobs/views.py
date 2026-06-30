@@ -34,6 +34,41 @@ logger = logging.getLogger(__name__)
 from .forms import JobForm, JobBulkUploadForm
 
 JOB_PAGE_SIZE_OPTIONS = (50, 100, 170)
+ROUTING_SENIORITY_CHOICES = [
+    ("unknown", "Unknown"),
+    ("intern", "Intern"),
+    ("graduate", "Graduate"),
+    ("entry", "Entry"),
+    ("junior", "Junior"),
+    ("mid", "Mid"),
+    ("senior", "Senior"),
+    ("lead", "Lead"),
+    ("manager", "Manager"),
+    ("director", "Director"),
+]
+ROUTING_COUNTRY_MODE_CHOICES = [
+    ("unknown", "Unknown"),
+    ("single", "Single country"),
+    ("multi", "Multi-country"),
+    ("regional", "Regional"),
+    ("remote_global", "Remote global"),
+]
+ROUTING_WORK_MODE_CHOICES = [
+    ("unknown", "Unknown"),
+    ("remote", "Remote"),
+    ("hybrid", "Hybrid"),
+    ("onsite", "Onsite"),
+]
+ROUTING_WORK_AUTH_CATEGORY_CHOICES = [
+    ("unknown", "Unknown"),
+    ("citizen_only", "Citizen only"),
+    ("gc_or_citizen", "GC or citizen"),
+    ("opt_only", "OPT only"),
+    ("opt_cpt", "OPT / CPT"),
+    ("h1b_transfer", "H1B transfer"),
+    ("sponsorship_available", "Sponsorship available"),
+    ("authorized_no_sponsorship", "Authorized, no sponsorship"),
+]
 
 
 _COUNTRY_LOCATION_SEPARATOR_RE = re.compile(r"\s[-|/]\s|,")
@@ -638,6 +673,16 @@ class JobDetailView(LoginRequiredMixin, DetailView):
         if job:
             context["routing_profile"] = effective_routing_profile(job)
             context["routing_profile_json"] = json.dumps(context["routing_profile"], indent=2)
+            from harvest.location_resolver import COUNTRY_CODE_TO_NAME
+
+            context["routing_seniority_choices"] = ROUTING_SENIORITY_CHOICES
+            context["routing_country_mode_choices"] = ROUTING_COUNTRY_MODE_CHOICES
+            context["routing_work_mode_choices"] = ROUTING_WORK_MODE_CHOICES
+            context["routing_work_auth_category_choices"] = ROUTING_WORK_AUTH_CATEGORY_CHOICES
+            context["routing_country_choices"] = [
+                {"value": code, "label": label}
+                for code, label in sorted(COUNTRY_CODE_TO_NAME.items(), key=lambda item: item[1])
+            ]
         if job:
             context["dual_classification_audit"] = attach_job_dual_classification_audit(job)
 
@@ -694,14 +739,27 @@ class JobRoutingOverrideView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         else:
             visa_sponsorship = None
 
+        country_codes_multi = [
+            c.strip().upper()
+            for c in request.POST.getlist("country_codes_multi")
+            if c and c.strip()
+        ]
+        if not country_codes_multi:
+            country_codes_multi = [
+                c.strip().upper()
+                for c in (request.POST.get("country_codes") or "").split(",")
+                if c.strip()
+            ]
+
         override = {
             "seniority_primary": (request.POST.get("seniority_primary") or "").strip().lower(),
             "years_min": (request.POST.get("years_min") or "").strip(),
             "years_max": (request.POST.get("years_max") or "").strip(),
             "country_mode": (request.POST.get("country_mode") or "").strip(),
-            "country_codes": [c.strip().upper() for c in (request.POST.get("country_codes") or "").split(",") if c.strip()],
+            "country_codes": country_codes_multi,
             "work_mode": (request.POST.get("work_mode") or "").strip(),
             "visa_sponsorship": visa_sponsorship,
+            "work_auth_category": (request.POST.get("work_auth_category") or "").strip(),
             "work_authorization": (request.POST.get("work_authorization") or "").strip(),
             "clearance_required": request.POST.get("clearance_required") == "1",
         }

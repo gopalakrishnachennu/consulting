@@ -1818,6 +1818,12 @@ class RawJobDetailView(SuperuserRequiredMixin, DetailView):
         from users.models import MarketingRole
 
         ctx = super().get_context_data(**kwargs)
+        ctx["job_domain_rule"] = JobDomain.objects.filter(slug=self.object.job_domain).only("id", "slug", "name").first() if self.object.job_domain else None
+        ctx["job_domain_candidate_rules"] = list(
+            JobDomain.objects.filter(slug__in=(self.object.job_domain_candidates or []))
+            .only("id", "slug", "name")
+            .order_by("priority", "slug")
+        ) if self.object.job_domain_candidates else []
         ctx["resume_jd_gate"] = evaluate_raw_job_resume_gate(self.object)
         ctx["payload_snapshots"] = self.object.payload_snapshots.all()[:8]
         ctx["payload_snapshot_count"] = self.object.payload_snapshots.count()

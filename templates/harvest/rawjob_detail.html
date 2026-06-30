@@ -342,9 +342,22 @@
             <div>
               <dt class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Domain</dt>
               <dd>
+                {% if job_domain_rule %}
+                <a href="{% url 'harvest-job-domains' %}?q={{ job_domain_rule.slug }}" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-violet-100 text-violet-700 border border-violet-200 hover:bg-violet-200">{{ job_domain_rule.name }}</a>
+                <span class="ml-1 text-[10px] text-slate-500">{{ job_domain_rule.slug }}</span>
+                {% else %}
                 <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-violet-100 text-violet-700 border border-violet-200">{{ rawjob.job_domain }}</span>
+                {% endif %}
                 {% if rawjob.domain_version %}<span class="text-[10px] text-slate-400 ml-1">{{ rawjob.domain_version }}</span>{% endif %}
               </dd>
+              {% if job_domain_candidate_rules %}
+              <p class="mt-1 text-[11px] text-slate-500">
+                Candidates:
+                {% for candidate in job_domain_candidate_rules %}
+                  <a href="{% url 'harvest-job-domains' %}?q={{ candidate.slug }}" class="font-medium text-slate-600 hover:text-slate-900">{{ candidate.name }}</a>{% if not forloop.last %}, {% endif %}
+                {% endfor %}
+              </p>
+              {% endif %}
             </div>
             {% endif %}
             {% if rawjob.job_category %}<div><dt class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Category</dt><dd class="font-semibold text-slate-800">{{ rawjob.job_category }}</dd></div>{% endif %}
