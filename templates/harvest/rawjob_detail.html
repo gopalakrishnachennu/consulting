@@ -460,6 +460,22 @@
           <dl class="space-y-2 text-sm">
             <div><dt class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Sync Status</dt><dd>{% if rawjob.sync_status == 'SYNCED' %}<span class="badge-green">{{ rawjob.get_sync_status_display }}</span>{% elif rawjob.sync_status == 'FAILED' %}<span class="badge-red">{{ rawjob.get_sync_status_display }}</span>{% else %}<span class="badge-yellow">{{ rawjob.get_sync_status_display }}</span>{% endif %}</dd></div>
             <div><dt class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Platform</dt><dd class="text-slate-700">{% if rawjob.job_platform %}{{ rawjob.job_platform.name }}{% else %}{{ rawjob.platform_slug|default:"—" }}{% endif %}</dd></div>
+            {% if rawjob.raw_payload.render_backend %}
+            <div>
+              <dt class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">HTML Backend</dt>
+              <dd class="text-slate-700">
+                {% if rawjob.raw_payload.render_backend == 'obscura' %}
+                <span class="badge-blue">Obscura</span>
+                {% elif rawjob.raw_payload.render_backend == 'requests' %}
+                <span class="badge-gray">Requests</span>
+                {% elif rawjob.raw_payload.render_backend == 'obscura_failed' %}
+                <span class="badge-red">Obscura failed</span>
+                {% else %}
+                <span class="badge-gray">{{ rawjob.raw_payload.render_backend }}</span>
+                {% endif %}
+              </dd>
+            </div>
+            {% endif %}
             {% if rawjob.external_id %}<div><dt class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">External ID</dt><dd class="font-mono text-xs text-slate-700 break-all">{{ rawjob.external_id|truncatechars:40 }}</dd></div>{% endif %}
             <div><dt class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Fetched</dt><dd class="text-slate-700">{{ rawjob.fetched_at|date:"M j, Y H:i" }}</dd></div>
             {% if rawjob.posted_date %}<div><dt class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Posted</dt><dd class="text-slate-700">{{ rawjob.posted_date|date:"M j, Y" }}</dd></div>{% endif %}

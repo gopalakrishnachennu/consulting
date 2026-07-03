@@ -3442,8 +3442,7 @@ def sync_harvested_to_pool_task(
         .exclude(Q(is_cold=True) | Q(filter_decision="NO_MATCH") | Q(jd_fetch_skipped=True))
     )
 
-    if not gate_cfg.allow_possible_filter:
-        base_qs = base_qs.filter(filter_decision="STRONG")
+    base_qs = base_qs.filter(filter_decision="STRONG")
 
     if gate_cfg.blocked_domains and isinstance(gate_cfg.blocked_domains, list):
         base_qs = base_qs.exclude(job_domain__in=gate_cfg.blocked_domains)

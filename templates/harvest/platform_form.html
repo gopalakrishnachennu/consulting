@@ -251,6 +251,21 @@
             </div>
           </div>
 
+          <div class="mt-4">
+            <label for="{{ form.config_html_render_backend.id_for_label }}" class="block text-sm font-semibold text-gray-700 mb-1">HTML Render Backend</label>
+            <select name="config_html_render_backend" id="{{ form.config_html_render_backend.id_for_label }}"
+              class="w-full border {% if form.config_html_render_backend.errors %}border-red-400{% else %}border-gray-300{% endif %} rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500">
+              {% for value, label in form.config_html_render_backend.field.choices %}
+              <option value="{{ value }}" {% if form.config_html_render_backend.value == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+            <p class="text-xs text-gray-400 mt-1">Only used by the generic HTML fallback harvester. API-backed platforms ignore this.</p>
+            <div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <strong>`Obscura only` is strict.</strong> If the renderer fails or the binary is unavailable, that platform returns zero jobs until the issue is fixed. Use `Obscura with native fallback` first.
+            </div>
+            {% if form.config_html_render_backend.errors %}<p class="text-xs text-red-600 mt-1">{{ form.config_html_render_backend.errors.0 }}</p>{% endif %}
+          </div>
+
           <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label class="flex items-start gap-3 p-3 border border-gray-200 rounded-xl bg-white/70 hover:bg-white cursor-pointer">
               <input type="checkbox" name="config_auto_backfill" id="{{ form.config_auto_backfill.id_for_label }}"

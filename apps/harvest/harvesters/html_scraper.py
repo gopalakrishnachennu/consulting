@@ -14,11 +14,16 @@ Strict scraping policies enforced:
   7. Only follows links that look like job listings (safe selectors)
 """
 import logging
-from typing import Any
+import time
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urljoin
 
 from .base import BaseHarvester
 from ..career_url import build_career_url
+from ..obscura import fetch_html_with_obscura, record_obscura_failure
+
+if TYPE_CHECKING:
+    from ..models import PlatformEngineConfig
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +81,7 @@ class HTMLScrapeHarvester(BaseHarvester):
                 platform_slug = platform_obj.platform.slug or ""
         except Exception:
             platform_slug = ""
+        runtime_cfg = self._runtime_config_for_company(company)
         url = (
             (build_career_url(platform_slug, tenant_id) if platform_slug and tenant_id else "")
             or getattr(company, "career_site_url", "")
@@ -89,7 +95,7 @@ class HTMLScrapeHarvester(BaseHarvester):
 
         # Generic fallback pages are HTML (not JSON), so fetch directly using
         # _get_html() which still enforces robots + rate-limit.
-        html_text = self._get_html(url)
+        html_text, render_backend = self._get_html(url, runtime_cfg=runtime_cfg)
         if not html_text:
             return []
 
@@ -118,7 +124,11 @@ class HTMLScrapeHarvester(BaseHarvester):
                     "title": text[:300],
                     "company_name": company.name,
                     "location": "",
-                    "raw_payload": {"source_url": url, "scraped_html": True},
+                    "raw_payload": {
+                        "source_url": url,
+                        "scraped_html": True,
+                        "render_backend": render_backend,
+                    },
                 })
                 if len(results) >= MAX_JOBS_PER_COMPANY:
                     break
@@ -131,23 +141,79 @@ class HTMLScrapeHarvester(BaseHarvester):
         )
         return results
 
-    def _get_html(self, url: str) -> str | None:
-        """Fetch raw HTML (not JSON). Respects all compliance rules."""
-        import time
-        from .base import (
-            _check_robots_allowed, MIN_DELAY_SCRAPE, DEFAULT_TIMEOUT,
-            MAX_RETRIES, BACKOFF_FACTOR, BOT_USER_AGENT,
-        )
-        import requests
+    @staticmethod
+    def _runtime_config_for_company(company) -> "PlatformEngineConfig | None":
+        from ..models import PlatformEngineConfig
+        try:
+            platform_obj = getattr(getattr(company, "platform_label", None), "platform", None)
+            if not platform_obj:
+                return None
+            return getattr(platform_obj, "config", None)
+        except PlatformEngineConfig.DoesNotExist:
+            return None
+        except Exception:
+            return None
 
+    def _respect_html_fetch_policy(self, url: str) -> bool:
+        from .base import _check_robots_allowed, MIN_DELAY_SCRAPE
         if not _check_robots_allowed(url):
             logger.warning("[HARVEST] HTMLScraper: robots.txt blocked %s", url)
-            return None
+            return False
 
         # Rate limit
         elapsed = time.monotonic() - self._last_request_at
         if elapsed < MIN_DELAY_SCRAPE:
             time.sleep(MIN_DELAY_SCRAPE - elapsed)
+        return True
+
+    def _get_html(
+        self,
+        url: str,
+        *,
+        runtime_cfg: "PlatformEngineConfig | None" = None,
+    ) -> tuple[str | None, str]:
+        """Fetch raw HTML (not JSON). Respects all compliance rules."""
+        from ..models import PlatformEngineConfig
+        if not self._respect_html_fetch_policy(url):
+            return None, "blocked"
+
+        backend = (
+            getattr(runtime_cfg, "html_render_backend", PlatformEngineConfig.HtmlRenderBackend.REQUESTS)
+            if runtime_cfg and getattr(runtime_cfg, "is_active", True)
+            else PlatformEngineConfig.HtmlRenderBackend.REQUESTS
+        )
+        if backend in {
+            PlatformEngineConfig.HtmlRenderBackend.OBSCURA_AUTO,
+            PlatformEngineConfig.HtmlRenderBackend.OBSCURA_ONLY,
+        }:
+            try:
+                rendered = fetch_html_with_obscura(url)
+                self._last_request_at = time.monotonic()
+                return rendered, "obscura"
+            except Exception as exc:
+                if backend == PlatformEngineConfig.HtmlRenderBackend.OBSCURA_ONLY:
+                    record_obscura_failure(
+                        url=url,
+                        backend_mode=backend,
+                        exc=exc,
+                        fallback_used=False,
+                    )
+                    logger.warning("[HARVEST] HTMLScraper: Obscura-only fetch failed for %s: %s", url, exc)
+                    return None, "obscura_failed"
+                record_obscura_failure(
+                    url=url,
+                    backend_mode=backend,
+                    exc=exc,
+                    fallback_used=True,
+                )
+                logger.info("[HARVEST] HTMLScraper: Obscura fallback to requests for %s: %s", url, exc)
+
+        return self._get_html_requests(url), "requests"
+
+    def _get_html_requests(self, url: str) -> str | None:
+        """Fetch raw HTML using requests after compliance checks have passed."""
+        from .base import DEFAULT_TIMEOUT, MAX_RETRIES, BACKOFF_FACTOR, BOT_USER_AGENT
+        import requests
 
         headers = {
             "User-Agent": BOT_USER_AGENT,

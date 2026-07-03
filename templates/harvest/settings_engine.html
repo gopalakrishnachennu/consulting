@@ -151,6 +151,69 @@
         </div>
       </div>
 
+      <div class="card-padded">
+        <div class="flex items-start justify-between gap-3 mb-3">
+          <div>
+            <h3 class="text-sm font-bold text-gray-800">Obscura HTML Renderer</h3>
+            <p class="text-xs text-gray-500 mt-0.5">Optional headless renderer for JS-heavy boards behind the generic HTML fallback harvester.</p>
+          </div>
+          {% if obscura_binary_available %}
+          <span class="badge-green text-xs font-semibold">Binary available</span>
+          {% else %}
+          <span class="badge-yellow text-xs font-semibold">Binary missing</span>
+          {% endif %}
+        </div>
+        <div class="space-y-4">
+          <label class="flex items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 cursor-pointer">
+            <input type="checkbox" name="obscura_enabled" value="1"
+                   {% if cfg.obscura_enabled %}checked{% endif %}
+                   class="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500/30">
+            <div>
+              <div class="text-sm font-semibold text-gray-800">Enable Obscura runtime</div>
+              <p class="text-xs text-gray-500 mt-0.5">Platforms still have to opt in individually from Platform Registry.</p>
+            </div>
+          </label>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label for="id_obscura_binary_path" class="block text-sm font-semibold text-gray-700 mb-1">Binary path</label>
+              <input id="id_obscura_binary_path" type="text" name="obscura_binary_path"
+                     value="{{ cfg.obscura_binary_path }}"
+                     class="form-input w-full font-mono"
+                     placeholder="obscura">
+              <p class="text-xs text-gray-400 mt-1">Container path or PATH-resolved executable name.</p>
+            </div>
+            <div>
+              <label for="id_obscura_wait_until" class="block text-sm font-semibold text-gray-700 mb-1">Wait until</label>
+              <select id="id_obscura_wait_until" name="obscura_wait_until" class="form-input w-full">
+                <option value="load" {% if cfg.obscura_wait_until == "load" %}selected{% endif %}>load</option>
+                <option value="domcontentloaded" {% if cfg.obscura_wait_until == "domcontentloaded" %}selected{% endif %}>domcontentloaded</option>
+                <option value="networkidle0" {% if cfg.obscura_wait_until == "networkidle0" %}selected{% endif %}>networkidle0</option>
+              </select>
+              <p class="text-xs text-gray-400 mt-1">`networkidle0` is the safest default for SPA boards.</p>
+            </div>
+            <div>
+              <label for="id_obscura_timeout_secs" class="block text-sm font-semibold text-gray-700 mb-1">Timeout (seconds)</label>
+              <input id="id_obscura_timeout_secs" type="number" name="obscura_timeout_secs"
+                     min="5" max="120" step="1"
+                     value="{{ cfg.obscura_timeout_secs }}"
+                     class="form-input w-full">
+              <p class="text-xs text-gray-400 mt-1">Hard per-page render timeout.</p>
+            </div>
+            <div class="flex items-end">
+              <label class="flex items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 cursor-pointer w-full">
+                <input type="checkbox" name="obscura_stealth" value="1"
+                       {% if cfg.obscura_stealth %}checked{% endif %}
+                       class="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500/30">
+                <div>
+                  <div class="text-sm font-semibold text-gray-800">Stealth mode</div>
+                  <p class="text-xs text-gray-500 mt-0.5">Keep off unless a specific board blocks the plain renderer.</p>
+                </div>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Scoped harvest countries -->
       <div class="card-padded">
         <div class="flex items-start justify-between gap-3 mb-3">

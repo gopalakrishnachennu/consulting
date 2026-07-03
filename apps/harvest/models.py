@@ -1388,7 +1388,7 @@ class RawJob(models.Model):
             "uncategorized",
             "unknown",
         }
-        filter_allows_pool = self.filter_decision in {None, "", "STRONG", "POSSIBLE"}
+        filter_allows_pool = (self.filter_decision or "").strip().upper() == "STRONG"
         if (
             not self.is_test_run
             and self.has_description
@@ -1622,6 +1622,11 @@ class PlatformEngineConfig(models.Model):
 
     One row per JobBoardPlatform. Edits take effect on next task run, no deploy needed.
     """
+    class HtmlRenderBackend(models.TextChoices):
+        REQUESTS = "requests", "Native requests"
+        OBSCURA_AUTO = "obscura_auto", "Obscura with native fallback"
+        OBSCURA_ONLY = "obscura_only", "Obscura only"
+
     platform = models.OneToOneField(
         JobBoardPlatform, on_delete=models.CASCADE, related_name='config',
     )
@@ -1640,6 +1645,15 @@ class PlatformEngineConfig(models.Model):
     inter_request_delay_ms = models.PositiveIntegerField(
         default=1500,
         help_text="Delay between consecutive requests (APIs ~1500, scrapers ~5000).",
+    )
+    html_render_backend = models.CharField(
+        max_length=24,
+        choices=HtmlRenderBackend.choices,
+        default=HtmlRenderBackend.REQUESTS,
+        help_text=(
+            "Renderer for generic HTML board fetching. "
+            "Use Obscura only for SPA-heavy boards that requests-based HTML misses."
+        ),
     )
     min_quality_score = models.FloatField(
         default=0.3,
@@ -1709,6 +1723,44 @@ class HarvestEngineConfig(models.Model):
             "(iCIMS, Taleo, Jobvite …). Keep ≥1000 to avoid hammering slow sites. "
             "Takes effect on next batch run."
         ),
+    )
+    obscura_enabled = models.BooleanField(
+        default=False,
+        verbose_name="Enable Obscura renderer",
+        help_text=(
+            "Allow the HTML fallback harvester to use the Obscura headless renderer "
+            "for SPA-heavy boards when a platform runtime rule opts into it."
+        ),
+    )
+    obscura_binary_path = models.CharField(
+        max_length=255,
+        default="obscura",
+        verbose_name="Obscura binary path",
+        help_text=(
+            "Executable path inside the worker container. "
+            "Default assumes the binary is on PATH."
+        ),
+    )
+    obscura_timeout_secs = models.PositiveSmallIntegerField(
+        default=20,
+        verbose_name="Obscura timeout (seconds)",
+        help_text="Hard timeout per rendered page fetch.",
+    )
+    obscura_wait_until = models.CharField(
+        max_length=24,
+        default="networkidle0",
+        choices=[
+            ("load", "load"),
+            ("domcontentloaded", "domcontentloaded"),
+            ("networkidle0", "networkidle0"),
+        ],
+        verbose_name="Obscura wait condition",
+        help_text="Browser lifecycle event to wait for before dumping rendered HTML.",
+    )
+    obscura_stealth = models.BooleanField(
+        default=False,
+        verbose_name="Obscura stealth mode",
+        help_text="Enable Obscura anti-detection mode for boards that block plain automation.",
     )
 
     # ── Freshness guard ───────────────────────────────────────────────────────
@@ -2183,12 +2235,21 @@ class HarvestEngineConfig(models.Model):
         return cleaned or ["US", "IN", "CA", "GB", "AU"]
 
     def save(self, *args, **kwargs):
+        if self.selective_filter_enabled:
+            # CHENN policy: selective intake means strict phrase-bank intake.
+            self.filter_audit_mode = False
+            self.pre_storage_filter_enabled = True
+            self.pre_storage_strict_strong_only = True
+            self.filter_full_crawl = True
         if self.pre_storage_strict_strong_only:
             self.pre_storage_filter_enabled = True
         self.worker_concurrency = max(1, min(int(self.worker_concurrency or 1), 2))
         self.task_rate_limit = max(1, min(int(self.task_rate_limit or 1), 3))
         self.api_stagger_ms = max(int(self.api_stagger_ms or 0), 1000)
         self.scraper_stagger_ms = max(int(self.scraper_stagger_ms or 0), 5000)
+        self.obscura_timeout_secs = max(5, min(int(self.obscura_timeout_secs or 0), 120))
+        if self.obscura_wait_until not in {"load", "domcontentloaded", "networkidle0"}:
+            self.obscura_wait_until = "networkidle0"
         self.full_fetch_cooldown_minutes = max(int(self.full_fetch_cooldown_minutes or 0), 360)
         self.backfill_jd_workers = 1
         self.detect_batch_size = max(10, min(int(self.detect_batch_size or 50), 50))
@@ -2264,9 +2325,9 @@ class VetGateConfig(models.Model):
         help_text="Include jobs whose country could not be determined. Turn off to sync only confirmed target-country jobs.",
     )
     allow_possible_filter = models.BooleanField(
-        default=True,
+        default=False,
         verbose_name="Allow POSSIBLE filter decision",
-        help_text="Include jobs where the pre-storage filter scored POSSIBLE (not just STRONG). Turn off for highest-confidence only.",
+        help_text="Deprecated. Vetting is locked to STRONG-only intake policy.",
     )
 
     # ── JD quality thresholds ─────────────────────────────────────────────────
@@ -2342,6 +2403,7 @@ class VetGateConfig(models.Model):
 
     def save(self, *args, **kwargs):
         # Clamp numeric fields to safe ranges
+        self.allow_possible_filter = False
         self.min_word_count = max(1, min(int(self.min_word_count or 80), 2000))
         self.min_char_count = max(1, min(int(self.min_char_count or 400), 10000))
         self.auto_lane_min_vet_priority = max(0.0, min(float(self.auto_lane_min_vet_priority or 0.75), 1.0))

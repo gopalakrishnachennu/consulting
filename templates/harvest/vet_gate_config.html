@@ -193,16 +193,9 @@
           </label>
         </div>
 
-        <!-- allow_possible_filter -->
-        <div class="flex items-start justify-between gap-4">
-          <div class="flex-1">
-            <label class="text-sm font-semibold text-gray-700">Allow POSSIBLE filter decision</label>
-            <p class="text-xs text-gray-500 mt-0.5">Include jobs where the pre-storage filter scored POSSIBLE (not just STRONG). Turn off for highest-confidence only.</p>
-          </div>
-          <label class="relative inline-flex items-center cursor-pointer shrink-0 mt-0.5">
-            <input type="checkbox" name="allow_possible_filter" id="id_allow_possible_filter" class="sr-only peer sync-field" {% if cfg.allow_possible_filter %}checked{% endif %}>
-            <div class="w-10 h-6 bg-gray-200 rounded-full peer peer-checked:bg-indigo-600 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-transform"></div>
-          </label>
+        <div class="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-3">
+          <p class="text-sm font-semibold text-indigo-900">POSSIBLE rows are blocked from vetting</p>
+          <p class="text-xs text-indigo-700 mt-1">Vetting now accepts only `STRONG` selective-filter matches. `POSSIBLE` and `UNKNOWN` rows must be fixed at intake, not passed downstream.</p>
         </div>
 
       </div>

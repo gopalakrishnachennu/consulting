@@ -40,6 +40,15 @@ class JobBoardPlatformForm(forms.ModelForm):
         label="Runtime config active",
         help_text="Disable only when this platform should ignore per-platform runtime rules.",
     )
+    config_html_render_backend = forms.ChoiceField(
+        choices=PlatformEngineConfig.HtmlRenderBackend.choices,
+        required=False,
+        label="HTML render backend",
+        help_text=(
+            "Used by the generic HTML fallback harvester. "
+            "Obscura is useful for JS-heavy career pages."
+        ),
+    )
 
     class Meta:
         model = JobBoardPlatform
@@ -49,7 +58,8 @@ class JobBoardPlatformForm(forms.ModelForm):
             "is_enabled", "title_in_list", "list_has_description", "unknown_jd_budget_per_run",
             "support_tier", "color_hex", "notes",
             "config_auto_backfill", "config_backfill_priority", "config_fetch_cadence_hours",
-            "config_inter_request_delay_ms", "config_min_quality_score", "config_is_active",
+            "config_inter_request_delay_ms", "config_html_render_backend",
+            "config_min_quality_score", "config_is_active",
         ]
         widgets = {
             "url_patterns": forms.Textarea(
@@ -93,6 +103,7 @@ class JobBoardPlatformForm(forms.ModelForm):
             "config_inter_request_delay_ms": 1500,
             "config_min_quality_score": 0.3,
             "config_is_active": True,
+            "config_html_render_backend": PlatformEngineConfig.HtmlRenderBackend.REQUESTS,
         }
         if cfg:
             runtime_defaults.update({
@@ -100,6 +111,7 @@ class JobBoardPlatformForm(forms.ModelForm):
                 "config_backfill_priority": cfg.backfill_priority,
                 "config_fetch_cadence_hours": cfg.fetch_cadence_hours,
                 "config_inter_request_delay_ms": cfg.inter_request_delay_ms,
+                "config_html_render_backend": cfg.html_render_backend,
                 "config_min_quality_score": cfg.min_quality_score,
                 "config_is_active": cfg.is_active,
             })
@@ -138,6 +150,10 @@ class JobBoardPlatformForm(forms.ModelForm):
             cfg.backfill_priority = self.cleaned_data["config_backfill_priority"]
             cfg.fetch_cadence_hours = self.cleaned_data["config_fetch_cadence_hours"]
             cfg.inter_request_delay_ms = self.cleaned_data["config_inter_request_delay_ms"]
+            cfg.html_render_backend = (
+                self.cleaned_data.get("config_html_render_backend")
+                or PlatformEngineConfig.HtmlRenderBackend.REQUESTS
+            )
             cfg.min_quality_score = self.cleaned_data["config_min_quality_score"]
             cfg.is_active = self.cleaned_data["config_is_active"]
             cfg.save(update_fields=[
@@ -145,6 +161,7 @@ class JobBoardPlatformForm(forms.ModelForm):
                 "backfill_priority",
                 "fetch_cadence_hours",
                 "inter_request_delay_ms",
+                "html_render_backend",
                 "min_quality_score",
                 "is_active",
                 "updated_at",

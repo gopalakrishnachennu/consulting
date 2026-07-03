@@ -175,6 +175,11 @@
                 <span class="text-gray-300">·</span>
                 <span>quality ≥ {{ platform.runtime_config.min_quality_score|floatformat:2 }}</span>
               </div>
+              <div>
+                <span class="font-semibold text-gray-700">HTML</span>
+                <span class="text-gray-300">·</span>
+                <span class="font-mono">{{ platform.runtime_config.get_html_render_backend_display }}</span>
+              </div>
               <div class="flex flex-wrap gap-1">
                 {% if platform.runtime_config.auto_backfill %}
                 <span class="badge-green text-[10px]">JD backfill P{{ platform.runtime_config.backfill_priority }}</span>

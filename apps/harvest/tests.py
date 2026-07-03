@@ -145,6 +145,7 @@ class PlatformSettingsViewTests(TestCase):
             backfill_priority=2,
             fetch_cadence_hours=12,
             inter_request_delay_ms=2400,
+            html_render_backend=PlatformEngineConfig.HtmlRenderBackend.REQUESTS,
             min_quality_score=0.42,
             is_active=True,
         )
@@ -157,6 +158,7 @@ class PlatformSettingsViewTests(TestCase):
         self.assertIn("JD in list", list_html)
         self.assertIn("2400ms delay", list_html)
         self.assertIn("12h cadence", list_html)
+        self.assertIn("Native requests", list_html)
 
         edit_response = self.client.get(reverse("harvest-platform-edit", args=[platform.pk]))
         self.assertEqual(edit_response.status_code, 200)
@@ -199,6 +201,7 @@ class PlatformSettingsViewTests(TestCase):
                 "config_backfill_priority": "3",
                 "config_fetch_cadence_hours": "18",
                 "config_inter_request_delay_ms": "3100",
+                "config_html_render_backend": "obscura_auto",
                 "config_min_quality_score": "0.58",
                 "config_is_active": "on",
             },
@@ -216,6 +219,7 @@ class PlatformSettingsViewTests(TestCase):
         self.assertEqual(cfg.backfill_priority, 3)
         self.assertEqual(cfg.fetch_cadence_hours, 18)
         self.assertEqual(cfg.inter_request_delay_ms, 3100)
+        self.assertEqual(cfg.html_render_backend, PlatformEngineConfig.HtmlRenderBackend.OBSCURA_AUTO)
         self.assertAlmostEqual(cfg.min_quality_score, 0.58)
         self.assertTrue(cfg.is_active)
 
@@ -283,6 +287,110 @@ class EngineConfigViewTests(TestCase):
         self.assertContains(response, "Primary routing controls now live in Vet Gate Config and Selective Filter Studio")
         self.assertContains(response, "Legacy quick edit")
 
+    def test_engine_config_saves_obscura_runtime_settings(self):
+        from harvest.models import HarvestEngineConfig
+
+        response = self.client.post(
+            reverse("harvest-engine-config"),
+            {
+                "obscura_enabled": "on",
+                "obscura_binary_path": "/usr/local/bin/obscura",
+                "obscura_timeout_secs": "35",
+                "obscura_wait_until": "domcontentloaded",
+                "obscura_stealth": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        cfg = HarvestEngineConfig.get()
+        self.assertTrue(cfg.obscura_enabled)
+        self.assertEqual(cfg.obscura_binary_path, "/usr/local/bin/obscura")
+        self.assertEqual(cfg.obscura_timeout_secs, 35)
+        self.assertEqual(cfg.obscura_wait_until, "domcontentloaded")
+        self.assertTrue(cfg.obscura_stealth)
+
+
+class HTMLScrapeHarvesterObscuraTests(TestCase):
+    def setUp(self):
+        from companies.models import Company
+        from harvest.models import CompanyPlatformLabel, JobBoardPlatform, PlatformEngineConfig
+
+        self.company = Company.objects.create(
+            name="Rendered Co",
+            career_site_url="https://careers.rendered.example/jobs",
+        )
+        self.platform = JobBoardPlatform.objects.create(
+            name="Rendered Platform",
+            slug="rendered-platform",
+            url_patterns=["rendered.example"],
+            api_type=JobBoardPlatform.ApiType.HTML_SCRAPE,
+        )
+        self.label = CompanyPlatformLabel.objects.create(
+            company=self.company,
+            platform=self.platform,
+            tenant_id="rendered",
+        )
+        self.company.platform_label = self.label
+        self.runtime_cfg = PlatformEngineConfig.objects.create(
+            platform=self.platform,
+            html_render_backend=PlatformEngineConfig.HtmlRenderBackend.OBSCURA_AUTO,
+            is_active=True,
+        )
+
+    @patch("harvest.harvesters.html_scraper.fetch_html_with_obscura")
+    def test_html_scraper_uses_obscura_when_platform_opted_in(self, obscura_fetch):
+        from harvest.harvesters.html_scraper import HTMLScrapeHarvester
+
+        obscura_fetch.return_value = '<a href="/jobs/123">Platform Engineer</a>'
+        harvester = HTMLScrapeHarvester()
+
+        with patch.object(harvester, "_respect_html_fetch_policy", return_value=True):
+            results = harvester.fetch_jobs(self.company, tenant_id="rendered")
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["title"], "Platform Engineer")
+        self.assertEqual(results[0]["raw_payload"]["render_backend"], "obscura")
+
+    @patch("harvest.harvesters.html_scraper.fetch_html_with_obscura")
+    def test_html_scraper_falls_back_to_requests_when_auto_backend_fails(self, obscura_fetch):
+        from harvest.harvesters.html_scraper import HTMLScrapeHarvester
+        from harvest.models import HarvestOpsRun
+
+        obscura_fetch.side_effect = RuntimeError("renderer failed")
+        harvester = HTMLScrapeHarvester()
+
+        with patch.object(harvester, "_respect_html_fetch_policy", return_value=True), \
+             patch.object(harvester, "_get_html_requests", return_value='<a href="/jobs/456">Site Reliability Engineer</a>'):
+            results = harvester.fetch_jobs(self.company, tenant_id="rendered")
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["raw_payload"]["render_backend"], "requests")
+        run = HarvestOpsRun.objects.filter(operation=HarvestOpsRun.Operation.CONFIG_FAILURE).order_by("-created_at").first()
+        self.assertIsNotNone(run)
+        self.assertEqual(run.status, HarvestOpsRun.Status.PARTIAL)
+        self.assertEqual(run.audit_payload["completion"]["component"], "obscura")
+        self.assertTrue(run.audit_payload["completion"]["fallback_used"])
+
+    @patch("harvest.harvesters.html_scraper.fetch_html_with_obscura")
+    def test_html_scraper_returns_nothing_when_obscura_only_backend_fails(self, obscura_fetch):
+        from harvest.harvesters.html_scraper import HTMLScrapeHarvester
+        from harvest.models import HarvestOpsRun, PlatformEngineConfig
+
+        self.runtime_cfg.html_render_backend = PlatformEngineConfig.HtmlRenderBackend.OBSCURA_ONLY
+        self.runtime_cfg.save(update_fields=["html_render_backend", "updated_at"])
+        obscura_fetch.side_effect = RuntimeError("renderer failed")
+        harvester = HTMLScrapeHarvester()
+
+        with patch.object(harvester, "_respect_html_fetch_policy", return_value=True), \
+             patch.object(harvester, "_get_html_requests", return_value='<a href="/jobs/456">Should Not Use</a>'):
+            results = harvester.fetch_jobs(self.company, tenant_id="rendered")
+
+        self.assertEqual(results, [])
+        run = HarvestOpsRun.objects.filter(operation=HarvestOpsRun.Operation.CONFIG_FAILURE).order_by("-created_at").first()
+        self.assertIsNotNone(run)
+        self.assertEqual(run.status, HarvestOpsRun.Status.FAILED)
+        self.assertFalse(run.audit_payload["completion"]["fallback_used"])
+
 
 class HarvestUrlHashDedupeTests(SimpleTestCase):
     def test_tracking_query_params_do_not_change_hash(self):
@@ -324,6 +432,7 @@ class HarvestEngineHardeningTests(TestCase):
             "title": overrides.pop("title", "Software Engineer"),
             "company_name": self.company.name,
             "content_hash": overrides.pop("content_hash", "content-same"),
+            "filter_decision": overrides.pop("filter_decision", "STRONG"),
             "sync_status": "PENDING",
             "is_active": True,
         }
@@ -765,7 +874,7 @@ class SelectiveHarvestEngineTests(TestCase):
 
         cfg = HarvestEngineConfig.get()
         cfg.selective_filter_enabled = True
-        cfg.filter_audit_mode = False
+        cfg.filter_audit_mode = True
         cfg.hard_negative_phrases = ["registered nurse"]
         cfg.save()
         self.platform.title_in_list = True
@@ -790,11 +899,7 @@ class SelectiveHarvestEngineTests(TestCase):
                 kwargs={"label_pk": self.label.pk, "fetch_all": True}
             ).get()
 
-        raw = RawJob.objects.get(platform_label=self.label, external_id="full-fetch")
-        self.assertEqual(raw.filter_decision, "NO_MATCH")
-        self.assertFalse(raw.is_cold)
-        self.assertFalse(raw.jd_fetch_skipped)
-        self.assertIn("Full fetch", raw.description)
+        self.assertFalse(RawJob.objects.filter(platform_label=self.label, external_id="full-fetch").exists())
         self.assertTrue(out["filter"]["fetch_all_bypass"])
 
     def test_title_not_in_list_platform_classifies_after_detail_without_marking_jd_skipped(self):
@@ -832,11 +937,7 @@ class SelectiveHarvestEngineTests(TestCase):
         with patch("harvest.harvesters.get_harvester", return_value=_FakeHarvester()):
             fetch_raw_jobs_for_company_task.apply(kwargs={"label_pk": self.label.pk}).get()
 
-        raw = RawJob.objects.get(platform_label=self.label, external_id="detail-first")
-        self.assertEqual(raw.filter_decision, "NO_MATCH")
-        self.assertTrue(raw.is_cold)
-        self.assertFalse(raw.jd_fetch_skipped)
-        self.assertIn("Detail was already fetched", raw.description)
+        self.assertFalse(RawJob.objects.filter(platform_label=self.label, external_id="detail-first").exists())
 
     def test_fetch_persists_ambiguous_title_gate_and_pending_jd_gate(self):
         from harvest.models import HarvestEngineConfig, RawJob
@@ -870,16 +971,14 @@ class SelectiveHarvestEngineTests(TestCase):
         with patch("harvest.harvesters.get_harvester", return_value=_FakeHarvester()), patch(
             "harvest.tasks.run_jd_gate_task.apply_async",
             return_value=SimpleNamespace(id="jd-gate-1"),
-        ), patch(
+        ) as mocked_jd_gate, patch(
             "harvest.tasks.backfill_descriptions_task.apply_async",
-        ):
+        ) as mocked_backfill:
             fetch_raw_jobs_for_company_task.apply(kwargs={"label_pk": self.label.pk}).get()
 
-        raw = RawJob.objects.get(platform_label=self.label, external_id="ambiguous-title")
-        self.assertEqual(raw.filter_decision, "POSSIBLE")
-        self.assertEqual(raw.title_gate_decision, "AMBIGUOUS")
-        self.assertEqual(raw.jd_gate_decision, "PENDING")
-        self.assertAlmostEqual(raw.title_gate_confidence, 0.60)
+        self.assertFalse(RawJob.objects.filter(platform_label=self.label, external_id="ambiguous-title").exists())
+        self.assertFalse(mocked_jd_gate.called)
+        self.assertFalse(mocked_backfill.called)
 
     def test_strict_strong_only_drops_possible_rows_before_rawjob_write(self):
         from harvest.models import HarvestEngineConfig, RawJob
@@ -958,8 +1057,40 @@ class SelectiveHarvestEngineTests(TestCase):
         ) as mocked_backfill:
             fetch_raw_jobs_for_company_task.apply(kwargs={"label_pk": self.label.pk}).get()
 
-        self.assertTrue(mocked_jd_gate.called)
+        self.assertFalse(mocked_jd_gate.called)
         self.assertFalse(mocked_backfill.called)
+
+    @patch("harvest.tasks.backfill_single_rawjob_description_task.delay", return_value=SimpleNamespace(id="recover-1"))
+    def test_skipped_title_recover_promotes_row_as_strong(self, mocked_delay):
+        from harvest.models import HarvestSkippedTitle
+
+        self.client.force_login(self.admin)
+        raw = self._raw_job(
+            url_hash="recover-strong",
+            original_url="https://selective.example/jobs/recover-strong",
+            title="Site Reliability Engineer",
+            filter_decision="NO_MATCH",
+            jd_fetch_skipped=True,
+            is_cold=True,
+        )
+        skipped = HarvestSkippedTitle.objects.create(
+            raw_job=raw,
+            company_name=self.company.name,
+            platform_slug=self.platform.slug,
+            job_title=raw.title,
+            filter_decision="NO_MATCH",
+            filter_reason="false negative sample",
+            is_sampled=True,
+        )
+
+        response = self.client.post(reverse("harvest-skipped-title-recover", args=[skipped.pk]))
+
+        self.assertEqual(response.status_code, 302)
+        raw.refresh_from_db()
+        self.assertEqual(raw.filter_decision, "STRONG")
+        self.assertFalse(raw.is_cold)
+        self.assertFalse(raw.jd_fetch_skipped)
+        self.assertTrue(mocked_delay.called)
 
     def test_backfill_queryset_holds_ambiguous_rows_until_jd_gate_confirms(self):
         from harvest.models import HarvestEngineConfig
@@ -2107,6 +2238,7 @@ class SyncRawJobsToPoolTests(TestCase):
             scope_status=RawJob.ScopeStatus.PRIORITY_TARGET,
             country_code="US",
             country_codes=["US"],
+            filter_decision="STRONG",
         )
         sync_harvested_to_pool_task.apply(kwargs={"max_jobs": 10}).get()
         raw.refresh_from_db()
@@ -2152,6 +2284,7 @@ class SyncRawJobsToPoolTests(TestCase):
             scope_status=RawJob.ScopeStatus.PRIORITY_TARGET,
             country_code="US",
             country_codes=["US"],
+            filter_decision="STRONG",
         )
 
         sync_harvested_to_pool_task.apply(kwargs={"max_jobs": 10}).get()
@@ -2181,6 +2314,7 @@ class SyncRawJobsToPoolTests(TestCase):
             scope_status=RawJob.ScopeStatus.PRIORITY_TARGET,
             country_code="US",
             country_codes=["US"],
+            filter_decision="STRONG",
         )
         Job.objects.create(
             title="Already here",
@@ -2216,6 +2350,7 @@ class SyncRawJobsToPoolTests(TestCase):
             scope_status=RawJob.ScopeStatus.PRIORITY_TARGET,
             country_code="US",
             country_codes=["US"],
+            filter_decision="STRONG",
         )
         Job.objects.create(
             title=raw.title,
@@ -2282,6 +2417,7 @@ class SyncRawJobsToPoolTests(TestCase):
             scope_status=RawJob.ScopeStatus.PRIORITY_TARGET,
             country_code="US",
             country_codes=["US"],
+            filter_decision="STRONG",
         )
 
         sync_harvested_to_pool_task.apply(kwargs={"max_jobs": 10}).get()
@@ -2332,6 +2468,7 @@ class SyncRawJobsToPoolTests(TestCase):
             is_priority=True,
             scope_status=RawJob.ScopeStatus.PRIORITY_TARGET,
             country_code="US",
+            filter_decision="STRONG",
         )
         RawJobClassificationSnapshot.objects.create(
             raw_job=raw,
@@ -2422,6 +2559,7 @@ class SyncRawJobsToPoolTests(TestCase):
             scope_status=RawJob.ScopeStatus.PRIORITY_TARGET,
             country_code="US",
             country_codes=["US"],
+            filter_decision="STRONG",
         )
 
         sync_harvested_to_pool_task.apply(kwargs={"max_jobs": 10}).get()
@@ -3434,6 +3572,7 @@ class RawJobPipelineUnificationTests(TestCase):
             word_count: int = 0,
             job_domain: str = "",
             is_test_run: bool = False,
+            filter_decision: str = "",
         ) -> RawJob:
             url = f"https://example.com/jobs/{suffix}"
             return RawJob.objects.create(
@@ -3452,6 +3591,7 @@ class RawJobPipelineUnificationTests(TestCase):
                 word_count=word_count,
                 job_domain=job_domain,
                 is_test_run=is_test_run,
+                filter_decision=filter_decision,
             )
 
         _mk("fetched", desc="")
@@ -3465,6 +3605,7 @@ class RawJobPipelineUnificationTests(TestCase):
             category_confidence=0.84,
             word_count=220,
             job_domain="devops-engineer",
+            filter_decision="STRONG",
         )
         _mk(
             "synced",
@@ -3474,6 +3615,7 @@ class RawJobPipelineUnificationTests(TestCase):
             category_confidence=0.90,
             word_count=260,
             job_domain="devops-engineer",
+            filter_decision="STRONG",
         )
 
     def test_funnel_counts_match_stage_filters(self):
@@ -3861,6 +4003,7 @@ class BoardAnalyticsServiceTests(TestCase):
             classification_confidence=0.93,
             category_confidence=0.89,
             resume_ready_score=0.87,
+            filter_decision="STRONG",
             sync_status=RawJob.SyncStatus.SYNCED,
             is_active=True,
         )
@@ -4966,6 +5109,7 @@ class VetGateConfigViewTests(TestCase):
         engine_cfg = HarvestEngineConfig.get()
 
         self.assertTrue(vet_cfg.allow_unknown_country)
+        self.assertFalse(vet_cfg.allow_possible_filter)
         self.assertEqual(vet_cfg.min_word_count, 120)
         self.assertEqual(vet_cfg.min_char_count, 700)
         self.assertEqual(vet_cfg.default_chunk_size, 750)
@@ -4994,6 +5138,33 @@ class VetGateConfigViewTests(TestCase):
         self.assertTrue(engine_cfg.backfill_jd_include_cold)
         self.assertTrue(engine_cfg.validate_links_include_synced)
         self.assertEqual(engine_cfg.validate_links_recent_hours, 240)
+
+    def test_engine_config_save_forces_strong_only_selective_policy(self):
+        from harvest.models import HarvestEngineConfig
+
+        cfg = HarvestEngineConfig.get()
+        cfg.selective_filter_enabled = True
+        cfg.filter_audit_mode = False
+        cfg.pre_storage_filter_enabled = False
+        cfg.pre_storage_strict_strong_only = False
+        cfg.filter_full_crawl = False
+        cfg.save()
+
+        cfg.refresh_from_db()
+        self.assertFalse(cfg.filter_audit_mode)
+        self.assertTrue(cfg.pre_storage_filter_enabled)
+        self.assertTrue(cfg.pre_storage_strict_strong_only)
+        self.assertTrue(cfg.filter_full_crawl)
+
+    def test_vet_gate_config_save_forces_possible_filter_off(self):
+        from harvest.models import VetGateConfig
+
+        cfg = VetGateConfig.get()
+        cfg.allow_possible_filter = True
+        cfg.save()
+
+        cfg.refresh_from_db()
+        self.assertFalse(cfg.allow_possible_filter)
 
     @patch("harvest.tasks.reclassify_stale_rawjobs_task.delay")
     def test_vet_gate_post_queues_historical_title_gate_backfill_when_missing_state_exists(self, mock_delay):

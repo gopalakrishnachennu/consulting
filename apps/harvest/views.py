@@ -4860,6 +4860,7 @@ class EngineConfigView(SuperuserRequiredMixin, View):
         import os
         from django.template.response import TemplateResponse
         cfg = HarvestEngineConfig.get()
+        from .obscura import obscura_binary_available
 
         # Detect server CPU count for the advisory note
         cpu_count = os.cpu_count() or 2
@@ -4901,6 +4902,7 @@ class EngineConfigView(SuperuserRequiredMixin, View):
             "country_options": country_options,
             "selected_countries": selected_countries,
             "geocoding_stats": geocoding_stats,
+            "obscura_binary_available": obscura_binary_available(cfg.obscura_binary_path),
             "automation_summary": _selective_automation_summary(),
             # Backwards-compat for existing template fragments:
             "provider_monthly_used": geocoding_stats["provider_monthly_used"],
@@ -4916,6 +4918,7 @@ class EngineConfigView(SuperuserRequiredMixin, View):
             "worker_concurrency", "task_rate_limit",
             "api_stagger_ms", "scraper_stagger_ms",
             "min_hours_since_fetch", "task_soft_time_limit_secs",
+            "obscura_timeout_secs",
             "resume_jd_min_words", "resume_jd_min_chars",
             "geocoding_monthly_limit", "geocoding_hourly_limit", "geocoding_warning_pct",
             "jd_backfill_lock_stale_minutes", "portal_health_failure_threshold",
@@ -4948,6 +4951,7 @@ class EngineConfigView(SuperuserRequiredMixin, View):
         bool_fields = [
             "auto_backfill_jd", "auto_enrich", "auto_sync_to_pool",
             "process_unknown_country_with_target_domain",
+            "obscura_enabled", "obscura_stealth",
             "geocoding_cache_enabled", "geocoding_provider_enabled",
             "legacy_hash_bridge_enabled",
             "rescope_on_target_country_change",
@@ -4956,6 +4960,15 @@ class EngineConfigView(SuperuserRequiredMixin, View):
         ]
         for field in bool_fields:
             setattr(cfg, field, field in request.POST)
+
+        obscura_binary_path = (request.POST.get("obscura_binary_path") or "").strip()
+        cfg.obscura_binary_path = obscura_binary_path or "obscura"
+
+        obscura_wait_until = (request.POST.get("obscura_wait_until") or "").strip().lower()
+        if obscura_wait_until in {"load", "domcontentloaded", "networkidle0"}:
+            cfg.obscura_wait_until = obscura_wait_until
+        elif obscura_wait_until:
+            errors.append("obscura_wait_until: unsupported wait condition")
 
         hard_negatives_raw = request.POST.get("hard_negative_phrases")
         if hard_negatives_raw is not None:
@@ -5513,8 +5526,8 @@ class SkippedTitleRecoverView(SuperuserRequiredMixin, View):
         RawJob.objects.filter(pk=raw_job.pk).update(
             is_cold=False,
             jd_fetch_skipped=False,
-            filter_decision="POSSIBLE",
-            filter_reason="Manually recovered from skipped-title audit",
+            filter_decision="STRONG",
+            filter_reason="Manually recovered from skipped-title audit as STRONG match",
             jd_backfill_locked_at=None,
         )
         from .tasks import backfill_single_rawjob_description_task
@@ -5522,7 +5535,7 @@ class SkippedTitleRecoverView(SuperuserRequiredMixin, View):
         task = backfill_single_rawjob_description_task.delay(raw_job.pk)
         messages.success(
             request,
-            f"RawJob #{raw_job.pk} marked POSSIBLE and queued for single JD fetch ({task.id}).",
+            f"RawJob #{raw_job.pk} marked STRONG and queued for single JD fetch ({task.id}).",
         )
         return redirect(request.META.get("HTTP_REFERER") or "harvest-skipped-titles")
 
@@ -6297,8 +6310,7 @@ def _vet_gate_preview_count(cfg) -> dict:
         .exclude(Q(is_cold=True) | Q(filter_decision="NO_MATCH") | Q(jd_fetch_skipped=True))
     )
 
-    if not cfg.allow_possible_filter:
-        qs = qs.filter(filter_decision="STRONG")
+    qs = qs.filter(filter_decision="STRONG")
 
     if cfg.blocked_domains and isinstance(cfg.blocked_domains, list):
         qs = qs.exclude(job_domain__in=cfg.blocked_domains)
@@ -6423,7 +6435,7 @@ class VetGateConfigView(SuperuserRequiredMixin, View):
         cfg = VetGateConfig.get()
 
         cfg.allow_unknown_country = _post_bool(request, "allow_unknown_country")
-        cfg.allow_possible_filter = _post_bool(request, "allow_possible_filter")
+        cfg.allow_possible_filter = False
         cfg.require_description = _post_bool(request, "require_description")
         cfg.min_word_count = _post_int(request, "min_word_count", 80, 1, 2000)
         cfg.min_char_count = _post_int(request, "min_char_count", 400, 1, 10000)
@@ -6530,7 +6542,7 @@ class VetGatePreviewView(SuperuserRequiredMixin, View):
         cfg = VetGateConfig.get()
         # Temporarily apply posted values without saving
         cfg.allow_unknown_country = request.POST.get("allow_unknown_country") == "on"
-        cfg.allow_possible_filter = request.POST.get("allow_possible_filter") == "on"
+        cfg.allow_possible_filter = False
         cfg.require_description = request.POST.get("require_description") == "on"
         try:
             cfg.min_word_count = max(1, int(request.POST.get("min_word_count") or 80))

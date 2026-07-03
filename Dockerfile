@@ -1,5 +1,7 @@
 FROM python:3.12-slim
 
+ARG OBSCURA_VERSION=v0.1.9
+
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
@@ -19,9 +21,23 @@ RUN apt-get update && apt-get install -y \
     libpangocairo-1.0-0 \
     libgdk-pixbuf-2.0-0 \
     libgdk-pixbuf-2.0-dev \
+    tar \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+      amd64) obscura_asset="obscura-x86_64-linux.tar.gz" ;; \
+      arm64) obscura_asset="obscura-aarch64-linux.tar.gz" ;; \
+      *) echo "Unsupported architecture for Obscura: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/h4ckf0r0day/obscura/releases/download/${OBSCURA_VERSION}/${obscura_asset}" -o /tmp/obscura.tar.gz; \
+    tar -xzf /tmp/obscura.tar.gz -C /tmp; \
+    install -m 0755 /tmp/obscura /usr/local/bin/obscura; \
+    if [ -f /tmp/obscura-worker ]; then install -m 0755 /tmp/obscura-worker /usr/local/bin/obscura-worker; fi; \
+    rm -f /tmp/obscura.tar.gz /tmp/obscura /tmp/obscura-worker
 
 # ── Layer 2: Python deps (cached until requirements.txt changes) ──────────────
 COPY requirements.txt /app/
