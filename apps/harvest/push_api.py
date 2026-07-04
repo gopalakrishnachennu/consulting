@@ -23,6 +23,7 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
 from .normalizer import compute_content_hash, compute_url_hash
+from .role_filter import COLD, NO_MATCH, POSSIBLE, UNKNOWN, classify_title, classify_title_v2
 from .services.enrichment_input import build_enrichment_input
 
 logger = logging.getLogger("harvest.push_api")
@@ -322,11 +323,27 @@ class PushJobsView(View):
                 _platform_cache[slug] = _resolve_platform(slug)
             return _platform_cache[slug]
 
-        from harvest.models import RawJob, RawJobPayloadSnapshot
+        from harvest.models import HarvestEngineConfig, HarvestFilterSnapshot, RawJob, RawJobPayloadSnapshot
         from .enrichments import clean_job_content, clean_job_text, extract_enrichments
         from .location_resolver import evaluate_rawjob_scope, extract_location_candidates
         from .payload_archive import capture_rawjob_source_payloads
         from .services.rawjob_upsert import upsert_raw_job_with_dedupe
+
+        engine_cfg = HarvestEngineConfig.get()
+        filter_enabled = bool(engine_cfg.selective_filter_enabled)
+        filter_audit_mode = bool(engine_cfg.filter_audit_mode)
+        pre_storage_live = bool(
+            engine_cfg.pre_storage_filter_enabled or engine_cfg.pre_storage_strict_strong_only
+        )
+        hard_yes_threshold = float(getattr(engine_cfg, "title_hard_yes_confidence", 0.80) or 0.80)
+        filter_snapshot_id = None
+        filter_categories = []
+        filter_hard_negatives = []
+        if filter_enabled:
+            snapshot = HarvestFilterSnapshot.create_snapshot(notes="created by push_api")
+            filter_snapshot_id = str(snapshot.snapshot_id)
+            filter_categories = snapshot.get_categories()
+            filter_hard_negatives = snapshot.get_hard_negatives()
 
         def capture_incoming_payload(raw_job, job_data):
             return capture_rawjob_source_payloads(
@@ -366,6 +383,68 @@ class PushJobsView(View):
                 platform_slug = job_data.get("platform_slug", "").strip()
                 platform = get_platform(platform_slug)
                 external_id = str(job_data.get("external_id", "")).strip()[:512]
+                title = str(job_data.get("title", "") or "")[:512]
+                department_for_gate = str(
+                    job_data.get("department_normalized", "")
+                    or job_data.get("department", "")
+                    or ""
+                )[:256]
+
+                filter_result = None
+                title_gate_result = None
+                filter_blocks_pool = False
+                should_skip_jd = False
+                if filter_enabled:
+                    filter_result = classify_title(
+                        title=title,
+                        department=department_for_gate,
+                        categories=filter_categories,
+                        hard_negatives=filter_hard_negatives,
+                        snapshot_id=filter_snapshot_id,
+                    )
+                    title_gate_result = classify_title_v2(
+                        title=title,
+                        department=department_for_gate,
+                        categories=filter_categories,
+                        hard_negatives=filter_hard_negatives,
+                        snapshot_id=filter_snapshot_id,
+                        hard_yes_threshold=hard_yes_threshold,
+                    )
+                    filter_blocks_pool = (
+                        not filter_audit_mode and filter_result.decision in {COLD, NO_MATCH}
+                    )
+                    should_skip_jd = filter_result.decision in {COLD, NO_MATCH}
+
+                    if not filter_audit_mode and pre_storage_live:
+                        strict_title = title.strip()
+                        is_hard_no = (
+                            filter_result.decision == NO_MATCH
+                            or (
+                                filter_result.decision == COLD
+                                and getattr(filter_result, "confidence", 1.0) < 0.2
+                            )
+                        )
+                        if strict_title and is_hard_no:
+                            skipped += 1
+                            logger.info(
+                                "push_api: pre-storage drop %r decision=%s",
+                                strict_title[:120],
+                                filter_result.decision,
+                            )
+                            continue
+                        if (
+                            engine_cfg.pre_storage_strict_strong_only
+                            and strict_title
+                            and filter_result.decision in {POSSIBLE, UNKNOWN}
+                        ):
+                            skipped += 1
+                            logger.info(
+                                "push_api: strict strong-only drop %r decision=%s",
+                                strict_title[:120],
+                                filter_result.decision,
+                            )
+                            continue
+
                 desc_meta = clean_job_content(job_data.get("description", ""), max_len=50000)
                 description = desc_meta["clean_text"]
                 requirements = clean_job_text(job_data.get("requirements", ""), max_len=20000)
@@ -402,7 +481,7 @@ class PushJobsView(View):
                     "external_id": external_id,
                     "original_url": original_url[:1024],
                     "apply_url": str(job_data.get("apply_url", ""))[:1024],
-                    "title": str(job_data.get("title", ""))[:512],
+                    "title": title,
                     "company_name": str(job_data.get("company_name", ""))[:256],
                     "department": str(job_data.get("department", ""))[:256],
                     "team": str(job_data.get("team", ""))[:256],
@@ -440,6 +519,28 @@ class PushJobsView(View):
                     "vendor_job_shift": str(job_data.get("vendor_job_shift", ""))[:128],
                     "vendor_location_block": str(job_data.get("vendor_location_block", ""))[:512],
                     "raw_payload": job_data.get("raw_payload") or {},
+                    "role_category": filter_result.category if filter_result is not None else None,
+                    "filter_decision": filter_result.decision if filter_result is not None else None,
+                    "filter_reason": filter_result.reason if filter_result is not None else None,
+                    "filter_snapshot_id": filter_result.snapshot_id if filter_result is not None else None,
+                    "title_gate_decision": (
+                        title_gate_result.gate_decision if title_gate_result is not None else None
+                    ),
+                    "title_gate_confidence": (
+                        title_gate_result.gate_confidence if title_gate_result is not None else None
+                    ),
+                    "jd_gate_decision": (
+                        "PENDING"
+                        if (
+                            filter_enabled
+                            and title_gate_result is not None
+                            and title_gate_result.gate_decision == "AMBIGUOUS"
+                            and getattr(engine_cfg, "jd_gate_enabled", False)
+                        )
+                        else None
+                    ),
+                    "is_cold": bool(filter_blocks_pool),
+                    "jd_fetch_skipped": bool(should_skip_jd),
                     "content_hash": compute_content_hash(
                         company.pk,
                         job_data.get("title") or "",
