@@ -721,7 +721,7 @@ class SelectiveHarvestEngineTests(TestCase):
         self.assertFalse(qs.filter(pk=skipped.pk).exists())
         self.assertTrue(qs.filter(pk=eligible.pk).exists())
 
-    def test_ready_stage_excludes_test_filtered_and_weak_domain_rows(self):
+    def test_ready_stage_depends_on_strong_filter_not_domain_fallbacks(self):
         from harvest.models import RawJob
         from harvest.services.rawjob_query import ready_stage_q
 
@@ -768,7 +768,7 @@ class SelectiveHarvestEngineTests(TestCase):
 
         qs = RawJob.objects.filter(ready_stage_q())
         self.assertTrue(qs.filter(pk=ready.pk).exists())
-        self.assertFalse(qs.filter(pk=weak_domain.pk).exists())
+        self.assertTrue(qs.filter(pk=weak_domain.pk).exists())
         self.assertFalse(qs.filter(pk=filtered.pk).exists())
         self.assertFalse(qs.filter(pk=test_row.pk).exists())
         self.assertEqual(filtered.pipeline_stage_label(), "FILTERED OUT")
@@ -5151,14 +5151,12 @@ class VetGateConfigViewTests(TestCase):
             reverse("harvest-vet-gate-config"),
             {
                 "allow_unknown_country": "on",
-                "allow_possible_filter": "on",
                 "require_description": "on",
                 "min_word_count": "120",
                 "min_char_count": "700",
                 "auto_lane_min_vet_priority": "0.81",
                 "auto_lane_min_data_quality": "0.76",
                 "auto_lane_min_trust": "0.74",
-                "blocked_domains_json": '["sales", "finance-accounting"]',
                 "default_chunk_size": "750",
                 "auto_sync_after_harvest": "on",
                 "auto_enrich": "on",
@@ -5204,11 +5202,9 @@ class VetGateConfigViewTests(TestCase):
         engine_cfg = HarvestEngineConfig.get()
 
         self.assertTrue(vet_cfg.allow_unknown_country)
-        self.assertFalse(vet_cfg.allow_possible_filter)
         self.assertEqual(vet_cfg.min_word_count, 120)
         self.assertEqual(vet_cfg.min_char_count, 700)
         self.assertEqual(vet_cfg.default_chunk_size, 750)
-        self.assertEqual(vet_cfg.blocked_domains, ["sales", "finance-accounting"])
         self.assertAlmostEqual(vet_cfg.auto_lane_min_vet_priority, 0.81)
 
         self.assertTrue(engine_cfg.selective_filter_enabled)
@@ -5251,16 +5247,6 @@ class VetGateConfigViewTests(TestCase):
         self.assertTrue(cfg.pre_storage_strict_strong_only)
         self.assertTrue(cfg.filter_full_crawl)
 
-    def test_vet_gate_config_save_forces_possible_filter_off(self):
-        from harvest.models import VetGateConfig
-
-        cfg = VetGateConfig.get()
-        cfg.allow_possible_filter = True
-        cfg.save()
-
-        cfg.refresh_from_db()
-        self.assertFalse(cfg.allow_possible_filter)
-
     @patch("harvest.tasks.reclassify_stale_rawjobs_task.delay")
     def test_vet_gate_post_queues_historical_title_gate_backfill_when_missing_state_exists(self, mock_delay):
         from companies.models import Company
@@ -5291,7 +5277,6 @@ class VetGateConfigViewTests(TestCase):
             reverse("harvest-vet-gate-config"),
             {
                 "allow_unknown_country": "on",
-                "allow_possible_filter": "on",
                 "min_word_count": "80",
                 "min_char_count": "400",
                 "auto_lane_min_vet_priority": "0.75",

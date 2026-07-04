@@ -1380,14 +1380,6 @@ class RawJob(models.Model):
             return "DUPLICATE"
         if self.is_cold or self.jd_fetch_skipped or self.filter_decision in {"COLD", "NO_MATCH"}:
             return "FILTERED OUT"
-        weak_domains = {
-            "",
-            "general-business",
-            "marketing-specialist",
-            "other-generalist",
-            "uncategorized",
-            "unknown",
-        }
         filter_allows_pool = (self.filter_decision or "").strip().upper() == "STRONG"
         if (
             not self.is_test_run
@@ -1396,7 +1388,6 @@ class RawJob(models.Model):
             and effective_conf >= get_ready_stage_min_confidence()
             and self.is_active
             and filter_allows_pool
-            and (self.job_domain or "").strip().lower() not in weak_domains
         ):
             return "READY"
         if effective_conf > 0:
@@ -2324,12 +2315,6 @@ class VetGateConfig(models.Model):
         verbose_name="Allow REVIEW_UNKNOWN_COUNTRY",
         help_text="Include jobs whose country could not be determined. Turn off to sync only confirmed target-country jobs.",
     )
-    allow_possible_filter = models.BooleanField(
-        default=False,
-        verbose_name="Allow POSSIBLE filter decision",
-        help_text="Deprecated. Vetting is locked to STRONG-only intake policy.",
-    )
-
     # ── JD quality thresholds ─────────────────────────────────────────────────
     require_description = models.BooleanField(
         default=True,
@@ -2364,18 +2349,6 @@ class VetGateConfig(models.Model):
         help_text="Trust score threshold for AUTO lane. 0.0–1.0.",
     )
 
-    # ── Domain blocklist ───────────────────────────────────────────────────────
-    blocked_domains = models.JSONField(
-        default=list,
-        blank=True,
-        verbose_name="Blocked job domains",
-        help_text=(
-            "JSON list of job_domain slugs to exclude from sync. "
-            "Example: [\"hr-recruiter\", \"sales\", \"finance-accounting\"]. "
-            "Jobs whose job_domain matches any entry are blocked regardless of other scores."
-        ),
-    )
-
     # ── Sync behaviour ─────────────────────────────────────────────────────────
     default_chunk_size = models.PositiveSmallIntegerField(
         default=500,
@@ -2403,15 +2376,12 @@ class VetGateConfig(models.Model):
 
     def save(self, *args, **kwargs):
         # Clamp numeric fields to safe ranges
-        self.allow_possible_filter = False
         self.min_word_count = max(1, min(int(self.min_word_count or 80), 2000))
         self.min_char_count = max(1, min(int(self.min_char_count or 400), 10000))
         self.auto_lane_min_vet_priority = max(0.0, min(float(self.auto_lane_min_vet_priority or 0.75), 1.0))
         self.auto_lane_min_data_quality = max(0.0, min(float(self.auto_lane_min_data_quality or 0.72), 1.0))
         self.auto_lane_min_trust = max(0.0, min(float(self.auto_lane_min_trust or 0.70), 1.0))
         self.default_chunk_size = max(50, min(int(self.default_chunk_size or 500), 2000))
-        if not isinstance(self.blocked_domains, list):
-            self.blocked_domains = []
         self.pk = 1  # enforce singleton
         super().save(*args, **kwargs)
 

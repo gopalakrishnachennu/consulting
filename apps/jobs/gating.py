@@ -22,7 +22,6 @@ REASON_JD_TOO_WEAK = "JD_TOO_WEAK"
 REASON_BLACKLISTED_COMPANY = "BLACKLISTED_COMPANY"
 REASON_COLD_SCOPE = "COLD_SCOPE"        # non-target country or no location
 REASON_UNSCOPED = "UNSCOPED"            # location never evaluated
-REASON_DOMAIN_BLOCKED = "DOMAIN_BLOCKED"  # job_domain is in the blocklist
 REASON_PARSED_JD_MISSING = "PARSED_JD_MISSING"
 REASON_ROUTING_NOT_READY = "ROUTING_NOT_READY"
 REASON_OK = "ELIGIBLE"
@@ -171,32 +170,6 @@ def evaluate_raw_job_gate(raw_job, cfg=None) -> GateResult:
         passable_scope.add("REVIEW_UNKNOWN_COUNTRY")
 
     effective = effective_raw_job_classification(raw_job)
-
-    # ── Domain blocklist pre-check (fast-path, before any expensive work) ─────
-    blocked_domains = cfg.blocked_domains if isinstance(cfg.blocked_domains, list) else []
-    if blocked_domains:
-        job_domain = (effective.get("job_domain") or "").strip().lower()
-        if job_domain and job_domain in [d.strip().lower() for d in blocked_domains]:
-            return GateResult(
-                passed=False,
-                reason_code=REASON_DOMAIN_BLOCKED,
-                reasons=[REASON_DOMAIN_BLOCKED],
-                checks={
-                    "scope_ok": True,
-                    "active_posting": False,
-                    "valid_source_url": False,
-                    "tenant_platform_match": False,
-                    "dedupe_passed": False,
-                    "clean_jd_present": False,
-                    "company_resolved": False,
-                },
-                data_quality_score=0.0,
-                trust_score=0.0,
-                candidate_fit_score=0.0,
-                vet_priority_score=0.0,
-                lane="BLOCKED",
-                status="BLOCKED",
-            )
 
     # ── Scope pre-check (fast-path) ───────────────────────────────────────────
     # COLD and UNSCOPED jobs are blocked before any expensive checks.

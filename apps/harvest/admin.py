@@ -154,7 +154,6 @@ class VetGateConfigAdmin(admin.ModelAdmin):
     list_display = [
         "id",
         "allow_unknown_country",
-        "allow_possible_filter",
         "require_description",
         "auto_sync_after_harvest",
         "default_chunk_size",

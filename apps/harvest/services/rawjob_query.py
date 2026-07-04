@@ -16,14 +16,6 @@ from harvest.runtime_config import get_ready_stage_min_confidence
 DUPLICATE_SKIP_REASONS = ("DUPLICATE_RISK", "DUPLICATE_EXISTING")
 POOL_ALLOWED_FILTER_DECISIONS = ("STRONG",)
 FILTERED_OUT_DECISIONS = ("COLD", "NO_MATCH")
-WEAK_OR_NON_TARGET_DOMAINS = (
-    "",
-    "general-business",
-    "marketing-specialist",
-    "other-generalist",
-    "uncategorized",
-    "unknown",
-)
 
 # Shared filter keys used by both Raw Jobs views and stats/funnel drill-downs.
 FILTER_STATE_KEYS = (
@@ -109,7 +101,6 @@ def ready_stage_q(min_conf: float | None = None) -> Q:
         & Q(has_description=True, is_active=True, is_cold=False, jd_fetch_skipped=False)
         & effective_classification_q(min_conf=min_conf)
         & Q(filter_decision__in=POOL_ALLOWED_FILTER_DECISIONS)
-        & ~Q(job_domain__in=WEAK_OR_NON_TARGET_DOMAINS)
     )
 
 

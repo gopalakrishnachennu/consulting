@@ -6312,9 +6312,6 @@ def _vet_gate_preview_count(cfg) -> dict:
 
     qs = qs.filter(filter_decision="STRONG")
 
-    if cfg.blocked_domains and isinstance(cfg.blocked_domains, list):
-        qs = qs.exclude(job_domain__in=cfg.blocked_domains)
-
     if cfg.require_description:
         qs = qs.filter(has_description=True, word_count__gte=cfg.min_word_count)
         qs = qs.annotate(
@@ -6435,23 +6432,12 @@ class VetGateConfigView(SuperuserRequiredMixin, View):
         cfg = VetGateConfig.get()
 
         cfg.allow_unknown_country = _post_bool(request, "allow_unknown_country")
-        cfg.allow_possible_filter = False
         cfg.require_description = _post_bool(request, "require_description")
         cfg.min_word_count = _post_int(request, "min_word_count", 80, 1, 2000)
         cfg.min_char_count = _post_int(request, "min_char_count", 400, 1, 10000)
         cfg.auto_lane_min_vet_priority = _post_float(request, "auto_lane_min_vet_priority", 0.75, 0.0, 1.0)
         cfg.auto_lane_min_data_quality = _post_float(request, "auto_lane_min_data_quality", 0.72, 0.0, 1.0)
         cfg.auto_lane_min_trust = _post_float(request, "auto_lane_min_trust", 0.70, 0.0, 1.0)
-        raw_domains = request.POST.get("blocked_domains_json") or "[]"
-        try:
-            parsed = json.loads(raw_domains)
-            cfg.blocked_domains = [
-                str(slug).strip().lower()
-                for slug in parsed
-                if str(slug).strip()
-            ] if isinstance(parsed, list) else []
-        except Exception:
-            cfg.blocked_domains = []
         cfg.default_chunk_size = _post_int(request, "default_chunk_size", 500, 50, 2000)
         cfg.auto_sync_after_harvest = _post_bool(request, "auto_sync_after_harvest")
         cfg.save()
@@ -6542,7 +6528,6 @@ class VetGatePreviewView(SuperuserRequiredMixin, View):
         cfg = VetGateConfig.get()
         # Temporarily apply posted values without saving
         cfg.allow_unknown_country = request.POST.get("allow_unknown_country") == "on"
-        cfg.allow_possible_filter = False
         cfg.require_description = request.POST.get("require_description") == "on"
         try:
             cfg.min_word_count = max(1, int(request.POST.get("min_word_count") or 80))
@@ -6552,12 +6537,6 @@ class VetGatePreviewView(SuperuserRequiredMixin, View):
             cfg.min_char_count = max(1, int(request.POST.get("min_char_count") or 400))
         except (ValueError, TypeError):
             pass
-        raw_domains = request.POST.get("blocked_domains_json") or "[]"
-        try:
-            parsed = json.loads(raw_domains)
-            cfg.blocked_domains = parsed if isinstance(parsed, list) else []
-        except Exception:
-            cfg.blocked_domains = []
 
         preview = _vet_gate_preview_count(cfg)
         return JsonResponse(preview)

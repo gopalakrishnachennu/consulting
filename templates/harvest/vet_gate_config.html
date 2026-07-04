@@ -328,45 +328,7 @@
       </div>
     </details>
 
-    <!-- ── 4. Domain Blocklist ─────────────────────────────────────────────── -->
-    <details class="card-padded group">
-      <summary class="flex items-center justify-between cursor-pointer list-none">
-        <div class="flex items-center gap-3">
-          <div class="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center shrink-0">
-            <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
-            </svg>
-          </div>
-          <div>
-            <h3 class="text-sm font-bold text-gray-800">Domain Blocklist</h3>
-            <p class="text-xs text-gray-500 mt-0.5">Job domain slugs that are always excluded from sync, regardless of scores.</p>
-          </div>
-        </div>
-        <svg class="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-        </svg>
-      </summary>
-      <div class="mt-4 border-t border-gray-100 pt-4">
-        <p class="text-xs text-gray-500 mb-3">Type a job domain slug and press <kbd class="px-1.5 py-0.5 text-[10px] font-mono bg-gray-100 border border-gray-300 rounded">Enter</kbd> to add. Click × to remove.</p>
-
-        <!-- Chip display area -->
-        <div id="chip-container" class="flex flex-wrap gap-2 min-h-10 p-2 bg-gray-50 border border-gray-200 rounded-lg mb-2">
-          <!-- chips injected by JS -->
-        </div>
-
-        <!-- Type-ahead input -->
-        <input type="text" id="domain-input" placeholder="e.g. hr-recruiter, sales, finance-accounting"
-               class="form-input w-full text-sm"
-               autocomplete="off">
-
-        <!-- Hidden JSON field sent with the form -->
-        <input type="hidden" name="blocked_domains_json" id="blocked_domains_json" value="{{ cfg.blocked_domains|default:'[]' }}">
-
-        <p class="text-xs text-gray-400 mt-2">Common noise domains: <button type="button" class="text-indigo-600 hover:underline text-xs" onclick="addDomain('hr-recruiter')">hr-recruiter</button>, <button type="button" class="text-indigo-600 hover:underline text-xs" onclick="addDomain('sales')">sales</button>, <button type="button" class="text-indigo-600 hover:underline text-xs" onclick="addDomain('finance-accounting')">finance-accounting</button>, <button type="button" class="text-indigo-600 hover:underline text-xs" onclick="addDomain('marketing')">marketing</button>, <button type="button" class="text-indigo-600 hover:underline text-xs" onclick="addDomain('legal')">legal</button></p>
-      </div>
-    </details>
-
-    <!-- ── 5. Sync Behaviour ───────────────────────────────────────────────── -->
+    <!-- ── 4. Sync Behaviour ───────────────────────────────────────────────── -->
     <details class="card-padded group">
       <summary class="flex items-center justify-between cursor-pointer list-none">
         <div class="flex items-center gap-3">
@@ -837,54 +799,6 @@ document.querySelectorAll('input[type="range"]').forEach(function(slider) {
   if (display) display.textContent = parseFloat(slider.value).toFixed(2);
 });
 
-// ── Chip input for domain blocklist ──────────────────────────────────────────
-var domains = [];
-try {
-  domains = JSON.parse(document.getElementById('blocked_domains_json').value || '[]');
-  if (!Array.isArray(domains)) domains = [];
-} catch(e) { domains = []; }
-
-function renderChips() {
-  var container = document.getElementById('chip-container');
-  container.innerHTML = '';
-  if (domains.length === 0) {
-    container.innerHTML = '<span class="text-xs text-gray-400 italic self-center">No domains blocked</span>';
-    return;
-  }
-  domains.forEach(function(d, i) {
-    var chip = document.createElement('span');
-    chip.className = 'inline-flex items-center gap-1 px-2.5 py-1 bg-red-100 text-red-800 text-xs font-medium rounded-full';
-    chip.innerHTML = d + ' <button type="button" onclick="removeDomain(' + i + ')" class="text-red-500 hover:text-red-700 font-bold leading-none">&times;</button>';
-    container.appendChild(chip);
-  });
-  document.getElementById('blocked_domains_json').value = JSON.stringify(domains);
-  triggerPreview();
-}
-
-function addDomain(slug) {
-  slug = (slug || '').trim().toLowerCase();
-  if (!slug) return;
-  if (!domains.includes(slug)) {
-    domains.push(slug);
-    renderChips();
-  }
-}
-
-function removeDomain(index) {
-  domains.splice(index, 1);
-  renderChips();
-}
-
-document.getElementById('domain-input').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    addDomain(this.value);
-    this.value = '';
-  }
-});
-
-renderChips();
-
 // ── Target country editor ───────────────────────────────────────────────────
 var allCountryCodes = "{{ all_country_codes_csv|escapejs }}";
 var defaultCountryCodes = "{{ target_country_default_codes|escapejs }}";
@@ -935,8 +849,6 @@ function fetchPreview() {
   document.getElementById('preview-count').classList.add('opacity-40');
 
   var formData = new FormData(document.getElementById('vet-gate-form'));
-  // Ensure the current domains JSON is included
-  formData.set('blocked_domains_json', JSON.stringify(domains));
 
   fetch(previewUrl, {
     method: 'POST',

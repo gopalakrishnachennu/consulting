@@ -3444,9 +3444,6 @@ def sync_harvested_to_pool_task(
 
     base_qs = base_qs.filter(filter_decision="STRONG")
 
-    if gate_cfg.blocked_domains and isinstance(gate_cfg.blocked_domains, list):
-        base_qs = base_qs.exclude(job_domain__in=gate_cfg.blocked_domains)
-
     if qualified_only:
         min_words = max(1, int(gate_cfg.min_word_count or 80))
         min_chars = max(1, int(gate_cfg.min_char_count or 400))
