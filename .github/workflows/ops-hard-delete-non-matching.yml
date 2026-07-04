@@ -1,9 +1,8 @@
 name: Ops - Hard-Delete Non-Matching (free space)
 
-# Physically DELETE non-matching raw + pool rows (after they've been classified
-# + soft-removed by run-purge-non-matching). Frees disk. Pool deletes are
-# work-protected (jobs with submissions/resumes/saves are kept).
-# Dry-run by default; execute requires confirm = DELETE.
+# Physically DELETE non-STRONG raw + vetting rows to reclaim space.
+# Runs inside the live web container so ops cleanup does not rebuild the app on
+# the VPS. Job-side work protection still comes from purge_non_matching_jobs.
 
 on:
   workflow_dispatch:
@@ -31,12 +30,11 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 30m
-          script_stop: true
           script: |
             set -e
             cd /opt/consulting
-            RUN="docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --no-deps web python manage.py"
-            $RUN shell -c "from harvest.models import RawJob; from jobs.models import Job; from django.db.models import Q; NM=['COLD','NO_MATCH','UNKNOWN']; hw=Q(submissions__isnull=False)|Q(resume_drafts__isnull=False)|Q(cover_letters__isnull=False)|Q(saved_by__isnull=False); pool=Job.objects.filter(source_raw_job__filter_decision__in=NM).exclude(id__in=Job.objects.filter(hw).values('id')); raw=RawJob.objects.filter(filter_decision__in=NM).exclude(sync_status='SYNCED'); print('WOULD DELETE -> pool:', pool.count(), '| raw:', raw.count(), '| protected pool kept:', Job.objects.filter(source_raw_job__filter_decision__in=NM).filter(hw).distinct().count()); print(chr(10).join('RAW '+d+' ('+str(RawJob.objects.filter(filter_decision=d).exclude(sync_status='SYNCED').count())+'): '+repr(list(RawJob.objects.filter(filter_decision=d).exclude(sync_status='SYNCED').values_list('title',flat=True)[:8])) for d in NM)); print('POOL sample: '+repr(list(pool.values_list('title',flat=True)[:12])))"
+            RUN="docker compose -f docker-compose.prod.yml --env-file .env.production exec -T web python manage.py"
+            $RUN purge_non_strong_pipeline --classify-unclassified --hard-delete
 
       - name: Hard delete (execute)
         if: ${{ github.event.inputs.execute == 'true' }}
@@ -46,13 +44,12 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 30m
-          script_stop: true
           script: |
             set -e
             if [ "${{ github.event.inputs.confirm }}" != "DELETE" ]; then
               echo "Refusing: confirm must be exactly DELETE"; exit 1
             fi
             cd /opt/consulting
-            RUN="docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --no-deps web python manage.py"
-            $RUN shell -c "from harvest.models import RawJob; from jobs.models import Job; from django.db.models import Q; NM=['COLD','NO_MATCH','UNKNOWN']; hw=Q(submissions__isnull=False)|Q(resume_drafts__isnull=False)|Q(cover_letters__isnull=False)|Q(saved_by__isnull=False); pool=Job.objects.filter(source_raw_job__filter_decision__in=NM).exclude(id__in=Job.objects.filter(hw).values('id')); raw=RawJob.objects.filter(filter_decision__in=NM).exclude(sync_status='SYNCED'); p=pool.count(); r=raw.count(); pool.delete(); raw.delete(); print('DELETED -> pool:', p, '| raw:', r)"
+            RUN="docker compose -f docker-compose.prod.yml --env-file .env.production exec -T web python manage.py"
+            $RUN purge_non_strong_pipeline --apply --classify-unclassified --hard-delete
             echo "Rows deleted. Postgres autovacuum will reclaim the disk space."

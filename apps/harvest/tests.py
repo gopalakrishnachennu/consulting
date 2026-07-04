@@ -868,6 +868,101 @@ class SelectiveHarvestEngineTests(TestCase):
         self.assertEqual(raw.filter_decision, "NO_MATCH")
         self.assertIsNotNone(raw.filter_snapshot_id)
 
+    @patch("harvest.management.commands.purge_non_strong_pipeline.call_command")
+    def test_purge_non_strong_pipeline_dry_run_classifies_and_keeps_strict_flag_unchanged(self, mock_call):
+        from harvest.models import HarvestEngineConfig
+
+        cfg = HarvestEngineConfig.get()
+        cfg.pre_storage_strict_strong_only = False
+        cfg.save(update_fields=["pre_storage_strict_strong_only"])
+
+        call_command(
+            "purge_non_strong_pipeline",
+            "--classify-unclassified",
+            "--enable-strict-flag",
+            "--classify-limit",
+            "25",
+            "--classify-batch-size",
+            "400",
+            "--raw-limit",
+            "50",
+            "--job-limit",
+            "10",
+        )
+
+        mock_call.assert_any_call(
+            "classify_existing_rawjobs",
+            dry_run=True,
+            only_unclassified=True,
+            limit=25,
+            batch_size=400,
+        )
+        mock_call.assert_any_call(
+            "purge_non_matching_rawjobs",
+            strict=True,
+            apply=False,
+            hard_delete=False,
+            limit=50,
+            batch_size=2000,
+        )
+        mock_call.assert_any_call(
+            "purge_non_matching_jobs",
+            strict=True,
+            apply=False,
+            hard_delete=False,
+            keep_raw=False,
+            limit=10,
+            batch_size=1000,
+        )
+
+        cfg.refresh_from_db()
+        self.assertFalse(cfg.pre_storage_strict_strong_only)
+
+    @patch("harvest.management.commands.purge_non_strong_pipeline.call_command")
+    def test_purge_non_strong_pipeline_apply_enables_strict_flag(self, mock_call):
+        from harvest.models import HarvestEngineConfig
+
+        cfg = HarvestEngineConfig.get()
+        cfg.pre_storage_strict_strong_only = False
+        cfg.save(update_fields=["pre_storage_strict_strong_only"])
+
+        call_command(
+            "purge_non_strong_pipeline",
+            "--apply",
+            "--classify-unclassified",
+            "--enable-strict-flag",
+            "--hard-delete",
+            "--keep-raw",
+        )
+
+        mock_call.assert_any_call(
+            "classify_existing_rawjobs",
+            dry_run=False,
+            only_unclassified=True,
+            limit=0,
+            batch_size=1000,
+        )
+        mock_call.assert_any_call(
+            "purge_non_matching_rawjobs",
+            strict=True,
+            apply=True,
+            hard_delete=True,
+            limit=0,
+            batch_size=2000,
+        )
+        mock_call.assert_any_call(
+            "purge_non_matching_jobs",
+            strict=True,
+            apply=True,
+            hard_delete=True,
+            keep_raw=True,
+            limit=0,
+            batch_size=1000,
+        )
+
+        cfg.refresh_from_db()
+        self.assertTrue(cfg.pre_storage_strict_strong_only)
+
     def test_fetch_all_bypasses_selective_jd_skip(self):
         from harvest.models import HarvestEngineConfig, RawJob
         from harvest.tasks import fetch_raw_jobs_for_company_task

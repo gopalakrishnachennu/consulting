@@ -1,12 +1,8 @@
-name: Ops - Purge Non-Matching Jobs (selective filter)
+name: Ops - Enforce Strong-Only Pipeline Cleanup
 
-# Keeps only selective-filter category matches in raw + pool/vetting.
-# Coordinated, safe sequence:
-#   1. classify the un-gated backlog
-#   2. soft-archive off-category pool jobs (work-protected) + un-sync their raws
-#   3. soft-deactivate off-category raw jobs
-#   4. (optional) turn on pre_storage_strict_strong_only for future harvests
-# Dry-run by default. Execute requires confirm = PURGE.
+# Enforces CHENN's STRONG-only intake policy across raw + vetting using the
+# consolidated management command. Runs directly inside the live web container
+# so ops cleanup does not rebuild the application on the VPS.
 
 on:
   workflow_dispatch:
@@ -46,18 +42,20 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 60m
-          script_stop: true
           script: |
             set -e
             cd /opt/consulting
             git pull --ff-only origin main
-            STRICT=""
-            [ "${{ github.event.inputs.strict }}" = "true" ] && STRICT="--strict"
-            RUN="docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --no-deps web python manage.py"
-            echo "==== pool / vetting jobs (dry-run) ===="
-            $RUN purge_non_matching_jobs $STRICT
-            echo "==== raw jobs (dry-run) ===="
-            $RUN purge_non_matching_rawjobs $STRICT
+            if [ "${{ github.event.inputs.strict }}" != "true" ]; then
+              echo "Refusing: this workflow is now STRONG-only by design."
+              exit 1
+            fi
+            RUN="docker compose -f docker-compose.prod.yml --env-file .env.production exec -T web python manage.py"
+            CMD="purge_non_strong_pipeline --classify-unclassified"
+            if [ "${{ github.event.inputs.enable_strict_flag }}" = "true" ]; then
+              CMD="$CMD --enable-strict-flag"
+            fi
+            $RUN $CMD
 
       - name: Execute — APPLY changes
         if: ${{ github.event.inputs.execute == 'true' }}
@@ -67,7 +65,6 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 60m
-          script_stop: true
           script: |
             set -e
             if [ "${{ github.event.inputs.confirm }}" != "PURGE" ]; then
@@ -75,17 +72,13 @@ jobs:
             fi
             cd /opt/consulting
             git pull --ff-only origin main
-            STRICT=""
-            [ "${{ github.event.inputs.strict }}" = "true" ] && STRICT="--strict"
-            RUN="docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --no-deps web python manage.py"
-            echo "==== 1) classify the un-gated backlog ===="
-            $RUN classify_existing_rawjobs --only-unclassified
-            echo "==== 2) soft-archive off-category pool jobs (work-protected) ===="
-            $RUN purge_non_matching_jobs $STRICT --apply
-            echo "==== 3) soft-deactivate off-category raw jobs ===="
-            $RUN purge_non_matching_rawjobs $STRICT --apply
-            if [ "${{ github.event.inputs.enable_strict_flag }}" = "true" ]; then
-              echo "==== 4) turn ON pre_storage_strict_strong_only ===="
-              $RUN shell -c "from harvest.models import HarvestEngineConfig as H; c=H.get(); c.pre_storage_strict_strong_only=True; c.save(); print('strict_strong_only =', c.pre_storage_strict_strong_only)"
+            if [ "${{ github.event.inputs.strict }}" != "true" ]; then
+              echo "Refusing: this workflow is now STRONG-only by design."
+              exit 1
             fi
-            echo "==== DONE ===="
+            RUN="docker compose -f docker-compose.prod.yml --env-file .env.production exec -T web python manage.py"
+            CMD="purge_non_strong_pipeline --apply --classify-unclassified"
+            if [ "${{ github.event.inputs.enable_strict_flag }}" = "true" ]; then
+              CMD="$CMD --enable-strict-flag"
+            fi
+            $RUN $CMD

@@ -34,6 +34,18 @@ class Command(BaseCommand):
             action="store_true",
             help="Do not deactivate source RawJobs when archiving vetting Jobs.",
         )
+        parser.add_argument(
+            "--classify-unclassified",
+            action="store_true",
+            help="Classify rows with NULL filter_decision before cleanup.",
+        )
+        parser.add_argument(
+            "--enable-strict-flag",
+            action="store_true",
+            help="Set HarvestEngineConfig.pre_storage_strict_strong_only=True after cleanup.",
+        )
+        parser.add_argument("--classify-limit", type=int, default=0)
+        parser.add_argument("--classify-batch-size", type=int, default=1000)
         parser.add_argument("--raw-limit", type=int, default=0)
         parser.add_argument("--job-limit", type=int, default=0)
         parser.add_argument("--raw-batch-size", type=int, default=2000)
@@ -43,6 +55,18 @@ class Command(BaseCommand):
         apply = opts["apply"]
         hard = opts["hard_delete"]
         keep_raw = opts["keep_raw"]
+        classify_unclassified = opts["classify_unclassified"]
+        enable_strict_flag = opts["enable_strict_flag"]
+
+        if classify_unclassified:
+            self.stdout.write(self.style.MIGRATE_HEADING("\nStep 0/2 — Classify unclassified RawJobs"))
+            classify_kwargs = {
+                "dry_run": not apply,
+                "only_unclassified": True,
+                "limit": int(opts["classify_limit"] or 0),
+                "batch_size": int(opts["classify_batch_size"] or 1000),
+            }
+            call_command("classify_existing_rawjobs", **classify_kwargs)
 
         self.stdout.write(self.style.MIGRATE_HEADING("\nStep 1/2 — RawJobs strict cleanup"))
         raw_kwargs = {
@@ -64,6 +88,25 @@ class Command(BaseCommand):
             "batch_size": int(opts["job_batch_size"] or 1000),
         }
         call_command("purge_non_matching_jobs", **job_kwargs)
+
+        if enable_strict_flag:
+            from harvest.models import HarvestEngineConfig
+
+            if apply:
+                cfg = HarvestEngineConfig.get()
+                cfg.pre_storage_strict_strong_only = True
+                cfg.save(update_fields=["pre_storage_strict_strong_only"])
+                self.stdout.write(
+                    self.style.SUCCESS(
+                        "\nStrict pre-storage flag enabled — future intake is locked to STRONG-only.\n"
+                    )
+                )
+            else:
+                self.stdout.write(
+                    self.style.NOTICE(
+                        "\nDRY-RUN — HarvestEngineConfig.pre_storage_strict_strong_only would be set to True.\n"
+                    )
+                )
 
         if not apply:
             self.stdout.write(self.style.NOTICE("\nDRY-RUN complete — re-run with --apply to enforce cleanup.\n"))
