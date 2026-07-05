@@ -873,8 +873,9 @@ class SelectiveHarvestEngineTests(TestCase):
         from harvest.models import HarvestEngineConfig
 
         cfg = HarvestEngineConfig.get()
+        cfg.selective_filter_enabled = False
         cfg.pre_storage_strict_strong_only = False
-        cfg.save(update_fields=["pre_storage_strict_strong_only"])
+        cfg.save()
 
         call_command(
             "purge_non_strong_pipeline",

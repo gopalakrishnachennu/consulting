@@ -382,6 +382,13 @@ class HarvestRoleCategory(models.Model):
     def __str__(self):
         return self.name
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.is_active and self.include_phrases:
+            from .selective_intake import ensure_selective_intake_enabled
+
+            ensure_selective_intake_enabled()
+
 
 class JobDomain(models.Model):
     """
@@ -2227,11 +2234,13 @@ class HarvestEngineConfig(models.Model):
 
     def save(self, *args, **kwargs):
         if self.selective_filter_enabled:
-            # CHENN policy: selective intake means strict phrase-bank intake.
+            # CHENN policy: intake rules = STRONG phrase matches only. No audit tier.
             self.filter_audit_mode = False
             self.pre_storage_filter_enabled = True
             self.pre_storage_strict_strong_only = True
             self.filter_full_crawl = True
+            self.jd_gate_enabled = False
+            self.jd_gate_audit_mode = True
         if self.pre_storage_strict_strong_only:
             self.pre_storage_filter_enabled = True
         self.worker_concurrency = max(1, min(int(self.worker_concurrency or 1), 2))

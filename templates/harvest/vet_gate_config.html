@@ -413,7 +413,7 @@
           </div>
           <div>
             <h3 class="text-sm font-bold text-gray-800">Intake Filtering</h3>
-            <p class="text-xs text-gray-500 mt-0.5">Controls what gets stored, what gets dropped, and which ambiguous titles move to the JD gate.</p>
+            <p class="text-xs text-gray-500 mt-0.5">Only titles matching your Role Category include phrases are stored. Everything else is dropped at harvest.</p>
           </div>
         </div>
         <svg class="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -422,62 +422,30 @@
       </summary>
       <div class="mt-4 space-y-4 border-t border-gray-100 pt-4">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3">
+          <label class="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
             <input type="checkbox" name="selective_filter_enabled" value="1"
                    {% if engine_cfg.selective_filter_enabled %}checked{% endif %}
                    class="mt-1 rounded border-gray-300 text-emerald-600">
             <span>
-              <span class="block text-sm font-semibold text-gray-800">Selective role filter enabled</span>
-              <span class="block text-xs text-gray-500">Classify titles into STRONG, POSSIBLE, COLD, NO_MATCH, or UNKNOWN.</span>
+              <span class="block text-sm font-semibold text-gray-800">STRONG-only intake (enabled)</span>
+              <span class="block text-xs text-gray-500">Harvest stores only jobs whose titles match an include phrase in Selective Filter Studio. COLD, POSSIBLE, NO_MATCH, and UNKNOWN rows are never saved.</span>
             </span>
           </label>
-          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3">
-            <input type="checkbox" name="filter_audit_mode" value="1"
-                   {% if engine_cfg.filter_audit_mode %}checked{% endif %}
-                   class="mt-1 rounded border-gray-300 text-amber-600">
-            <span>
-              <span class="block text-sm font-semibold text-gray-800">Audit mode</span>
-              <span class="block text-xs text-gray-500">Record filter decisions without suppressing jobs.</span>
-            </span>
-          </label>
-          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3">
-            <input type="checkbox" name="pre_storage_filter_enabled" value="1"
-                   {% if engine_cfg.pre_storage_filter_enabled %}checked{% endif %}
-                   class="mt-1 rounded border-gray-300 text-red-600">
-            <span>
-              <span class="block text-sm font-semibold text-gray-800">Pre-storage filter</span>
-              <span class="block text-xs text-gray-500">Drop HARD_NO rows before writing them to RawJob.</span>
-            </span>
-          </label>
-          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3">
-            <input type="checkbox" name="pre_storage_strict_strong_only" value="1"
-                   {% if engine_cfg.pre_storage_strict_strong_only %}checked{% endif %}
-                   class="mt-1 rounded border-gray-300 text-rose-600">
-            <span>
-              <span class="block text-sm font-semibold text-gray-800">STRONG-only intake</span>
-              <span class="block text-xs text-gray-500">Keep only titles that match your selective phrase bank. Drop POSSIBLE and UNKNOWN rows too.</span>
-            </span>
-          </label>
-          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3">
-            <input type="checkbox" name="filter_full_crawl" value="1"
-                   {% if engine_cfg.filter_full_crawl %}checked{% endif %}
-                   class="mt-1 rounded border-gray-300 text-red-600">
-            <span>
-              <span class="block text-sm font-semibold text-gray-800">Enforce during full crawls</span>
-              <span class="block text-xs text-gray-500">Apply the same drop rules even for full-crawl harvests.</span>
-            </span>
-          </label>
+          <div class="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+            <p class="font-semibold text-slate-800">Manage phrase rules</p>
+            <p class="mt-1">Add or edit categories in <a href="{% url 'harvest-role-categories' %}" class="brand-link">Selective Filter Studio</a>. That phrase bank is the only intake source of truth.</p>
+          </div>
         </div>
+        <input type="hidden" name="filter_audit_mode" value="">
+        <input type="hidden" name="pre_storage_filter_enabled" value="1">
+        <input type="hidden" name="pre_storage_strict_strong_only" value="1">
+        <input type="hidden" name="filter_full_crawl" value="1">
         <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
           Current policy: <span class="font-semibold text-slate-900">
-            {% if engine_cfg.selective_filter_enabled and not engine_cfg.filter_audit_mode and engine_cfg.pre_storage_strict_strong_only %}
+            {% if engine_cfg.selective_filter_enabled %}
               only STRONG phrase matches are stored in Raw Jobs
-            {% elif engine_cfg.selective_filter_enabled and not engine_cfg.filter_audit_mode and engine_cfg.pre_storage_filter_enabled %}
-              HARD_NO titles are dropped, but POSSIBLE / UNKNOWN can still be stored
-            {% elif engine_cfg.selective_filter_enabled and engine_cfg.filter_audit_mode %}
-              audit only, nothing is suppressed
             {% else %}
-              legacy full-storage behavior
+              full-storage (all harvested titles saved — not recommended)
             {% endif %}
           </span>
         </div>

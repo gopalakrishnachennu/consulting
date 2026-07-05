@@ -23,7 +23,6 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
 from .normalizer import compute_content_hash, compute_url_hash
-from .role_filter import COLD, NO_MATCH, POSSIBLE, UNKNOWN, classify_title, classify_title_v2
 from .services.enrichment_input import build_enrichment_input
 
 logger = logging.getLogger("harvest.push_api")
@@ -327,14 +326,14 @@ class PushJobsView(View):
         from .enrichments import clean_job_content, clean_job_text, extract_enrichments
         from .location_resolver import evaluate_rawjob_scope, extract_location_candidates
         from .payload_archive import capture_rawjob_source_payloads
+        from .role_filter import COLD, NO_MATCH, classify_title, classify_title_v2
+        from .selective_intake import selective_enforcement_active, should_pre_storage_drop
         from .services.rawjob_upsert import upsert_raw_job_with_dedupe
 
         engine_cfg = HarvestEngineConfig.get()
         filter_enabled = bool(engine_cfg.selective_filter_enabled)
         filter_audit_mode = bool(engine_cfg.filter_audit_mode)
-        pre_storage_live = bool(
-            engine_cfg.pre_storage_filter_enabled or engine_cfg.pre_storage_strict_strong_only
-        )
+        intake_enforcement_active = selective_enforcement_active(engine_cfg, fetch_all=False)
         hard_yes_threshold = float(getattr(engine_cfg, "title_hard_yes_confidence", 0.80) or 0.80)
         filter_snapshot_id = None
         filter_categories = []
@@ -415,35 +414,19 @@ class PushJobsView(View):
                     )
                     should_skip_jd = filter_result.decision in {COLD, NO_MATCH}
 
-                    if not filter_audit_mode and pre_storage_live:
-                        strict_title = title.strip()
-                        is_hard_no = (
-                            filter_result.decision == NO_MATCH
-                            or (
-                                filter_result.decision == COLD
-                                and getattr(filter_result, "confidence", 1.0) < 0.2
-                            )
+                    if should_pre_storage_drop(
+                        engine_cfg,
+                        filter_result,
+                        title=title,
+                        enforcement_active=intake_enforcement_active,
+                    ):
+                        skipped += 1
+                        logger.info(
+                            "push_api: pre-storage drop %r decision=%s",
+                            title.strip()[:120],
+                            filter_result.decision,
                         )
-                        if strict_title and is_hard_no:
-                            skipped += 1
-                            logger.info(
-                                "push_api: pre-storage drop %r decision=%s",
-                                strict_title[:120],
-                                filter_result.decision,
-                            )
-                            continue
-                        if (
-                            engine_cfg.pre_storage_strict_strong_only
-                            and strict_title
-                            and filter_result.decision in {POSSIBLE, UNKNOWN}
-                        ):
-                            skipped += 1
-                            logger.info(
-                                "push_api: strict strong-only drop %r decision=%s",
-                                strict_title[:120],
-                                filter_result.decision,
-                            )
-                            continue
+                        continue
 
                 desc_meta = clean_job_content(job_data.get("description", ""), max_len=50000)
                 description = desc_meta["clean_text"]

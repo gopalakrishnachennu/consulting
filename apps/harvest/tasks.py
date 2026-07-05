@@ -17,6 +17,10 @@ from .runtime_config import (
     get_jd_backfill_lock_stale_minutes,
     require_harvest_engine_config,
 )
+from .selective_intake import (
+    selective_enforcement_active,
+    should_pre_storage_drop,
+)
 from .services.enrichment_input import build_enrichment_input
 
 # ─── Harvest compliance constants ────────────────────────────────────────────
@@ -863,10 +867,7 @@ def harvest_jobs_task(
     _cfg = require_harvest_engine_config("harvest_jobs_task")
     filter_enabled = bool(getattr(_cfg, "selective_filter_enabled", False))
     filter_audit_mode = bool(getattr(_cfg, "filter_audit_mode", True))
-    pre_storage_live = bool(
-        getattr(_cfg, "pre_storage_filter_enabled", False)
-        or getattr(_cfg, "pre_storage_strict_strong_only", False)
-    )
+    intake_enforcement_active = selective_enforcement_active(_cfg, fetch_all=False)
     filter_snapshot = None
     filter_snapshot_id = None
     filter_categories: list[dict] = []
@@ -969,22 +970,13 @@ def harvest_jobs_task(
                                 not filter_audit_mode and filter_result.decision in {COLD, NO_MATCH}
                             )
                             should_skip_jd = filter_blocks_pool
-                            if pre_storage_live and filter_blocks_pool:
-                                _pre_title = (normalized.get("title") or "").strip()
-                                _pre_conf = float(getattr(filter_result, "confidence", 0.0) or 0.0)
-                                _hard_no = (
-                                    filter_result.decision == NO_MATCH
-                                    or (filter_result.decision == COLD and _pre_conf < 0.2)
-                                )
-                                if _pre_title and _hard_no:
-                                    continue
-                            if (
-                                pre_storage_live
-                                and getattr(_cfg, "pre_storage_strict_strong_only", False)
+                            if should_pre_storage_drop(
+                                _cfg,
+                                filter_result,
+                                title=normalized.get("title") or "",
+                                enforcement_active=intake_enforcement_active,
                             ):
-                                _strict_title = (normalized.get("title") or "").strip()
-                                if _strict_title and filter_result.decision in {POSSIBLE, UNKNOWN}:
-                                    continue
+                                continue
                         desc_meta = clean_job_content(normalized.get("description_text", ""), max_len=50000)
                         description = desc_meta["clean_text"]
                         requirements = clean_job_text(normalized.get("requirements_text", ""), max_len=20000)
@@ -1299,6 +1291,7 @@ def fetch_raw_jobs_for_company_task(
     # harvesting from day one without a separate incremental run first.
     _filter_full_crawl = bool(getattr(_cfg, "filter_full_crawl", False))
     effective_filter_audit_mode = filter_audit_mode or (bool(fetch_all) and not _filter_full_crawl)
+    intake_enforcement_active = selective_enforcement_active(_cfg, fetch_all=bool(fetch_all))
     filter_snapshot = None
     filter_categories: list[dict] = []
     filter_hard_negatives: list[str] = []
@@ -1591,33 +1584,23 @@ def fetch_raw_jobs_for_company_task(
             )
             title_gate_result = None
             if filter_enabled and filter_snapshot_id:
-                if getattr(label.platform, "title_in_list", False):
-                    filter_result = classify_title(
-                        title=job_dict.get("title") or "",
-                        department=job_dict.get("department") or "",
-                        categories=filter_categories,
-                        hard_negatives=filter_hard_negatives,
-                        custom_phrases=label.custom_include_phrases or [],
-                        snapshot_id=filter_snapshot_id,
-                    )
-                    title_gate_result = classify_title_v2(
-                        title=job_dict.get("title") or "",
-                        department=job_dict.get("department") or "",
-                        categories=filter_categories,
-                        hard_negatives=filter_hard_negatives,
-                        custom_phrases=label.custom_include_phrases or [],
-                        snapshot_id=filter_snapshot_id,
-                        hard_yes_threshold=float(getattr(_cfg, "title_hard_yes_confidence", 0.80) or 0.80),
-                    )
-                else:
-                    filter_result = ClassifyResult(
-                        decision=POSSIBLE,
-                        category=None,
-                        matched_phrase=None,
-                        matched_negative=None,
-                        reason="platform title_in_list is false - preserving existing fetch behavior",
-                        snapshot_id=filter_snapshot_id,
-                    )
+                filter_result = classify_title(
+                    title=job_dict.get("title") or "",
+                    department=job_dict.get("department") or "",
+                    categories=filter_categories,
+                    hard_negatives=filter_hard_negatives,
+                    custom_phrases=label.custom_include_phrases or [],
+                    snapshot_id=filter_snapshot_id,
+                )
+                title_gate_result = classify_title_v2(
+                    title=job_dict.get("title") or "",
+                    department=job_dict.get("department") or "",
+                    categories=filter_categories,
+                    hard_negatives=filter_hard_negatives,
+                    custom_phrases=label.custom_include_phrases or [],
+                    snapshot_id=filter_snapshot_id,
+                    hard_yes_threshold=float(getattr(_cfg, "title_hard_yes_confidence", 0.80) or 0.80),
+                )
 
             if filter_enabled and filter_result.decision == UNKNOWN:
                 budget = int(getattr(label.platform, "unknown_jd_budget_per_run", 0) or 0)
@@ -1632,6 +1615,33 @@ def fetch_raw_jobs_for_company_task(
                     )
                 else:
                     unknown_jd_count += 1
+
+            if should_pre_storage_drop(
+                _cfg,
+                filter_result if filter_enabled else None,
+                title=job_dict.get("title") or "",
+                enforcement_active=intake_enforcement_active,
+            ):
+                jobs_pre_filtered += 1
+                if filter_result.decision == NO_MATCH:
+                    filter_no_match += 1
+                elif filter_result.decision == COLD:
+                    filter_cold += 1
+                elif filter_result.decision == STRONG:
+                    pass
+                elif filter_result.decision == POSSIBLE:
+                    filter_possible += 1
+                else:
+                    filter_unknown += 1
+                if jobs_pre_filtered <= 5 or jobs_pre_filtered % 100 == 0:
+                    logger.debug(
+                        "pre-storage drop [%d]: %r decision=%s label=%s",
+                        jobs_pre_filtered,
+                        (job_dict.get("title") or "")[:80],
+                        filter_result.decision,
+                        label_pk,
+                    )
+                continue
 
             should_skip_jd = (
                 filter_enabled
@@ -1671,119 +1681,6 @@ def fetch_raw_jobs_for_company_task(
                     company_name=job_dict.get("company_name") or label.company.name,
                     posted_date=posted_date,
                 ))
-
-                if (
-                    filter_enabled
-                    and filter_snapshot_id
-                    and not getattr(label.platform, "title_in_list", False)
-                ):
-                    post_fetch_result = classify_title(
-                        title=job_dict.get("title") or "",
-                        department=job_dict.get("department") or "",
-                        categories=filter_categories,
-                        hard_negatives=filter_hard_negatives,
-                        custom_phrases=label.custom_include_phrases or [],
-                        snapshot_id=filter_snapshot_id,
-                    )
-                    filter_result = ClassifyResult(
-                        decision=post_fetch_result.decision,
-                        category=post_fetch_result.category,
-                        matched_phrase=post_fetch_result.matched_phrase,
-                        matched_negative=post_fetch_result.matched_negative,
-                        reason=f"post-fetch classification: {post_fetch_result.reason}",
-                        snapshot_id=post_fetch_result.snapshot_id,
-                        confidence=post_fetch_result.confidence,  # MUST forward: pre-storage gate uses this to distinguish HARD_NO (conf<0.2) from AMBIGUOUS (conf≥0.2)
-                    )
-                    title_gate_result = classify_title_v2(
-                        title=job_dict.get("title") or "",
-                        department=job_dict.get("department") or "",
-                        categories=filter_categories,
-                        hard_negatives=filter_hard_negatives,
-                        custom_phrases=label.custom_include_phrases or [],
-                        snapshot_id=filter_snapshot_id,
-                        hard_yes_threshold=float(getattr(_cfg, "title_hard_yes_confidence", 0.80) or 0.80),
-                    )
-                    should_skip_jd = False
-
-            filter_blocks_pool = (
-                filter_enabled
-                and not effective_filter_audit_mode
-                and filter_result.decision in {COLD, NO_MATCH}
-            )
-
-            # ── Pre-storage title gate (selective fetch) ──────────────────────
-            # Drop definitive HARD_NO titles BEFORE any DB write, defaults build,
-            # or location extraction — keeps RawJob table clean from day one.
-            #
-            # Only fires when ALL of:
-            #   • selective_filter_enabled=True (filter is on)
-            #   • filter_audit_mode=False (enforcement mode, not observation)
-            #   • pre_storage_filter_enabled=True (operator opt-in flag)
-            #   • filter_blocks_pool=True (COLD or NO_MATCH in enforcement mode)
-            #
-            # HARD_NO = NO_MATCH  OR  COLD with confidence < 0.2
-            # Borderline COLD (conf ≥ 0.2) → AMBIGUOUS → still stored for JD gate.
-            # Blank titles → unknown intent → stored (fail-safe, treated as AMBIGUOUS).
-            # Any exception in this block → fall through and store (never silently drop).
-            # fetch_all / audit_mode paths never reach here (filter_blocks_pool=False).
-            pre_storage_live = (
-                getattr(_cfg, "pre_storage_filter_enabled", False)
-                or getattr(_cfg, "pre_storage_strict_strong_only", False)
-            )
-            if filter_blocks_pool and pre_storage_live:
-                _pre_title = (job_dict.get("title") or "").strip()
-                _is_hard_no = (
-                    filter_result.decision == NO_MATCH
-                    or (
-                        filter_result.decision == COLD
-                        and getattr(filter_result, "confidence", 1.0) < 0.2
-                    )
-                )
-                if _pre_title and _is_hard_no:
-                    jobs_pre_filtered += 1
-                    # Keep filter counters accurate for run summary + zero-tech logic
-                    if filter_result.decision == NO_MATCH:
-                        filter_no_match += 1
-                    else:
-                        filter_cold += 1
-                    if jobs_pre_filtered <= 5 or jobs_pre_filtered % 100 == 0:
-                        logger.debug(
-                            "pre-storage drop [%d]: %r decision=%s conf=%.2f label=%s",
-                            jobs_pre_filtered,
-                            _pre_title[:80],
-                            filter_result.decision,
-                            getattr(filter_result, "confidence", 0.0),
-                            label_pk,
-                        )
-                    continue  # ← skip upsert, payload archive, new_raw_job_pks entirely
-
-            # ── Strict pre-storage gate: keep ONLY STRONG category matches ─────
-            # When pre_storage_strict_strong_only is on, also drop POSSIBLE
-            # (tech-adjacent, no exact phrase) and non-ASCII UNKNOWN titles before
-            # any DB write — so only titles that match one of your category phrases
-            # are ever stored. COLD/NO_MATCH are already dropped by the block above.
-            # Blank titles are kept (fail-safe canary for scraper breakage).
-            # Title-only: location/scope is untouched (Location Review unaffected).
-            if (
-                filter_enabled
-                and not effective_filter_audit_mode
-                and pre_storage_live
-                and getattr(_cfg, "pre_storage_strict_strong_only", False)
-            ):
-                _strict_title = (job_dict.get("title") or "").strip()
-                if _strict_title and filter_result.decision in {POSSIBLE, UNKNOWN}:
-                    jobs_pre_filtered += 1
-                    if filter_result.decision == POSSIBLE:
-                        filter_possible += 1
-                    else:
-                        filter_unknown += 1
-                    if jobs_pre_filtered <= 5 or jobs_pre_filtered % 100 == 0:
-                        logger.debug(
-                            "pre-storage strict drop [%d]: %r decision=%s label=%s",
-                            jobs_pre_filtered, _strict_title[:80],
-                            filter_result.decision, label_pk,
-                        )
-                    continue  # ← skip upsert entirely
 
             supplied_location_candidates = job_dict.get("location_candidates")
             if not isinstance(supplied_location_candidates, list):

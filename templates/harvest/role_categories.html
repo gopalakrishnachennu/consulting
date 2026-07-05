@@ -34,6 +34,22 @@
     {% endfor %}
   {% endif %}
 
+  {% if intake_policy.just_enabled %}
+  <div class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+    Selective intake enforcement was turned on automatically because you have active role categories with include phrases.
+    Only titles matching your phrase bank (STRONG) will be stored in Raw Jobs on the next fetch.
+  </div>
+  {% elif intake_policy.selective_enabled and not intake_policy.enforcement_live %}
+  <div class="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+    Phrase rules exist but intake is in <strong>audit mode</strong> or pre-storage is off — harvest still stores every job.
+    <a href="{{ intake_policy.vet_gate_url }}" class="font-semibold underline">Open Intake Filtering</a> and ensure selective filter + STRONG-only intake are enabled.
+  </div>
+  {% elif intake_policy.enforcement_live and intake_policy.strict_strong_only %}
+  <div class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+    Intake is live: only titles matching your include phrases are stored in Raw Jobs. Non-matching titles are dropped at harvest time.
+  </div>
+  {% endif %}
+
   <section class="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
     <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
       <div>

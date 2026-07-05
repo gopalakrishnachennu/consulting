@@ -5033,6 +5033,11 @@ class SelectiveRoleCategoryListView(SuperuserRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
+        from .models import HarvestEngineConfig
+        from .selective_intake import ensure_selective_intake_enabled, selective_enforcement_active
+
+        intake_just_enabled = ensure_selective_intake_enabled()
+        engine_cfg = HarvestEngineConfig.get()
         categories, diagnostics = _build_selective_category_rows(self.request)
         latest_snapshot = HarvestFilterSnapshot.objects.order_by("-taken_at").first()
         previous_snapshot = (
@@ -5081,6 +5086,13 @@ class SelectiveRoleCategoryListView(SuperuserRequiredMixin, TemplateView):
                 reverse("harvest-filter-snapshot-detail", args=[latest_snapshot.pk])
                 if latest_snapshot else reverse("harvest-filter-snapshots")
             ),
+        }
+        ctx["intake_policy"] = {
+            "selective_enabled": bool(engine_cfg.selective_filter_enabled),
+            "enforcement_live": selective_enforcement_active(engine_cfg),
+            "strict_strong_only": bool(engine_cfg.pre_storage_strict_strong_only),
+            "just_enabled": intake_just_enabled,
+            "vet_gate_url": reverse("harvest-vet-gate-config"),
         }
         return ctx
 
