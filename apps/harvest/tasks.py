@@ -252,21 +252,22 @@ def _supports_select_for_update_skip_locked() -> bool:
 def _backfill_eligible_queryset(platform_slug: str | None, include_cold: bool = False):
     """Rows that still need a JD and are not actively claimed (unless lock is stale).
 
-    Scoped harvest gate: only PRIORITY (target-country) jobs get JD backfill by
-    default. Cold + unknown-country jobs stay as cheap discovery rows and become
-    eligible later when the country resolver upgrades them.
+    By default includes is_priority rows and STRONG intake rows (even when country
+    scope left is_priority=False). Non-STRONG discovery rows stay cheap until scope
+    upgrades them.
 
     When ``include_cold=True`` (controlled by HarvestEngineConfig.backfill_jd_include_cold)
     COLD and REVIEW_* jobs are also included — useful for full-coverage audits.
     """
     from .models import RawJob
+    from .selective_intake import jd_backfill_eligibility_q
 
     stale_mins = get_jd_backfill_lock_stale_minutes()
     if include_cold:
         q = RawJob.objects.missing_jd(stale_minutes=stale_mins)
     else:
         q = RawJob.objects.missing_jd(stale_minutes=stale_mins).filter(
-            is_priority=True,
+            jd_backfill_eligibility_q(),
         )
     try:
         cfg = require_harvest_engine_config("_backfill_eligible_queryset")
@@ -2206,10 +2207,12 @@ def fetch_raw_jobs_for_company_task(
             platform_s = (label.platform.slug if label and label.platform else "") or ""
             if _pipe_cfg.auto_backfill_jd:
                 gate_enforced = bool(_pipe_cfg.jd_gate_enabled and not _pipe_cfg.jd_gate_audit_mode)
+                from .selective_intake import job_qualifies_for_jd_backfill
+
                 needs_jd_count = sum(
                     1
                     for j in new_jobs
-                    if j.is_priority
+                    if job_qualifies_for_jd_backfill(j)
                     and not (j.description or "").strip()
                     and (
                         not gate_enforced

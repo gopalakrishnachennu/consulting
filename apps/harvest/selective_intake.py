@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Mapping
 
+from django.db.models import Q
+
 from .role_filter import STRONG, ClassifyResult
 
 if TYPE_CHECKING:
@@ -15,6 +17,21 @@ STRONG_INTAKE_CONFIDENCE = 0.92
 
 def is_strong_intake(raw_job) -> bool:
     return (getattr(raw_job, "filter_decision", "") or "").strip().upper() == STRONG
+
+
+def jd_backfill_eligibility_q() -> Q:
+    """
+    RawJobs that should receive JD backfill.
+
+    Priority targets always qualify. STRONG intake rows qualify even when country
+    scope left is_priority=False (unknown / no location) — JD text is needed to
+    resolve country and resume gates before vetting.
+    """
+    return Q(is_priority=True) | Q(filter_decision=STRONG)
+
+
+def job_qualifies_for_jd_backfill(job) -> bool:
+    return bool(getattr(job, "is_priority", False) or is_strong_intake(job))
 
 
 def effective_pipeline_confidence(raw_job) -> float | None:
