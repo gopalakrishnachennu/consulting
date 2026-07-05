@@ -1230,9 +1230,10 @@ class SelectiveHarvestEngineTests(TestCase):
         from harvest.tasks import _backfill_eligible_queryset
 
         cfg = HarvestEngineConfig.get()
+        cfg.selective_filter_enabled = False
         cfg.jd_gate_enabled = True
         cfg.jd_gate_audit_mode = False
-        cfg.save(update_fields=["jd_gate_enabled", "jd_gate_audit_mode"])
+        cfg.save()
 
         blocked = self._raw_job(
             url_hash="ambiguous-pending",
@@ -3391,6 +3392,13 @@ class JarvisPlatformLabelRepairTests(TestCase):
 
 
 class JarvisCompanyAndRawJobDedupeTests(TestCase):
+    def setUp(self):
+        from harvest.models import HarvestEngineConfig
+
+        cfg = HarvestEngineConfig.get()
+        cfg.selective_filter_enabled = False
+        cfg.save()
+
     def test_company_resolution_reuses_normalized_existing_company(self):
         from companies.models import Company
         from harvest.tasks import _jarvis_resolve_company
@@ -5204,7 +5212,7 @@ class VetGateConfigViewTests(TestCase):
         self.assertIn("Location Scope", content)
         self.assertIn("LLM JD Content Gate", content)
         self.assertIn("Resume / Ready / Recheck Rules", content)
-        self.assertIn("Pre-storage filter", content)
+        self.assertIn("STRONG-only intake", content)
         self.assertIn("Remote/no-country policy", content)
         self.assertIn("Selective Automation Control", content)
         self.assertIn("Apply phrases to existing jobs", content)
