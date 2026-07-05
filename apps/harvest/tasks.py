@@ -846,14 +846,40 @@ def harvest_jobs_task(
     from django.contrib.auth import get_user_model
     from jobs.models import PipelineEvent
 
-    from .models import JobBoardPlatform, CompanyPlatformLabel, RawJob
+    from .models import (
+        CompanyPlatformLabel,
+        HarvestFilterSnapshot,
+        JobBoardPlatform,
+        RawJob,
+    )
     from .harvesters import get_harvester
     from .normalizer import normalize_job_data
     from .rate_limiter import throttle as _throttle
     from .enrichments import clean_job_content, clean_job_text, extract_enrichments
     from .location_resolver import extract_location_candidates
+    from .role_filter import COLD, NO_MATCH, POSSIBLE, UNKNOWN, classify_title, classify_title_v2
 
     tb = triggered_by if triggered_by in ("SCHEDULED", "MANUAL") else "SCHEDULED"
+    _cfg = require_harvest_engine_config("harvest_jobs_task")
+    filter_enabled = bool(getattr(_cfg, "selective_filter_enabled", False))
+    filter_audit_mode = bool(getattr(_cfg, "filter_audit_mode", True))
+    pre_storage_live = bool(
+        getattr(_cfg, "pre_storage_filter_enabled", False)
+        or getattr(_cfg, "pre_storage_strict_strong_only", False)
+    )
+    filter_snapshot = None
+    filter_snapshot_id = None
+    filter_categories: list[dict] = []
+    filter_hard_negatives: list[str] = []
+    if filter_enabled:
+        try:
+            filter_snapshot = HarvestFilterSnapshot.create_snapshot(notes="created by harvest_jobs_task")
+            filter_snapshot_id = str(filter_snapshot.snapshot_id)
+            filter_categories = filter_snapshot.get_categories()
+            filter_hard_negatives = filter_snapshot.get_hard_negatives()
+        except Exception:
+            logger.exception("Selective filter snapshot load failed in harvest_jobs_task; continuing without enforcement.")
+            filter_enabled = False
 
     qs = JobBoardPlatform.objects.filter(is_enabled=True)
     if platform_slug:
@@ -917,6 +943,48 @@ def harvest_jobs_task(
                         url_hash = normalized.get("url_hash", "")
                         if not original_url or not url_hash:
                             continue
+                        filter_result = None
+                        title_gate_result = None
+                        filter_blocks_pool = False
+                        should_skip_jd = False
+                        if filter_enabled and filter_snapshot_id:
+                            filter_result = classify_title(
+                                title=normalized.get("title") or "",
+                                department=normalized.get("department") or "",
+                                categories=filter_categories,
+                                hard_negatives=filter_hard_negatives,
+                                custom_phrases=label.custom_include_phrases or [],
+                                snapshot_id=filter_snapshot_id,
+                            )
+                            title_gate_result = classify_title_v2(
+                                title=normalized.get("title") or "",
+                                department=normalized.get("department") or "",
+                                categories=filter_categories,
+                                hard_negatives=filter_hard_negatives,
+                                custom_phrases=label.custom_include_phrases or [],
+                                snapshot_id=filter_snapshot_id,
+                                hard_yes_threshold=float(getattr(_cfg, "title_hard_yes_confidence", 0.80) or 0.80),
+                            )
+                            filter_blocks_pool = (
+                                not filter_audit_mode and filter_result.decision in {COLD, NO_MATCH}
+                            )
+                            should_skip_jd = filter_blocks_pool
+                            if pre_storage_live and filter_blocks_pool:
+                                _pre_title = (normalized.get("title") or "").strip()
+                                _pre_conf = float(getattr(filter_result, "confidence", 0.0) or 0.0)
+                                _hard_no = (
+                                    filter_result.decision == NO_MATCH
+                                    or (filter_result.decision == COLD and _pre_conf < 0.2)
+                                )
+                                if _pre_title and _hard_no:
+                                    continue
+                            if (
+                                pre_storage_live
+                                and getattr(_cfg, "pre_storage_strict_strong_only", False)
+                            ):
+                                _strict_title = (normalized.get("title") or "").strip()
+                                if _strict_title and filter_result.decision in {POSSIBLE, UNKNOWN}:
+                                    continue
                         desc_meta = clean_job_content(normalized.get("description_text", ""), max_len=50000)
                         description = desc_meta["clean_text"]
                         requirements = clean_job_text(normalized.get("requirements_text", ""), max_len=20000)
@@ -961,6 +1029,24 @@ def harvest_jobs_task(
                             "benefits": benefits,
                             "posted_date": normalized.get("posted_date"),
                             "raw_payload": normalized.get("raw_payload", {}),
+                            "role_category": filter_result.category if filter_result is not None else None,
+                            "filter_decision": filter_result.decision if filter_result is not None else None,
+                            "filter_reason": filter_result.reason if filter_result is not None else None,
+                            "filter_snapshot_id": filter_result.snapshot_id if filter_result is not None else None,
+                            "title_gate_decision": (
+                                title_gate_result.gate_decision if title_gate_result is not None else None
+                            ),
+                            "title_gate_confidence": (
+                                title_gate_result.gate_confidence if title_gate_result is not None else None
+                            ),
+                            "jd_gate_decision": (
+                                "PENDING"
+                                if title_gate_result is not None
+                                and title_gate_result.gate_decision == "AMBIGUOUS"
+                                else None
+                            ),
+                            "is_cold": bool(filter_blocks_pool),
+                            "jd_fetch_skipped": bool(should_skip_jd),
                             "sync_status": "PENDING",
                             "is_active": True,
                             **_company_snapshot_fields(company),
@@ -4104,6 +4190,74 @@ def jarvis_ingest_task(self, url: str, user_id: int | None = None):
 
     from .enrichments import clean_job_content, clean_job_text
     from .location_resolver import evaluate_rawjob_scope, extract_location_candidates
+    from .models import HarvestFilterSnapshot
+    from .role_filter import COLD, NO_MATCH, POSSIBLE, UNKNOWN, classify_title, classify_title_v2
+
+    engine_cfg = require_harvest_engine_config("jarvis_ingest_task")
+    filter_enabled = bool(getattr(engine_cfg, "selective_filter_enabled", False))
+    filter_audit_mode = bool(getattr(engine_cfg, "filter_audit_mode", True))
+    pre_storage_live = bool(
+        getattr(engine_cfg, "pre_storage_filter_enabled", False)
+        or getattr(engine_cfg, "pre_storage_strict_strong_only", False)
+    )
+    filter_result = None
+    title_gate_result = None
+    filter_blocks_pool = False
+    should_skip_jd = False
+    if filter_enabled:
+        try:
+            snapshot = HarvestFilterSnapshot.create_snapshot(notes="created by jarvis_ingest_task")
+            filter_result = classify_title(
+                title=data.get("title") or "",
+                department=data.get("department") or "",
+                categories=snapshot.get_categories(),
+                hard_negatives=snapshot.get_hard_negatives(),
+                custom_phrases=platform_label.custom_include_phrases if platform_label else [],
+                snapshot_id=str(snapshot.snapshot_id),
+            )
+            title_gate_result = classify_title_v2(
+                title=data.get("title") or "",
+                department=data.get("department") or "",
+                categories=snapshot.get_categories(),
+                hard_negatives=snapshot.get_hard_negatives(),
+                custom_phrases=platform_label.custom_include_phrases if platform_label else [],
+                snapshot_id=str(snapshot.snapshot_id),
+                hard_yes_threshold=float(getattr(engine_cfg, "title_hard_yes_confidence", 0.80) or 0.80),
+            )
+            filter_blocks_pool = (
+                not filter_audit_mode and filter_result.decision in {COLD, NO_MATCH}
+            )
+            should_skip_jd = filter_blocks_pool
+            if pre_storage_live and filter_blocks_pool:
+                _pre_title = (data.get("title") or "").strip()
+                _pre_conf = float(getattr(filter_result, "confidence", 0.0) or 0.0)
+                _hard_no = (
+                    filter_result.decision == NO_MATCH
+                    or (filter_result.decision == COLD and _pre_conf < 0.2)
+                )
+                if _pre_title and _hard_no:
+                    update_task_progress(self, current=3, total=3, message="Skipped by selective title gate")
+                    return {
+                        "ok": False,
+                        "skipped": True,
+                        "reason": filter_result.decision,
+                        "title": data.get("title", ""),
+                        "company_name": company.name if company else company_name,
+                    }
+            if pre_storage_live and getattr(engine_cfg, "pre_storage_strict_strong_only", False):
+                _strict_title = (data.get("title") or "").strip()
+                if _strict_title and filter_result.decision in {POSSIBLE, UNKNOWN}:
+                    update_task_progress(self, current=3, total=3, message="Skipped by strict strong-only gate")
+                    return {
+                        "ok": False,
+                        "skipped": True,
+                        "reason": filter_result.decision,
+                        "title": data.get("title", ""),
+                        "company_name": company.name if company else company_name,
+                    }
+        except Exception:
+            logger.exception("Selective filter snapshot load failed in jarvis_ingest_task; continuing without enforcement.")
+            filter_enabled = False
 
     # Normalize HTML-heavy scraped content into cleaner plain text.
     desc_meta = clean_job_content(data.get("description") or "", max_len=50000)
@@ -4191,6 +4345,23 @@ def jarvis_ingest_task(self, url: str, user_id: int | None = None):
         "posted_date": posted_date,
         "closing_date": closing_date,
         "raw_payload": raw_payload,
+        "role_category": filter_result.category if filter_result is not None else None,
+        "filter_decision": filter_result.decision if filter_result is not None else None,
+        "filter_reason": filter_result.reason if filter_result is not None else None,
+        "filter_snapshot_id": filter_result.snapshot_id if filter_result is not None else None,
+        "title_gate_decision": (
+            title_gate_result.gate_decision if title_gate_result is not None else None
+        ),
+        "title_gate_confidence": (
+            title_gate_result.gate_confidence if title_gate_result is not None else None
+        ),
+        "jd_gate_decision": (
+            "PENDING"
+            if title_gate_result is not None and title_gate_result.gate_decision == "AMBIGUOUS"
+            else None
+        ),
+        "is_cold": bool(filter_blocks_pool),
+        "jd_fetch_skipped": bool(should_skip_jd),
         "content_hash": compute_content_hash(
             company.pk,
             data.get("title") or "",

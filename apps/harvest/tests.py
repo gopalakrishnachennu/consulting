@@ -1115,6 +1115,43 @@ class SelectiveHarvestEngineTests(TestCase):
         self.assertFalse(mocked_jd_gate.called)
         self.assertFalse(mocked_backfill.called)
 
+    def test_harvest_jobs_task_strict_strong_only_drops_irrelevant_rows(self):
+        from harvest.models import HarvestEngineConfig, RawJob
+        from harvest.tasks import harvest_jobs_task
+
+        cfg = HarvestEngineConfig.get()
+        cfg.selective_filter_enabled = True
+        cfg.filter_audit_mode = False
+        cfg.pre_storage_filter_enabled = True
+        cfg.pre_storage_strict_strong_only = True
+        cfg.hard_negative_phrases = ["registered nurse"]
+        cfg.save()
+
+        class _FakeHarvester:
+            def fetch_jobs(self, *args, **kwargs):
+                return [{
+                    "original_url": "https://selective.example/jobs/legacy-harvest-drop",
+                    "apply_url": "https://selective.example/jobs/legacy-harvest-drop",
+                    "external_id": "legacy-harvest-drop",
+                    "title": "Registered Nurse",
+                    "company_name": self_company_name,
+                    "department": "Nursing",
+                    "location": "Remote - US",
+                    "description_text": "",
+                    "requirements_text": "",
+                    "benefits_text": "",
+                    "raw_payload": {"source": "test"},
+                    "posted_date": None,
+                }]
+
+        self_company_name = self.label.company.name
+        with patch("harvest.harvesters.get_harvester", return_value=_FakeHarvester()):
+            harvest_jobs_task.apply(
+                kwargs={"platform_slug": self.platform.slug, "max_companies": 1}
+            ).get()
+
+        self.assertFalse(RawJob.objects.filter(external_id="legacy-harvest-drop").exists())
+
     def test_ambiguous_titles_queue_jd_gate_but_not_immediate_backfill(self):
         from harvest.models import HarvestEngineConfig
         from harvest.tasks import fetch_raw_jobs_for_company_task
@@ -3511,6 +3548,43 @@ class JarvisIngestDayforceIntegrationTests(TestCase):
         self.assertTrue((raw_job.raw_payload or {}).get("jarvis_fetch_all_supported"))
         self.assertEqual((raw_job.raw_payload or {}).get("jarvis_detected_ats"), "dayforce")
         self.assertTrue(CompanyPlatformLabel.objects.filter(company=company, platform__slug="dayforce").exists())
+
+    def test_ingest_strict_strong_only_skips_irrelevant_title(self):
+        from companies.models import Company
+        from harvest.models import HarvestEngineConfig, JobBoardPlatform, RawJob
+        from harvest.tasks import jarvis_ingest_task
+
+        cfg = HarvestEngineConfig.get()
+        cfg.selective_filter_enabled = True
+        cfg.filter_audit_mode = False
+        cfg.pre_storage_filter_enabled = True
+        cfg.pre_storage_strict_strong_only = True
+        cfg.hard_negative_phrases = ["registered nurse", "cook"]
+        cfg.save()
+
+        JobBoardPlatform.objects.filter(slug="dayforce").delete()
+        Company.objects.filter(name="Kestra").delete()
+
+        source_url = "https://jobs.dayforcehcm.com/en-US/kestra/KESTRACAREERSITE/jobs/6504?src=LinkedIn"
+        mock_ingest = {
+            "error": "",
+            "platform_slug": "dayforce",
+            "strategy": "api:dayforce",
+            "title": "Cook",
+            "company_name": "",
+            "description": "Food service shift coverage.",
+            "original_url": source_url,
+            "apply_url": source_url,
+            "raw_payload": {"source": "test"},
+        }
+
+        with patch("harvest.jarvis.JobJarvis.ingest", return_value=mock_ingest):
+            result = jarvis_ingest_task.apply(kwargs={"url": source_url, "user_id": None}).get()
+
+        self.assertFalse(result.get("ok"))
+        self.assertTrue(result.get("skipped"))
+        self.assertEqual(result.get("title"), "Cook")
+        self.assertFalse(RawJob.objects.filter(original_url=source_url).exists())
 
 
 class JarvisFetchAllCompanyViewTests(TestCase):
