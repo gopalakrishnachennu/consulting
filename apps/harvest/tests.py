@@ -3782,9 +3782,9 @@ class RawJobPipelineUnificationTests(TestCase):
             )
 
         _mk("fetched", desc="")
-        _mk("parsed", desc="Parsed description text")
-        _mk("enriched", desc="Enriched text", quality_score=0.71)
-        _mk("classified", desc="Classified text", quality_score=0.81, category_confidence=0.24, word_count=120, filter_decision="STRONG")
+        _mk("parsed", desc="Parsed description text", filter_decision="POSSIBLE")
+        _mk("enriched", desc="Enriched text", quality_score=0.71, filter_decision="POSSIBLE")
+        _mk("classified", desc="Classified text", quality_score=0.81, category_confidence=0.24, word_count=120, filter_decision="POSSIBLE")
         _mk(
             "ready",
             desc="Ready text",
