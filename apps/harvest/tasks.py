@@ -1648,6 +1648,7 @@ def fetch_raw_jobs_for_company_task(
                 and not effective_filter_audit_mode
                 and filter_result.decision in {COLD, NO_MATCH}
             )
+            filter_blocks_pool = should_skip_jd
             if should_skip_jd:
                 desc_meta = {
                     "clean_text": "",
