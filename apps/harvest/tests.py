@@ -3450,7 +3450,7 @@ class JarvisCompanyAndRawJobDedupeTests(TestCase):
                 ]
 
         with patch("harvest.harvesters.get_harvester", return_value=_FakeHarvester()), patch(
-            "harvest.tasks.selective_enforcement_active", return_value=False
+            "harvest.tasks.should_pre_storage_drop", return_value=False
         ):
             out = fetch_raw_jobs_for_company_task.apply(
                 kwargs={"label_pk": label.pk, "fetch_all": True}
@@ -3506,7 +3506,7 @@ class JarvisCompanyAndRawJobDedupeTests(TestCase):
                 ]
 
         with patch("harvest.harvesters.get_harvester", return_value=_FakeHarvester()), patch(
-            "harvest.tasks.selective_enforcement_active", return_value=False
+            "harvest.tasks.should_pre_storage_drop", return_value=False
         ):
             out = fetch_raw_jobs_for_company_task.apply(
                 kwargs={"label_pk": label.pk, "fetch_all": True}
