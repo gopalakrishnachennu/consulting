@@ -3449,7 +3449,9 @@ class JarvisCompanyAndRawJobDedupeTests(TestCase):
                     },
                 ]
 
-        with patch("harvest.harvesters.get_harvester", return_value=_FakeHarvester()):
+        with patch("harvest.harvesters.get_harvester", return_value=_FakeHarvester()), patch(
+            "harvest.tasks.selective_enforcement_active", return_value=False
+        ):
             out = fetch_raw_jobs_for_company_task.apply(
                 kwargs={"label_pk": label.pk, "fetch_all": True}
             ).get()
@@ -3503,7 +3505,9 @@ class JarvisCompanyAndRawJobDedupeTests(TestCase):
                     }
                 ]
 
-        with patch("harvest.harvesters.get_harvester", return_value=_FakeHarvester()):
+        with patch("harvest.harvesters.get_harvester", return_value=_FakeHarvester()), patch(
+            "harvest.tasks.selective_enforcement_active", return_value=False
+        ):
             out = fetch_raw_jobs_for_company_task.apply(
                 kwargs={"label_pk": label.pk, "fetch_all": True}
             ).get()
@@ -5299,8 +5303,8 @@ class VetGateConfigViewTests(TestCase):
         self.assertEqual(engine_cfg.remote_unknown_policy, "target")
         self.assertTrue(engine_cfg.remote_llm_jd_scan)
         self.assertEqual(engine_cfg.geocoding_provider, "mapbox")
-        self.assertTrue(engine_cfg.jd_gate_enabled)
-        self.assertFalse(engine_cfg.jd_gate_audit_mode)
+        self.assertFalse(engine_cfg.jd_gate_enabled)
+        self.assertTrue(engine_cfg.jd_gate_audit_mode)
         self.assertEqual(engine_cfg.jd_gate_scope, "all_possible")
         self.assertEqual(engine_cfg.jd_gate_batch_size, 30)
         self.assertEqual(engine_cfg.jd_gate_snippet_chars, 1000)
