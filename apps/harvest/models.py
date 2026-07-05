@@ -1372,12 +1372,9 @@ class RawJob(models.Model):
 
         Flow: Fetched -> Parsed -> Enriched -> Classified -> Ready -> Synced
         """
-        effective_conf = (
-            self.category_confidence
-            if self.category_confidence is not None
-            else self.classification_confidence
-        ) or 0
-        from .runtime_config import get_ready_stage_min_confidence
+        from .selective_intake import effective_pipeline_confidence, is_strong_intake
+
+        effective_conf = effective_pipeline_confidence(self) or 0
 
         if self.sync_status == self.SyncStatus.SYNCED:
             return "SYNCED"
@@ -1387,23 +1384,30 @@ class RawJob(models.Model):
             return "DUPLICATE"
         if self.is_cold or self.jd_fetch_skipped or self.filter_decision in {"COLD", "NO_MATCH"}:
             return "FILTERED OUT"
-        filter_allows_pool = (self.filter_decision or "").strip().upper() == "STRONG"
+        filter_allows_pool = is_strong_intake(self)
         if (
             not self.is_test_run
             and self.has_description
             and self.is_resume_jd_usable()
-            and effective_conf >= get_ready_stage_min_confidence()
             and self.is_active
             and filter_allows_pool
         ):
             return "READY"
-        if effective_conf > 0:
+        if filter_allows_pool or effective_conf > 0:
             return "CLASSIFIED"
         if self.quality_score is not None or self.jd_quality_score is not None:
             return "ENRICHED"
         if self.has_description:
             return "PARSED"
         return "FETCHED"
+
+    def unified_pipeline(self, *, gate=None) -> dict:
+        from .unified_pipeline import resolve_unified_pipeline
+
+        return resolve_unified_pipeline(self, gate=gate)
+
+    def unified_pipeline_step(self) -> str:
+        return self.unified_pipeline()["step"]
 
     def owner_pipeline_label(self) -> str:
         slug = (self.platform_slug or "").lower()

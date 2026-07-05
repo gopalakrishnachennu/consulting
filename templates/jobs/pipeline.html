@@ -648,7 +648,7 @@
 <div class="section-hdr">
   <div>
     <h2 class="section-title-sm">Raw Job Intake</h2>
-    <p class="section-subtitle">Jobs collected from source platforms — only qualified jobs (active + JD + confidence) should move to Vet Queue</p>
+    <p class="section-subtitle">Jobs collected from source platforms — STRONG intake matches move forward when active and have a usable job description</p>
   </div>
   <div class="flex gap-2 flex-wrap items-center">
     <a href="{% url 'jobs-pipeline' %}?tab=raw#raw-jobs-table" class="btn-secondary btn-sm">Raw Table</a>
@@ -656,7 +656,7 @@
     <a href="{% url 'ops-center' %}#pipelines" class="btn-secondary btn-sm">Run Monitor</a>
     <a href="{% url 'harvest-batch-activity' %}" class="btn-secondary btn-sm" title="Centralized metrics for Quick / Full fetch">Pipeline Activity</a>
     <form method="post" action="{% url 'jobs-pipeline-run-sync' %}"
-      data-gc-confirm-message="Sync only production READY rows to Vet Queue. Test/smoke, filtered-out, missing-JD, inactive, weak-domain, and low-confidence rows stay blocked. Continue?"
+      data-gc-confirm-message="Sync only production READY rows to Vet Queue. Test/smoke, filtered-out, missing-JD, inactive, and short/unusable JD rows stay blocked. Continue?"
       data-gc-confirm-title="Sync qualified to Vet Queue"
       data-gc-confirm-text="Continue sync"
       data-gc-confirm-variant="warning">{% csrf_token %}
@@ -1240,57 +1240,51 @@
 
 <div class="mb-3 p-3 rounded-xl border border-slate-200 bg-white">
   <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
-    <div class="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">Pipeline funnel</div>
-    <div class="text-[11px] text-slate-500">Click any stage to open matching jobs in this table</div>
+    <div class="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">Harvest pipeline</div>
+    <div class="text-[11px] text-slate-500">Board list → STRONG intake → JD → enrich → vet queue</div>
   </div>
   <div class="flex flex-col lg:flex-row gap-1.5 lg:items-stretch">
     {% with f=raw_funnel.fetched %}
-    <a href="?{{ raw_stage_links.FETCHED }}#raw-jobs-table" class="flex-1 p-2.5 rounded-lg border transition {% if not raw_selected_stage %}border-slate-500 bg-slate-100 ring-1 ring-slate-300{% else %}border-slate-200 hover:border-slate-400{% endif %}">
-      <div class="flex items-baseline justify-between"><span class="text-[10px] uppercase font-semibold text-slate-500">Fetched</span><span class="text-[11px] font-bold text-slate-400">100%</span></div>
-      <div class="text-xl font-black text-slate-900">{{ raw_funnel.fetched }}</div>
-      <div class="mt-1 h-1 rounded-full bg-slate-200"><div class="h-1 rounded-full bg-slate-600" style="width:100%"></div></div>
+    <a href="?{{ raw_stage_links.INTAKE }}#raw-jobs-table" class="flex-1 p-2.5 rounded-lg border transition {% if raw_selected_stage == 'INTAKE' %}border-slate-500 bg-slate-100 ring-1 ring-slate-300{% else %}border-slate-200 hover:border-slate-400{% endif %}">
+      <div class="flex items-baseline justify-between"><span class="text-[10px] uppercase font-semibold text-slate-500">Intake</span><span class="text-[11px] font-bold text-slate-600">{% if f %}{% widthratio raw_funnel.intake f 100 %}{% else %}0{% endif %}%</span></div>
+      <div class="text-xl font-black text-slate-900">{{ raw_funnel.intake }}</div>
+      <div class="mt-0.5 text-[10px] text-slate-500">saved, waiting for JD</div>
     </a>
     <div class="hidden lg:flex items-center text-slate-300">›</div>
-    <a href="?{{ raw_stage_links.PARSED }}#raw-jobs-table" class="flex-1 p-2.5 rounded-lg border transition {% if raw_selected_stage == 'PARSED' %}border-sky-400 bg-sky-50 ring-1 ring-sky-200{% else %}border-slate-200 hover:border-sky-300{% endif %}">
-      <div class="flex items-baseline justify-between"><span class="text-[10px] uppercase font-semibold text-slate-500">Parsed</span><span class="text-[11px] font-bold text-sky-600">{% widthratio raw_funnel.parsed f 100 %}%</span></div>
-      <div class="text-xl font-black text-sky-700">{{ raw_funnel.parsed }}</div>
-      <div class="mt-1 h-1 rounded-full bg-slate-200"><div class="h-1 rounded-full bg-sky-500" style="width:{% widthratio raw_funnel.parsed f 100 %}%"></div></div>
+    <a href="?{{ raw_stage_links.JD_BACKFILL }}#raw-jobs-table" class="flex-1 p-2.5 rounded-lg border transition {% if raw_selected_stage == 'JD_BACKFILL' %}border-amber-400 bg-amber-50 ring-1 ring-amber-200{% else %}border-slate-200 hover:border-amber-300{% endif %}">
+      <div class="flex items-baseline justify-between"><span class="text-[10px] uppercase font-semibold text-slate-500">JD backfill</span><span class="text-[11px] font-bold text-amber-600">{% if f %}{% widthratio raw_funnel.jd_backfill f 100 %}{% else %}0{% endif %}%</span></div>
+      <div class="text-xl font-black text-amber-700">{{ raw_funnel.jd_backfill }}</div>
+      <div class="mt-0.5 text-[10px] text-slate-500">fetching or weak JD</div>
     </a>
     <div class="hidden lg:flex items-center text-slate-300">›</div>
-    <a href="?{{ raw_stage_links.ENRICHED }}#raw-jobs-table" class="flex-1 p-2.5 rounded-lg border transition {% if raw_selected_stage == 'ENRICHED' %}border-violet-400 bg-violet-50 ring-1 ring-violet-200{% else %}border-slate-200 hover:border-violet-300{% endif %}">
-      <div class="flex items-baseline justify-between"><span class="text-[10px] uppercase font-semibold text-slate-500">Enriched</span><span class="text-[11px] font-bold text-violet-600">{% widthratio raw_funnel.enriched f 100 %}%</span></div>
-      <div class="text-xl font-black text-violet-700">{{ raw_funnel.enriched }}</div>
-      <div class="mt-1 h-1 rounded-full bg-slate-200"><div class="h-1 rounded-full bg-violet-500" style="width:{% widthratio raw_funnel.enriched f 100 %}%"></div></div>
-    </a>
-    <div class="hidden lg:flex items-center text-slate-300">›</div>
-    <a href="?{{ raw_stage_links.CLASSIFIED }}#raw-jobs-table" class="flex-1 p-2.5 rounded-lg border transition {% if raw_selected_stage == 'CLASSIFIED' %}border-amber-400 bg-amber-50 ring-1 ring-amber-200{% else %}border-slate-200 hover:border-amber-300{% endif %}">
-      <div class="flex items-baseline justify-between"><span class="text-[10px] uppercase font-semibold text-slate-500">Classified</span><span class="text-[11px] font-bold text-amber-600">{% widthratio raw_funnel.classified f 100 %}%</span></div>
-      <div class="text-xl font-black text-amber-700">{{ raw_funnel.classified }}</div>
-      <div class="mt-1 h-1 rounded-full bg-slate-200"><div class="h-1 rounded-full bg-amber-500" style="width:{% widthratio raw_funnel.classified f 100 %}%"></div></div>
+    <a href="?{{ raw_stage_links.ENRICH }}#raw-jobs-table" class="flex-1 p-2.5 rounded-lg border transition {% if raw_selected_stage == 'ENRICH' %}border-violet-400 bg-violet-50 ring-1 ring-violet-200{% else %}border-slate-200 hover:border-violet-300{% endif %}">
+      <div class="flex items-baseline justify-between"><span class="text-[10px] uppercase font-semibold text-slate-500">Enrich</span><span class="text-[11px] font-bold text-violet-600">{% if f %}{% widthratio raw_funnel.enrich f 100 %}{% else %}0{% endif %}%</span></div>
+      <div class="text-xl font-black text-violet-700">{{ raw_funnel.enrich }}</div>
+      <div class="mt-0.5 text-[10px] text-slate-500">scope / domain</div>
     </a>
     <div class="hidden lg:flex items-center text-slate-300">›</div>
     <a href="?{{ raw_stage_links.READY }}#raw-jobs-table" class="flex-1 p-2.5 rounded-lg border transition {% if raw_selected_stage == 'READY' %}border-emerald-400 bg-emerald-50 ring-1 ring-emerald-200{% else %}border-slate-200 hover:border-emerald-300{% endif %}">
-      <div class="flex items-baseline justify-between"><span class="text-[10px] uppercase font-semibold text-slate-500">Ready</span><span class="text-[11px] font-bold text-emerald-600">{% widthratio raw_funnel.ready f 100 %}%</span></div>
+      <div class="flex items-baseline justify-between"><span class="text-[10px] uppercase font-semibold text-slate-500">Ready</span><span class="text-[11px] font-bold text-emerald-600">{% if f %}{% widthratio raw_funnel.ready f 100 %}{% else %}0{% endif %}%</span></div>
       <div class="text-xl font-black text-emerald-700">{{ raw_funnel.ready }}</div>
-      <div class="mt-1 h-1 rounded-full bg-slate-200"><div class="h-1 rounded-full bg-emerald-500" style="width:{% widthratio raw_funnel.ready f 100 %}%"></div></div>
+      <div class="mt-0.5 text-[10px] text-slate-500">sync to vet queue</div>
     </a>
     <div class="hidden lg:flex items-center text-slate-300">›</div>
-    <a href="?{{ raw_stage_links.SYNCED }}#raw-jobs-table" class="flex-1 p-2.5 rounded-lg border transition {% if raw_selected_stage == 'SYNCED' %}border-teal-400 bg-teal-50 ring-1 ring-teal-200{% else %}border-slate-200 hover:border-teal-300{% endif %}">
-      <div class="flex items-baseline justify-between"><span class="text-[10px] uppercase font-semibold text-slate-500">Synced</span><span class="text-[11px] font-bold text-teal-600">{% widthratio raw_funnel.synced f 100 %}%</span></div>
+    <a href="?{{ raw_stage_links.VET_QUEUE }}#raw-jobs-table" class="flex-1 p-2.5 rounded-lg border transition {% if raw_selected_stage == 'VET_QUEUE' %}border-teal-400 bg-teal-50 ring-1 ring-teal-200{% else %}border-slate-200 hover:border-teal-300{% endif %}">
+      <div class="flex items-baseline justify-between"><span class="text-[10px] uppercase font-semibold text-slate-500">Vet queue</span><span class="text-[11px] font-bold text-teal-600">{% if f %}{% widthratio raw_funnel.synced f 100 %}{% else %}0{% endif %}%</span></div>
       <div class="text-xl font-black text-teal-700">{{ raw_funnel.synced }}</div>
-      <div class="mt-1 h-1 rounded-full bg-slate-200"><div class="h-1 rounded-full bg-teal-500" style="width:{% widthratio raw_funnel.synced f 100 %}%"></div></div>
+      <div class="mt-0.5 text-[10px] text-slate-500">synced from raw</div>
     </a>
     {% endwith %}
   </div>
   {% if raw_selected_stage %}
   <div class="mt-2 text-xs text-slate-600">
     Filter active: <span class="font-semibold">{{ raw_selected_stage }}</span>.
-    <a href="?{{ raw_stage_links.FETCHED }}#raw-jobs-table" class="text-indigo-600 hover:underline">Clear stage filter</a>
+    <a href="?tab=raw#raw-jobs-table" class="text-indigo-600 hover:underline">Clear stage filter</a>
   </div>
   {% endif %}
 </div>
 
-<div class="grid grid-cols-2 lg:grid-cols-5 gap-2 mb-3">
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
   <a href="?{{ raw_blocker_links.qualified_pending }}#raw-jobs-table"
      class="p-3 rounded-lg border border-emerald-200 bg-emerald-50 hover:border-emerald-300 transition">
     <div class="text-[11px] uppercase text-emerald-700">Qualified Pending</div>
@@ -1315,11 +1309,11 @@
     <div class="text-2xl font-bold text-rose-800">{{ raw_gate_summary.blocked_inactive }}</div>
     <div class="text-[11px] text-rose-700 mt-0.5">posting no longer live</div>
   </a>
-  <a href="?{{ raw_blocker_links.blocked_low_conf }}#raw-jobs-table"
+  <a href="?{{ raw_blocker_links.blocked_jd_gate }}#raw-jobs-table"
      class="p-3 rounded-lg border border-indigo-200 bg-indigo-50 hover:border-indigo-300 transition">
-    <div class="text-[11px] uppercase text-indigo-700">Blocked: Low Confidence</div>
-    <div class="text-2xl font-bold text-indigo-800">{{ raw_gate_summary.blocked_low_conf }}</div>
-    <div class="text-[11px] text-indigo-700 mt-0.5">needs better classification</div>
+    <div class="text-[11px] uppercase text-indigo-700">Blocked: JD Quality</div>
+    <div class="text-2xl font-bold text-indigo-800">{{ raw_gate_summary.blocked_jd_gate }}</div>
+    <div class="text-[11px] text-indigo-700 mt-0.5">has JD but not resume-ready</div>
   </a>
 </div>
 <div class="mb-4 p-3 rounded-lg border border-slate-200 bg-slate-50 text-xs text-slate-600">
@@ -1382,10 +1376,7 @@
         <th class="tbl-th min-w-[190px]">Company</th>
         <th class="tbl-th">Platform</th>
         <th class="tbl-th">Domain</th>
-        <th class="tbl-th min-w-[150px]">Filter</th>
-        <th class="tbl-th">Confidence</th>
-        <th class="tbl-th">Stage</th>
-        <th class="tbl-th">JD Status</th>
+        <th class="tbl-th min-w-[200px]">Pipeline</th>
         <th class="tbl-th">Active</th>
         <th class="tbl-th min-w-[160px]">Country / Scope</th>
         <th class="tbl-th">Gate</th>
@@ -1423,30 +1414,9 @@
             <span class="text-gray-300 text-xs">—</span>
           {% endif %}
         </td>
-        <td class="tbl-td min-w-[150px]">
-          {% if raw.pipeline_row.is_test_run %}
-            <span class="badge-yellow">TEST</span>
-          {% elif raw.pipeline_row.filter_decision == 'STRONG' %}
-            <span class="badge-green">STRONG</span>
-          {% elif raw.pipeline_row.filter_decision == 'POSSIBLE' %}
-            <span class="badge-blue">POSSIBLE</span>
-          {% elif raw.pipeline_row.filter_decision == 'COLD' or raw.pipeline_row.filter_decision == 'NO_MATCH' %}
-            <span class="badge-gray">{{ raw.pipeline_row.filter_decision }}</span>
-          {% elif raw.pipeline_row.filter_decision %}
-            <span class="badge-yellow">{{ raw.pipeline_row.filter_decision }}</span>
-          {% else %}
-            <span class="text-gray-300 text-xs">—</span>
-          {% endif %}
-          {% if raw.pipeline_row.filter_reason %}<div class="mt-1 max-w-[180px] truncate text-[11px] text-slate-400" title="{{ raw.pipeline_row.filter_reason }}">{{ raw.pipeline_row.filter_reason }}</div>{% endif %}
-        </td>
-        <td class="tbl-td">
-          <span class="{% if raw.pipeline_row.confidence_level == 'high' %}badge-green{% elif raw.pipeline_row.confidence_level == 'medium' %}badge-yellow{% elif raw.pipeline_row.confidence_level == 'low' %}badge-red{% else %}badge-gray{% endif %}">{{ raw.pipeline_row.confidence_label }}</span>
-        </td>
-        <td class="tbl-td">
-          <span class="badge-gray">{{ raw.pipeline_stage_label }}</span>
-        </td>
-        <td class="tbl-td">
-          <span class="{% if raw.pipeline_row.jd_level == 'good' %}badge-green{% else %}badge-yellow{% endif %}">{{ raw.pipeline_row.jd_status }}</span>
+        <td class="tbl-td min-w-[200px]">
+          <span class="{% if raw.pipeline_row.pipeline_level == 'success' %}badge-green{% elif raw.pipeline_row.pipeline_level == 'progress' %}badge-blue{% elif raw.pipeline_row.pipeline_level == 'warn' %}badge-yellow{% elif raw.pipeline_row.pipeline_level == 'error' %}badge-red{% else %}badge-gray{% endif %}">{{ raw.pipeline_row.pipeline_label }}</span>
+          <div class="mt-1 max-w-[220px] truncate text-[11px] text-slate-500" title="{{ raw.pipeline_row.pipeline_detail }}">{{ raw.pipeline_row.pipeline_detail }}</div>
         </td>
         <td class="tbl-td">
           {% if raw.is_active %}
@@ -1695,13 +1665,11 @@
     return div.innerHTML;
   };
 
-  const toBadgeClass = (stageRaw) => {
-    const stage = String(stageRaw || "").toUpperCase();
-    if (stage === "READY") return "badge-green";
-    if (stage === "SYNCED") return "badge-blue";
-    if (stage === "DUPLICATE") return "badge-yellow";
-    if (stage === "FILTERED OUT") return "badge-gray";
-    if (stage === "BLOCKED" || stage === "INACTIVE" || stage === "FAILED") return "badge-red";
+  const pipelineBadgeClass = (level) => {
+    if (level === "success") return "badge-green";
+    if (level === "progress") return "badge-blue";
+    if (level === "warn") return "badge-yellow";
+    if (level === "error") return "badge-red";
     return "badge-gray";
   };
 
@@ -1711,13 +1679,7 @@
     const domainMeta = job.classification_source && job.classification_source !== "raw_job"
       ? `<div class="mt-1 text-[11px] text-violet-500">${esc(String(job.classification_source).toLowerCase())}</div>`
       : "";
-    const decision = job.is_test_run ? "TEST" : String(job.filter_decision || "");
-    const filterClass = decision === "STRONG" ? "badge-green" : decision === "POSSIBLE" ? "badge-blue" : decision === "TEST" || decision === "UNKNOWN" ? "badge-yellow" : decision ? "badge-gray" : "";
-    const filterCell = decision
-      ? `<span class="${filterClass}">${esc(decision)}</span>${job.filter_reason ? `<div class="mt-1 max-w-[180px] truncate text-[11px] text-slate-400" title="${esc(job.filter_reason)}">${esc(job.filter_reason)}</div>` : ""}`
-      : `<span class="text-gray-300 text-xs">—</span>`;
-    const confidenceClass = job.confidence_level === "high" ? "badge-green" : job.confidence_level === "medium" ? "badge-yellow" : job.confidence_level === "low" ? "badge-red" : "badge-gray";
-    const jdClass = job.jd_level === "good" ? "badge-green" : job.jd_level === "muted" ? "badge-gray" : "badge-yellow";
+    const pipelineCell = `<span class="${pipelineBadgeClass(job.pipeline_level)}">${esc(job.pipeline_label || job.stage || "—")}</span>${job.pipeline_detail ? `<div class="mt-1 max-w-[220px] truncate text-[11px] text-slate-500" title="${esc(job.pipeline_detail)}">${esc(job.pipeline_detail)}</div>` : ""}`;
     const active = job.is_active ? `<span class="badge-green">✓ Active</span>` : `<span class="badge-red">✗ Inactive</span>`;
     const gateBadgeClass = job.gate_pass ? "badge-green" : "badge-red";
     const gate = job.gate_code ? `<span class="${gateBadgeClass}">${esc(job.gate_code)}</span>` : "—";
@@ -1730,10 +1692,7 @@
         <td class="tbl-td min-w-[190px]"><div class="font-medium text-slate-800">${esc(job.company_name || "—")}</div></td>
         <td class="tbl-td">${platform}</td>
         <td class="tbl-td">${domain}${domainMeta}</td>
-        <td class="tbl-td min-w-[150px]">${filterCell}</td>
-        <td class="tbl-td"><span class="${confidenceClass}">${esc(job.confidence_label || "Unknown")}</span></td>
-        <td class="tbl-td"><span class="${toBadgeClass(job.stage)}">${esc(job.stage || "—")}</span></td>
-        <td class="tbl-td"><span class="${jdClass}">${esc(job.jd_status || "—")}</span></td>
+        <td class="tbl-td min-w-[200px]">${pipelineCell}</td>
         <td class="tbl-td">${active}</td>
         <td class="tbl-td text-xs text-gray-600">${esc(job.country_scope || "—")}</td>
         <td class="tbl-td text-xs text-gray-500">${gate}</td>

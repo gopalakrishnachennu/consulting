@@ -10,6 +10,7 @@ from django.utils import timezone
 from django.utils.timezone import make_aware
 
 from harvest.models import RawJob
+from harvest.role_filter import STRONG
 from harvest.runtime_config import get_ready_stage_min_confidence
 
 
@@ -84,22 +85,21 @@ def _get(params: Mapping[str, str], key: str) -> str:
 def effective_classification_q(min_conf: float = 0.01) -> Q:
     """
     Effective classification confidence filter.
-    Prefer category_confidence when present; fallback to legacy
-    classification_confidence for old rows.
+
+    STRONG intake phrase matches satisfy this without legacy domain-regex
+    category_confidence. Non-STRONG rows still use category_confidence with
+    classification_confidence fallback.
     """
-    return Q(category_confidence__gte=min_conf) | (
+    return Q(filter_decision=STRONG) | Q(category_confidence__gte=min_conf) | (
         Q(category_confidence__isnull=True) & Q(classification_confidence__gte=min_conf)
     )
 
 
 def ready_stage_q(min_conf: float | None = None) -> Q:
-    """READY rows for workflow board (active + JD present + confidence)."""
-    if min_conf is None:
-        min_conf = get_ready_stage_min_confidence()
+    """READY rows for workflow board (STRONG intake + active + usable JD)."""
     return (
         Q(is_test_run=False)
         & Q(has_description=True, is_active=True, is_cold=False, jd_fetch_skipped=False)
-        & effective_classification_q(min_conf=min_conf)
         & Q(filter_decision__in=POOL_ALLOWED_FILTER_DECISIONS)
     )
 
@@ -145,6 +145,10 @@ def duplicate_rawjob_q() -> Q:
 def apply_stage_filter(qs: QuerySet[RawJob], stage: str) -> QuerySet[RawJob]:
     """Canonical stage predicates for funnel card click-through and stats."""
     stage_value = (stage or "").strip().upper()
+    if stage_value in {"INTAKE", "JD_BACKFILL", "ENRICH", "READY", "VET_QUEUE", "INACTIVE", "TEST", "FILTERED_OUT", "DUPLICATE", "FAILED"}:
+        from harvest.unified_pipeline import unified_step_q
+
+        return qs.filter(unified_step_q(stage_value))
     if stage_value == "FETCHED":
         return qs
     if stage_value == "PARSED":
@@ -165,14 +169,20 @@ def apply_stage_filter(qs: QuerySet[RawJob], stage: str) -> QuerySet[RawJob]:
 
 
 def build_funnel_counts(base_qs: QuerySet[RawJob] | None = None) -> dict[str, int]:
+    from harvest.unified_pipeline import build_unified_funnel_counts
+
     qs = base_qs if base_qs is not None else RawJob.objects.all()
+    unified = build_unified_funnel_counts(qs)
     return {
-        "fetched": qs.count(),
-        "parsed": apply_stage_filter(qs, "PARSED").count(),
-        "enriched": apply_stage_filter(qs, "ENRICHED").count(),
-        "classified": apply_stage_filter(qs, "CLASSIFIED").count(),
-        "ready": apply_stage_filter(qs, "READY").count(),
-        "synced": apply_stage_filter(qs, "SYNCED").count(),
+        "fetched": unified["total"],
+        "intake": unified["intake"],
+        "jd_backfill": unified["jd_backfill"],
+        "enrich": unified["enrich"],
+        "ready": unified["ready"],
+        "synced": unified["vet_queue"],
+        # Legacy keys kept for callers that still reference them.
+        "parsed": qs.filter(is_test_run=False, has_description=True).count(),
+        "classified": qs.filter(is_test_run=False).filter(effective_classification_q(min_conf=0.01)).count(),
     }
 
 

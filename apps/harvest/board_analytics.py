@@ -21,6 +21,7 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from .board_capabilities import get_capabilities, capability_gap
+from .role_filter import STRONG
 from .services.rawjob_query import (
     duplicate_rawjob_q,
     effective_classification_q,
@@ -349,6 +350,7 @@ def _build_board_analytics(window_days: int = 30) -> dict:
             Q(sync_status="PENDING", has_description=True, is_active=True)
             & effective_classification_q(min_conf=0.01)
             & ~effective_classification_q(min_conf=ready_min_conf)
+            & ~Q(filter_decision=STRONG)
         ),
     )
     if "requirements" in _raw_fields:

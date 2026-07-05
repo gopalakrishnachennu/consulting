@@ -28,6 +28,9 @@
         <div class="border-b border-slate-200 p-6">
           <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
             <h2 class="text-2xl font-bold leading-tight text-slate-900">{{ rawjob.title }}</h2>
+            {% with pipe=unified_pipeline %}
+            <span class="{% if pipe.level == 'success' %}badge-green{% elif pipe.level == 'progress' %}badge-blue{% elif pipe.level == 'warn' %}badge-yellow{% elif pipe.level == 'error' %}badge-red{% else %}badge-gray{% endif %}">{{ pipe.label }}</span>
+            {% endwith %}
             {% if rawjob.is_remote %}
             <span class="badge-green">Remote</span>
             {% endif %}
@@ -66,6 +69,9 @@
             </span>
             {% endif %}
           </div>
+          {% if unified_pipeline.detail %}
+          <p class="mt-2 text-sm text-slate-500">{{ unified_pipeline.detail }}</p>
+          {% endif %}
         </div>
 
         <div class="grid border-b border-slate-200 sm:grid-cols-2 xl:grid-cols-4">
@@ -318,7 +324,7 @@
           <span class="badge-red mb-2">Blocked for resume</span>
           {% endif %}
           <p class="mb-2 text-sm text-slate-700">{{ resume_jd_gate.reason_text }}</p>
-          {% if resume_jd_gate.reason_code == 'LOW_CLASSIFICATION_CONFIDENCE' %}
+          {% if resume_jd_gate.reason_code == 'LOW_CLASSIFICATION_CONFIDENCE' and rawjob.filter_decision != 'STRONG' %}
           <p class="mb-3 rounded-lg border border-cyan-200 bg-cyan-50 p-2 text-xs text-cyan-900">This job can still be sent to Vet Queue for human review. Resume generation stays blocked until enrichment raises confidence.</p>
           {% endif %}
           <div class="grid grid-cols-2 gap-2">

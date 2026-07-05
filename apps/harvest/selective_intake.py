@@ -2,12 +2,63 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Mapping
 
 from .role_filter import STRONG, ClassifyResult
 
 if TYPE_CHECKING:
     from .models import HarvestEngineConfig
+
+# Phrase-matched intake rows are treated as classified for pipeline gating/UI.
+STRONG_INTAKE_CONFIDENCE = 0.92
+
+
+def is_strong_intake(raw_job) -> bool:
+    return (getattr(raw_job, "filter_decision", "") or "").strip().upper() == STRONG
+
+
+def effective_pipeline_confidence(raw_job) -> float | None:
+    """
+    Confidence used for READY/sync/resume-gate decisions.
+
+    STRONG intake (Role Category phrase match) bypasses legacy domain-regex
+    category_confidence — the intake rule is the source of truth.
+    """
+    if is_strong_intake(raw_job):
+        return STRONG_INTAKE_CONFIDENCE
+
+    snapshot = getattr(raw_job, "classification_snapshot", None)
+    if snapshot and getattr(snapshot, "final_confidence", None):
+        return float(snapshot.final_confidence)
+
+    for attr in ("category_confidence", "classification_confidence"):
+        val = getattr(raw_job, attr, None)
+        if val is not None:
+            return float(val)
+    return None
+
+
+def apply_strong_intake_confidence_fields(defaults: Mapping[str, Any]) -> dict[str, Any]:
+    """Persist intake confidence on upsert when a STRONG phrase match is stored."""
+    merged = dict(defaults)
+    decision = (merged.get("filter_decision") or "").strip().upper()
+    if decision != STRONG:
+        return merged
+    current = merged.get("category_confidence")
+    if current is None or float(current) < STRONG_INTAKE_CONFIDENCE:
+        merged["category_confidence"] = STRONG_INTAKE_CONFIDENCE
+    return merged
+
+
+def ensure_strong_intake_confidence_on_job(job) -> bool:
+    """Backfill category_confidence on in-memory RawJob rows after enrichment."""
+    if not is_strong_intake(job):
+        return False
+    current = getattr(job, "category_confidence", None)
+    if current is not None and float(current) >= STRONG_INTAKE_CONFIDENCE:
+        return False
+    job.category_confidence = STRONG_INTAKE_CONFIDENCE
+    return True
 
 
 def selective_enforcement_active(cfg: HarvestEngineConfig, *, fetch_all: bool = False) -> bool:

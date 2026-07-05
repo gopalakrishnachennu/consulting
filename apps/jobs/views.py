@@ -276,15 +276,9 @@ from submissions.models import ApplicationSubmission
 
 
 def _rawjob_effective_confidence(raw_job) -> float | None:
-    snapshot = getattr(raw_job, "classification_snapshot", None)
-    if snapshot and getattr(snapshot, "final_confidence", None):
-        return float(snapshot.final_confidence)
-    value = (
-        raw_job.category_confidence
-        if raw_job.category_confidence is not None
-        else raw_job.classification_confidence
-    )
-    return float(value) if value is not None else None
+    from harvest.selective_intake import effective_pipeline_confidence
+
+    return effective_pipeline_confidence(raw_job)
 
 
 def _rawjob_salary_label(raw_job) -> str:
@@ -356,11 +350,6 @@ def _rawjob_blocker_label(raw_job, gate) -> str:
         return "INACTIVE_POSTING"
     if not raw_job.has_description:
         return "MISSING_JD"
-    confidence = _rawjob_effective_confidence(raw_job)
-    from harvest.runtime_config import get_ready_stage_min_confidence
-
-    if confidence is not None and confidence < get_ready_stage_min_confidence():
-        return "LOW_CONFIDENCE"
     if gate and not gate.usable:
         return gate.reason_code
     return ""
@@ -376,15 +365,22 @@ def build_rawjob_pipeline_row(raw_job, *, gate=None, country_label: str = "") ->
             gate = None
 
     effective = effective_raw_job_classification(raw_job)
-    confidence = _rawjob_effective_confidence(raw_job)
-    from harvest.runtime_config import get_ready_stage_min_confidence
-
-    ready_min_conf = get_ready_stage_min_confidence()
-    confidence_pct = round(confidence * 100) if confidence is not None else None
     scope_label = country_label or _rawjob_scope_label(raw_job, effective=effective)
     blocker = _rawjob_blocker_label(raw_job, gate)
     jd_status = _rawjob_jd_label(raw_job)
     filter_decision = raw_job.filter_decision or ("TEST" if getattr(raw_job, "is_test_run", False) else "")
+    role_category = (raw_job.role_category or "").strip()
+    from harvest.selective_intake import is_strong_intake
+
+    if role_category:
+        intake_label = role_category
+        intake_level = "matched"
+    elif is_strong_intake(raw_job):
+        intake_label = "STRONG"
+        intake_level = "matched"
+    else:
+        intake_label = filter_decision or "—"
+        intake_level = "none" if not filter_decision else "weak"
 
     location_type = effective.get("location_type") or raw_job.location_type
     is_remote = bool(effective.get("is_remote"))
@@ -402,6 +398,8 @@ def build_rawjob_pipeline_row(raw_job, *, gate=None, country_label: str = "") ->
         else ""
     ) or "raw_job"
 
+    unified = raw_job.unified_pipeline(gate=gate)
+
     return {
         "company": raw_job.company_name or "",
         "platform": raw_job.platform_slug or (raw_job.job_platform.name if raw_job.job_platform else ""),
@@ -411,14 +409,13 @@ def build_rawjob_pipeline_row(raw_job, *, gate=None, country_label: str = "") ->
         "country": effective.get("country") or "",
         "country_codes": effective.get("country_codes") or [],
         "classification_source": classification_source,
-        "confidence_pct": confidence_pct,
-        "confidence_label": f"{confidence_pct}%" if confidence_pct is not None else "Unknown",
-        "confidence_level": (
-            "high" if confidence is not None and confidence >= 0.75
-            else "medium" if confidence is not None and confidence >= ready_min_conf
-            else "low" if confidence is not None
-            else "unknown"
-        ),
+        "intake_role": role_category,
+        "intake_label": intake_label,
+        "intake_level": intake_level,
+        "pipeline_step": unified["step"],
+        "pipeline_label": unified["label"],
+        "pipeline_detail": unified["detail"],
+        "pipeline_level": unified["level"],
         "jd_status": jd_status,
         "jd_level": "good" if raw_job.has_description else ("muted" if blocker == "FILTERED_OUT" else "warn"),
         "country_scope": scope_label,
@@ -1771,7 +1768,7 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
             "sync_skip_reason", "external_id", "location_type", "salary_currency",
             "salary_period", "jd_backfill_locked_at",
             "filter_decision", "filter_reason", "is_cold", "jd_fetch_skipped",
-            "is_test_run", "fetch_batch",
+            "is_test_run", "fetch_batch", "role_category", "role_category",
         )
 
         paginator = Paginator(qs, 100)
@@ -1805,12 +1802,19 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
                 "location_raw": (job.location_raw or "")[:64],
                 "fetched_at": row["harvested"],
                 "is_active": bool(job.is_active),
-                "stage": job.pipeline_stage_label(),
+                "pipeline_step": row["pipeline_step"],
+                "stage": row["pipeline_step"],
+                "pipeline_label": row["pipeline_label"],
+                "pipeline_detail": row["pipeline_detail"],
+                "pipeline_level": row["pipeline_level"],
                 "resume_jd_usable": jd_gate.usable,
                 "resume_jd_reason_code": jd_gate.reason_code,
                 "country": (detected_country or row["country"] or "")[:48],
-                "confidence_label": row["confidence_label"],
-                "confidence_level": row["confidence_level"],
+                "confidence_label": row["intake_label"],
+                "confidence_level": row["intake_level"],
+                "intake_label": row["intake_label"],
+                "intake_level": row["intake_level"],
+                "intake_role": row["intake_role"],
                 "jd_status": row["jd_status"],
                 "jd_level": row["jd_level"],
                 "country_scope": row["country_scope"],
@@ -1876,12 +1880,10 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
             FILTER_STATE_KEYS,
             apply_rawjob_filters,
             build_funnel_counts,
-            effective_classification_q,
             filtered_out_q,
             production_rawjobs_queryset,
             ready_stage_q,
         )
-        from harvest.runtime_config import get_ready_stage_min_confidence
 
         raw_stats = load_rawjobs_dashboard_stats(force_refresh=False)
         raw_total = raw_stats.get("total", 0)
@@ -1899,8 +1901,7 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
             raw_insights = raw_jobs_workflow_insights()
             raw_base_qs = production_rawjobs_queryset()
             raw_funnel = (raw_insights or {}).get("funnel") or build_funnel_counts(raw_base_qs)
-            ready_min_conf = get_ready_stage_min_confidence()
-            raw_ready_q = ready_stage_q(min_conf=ready_min_conf)
+            raw_ready_q = ready_stage_q()
             raw_qualified_pending = raw_base_qs.filter(raw_ready_q, sync_status=RawJob.SyncStatus.PENDING).count()
             raw_qualified_synced = raw_base_qs.filter(raw_ready_q, sync_status=RawJob.SyncStatus.SYNCED).count()
             raw_pending_total = raw_stats.get("pending", 0)
@@ -1914,12 +1915,12 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
                 sync_status=RawJob.SyncStatus.PENDING,
             ).filter(filtered_out_q()).count()
             raw_blocked_inactive = raw_base_qs.filter(sync_status=RawJob.SyncStatus.PENDING, is_active=False).count()
-            raw_blocked_low_conf = (
+            raw_blocked_jd_gate = (
                 raw_base_qs.filter(sync_status=RawJob.SyncStatus.PENDING, has_description=True, is_active=True)
                 .filter(is_cold=False, jd_fetch_skipped=False)
                 .exclude(filter_decision__in=["COLD", "NO_MATCH"])
-                .filter(effective_classification_q(min_conf=0.01))
-                .exclude(effective_classification_q(min_conf=ready_min_conf))
+                .filter(filter_decision="STRONG")
+                .exclude(ready_stage_q())
                 .count()
             )
             raw_duplicates_total = (raw_insights or {}).get("duplicates", {}).get("total")
@@ -1932,7 +1933,7 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
                 "blocked_missing_jd": raw_blocked_missing_jd,
                 "blocked_filtered_out": raw_blocked_filtered_out,
                 "blocked_inactive": raw_blocked_inactive,
-                "blocked_low_conf": raw_blocked_low_conf,
+                "blocked_jd_gate": raw_blocked_jd_gate,
                 "duplicates": raw_duplicates_total,
                 "test_rows": raw_test_total,
             }
@@ -2029,12 +2030,11 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
                     if value_s:
                         raw_scope_pairs.append((key, value_s))
             raw_stage_links = {
-                "FETCHED": _raw_query_with_overrides(raw_scope_pairs, {}, remove_keys={"stage"}),
-                "PARSED": _raw_query_with_overrides(raw_scope_pairs, {"stage": "PARSED"}, remove_keys={"stage"}),
-                "ENRICHED": _raw_query_with_overrides(raw_scope_pairs, {"stage": "ENRICHED"}, remove_keys={"stage"}),
-                "CLASSIFIED": _raw_query_with_overrides(raw_scope_pairs, {"stage": "CLASSIFIED"}, remove_keys={"stage"}),
+                "INTAKE": _raw_query_with_overrides(raw_scope_pairs, {"stage": "INTAKE"}, remove_keys={"stage"}),
+                "JD_BACKFILL": _raw_query_with_overrides(raw_scope_pairs, {"stage": "JD_BACKFILL"}, remove_keys={"stage"}),
+                "ENRICH": _raw_query_with_overrides(raw_scope_pairs, {"stage": "ENRICH"}, remove_keys={"stage"}),
                 "READY": _raw_query_with_overrides(raw_scope_pairs, {"stage": "READY"}, remove_keys={"stage"}),
-                "SYNCED": _raw_query_with_overrides(raw_scope_pairs, {"stage": "SYNCED"}, remove_keys={"stage"}),
+                "VET_QUEUE": _raw_query_with_overrides(raw_scope_pairs, {"stage": "VET_QUEUE"}, remove_keys={"stage"}),
             }
             raw_blocker_links = {
                 "qualified_pending": _raw_query_with_overrides(
@@ -2057,9 +2057,9 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
                     {"sync_status": "PENDING", "is_active": "0"},
                     remove_keys={"stage", "sync_status", "has_jd", "is_active", "classification_bucket", "filter_decision"},
                 ),
-                "blocked_low_conf": _raw_query_with_overrides(
+                "blocked_jd_gate": _raw_query_with_overrides(
                     raw_scope_pairs,
-                    {"sync_status": "PENDING", "classification_bucket": "low"},
+                    {"sync_status": "PENDING", "stage": "JD_BACKFILL"},
                     remove_keys={"stage", "sync_status", "has_jd", "is_active", "classification_bucket", "filter_decision"},
                 ),
             }

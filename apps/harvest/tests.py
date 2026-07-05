@@ -506,7 +506,7 @@ class HarvestEngineHardeningTests(TestCase):
         existing.refresh_from_db()
         self.assertEqual(existing.title, "Senior Software Engineer")
 
-    def test_ready_stage_threshold_comes_from_engine_config(self):
+    def test_ready_stage_ignores_legacy_domain_confidence_for_strong_intake(self):
         from django.core.cache import cache
         from harvest.models import HarvestEngineConfig, RawJob
         from harvest.services.rawjob_query import ready_stage_q
@@ -519,27 +519,32 @@ class HarvestEngineHardeningTests(TestCase):
         low = RawJob.objects.create(
             **self._raw_defaults(
                 url_hash="ready-low",
-                description="A real job description",
+                description="A real job description with enough words to pass resume JD gate checks easily.",
+                description_clean="A real job description with enough words to pass resume JD gate checks easily.",
                 has_description=True,
-                category_confidence=0.60,
-                job_domain="devops-engineer",
+                word_count=120,
+                category_confidence=0.10,
+                filter_decision="STRONG",
+                role_category="Software",
             )
         )
-        high = RawJob.objects.create(
+        legacy = RawJob.objects.create(
             **self._raw_defaults(
-                url_hash="ready-high",
-                original_url="https://hardening.example/jobs/high",
-                content_hash="content-high",
-                description="A real job description",
+                url_hash="ready-legacy",
+                original_url="https://hardening.example/jobs/legacy",
+                content_hash="content-legacy",
+                description="A real job description with enough words to pass resume JD gate checks easily.",
+                description_clean="A real job description with enough words to pass resume JD gate checks easily.",
                 has_description=True,
-                category_confidence=0.75,
-                job_domain="devops-engineer",
+                word_count=120,
+                category_confidence=0.10,
+                filter_decision="POSSIBLE",
             )
         )
 
         qs = RawJob.objects.filter(ready_stage_q())
-        self.assertFalse(qs.filter(pk=low.pk).exists())
-        self.assertTrue(qs.filter(pk=high.pk).exists())
+        self.assertTrue(qs.filter(pk=low.pk).exists())
+        self.assertFalse(qs.filter(pk=legacy.pk).exists())
 
     def test_scope_evaluation_uses_config_provider_when_requested(self):
         from harvest.location_resolver import LocationResolution, evaluate_rawjob_scope
@@ -3754,7 +3759,7 @@ class RawJobPipelineUnificationTests(TestCase):
             word_count: int = 0,
             job_domain: str = "",
             is_test_run: bool = False,
-            filter_decision: str = "",
+            filter_decision: str = "STRONG",
         ) -> RawJob:
             url = f"https://example.com/jobs/{suffix}"
             return RawJob.objects.create(
@@ -3779,7 +3784,7 @@ class RawJobPipelineUnificationTests(TestCase):
         _mk("fetched", desc="")
         _mk("parsed", desc="Parsed description text")
         _mk("enriched", desc="Enriched text", quality_score=0.71)
-        _mk("classified", desc="Classified text", quality_score=0.81, category_confidence=0.24)
+        _mk("classified", desc="Classified text", quality_score=0.81, category_confidence=0.24, word_count=120, filter_decision="STRONG")
         _mk(
             "ready",
             desc="Ready text",
@@ -3808,12 +3813,11 @@ class RawJobPipelineUnificationTests(TestCase):
         insights = raw_jobs_workflow_insights(stale_pending_hours=6)
         funnel = insights["funnel"]
         stage_to_key = {
-            "FETCHED": "fetched",
-            "PARSED": "parsed",
-            "ENRICHED": "enriched",
-            "CLASSIFIED": "classified",
+            "INTAKE": "intake",
+            "JD_BACKFILL": "jd_backfill",
+            "ENRICH": "enrich",
             "READY": "ready",
-            "SYNCED": "synced",
+            "VET_QUEUE": "synced",
         }
         for stage, key in stage_to_key.items():
             expected = apply_rawjob_filters(RawJob.objects.all(), {"stage": stage}).count()
@@ -3824,13 +3828,13 @@ class RawJobPipelineUnificationTests(TestCase):
             )
 
     def test_rawjobs_stage_page_count_matches_shared_filter(self):
-        response = self.client.get(reverse("harvest-rawjobs"), {"stage": "CLASSIFIED"})
+        response = self.client.get(reverse("harvest-rawjobs"), {"stage": "ENRICH"})
         self.assertEqual(response.status_code, 302)
         parsed = urlparse(response["Location"])
         self.assertEqual(parsed.path, reverse("jobs-pipeline"))
         qs = parse_qs(parsed.query)
         self.assertEqual(qs.get("tab"), ["raw"])
-        self.assertEqual(qs.get("stage"), ["CLASSIFIED"])
+        self.assertEqual(qs.get("stage"), ["ENRICH"])
 
     def test_jobs_pipeline_uses_shared_raw_total_snapshot(self):
         from harvest.services.pipeline_snapshot import load_rawjobs_dashboard_stats
@@ -3860,7 +3864,7 @@ class RawJobPipelineUnificationTests(TestCase):
         self.assertEqual(summary["qualified_synced"], 1)
         self.assertEqual(summary["blocked_missing_jd"], 1)
         self.assertEqual(summary["blocked_inactive"], 0)
-        self.assertEqual(summary["blocked_low_conf"], 1)
+        self.assertEqual(summary["blocked_jd_gate"], 0)
 
     def test_jobs_pipeline_hides_test_rows_by_default(self):
         from harvest.models import RawJob
@@ -3890,12 +3894,12 @@ class RawJobPipelineUnificationTests(TestCase):
         from harvest.models import RawJob
         from harvest.services.rawjob_query import apply_rawjob_filters
 
-        response = self.client.get(reverse("jobs-pipeline"), {"tab": "raw", "stage": "CLASSIFIED"})
+        response = self.client.get(reverse("jobs-pipeline"), {"tab": "raw", "stage": "ENRICH"})
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.context["raw_selected_stage"], "CLASSIFIED")
+        self.assertEqual(response.context["raw_selected_stage"], "ENRICH")
 
         expected_ids = list(
-            apply_rawjob_filters(RawJob.objects.all(), {"stage": "CLASSIFIED"})
+            apply_rawjob_filters(RawJob.objects.all(), {"stage": "ENRICH"})
             .order_by("-fetched_at")
             .values_list("id", flat=True)[:200]
         )
@@ -3903,7 +3907,7 @@ class RawJobPipelineUnificationTests(TestCase):
         self.assertEqual(actual_ids, expected_ids)
 
         html = response.content.decode("utf-8")
-        self.assertIn("?tab=raw&amp;stage=CLASSIFIED#raw-jobs-table", html)
+        self.assertIn("?tab=raw&amp;stage=ENRICH#raw-jobs-table", html)
         self.assertIn("?tab=raw&amp;sync_status=PENDING&amp;has_jd=0#raw-jobs-table", html)
 
     def test_jobs_pipeline_raw_json_includes_domain_and_category(self):
@@ -4007,17 +4011,17 @@ class RawJobPipelineUnificationTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         html = response.content.decode("utf-8")
-        self.assertIn("?tab=raw&amp;stage=CLASSIFIED#raw-jobs-table", html)
+        self.assertIn("?tab=raw&amp;stage=ENRICH#raw-jobs-table", html)
         self.assertIn("?tab=raw&amp;sync_status=PENDING&amp;has_jd=0#raw-jobs-table", html)
 
     def test_jobs_pipeline_supports_legacy_subtab_raw_links(self):
         response = self.client.get(
             reverse("jobs-pipeline"),
-            {"_subtab": "jobs", "stage": "CLASSIFIED"},
+            {"_subtab": "jobs", "stage": "ENRICH"},
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["tab"], "raw")
-        self.assertEqual(response.context["raw_selected_stage"], "CLASSIFIED")
+        self.assertEqual(response.context["raw_selected_stage"], "ENRICH")
 
     def test_jobs_pipeline_pool_gate_filter(self):
         from jobs.models import Job
@@ -5607,3 +5611,114 @@ class ActiveJobIntegrityCleanupTaskTests(TestCase):
         self.assertEqual(loser.pipeline_reason_code, "DUPLICATE_SUPERSEDED")
         self.assertEqual(result["duplicate_groups"], 1)
         self.assertEqual(result["duplicate_jobs_archived"], 1)
+
+
+class BackfillStrongIntakeConfidenceTests(TestCase):
+    def setUp(self):
+        import hashlib
+
+        from companies.models import Company
+        from harvest.models import RawJob
+        from harvest.selective_intake import STRONG_INTAKE_CONFIDENCE
+
+        self.company = Company.objects.create(name="BackfillCo")
+        self.strong_conf = STRONG_INTAKE_CONFIDENCE
+
+        def _mk(suffix: str, **kwargs) -> RawJob:
+            url = f"https://example.com/jobs/backfill-{suffix}"
+            defaults = {
+                "company": self.company,
+                "company_name": "BackfillCo",
+                "title": f"Role {suffix}",
+                "url_hash": hashlib.sha256(url.encode()).hexdigest(),
+                "original_url": url,
+                "filter_decision": "STRONG",
+            }
+            defaults.update(kwargs)
+            return RawJob.objects.create(**defaults)
+
+        self.null_conf = _mk("null", category_confidence=None)
+        self.low_conf = _mk("low", category_confidence=0.0)
+        self.ok_conf = _mk("ok", category_confidence=0.97)
+        self.possible = _mk(
+            "possible",
+            filter_decision="POSSIBLE",
+            category_confidence=0.0,
+            original_url="https://example.com/jobs/backfill-possible",
+            url_hash=hashlib.sha256(b"https://example.com/jobs/backfill-possible").hexdigest(),
+        )
+
+    def test_dry_run_reports_candidates_without_writing(self):
+        out = StringIO()
+        call_command("backfill_strong_intake_confidence", stdout=out)
+        self.null_conf.refresh_from_db()
+        self.low_conf.refresh_from_db()
+        self.assertIsNone(self.null_conf.category_confidence)
+        self.assertEqual(self.low_conf.category_confidence, 0.0)
+        self.assertIn("STRONG rows needing backfill: 2", out.getvalue())
+        self.assertIn("DRY-RUN", out.getvalue())
+
+    def test_apply_sets_intake_confidence_without_lowering_higher_values(self):
+        call_command("backfill_strong_intake_confidence", "--apply")
+        self.null_conf.refresh_from_db()
+        self.low_conf.refresh_from_db()
+        self.ok_conf.refresh_from_db()
+        self.possible.refresh_from_db()
+        self.assertEqual(self.null_conf.category_confidence, self.strong_conf)
+        self.assertEqual(self.low_conf.category_confidence, self.strong_conf)
+        self.assertEqual(self.ok_conf.category_confidence, 0.97)
+        self.assertEqual(self.possible.category_confidence, 0.0)
+
+
+class UnifiedPipelineTests(TestCase):
+    def test_strong_missing_jd_is_intake(self):
+        import hashlib
+
+        from companies.models import Company
+        from harvest.models import RawJob
+
+        company = Company.objects.create(name="PipeCo")
+        url = "https://example.com/jobs/pipe-intake"
+        raw = RawJob.objects.create(
+            company=company,
+            company_name="PipeCo",
+            title="DevOps Engineer",
+            url_hash=hashlib.sha256(url.encode()).hexdigest(),
+            original_url=url,
+            filter_decision="STRONG",
+            role_category="DevOps",
+            has_description=False,
+            is_active=True,
+        )
+        pipe = raw.unified_pipeline()
+        self.assertEqual(pipe["step"], "INTAKE")
+        self.assertIn("STRONG", pipe["detail"])
+
+    def test_strong_ready_when_jd_usable(self):
+        import hashlib
+
+        from companies.models import Company
+        from harvest.models import RawJob
+
+        company = Company.objects.create(name="PipeCo")
+        url = "https://example.com/jobs/pipe-ready"
+        desc = " ".join(["word"] * 120)
+        raw = RawJob.objects.create(
+            company=company,
+            company_name="PipeCo",
+            title="Data Engineer",
+            url_hash=hashlib.sha256(url.encode()).hexdigest(),
+            original_url=url,
+            description=desc,
+            description_clean=desc,
+            has_description=True,
+            word_count=120,
+            filter_decision="STRONG",
+            role_category="Data",
+            job_domain="data-engineer",
+            scope_status=RawJob.ScopeStatus.PRIORITY_TARGET,
+            quality_score=0.8,
+            is_active=True,
+        )
+        pipe = raw.unified_pipeline()
+        self.assertEqual(pipe["step"], "READY")

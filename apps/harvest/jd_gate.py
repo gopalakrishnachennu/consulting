@@ -84,8 +84,12 @@ def evaluate_raw_job_resume_gate(raw_job) -> ResumeJDGate:
     desc = _clean_spaces(desc_clean or desc_raw)
     title = _clean_spaces(getattr(raw_job, "title", ""))
     is_active = bool(getattr(raw_job, "is_active", True))
-    class_conf = getattr(raw_job, "classification_confidence", None)
-    class_conf = float(class_conf) if class_conf is not None else 0.0
+    from .selective_intake import effective_pipeline_confidence, is_strong_intake
+
+    class_conf = effective_pipeline_confidence(raw_job)
+    if class_conf is None:
+        legacy = getattr(raw_job, "classification_confidence", None)
+        class_conf = float(legacy) if legacy is not None else 0.0
 
     # Prefer stored enrichment word_count to avoid recomputing on list pages.
     stored_wc = getattr(raw_job, "word_count", 0) or 0
@@ -138,7 +142,7 @@ def evaluate_raw_job_resume_gate(raw_job) -> ResumeJDGate:
             min_classification_confidence=min_class_conf,
         )
 
-    if class_conf < min_class_conf:
+    if not is_strong_intake(raw_job) and class_conf < min_class_conf:
         return ResumeJDGate(
             usable=False,
             reason_code=REASON_LOW_CLASSIFICATION,

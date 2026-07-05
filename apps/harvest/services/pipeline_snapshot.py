@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from harvest.models import CompanyFetchRun, RawJob
 from harvest.runtime_config import get_jd_backfill_lock_stale_minutes, get_ready_stage_min_confidence
+from harvest.role_filter import STRONG
 from harvest.services.rawjob_query import build_funnel_counts, filtered_out_q, production_rawjobs_queryset
 
 
@@ -132,7 +133,7 @@ def raw_jobs_workflow_insights(*, stale_pending_hours: int = 6) -> dict:
                 Q(category_confidence__isnull=True)
                 & (Q(classification_confidence__lt=ready_min_conf) | Q(classification_confidence__isnull=True))
             )
-        ).count(),
+        ).exclude(filter_decision=STRONG).count(),
         "missing_salary": base.filter(salary_min__isnull=True, salary_max__isnull=True).count(),
         "missing_location": base.filter(Q(location_raw="") & Q(city="") & Q(state="") & Q(country="")).count(),
         "missing_experience": base.filter(

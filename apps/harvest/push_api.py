@@ -23,6 +23,7 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
 from .normalizer import compute_content_hash, compute_url_hash
+from .selective_intake import apply_strong_intake_confidence_fields
 from .services.enrichment_input import build_enrichment_input
 
 logger = logging.getLogger("harvest.push_api")
@@ -585,6 +586,7 @@ class PushJobsView(View):
                 scope_updates = evaluate_rawjob_scope(scope_probe, use_provider=None, save=False)
                 for field, value in scope_updates.items():
                     defaults[field] = value
+                defaults = apply_strong_intake_confidence_fields(defaults)
 
                 upsert = upsert_raw_job_with_dedupe(
                     company=company,

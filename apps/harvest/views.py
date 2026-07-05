@@ -1825,6 +1825,7 @@ class RawJobDetailView(SuperuserRequiredMixin, DetailView):
             .order_by("priority", "slug")
         ) if self.object.job_domain_candidates else []
         ctx["resume_jd_gate"] = evaluate_raw_job_resume_gate(self.object)
+        ctx["unified_pipeline"] = self.object.unified_pipeline(gate=ctx["resume_jd_gate"])
         ctx["payload_snapshots"] = self.object.payload_snapshots.all()[:8]
         ctx["payload_snapshot_count"] = self.object.payload_snapshots.count()
         ctx["ops_timeline"] = _build_rawjob_ops_timeline(self.object)

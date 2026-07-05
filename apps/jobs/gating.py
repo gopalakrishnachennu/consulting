@@ -231,12 +231,10 @@ def evaluate_raw_job_gate(raw_job, cfg=None) -> GateResult:
     source_bonus = 0.45 if (raw_job.platform_slug or "").lower() in {
         "workday", "greenhouse", "lever", "ashby", "icims", "smartrecruiters", "bamboohr", "dayforce", "workable", "jobvite", "jarvis"
     } else 0.3
-    # Prefer category_confidence (direct category-detection signal) over the
-    # legacy classification_confidence (field-completeness average) which was
-    # poisoning trust scores for jobs that have category=="" or empty fields.
-    cls_conf = _clamp01(_as_float(
-        getattr(raw_job, "category_confidence", None) or raw_job.classification_confidence, 0.0
-    ))
+    # Prefer intake phrase match (STRONG) over legacy domain-regex confidence.
+    from harvest.selective_intake import effective_pipeline_confidence
+
+    cls_conf = _clamp01(effective_pipeline_confidence(raw_job) or 0.0)
     platform_conf = 0.5
     if raw_job.platform_label_id:
         platform_conf_map = {"HIGH": 1.0, "MEDIUM": 0.7, "LOW": 0.4, "UNKNOWN": 0.5}

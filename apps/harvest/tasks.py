@@ -18,6 +18,8 @@ from .runtime_config import (
     require_harvest_engine_config,
 )
 from .selective_intake import (
+    apply_strong_intake_confidence_fields,
+    ensure_strong_intake_confidence_on_job,
     selective_enforcement_active,
     should_pre_storage_drop,
 )
@@ -1780,6 +1782,7 @@ def fetch_raw_jobs_for_company_task(
                 **_company_snapshot_fields(label.company),
                 **enriched,
             }
+            defaults = apply_strong_intake_confidence_fields(defaults)
 
             def _archive_job_payload(raw_obj):
                 try:
@@ -4272,6 +4275,7 @@ def jarvis_ingest_task(self, url: str, user_id: int | None = None):
         # ── enrichment fields ─────────────────────────────────────────
         **enriched,
     }
+    raw_job_defaults = apply_strong_intake_confidence_fields(raw_job_defaults)
 
     from .services.rawjob_upsert import upsert_raw_job_with_dedupe
 
@@ -6307,6 +6311,8 @@ def enrich_existing_jobs_task(
                 has_change = True
 
         if has_change:
+            if ensure_strong_intake_confidence_on_job(job):
+                has_change = True
             bulk_updates.append(job)
             updated += 1
         else:
