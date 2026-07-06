@@ -8,7 +8,7 @@ from harvest.location_resolver import COUNTRY_CODE_TO_NAME
 
 
 def get_vet_queue_country_codes() -> list[str]:
-    """ISO codes allowed into the vet queue. Empty = no extra country filter."""
+    """ISO codes allowed into the vet queue for sync/gate. Empty = no extra country filter."""
     from harvest.models import HarvestEngineConfig, VetGateConfig
 
     vet_cfg = VetGateConfig.get()
@@ -17,6 +17,15 @@ def get_vet_queue_country_codes() -> list[str]:
     if cleaned:
         return cleaned
     return HarvestEngineConfig.get().get_target_countries()
+
+
+def get_vet_queue_pool_country_codes() -> list[str]:
+    """ISO codes for POOL UI/badge filtering. Only applies when explicitly configured."""
+    from harvest.models import VetGateConfig
+
+    vet_cfg = VetGateConfig.get()
+    configured = vet_cfg.vet_queue_country_codes if isinstance(vet_cfg.vet_queue_country_codes, list) else []
+    return [str(code).strip().upper() for code in configured if str(code).strip()]
 
 
 def raw_job_matches_vet_queue_countries(raw_job, codes: list[str] | None = None) -> bool:
@@ -50,7 +59,7 @@ def vet_queue_job_queryset():
     from jobs.models import Job
 
     qs = Job.objects.filter(status=Job.Status.POOL, is_archived=False)
-    country_q = job_vet_country_q()
+    country_q = job_vet_country_q(get_vet_queue_pool_country_codes())
     if country_q:
         qs = qs.filter(country_q)
     return qs

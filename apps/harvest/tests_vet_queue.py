@@ -50,7 +50,7 @@ class VetQueueCountryTests(TestCase):
         self.assertTrue(raw_job_matches_vet_queue_countries(us_job, ["US"]))
         self.assertFalse(raw_job_matches_vet_queue_countries(in_job, ["US"]))
 
-    def test_pool_queryset_filters_non_us_jobs(self):
+    def test_pool_queryset_filters_non_us_jobs_when_explicitly_configured(self):
         self.engine.target_countries = ["US"]
         self.engine.save(update_fields=["target_countries", "updated_at"])
         self.vet.vet_queue_country_codes = ["US"]

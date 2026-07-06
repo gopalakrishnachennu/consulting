@@ -1551,9 +1551,10 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         lane_tab = (request.GET.get('lane') or 'all').strip().lower()
         gate_tab = request.GET.get('gate', 'all').upper()
         qs = Job.objects.filter(status=Job.Status.POOL, is_archived=False)
-        from harvest.vet_queue import job_vet_country_q
+        from harvest.vet_queue import get_vet_queue_pool_country_codes, job_vet_country_q
 
-        country_q = job_vet_country_q()
+        pool_codes = get_vet_queue_pool_country_codes()
+        country_q = job_vet_country_q(pool_codes)
         if country_q:
             qs = qs.filter(country_q)
         qs = _apply_job_pool_filters(request, qs, search_by=search_by)
