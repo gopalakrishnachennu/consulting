@@ -3,6 +3,7 @@ from django.test import TestCase
 
 from companies.models import Company
 from harvest.models import HarvestEngineConfig, RawJob, VetGateConfig
+from harvest.normalizer import compute_url_hash
 from harvest.vet_queue import (
     get_vet_queue_country_codes,
     job_vet_country_q,
@@ -56,18 +57,22 @@ class VetQueueCountryTests(TestCase):
         self.vet.vet_queue_country_codes = ["US"]
         self.vet.allow_unknown_country = False
         self.vet.save(update_fields=["vet_queue_country_codes", "allow_unknown_country"])
+        us_url = "https://example.com/vet-queue/us"
+        in_url = "https://example.com/vet-queue/in"
         us_raw = RawJob.objects.create(
             company=self.company,
             title="US Analyst",
             company_name="Acme",
-            original_url="https://example.com/vet-queue/us",
+            original_url=us_url,
+            url_hash=compute_url_hash(us_url),
             country_code="US",
         )
         in_raw = RawJob.objects.create(
             company=self.company,
             title="IN Analyst",
             company_name="Acme",
-            original_url="https://example.com/vet-queue/in",
+            original_url=in_url,
+            url_hash=compute_url_hash(in_url),
             country_code="IN",
         )
         us_job = Job.objects.create(
@@ -94,18 +99,22 @@ class VetQueueCountryTests(TestCase):
         self.assertEqual(visible, [us_job.id])
 
     def test_raw_job_vet_country_q_filters_queryset(self):
+        us_url = "https://example.com/vet-queue/raw-us"
+        ca_url = "https://example.com/vet-queue/raw-ca"
         RawJob.objects.create(
             company=self.company,
             title="US",
             company_name="Acme",
-            original_url="https://example.com/vet-queue/raw-us",
+            original_url=us_url,
+            url_hash=compute_url_hash(us_url),
             country_code="US",
         )
         RawJob.objects.create(
             company=self.company,
             title="CA",
             company_name="Acme",
-            original_url="https://example.com/vet-queue/raw-ca",
+            original_url=ca_url,
+            url_hash=compute_url_hash(ca_url),
             country_code="CA",
         )
         qs = RawJob.objects.filter(raw_job_vet_country_q(["US"]))
@@ -113,11 +122,13 @@ class VetQueueCountryTests(TestCase):
         self.assertEqual(qs.first().country_code, "US")
 
     def test_job_vet_country_q_matches_country_name(self):
+        raw_url = "https://example.com/vet-queue/job-us"
         raw = RawJob.objects.create(
             company=self.company,
             title="US role",
             company_name="Acme",
-            original_url="https://example.com/vet-queue/job-us",
+            original_url=raw_url,
+            url_hash=compute_url_hash(raw_url),
             country_code="US",
         )
         job = Job.objects.create(
