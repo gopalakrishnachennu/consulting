@@ -143,6 +143,10 @@ class VetQueueCountryTests(TestCase):
             posted_by=self.admin,
         )
         self.assertEqual(vet_queue_job_queryset().count(), 0)
+
+    def test_job_vet_country_q_matches_country_name(self):
+        self.vet.vet_queue_country_codes = ["US"]
+        self.vet.save(update_fields=["vet_queue_country_codes"])
         raw_url = "https://example.com/vet-queue/job-us"
         raw = RawJob.objects.create(
             company=self.company,
