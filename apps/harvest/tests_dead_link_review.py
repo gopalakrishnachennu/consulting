@@ -104,6 +104,7 @@ class DeadLinkReviewViewTests(TestCase):
             source_raw_job=self.raw,
             status=Job.Status.POOL,
             original_link=self.raw.original_url,
+            posted_by=self.admin,
         )
         flag_dead_raw_jobs_for_review([self.raw.id])
 
