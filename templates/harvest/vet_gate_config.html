@@ -505,6 +505,17 @@
       <div class="mt-4 space-y-4 border-t border-gray-100 pt-4">
         <div>
           <div class="flex items-center justify-between gap-3 mb-2">
+            <label for="id_vet_queue_country_codes_csv" class="form-label mb-0">Vet queue country codes</label>
+            <span class="rounded-full bg-cyan-50 border border-cyan-200 px-2.5 py-1 text-xs font-semibold text-cyan-800">POOL scope</span>
+          </div>
+          <textarea id="id_vet_queue_country_codes_csv" name="vet_queue_country_codes_csv" rows="2"
+                    class="form-input w-full font-mono text-xs"
+                    placeholder="US">{{ vet_queue_country_codes_text }}</textarea>
+          <p class="mt-1 text-[11px] text-gray-400">Only jobs in these countries appear in the vetting queue and sync to POOL. Blank inherits harvest target countries above.</p>
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between gap-3 mb-2">
             <label for="id_target_countries_csv" class="form-label mb-0">Target country ISO codes</label>
             <span id="target-country-count" class="rounded-full bg-cyan-50 border border-cyan-200 px-2.5 py-1 text-xs font-semibold text-cyan-800">{{ target_country_count }} selected</span>
           </div>

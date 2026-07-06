@@ -180,6 +180,11 @@ def evaluate_raw_job_gate(raw_job, cfg=None) -> GateResult:
         reason = REASON_UNSCOPED if scope_status == "UNSCOPED" else REASON_COLD_SCOPE
         return _scope_blocked_result(reason, scope_status)
 
+    from harvest.vet_queue import raw_job_matches_vet_queue_countries
+
+    if not raw_job_matches_vet_queue_countries(raw_job):
+        return _scope_blocked_result(REASON_COLD_SCOPE, "NON_VET_QUEUE_COUNTRY")
+
     checks = {
         "scope_ok": True,
         "active_posting": bool(raw_job.is_active),

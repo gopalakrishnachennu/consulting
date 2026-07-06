@@ -91,8 +91,8 @@ def pending_pool_count(request):
     if not (request.user.is_superuser or role in ('ADMIN', 'EMPLOYEE')):
         return {'pending_pool_count': 0}
     try:
-        from jobs.models import Job
-        count = Job.objects.filter(status=Job.Status.POOL, is_archived=False).count()
+        from harvest.vet_queue import vet_queue_job_queryset
+        count = vet_queue_job_queryset().count()
     except Exception:
         count = 0
     return {'pending_pool_count': count}

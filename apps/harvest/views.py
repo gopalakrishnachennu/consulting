@@ -6330,6 +6330,12 @@ def _vet_gate_preview_count(cfg) -> dict:
 
     qs = qs.filter(filter_decision="STRONG")
 
+    from harvest.vet_queue import raw_job_vet_country_q
+
+    country_q = raw_job_vet_country_q()
+    if country_q:
+        qs = qs.filter(country_q)
+
     if cfg.require_description:
         qs = qs.filter(has_description=True, word_count__gte=cfg.min_word_count)
         qs = qs.annotate(
@@ -6403,6 +6409,7 @@ def _vet_gate_effective_llm() -> dict:
 
 def _vet_gate_engine_context(engine_cfg) -> dict:
     from .location_resolver import COUNTRY_CODE_TO_NAME, DEFAULT_TARGET_COUNTRIES
+    from .models import VetGateConfig
 
     all_country_codes = sorted(COUNTRY_CODE_TO_NAME)
     effective_target_countries = engine_cfg.get_target_countries()
@@ -6416,6 +6423,11 @@ def _vet_gate_engine_context(engine_cfg) -> dict:
         "target_country_codes_text": ", ".join(configured_target_countries or effective_target_countries),
         "target_country_count": len(effective_target_countries),
         "target_country_default_codes": ", ".join(DEFAULT_TARGET_COUNTRIES),
+        "vet_queue_country_codes_text": ", ".join(
+            str(code).strip().upper()
+            for code in (getattr(VetGateConfig.get(), "vet_queue_country_codes", None) or [])
+            if str(code).strip()
+        ),
         "all_country_codes_csv": ",".join(all_country_codes),
         "common_country_codes_csv": ",".join(DEFAULT_TARGET_COUNTRIES),
     }
@@ -6450,6 +6462,11 @@ class VetGateConfigView(SuperuserRequiredMixin, View):
         cfg = VetGateConfig.get()
 
         cfg.allow_unknown_country = _post_bool(request, "allow_unknown_country")
+        vet_queue_csv = (request.POST.get("vet_queue_country_codes_csv") or "").strip()
+        if vet_queue_csv:
+            cfg.vet_queue_country_codes = _parse_target_country_codes(vet_queue_csv)
+        else:
+            cfg.vet_queue_country_codes = []
         cfg.require_description = _post_bool(request, "require_description")
         cfg.min_word_count = _post_int(request, "min_word_count", 80, 1, 2000)
         cfg.min_char_count = _post_int(request, "min_char_count", 400, 1, 10000)

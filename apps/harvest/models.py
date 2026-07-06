@@ -2384,6 +2384,15 @@ class VetGateConfig(models.Model):
         verbose_name="Allow REVIEW_UNKNOWN_COUNTRY",
         help_text="Include jobs whose country could not be determined. Turn off to sync only confirmed target-country jobs.",
     )
+    vet_queue_country_codes = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Vet queue country codes",
+        help_text=(
+            "ISO codes allowed in the vetting (POOL) queue, e.g. [\"US\"]. "
+            "When empty, uses Harvest Engine target countries."
+        ),
+    )
     # ── JD quality thresholds ─────────────────────────────────────────────────
     require_description = models.BooleanField(
         default=True,

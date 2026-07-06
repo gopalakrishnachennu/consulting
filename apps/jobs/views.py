@@ -562,7 +562,8 @@ class JobListView(LoginRequiredMixin, ListView):
             if code in summary:
                 summary[code] = row['count']
         # Also add global pool count (across all non-archived pool jobs) for the badge
-        summary['POOL'] = Job.objects.filter(status=Job.Status.POOL, is_archived=False).count()
+        from harvest.vet_queue import vet_queue_job_queryset
+        summary['POOL'] = vet_queue_job_queryset().count()
 
         context['status_summary'] = summary
         context['total_jobs'] = full_qs.count()
@@ -1550,6 +1551,11 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         lane_tab = (request.GET.get('lane') or 'all').strip().lower()
         gate_tab = request.GET.get('gate', 'all').upper()
         qs = Job.objects.filter(status=Job.Status.POOL, is_archived=False)
+        from harvest.vet_queue import job_vet_country_q
+
+        country_q = job_vet_country_q()
+        if country_q:
+            qs = qs.filter(country_q)
         qs = _apply_job_pool_filters(request, qs, search_by=search_by)
         now = timezone.now()
         age_24h = now - timezone.timedelta(hours=24)
@@ -1717,7 +1723,8 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
             code = row['status']
             if code in summary:
                 summary[code] = row['count']
-        summary['POOL'] = Job.objects.filter(status=Job.Status.POOL, is_archived=False).count()
+        from harvest.vet_queue import vet_queue_job_queryset
+        summary['POOL'] = vet_queue_job_queryset().count()
         qd = request.GET.copy()
         qd.pop('page', None)
         pagination_query = qd.urlencode()

@@ -3467,6 +3467,12 @@ def sync_harvested_to_pool_task(
 
     base_qs = base_qs.filter(filter_decision="STRONG")
 
+    from harvest.vet_queue import raw_job_vet_country_q
+
+    country_q = raw_job_vet_country_q()
+    if country_q:
+        base_qs = base_qs.filter(country_q)
+
     if qualified_only:
         min_words = max(1, int(gate_cfg.min_word_count or 80))
         min_chars = max(1, int(gate_cfg.min_char_count or 400))
