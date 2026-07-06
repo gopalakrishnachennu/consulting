@@ -1565,6 +1565,61 @@ class RawJobPayloadSnapshot(models.Model):
         return f"{self.raw_job_id} {self.payload_kind} {self.content_hash[:10]}"
 
 
+class DeadLinkReviewItem(models.Model):
+    """Admin queue for dead posting links on pipeline-touching raw jobs."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending review"
+        DISMISSED = "dismissed", "Dismissed"
+        ARCHIVED = "archived", "Archived"
+        PURGED = "purged", "Purged"
+
+    raw_job = models.OneToOneField(
+        RawJob,
+        on_delete=models.CASCADE,
+        related_name="dead_link_review",
+    )
+    linked_job = models.ForeignKey(
+        "jobs.Job",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="dead_link_reviews",
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+    )
+    link_health_reason = models.CharField(max_length=120, blank=True)
+    link_health_state = models.CharField(max_length=16, blank=True)
+    link_checked_at = models.DateTimeField(null=True, blank=True)
+    submission_count = models.PositiveIntegerField(default=0)
+    flagged_at = models.DateTimeField(default=timezone.now, db_index=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    review_note = models.CharField(max_length=500, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-flagged_at"]
+        indexes = [
+            models.Index(fields=["status", "-flagged_at"], name="dead_link_status_flagged_idx"),
+        ]
+        verbose_name = "Dead link review item"
+        verbose_name_plural = "Dead link review items"
+
+    def __str__(self):
+        return f"DeadLinkReview #{self.pk} raw={self.raw_job_id} {self.status}"
+
+
 # ── Duplicate Detection ───────────────────────────────────────────────────────
 
 class DuplicateLabel(models.TextChoices):
@@ -2154,8 +2209,9 @@ class HarvestEngineConfig(models.Model):
         verbose_name="Cleanup — inactive row max age (days)",
         help_text=(
             "Inactive rows older than this are purged by Phase 3 of cleanup. "
-            "Default 7 days. Rows that are inactive+PENDING are always purged "
-            "immediately (Phase 2) regardless of age."
+            "Default 7 days. Rows that are inactive+PENDING are purged after the "
+            "safe buffer (Phase 2) when they never touched the pipeline. Synced, "
+            "pool-linked, or admin-review rows are kept until approved purge."
         ),
     )
     cleanup_pending_safe_minutes = models.PositiveSmallIntegerField(

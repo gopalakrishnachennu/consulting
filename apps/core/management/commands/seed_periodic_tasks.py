@@ -158,7 +158,7 @@ TASKS = [
         "name": "Harvest — cleanup expired jobs",
         "task": "harvest.cleanup_harvested_jobs",
         "category": "harvest",
-        "description": "Soft-deletes expired RawJob rows and purges rows inactive for 30+ days.",
+        "description": "Soft-deletes expired RawJob rows and purges inactive rows that never touched the pipeline. Synced/pool-linked rows require dead-link admin approval.",
         "cron": {"minute": "0", "hour": "0", "day_of_week": "*", "day_of_month": "*", "month_of_year": "*"},
         "schedule_label": "Daily midnight UTC",
         "kwargs": {},

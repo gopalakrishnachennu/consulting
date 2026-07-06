@@ -141,6 +141,19 @@ def dual_review_queue_count(request):
     return {'dual_review_queue_count': count}
 
 
+def dead_link_review_count(request):
+    """Inject pending dead-link admin review count for the subnav badge."""
+    if not request.user.is_authenticated or not request.user.is_superuser:
+        return {'dead_link_review_count': 0}
+    try:
+        from harvest.dead_link_review import pending_dead_link_review_count
+
+        count = pending_dead_link_review_count()
+    except Exception:
+        count = 0
+    return {'dead_link_review_count': count}
+
+
 def user_feature_flags(request):
     """
     Inject USER_FEATURE_FLAGS: dict key -> bool for the current user (for nav / dashboards).

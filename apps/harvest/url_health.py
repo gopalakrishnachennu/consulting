@@ -91,10 +91,27 @@ _DEAD_MARKERS_BY_PLATFORM = {
     "greenhouse": (
         "this job has been filled",
         "this role is no longer open",
+        "the job you were looking for was not found",
     ),
     "lever": (
         "this posting is no longer available",
         "the position has been filled",
+        "posting not found",
+    ),
+    "ashby": (
+        "job posting not found",
+        "this job is not available",
+    ),
+    "smartrecruiters": (
+        "job posting is no longer available",
+    ),
+    "oracle": (
+        "this job is no longer available",
+        "requisition is no longer available",
+    ),
+    "bamboohr": (
+        "job not found",
+        "this position is no longer available",
     ),
     "workable": (
         "this job has been archived",
@@ -229,6 +246,29 @@ _INCONCLUSIVE_LIVE_REASONS = {
     "workday_cxs_error",
 }
 
+# Host fragment → platform slug (aligned with harvest detectors / JobBoardPlatform).
+_HOST_FRAGMENT_TO_PLATFORM_SLUG: tuple[tuple[str, str], ...] = (
+    ("myworkdayjobs.com", "workday"),
+    ("oraclecloud.com", "oracle"),
+    ("greenhouse.io", "greenhouse"),
+    ("lever.co", "lever"),
+    ("ashbyhq.com", "ashby"),
+    ("smartrecruiters.com", "smartrecruiters"),
+    ("bamboohr.com", "bamboohr"),
+    ("workable.com", "workable"),
+    ("recruitee.com", "recruitee"),
+    ("icims.com", "icims"),
+    ("jobvite.com", "jobvite"),
+    ("taleo.net", "taleo"),
+    ("dayforcehcm.com", "dayforce"),
+    ("breezy.hr", "breezy"),
+    ("teamtailor.com", "teamtailor"),
+    ("jobs.zoho.com", "zoho"),
+    ("zohorecruit.com", "zoho"),
+    ("recruiting.ultipro.com", "ultipro"),
+    ("recruiting.ukg.net", "ultipro"),
+)
+
 
 def _norm_text(raw: str) -> str:
     txt = html.unescape(raw or "").lower()
@@ -280,13 +320,33 @@ def _looks_like_detail_path(path: str, platform_slug: str) -> bool:
     return any(seg in p for seg in ("/job/", "/jobs/", "/details/", "/positions/"))
 
 
+def _resolve_platform_slug(url: str, platform_slug: str = "") -> str:
+    slug = (platform_slug or "").strip().lower()
+    if slug:
+        return slug
+    url_lower = (url or "").lower()
+    for fragment, mapped in _HOST_FRAGMENT_TO_PLATFORM_SLUG:
+        if fragment in url_lower:
+            return mapped
+    return ""
+
+
+def _weak_html_live_confirmed(platform_slug: str) -> bool:
+    """Generic marker/size heuristics are only decisive on unknown hosts."""
+    return not platform_slug
+
+
 def link_health_state(result: LinkHealthResult) -> str:
     if is_definitive_inactive(result):
         return "DEAD"
     reason = (result.reason or "").strip().lower()
     if reason in _CONFIRMED_LIVE_REASONS:
         return "LIVE"
-    if reason in _INCONCLUSIVE_LIVE_REASONS or reason.startswith("transient_http_"):
+    if (
+        reason in _INCONCLUSIVE_LIVE_REASONS
+        or reason.startswith("transient_http_")
+        or reason.endswith("_html_inconclusive")
+    ):
         return "INCONCLUSIVE"
     if result.is_live:
         return "INCONCLUSIVE"
@@ -330,6 +390,8 @@ def is_definitive_inactive(result: LinkHealthResult) -> bool:
         # Workday
         "workday_cxs_not_found",
         "workday_search_no_match",
+        # SPA shells across platforms (HTTP 200 but posting gone)
+        "workday_posting_unavailable",
         # Oracle HCM
         "oracle_hcm_not_found",
         "oracle_hcm_no_results",
@@ -353,6 +415,74 @@ def is_definitive_inactive(result: LinkHealthResult) -> bool:
         "icims_api_not_found",
     }:
         return True
+    if reason.endswith("_posting_unavailable"):
+        return True
+    return False
+
+
+def _workday_search_by_req_id(
+    full_subdomain: str,
+    tenant: str,
+    jobboard: str,
+    req_id: str,
+) -> LinkHealthResult | None:
+    if not req_id:
+        return None
+    search_url = (
+        f"https://{full_subdomain}.myworkdayjobs.com/wday/cxs/{tenant}/{jobboard}/jobs"
+    )
+    try:
+        q = requests.post(
+            search_url,
+            json={"limit": 20, "offset": 0, "searchText": req_id, "appliedFacets": {}},
+            headers={"Accept": "application/json", **_UA},
+            timeout=10,
+        )
+        q_status = int(q.status_code or 0)
+        if q_status >= 400:
+            return None
+        data_q = q.json() if q.content else {}
+        total = int((data_q or {}).get("total") or 0)
+        if total > 0:
+            return LinkHealthResult(True, q_status, "workday_search_match", search_url)
+        return LinkHealthResult(False, q_status, "workday_search_no_match", search_url)
+    except Exception:
+        return None
+
+
+def _workday_html_shell_dead(text: str) -> bool:
+    """Detect Workday SPA shells that return HTTP 200 before the client-side 404 UI."""
+    if not text:
+        return False
+    if "postingavailable: false" in text or "postingavailable:false" in text:
+        return True
+    if '"@type" : "jobposting"' in text or '"@type":"jobposting"' in text:
+        if re.search(r'"title"\s*:\s*""', text):
+            return True
+    return False
+
+
+def _platform_html_shell_dead(text: str, platform_slug: str) -> bool:
+    """Platform-specific SPA shell signals that mean the posting is gone."""
+    slug = (platform_slug or "").lower()
+    if slug == "workday":
+        return _workday_html_shell_dead(text)
+    if slug == "greenhouse":
+        return "the job you were looking for was not found" in text
+    if slug == "lever":
+        return (
+            "posting not found" in text
+            or ("the job posting you" in text and "not found" in text)
+        )
+    if slug == "ashby":
+        return "job posting not found" in text or "this job is not available" in text
+    if slug == "smartrecruiters":
+        return "job posting is no longer available" in text and "smartrecruiters" in text
+    if slug == "oracle":
+        return (
+            "this job is no longer available" in text
+            and ("candidatexperience" in text or "oraclecloud" in text)
+        )
     return False
 
 
@@ -391,26 +521,17 @@ def _workday_cxs_liveness(url: str) -> LinkHealthResult | None:
         )
         status = int(resp.status_code or 0)
         if status >= 400:
-            # Some tenants block detail CXS for bots (403). Fallback to searchable CXS jobs endpoint.
-            if status in {401, 403}:
-                search_url = f"https://{full_subdomain}.myworkdayjobs.com/wday/cxs/{tenant}/{jobboard}/jobs"
-                if req_id:
-                    try:
-                        q = requests.post(
-                            search_url,
-                            json={"limit": 20, "offset": 0, "searchText": req_id, "appliedFacets": {}},
-                            headers={"Accept": "application/json", **_UA},
-                            timeout=10,
-                        )
-                        q_status = int(q.status_code or 0)
-                        if q_status < 400:
-                            data_q = q.json() if q.content else {}
-                            total = int((data_q or {}).get("total") or 0)
-                            if total > 0:
-                                return LinkHealthResult(True, q_status, "workday_search_match", search_url)
-                            return LinkHealthResult(False, q_status, "workday_search_no_match", search_url)
-                    except Exception:
-                        pass
+            # Detail CXS 404/403 often means the req is gone; confirm via search when possible.
+            if status in {401, 403, 404, 410}:
+                search_result = _workday_search_by_req_id(
+                    full_subdomain, tenant, jobboard, req_id,
+                )
+                if search_result is not None:
+                    return search_result
+                if status in {404, 410}:
+                    return LinkHealthResult(False, status, "workday_cxs_not_found", cxs_url)
+            if status >= 500:
+                return LinkHealthResult(False, status, "workday_cxs_http_error", cxs_url)
             return LinkHealthResult(False, status, "workday_cxs_http_error", cxs_url)
         data = resp.json() if resp.content else {}
         if not isinstance(data, dict):
@@ -921,6 +1042,17 @@ _INCONCLUSIVE_API_REASONS = {
 }
 
 
+def _should_fallback_to_html_after_api(result: LinkHealthResult) -> bool:
+    """Transient API failures may still leave a live HTML page; definitive dead does not."""
+    reason = (result.reason or "").lower()
+    if reason in _INCONCLUSIVE_API_REASONS:
+        return True
+    if is_definitive_inactive(result):
+        return False
+    code = int(result.status_code or 0)
+    return code in {401, 403, 429} or code >= 500
+
+
 def check_job_posting_live(
     url: str,
     *,
@@ -945,7 +1077,7 @@ def check_job_posting_live(
                 # Some API probes can fail for tenant/firewall reasons while the
                 # actual detail page is still available. Fall back to HTML checks
                 # for these inconclusive states instead of short-circuiting.
-                if (result.reason or "") in _INCONCLUSIVE_API_REASONS:
+                if _should_fallback_to_html_after_api(result):
                     break
                 return result
             break  # matched platform but API was inconclusive — fall through to HTML check
@@ -994,11 +1126,14 @@ def check_job_posting_live(
         r_get.close()
         text = _norm_text(body_bytes.decode("utf-8", errors="ignore"))
 
+        resolved_platform = _resolve_platform_slug(final_url, platform_slug)
+        marker_platform = resolved_platform or platform_slug
+
         # If the resulting URL already points to search/home routes, it's likely no longer a detail posting.
         path_l = urlparse(final_url).path.lower()
-        detail_path = _looks_like_detail_path(path_l, platform_slug)
-        dead_marker = _contains_dead_marker(text, platform_slug)
-        live_marker = _contains_live_marker(text, platform_slug)
+        detail_path = _looks_like_detail_path(path_l, marker_platform)
+        dead_marker = _contains_dead_marker(text, marker_platform)
+        live_marker = _contains_live_marker(text, marker_platform)
 
         # Bot-block / login-wall: treat as live-assumed (inconclusive) to avoid
         # false positives where a valid job is unreachable only to the crawler.
@@ -1018,10 +1153,18 @@ def check_job_posting_live(
         if dead_marker:
             return LinkHealthResult(False, status_get, "soft_404_marker", final_url)
 
+        if _platform_html_shell_dead(text, resolved_platform):
+            slug = resolved_platform or "platform"
+            return LinkHealthResult(False, status_get, f"{slug}_posting_unavailable", final_url)
+
         if detail_path and live_marker:
+            if not _weak_html_live_confirmed(resolved_platform):
+                return LinkHealthResult(True, status_get, f"{resolved_platform}_html_inconclusive", final_url)
             return LinkHealthResult(True, status_get, "detail_live_markers", final_url)
 
         if detail_path and len(text) > 800:
+            if not _weak_html_live_confirmed(resolved_platform):
+                return LinkHealthResult(True, status_get, f"{resolved_platform}_html_inconclusive", final_url)
             return LinkHealthResult(True, status_get, "detail_long_content", final_url)
 
         return LinkHealthResult(True, status_get, "ok", final_url)

@@ -98,6 +98,16 @@ class Command(BaseCommand):
                     raw.updated_at = now
                 RawJob.objects.bulk_update(raws, ["is_active", "raw_payload", "updated_at"])
 
+                dead_raw_ids = [
+                    raw.id
+                    for raw in raws
+                    if ((raw.raw_payload or {}).get("link_health") or {}).get("state") == "DEAD"
+                ]
+                if dead_raw_ids:
+                    from harvest.dead_link_review import flag_dead_raw_jobs_for_review
+
+                    flag_dead_raw_jobs_for_review(dead_raw_ids, checked_at=now)
+
                 try:
                     from jobs.link_health import JOB_LINK_HEALTH_UPDATE_FIELDS, apply_link_health_payload_to_job
                     from jobs.models import Job

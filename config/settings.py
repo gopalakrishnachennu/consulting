@@ -136,6 +136,7 @@ TEMPLATES = [
                 'core.context_processors.dup_pending_count',      # Duplicate engine badge in subnav
                 'core.context_processors.unknown_country_count',  # Unknown-country review badge in subnav
                 'core.context_processors.dual_review_queue_count',  # Dual classification review badge in subnav
+                'core.context_processors.dead_link_review_count',  # Dead link admin review badge in subnav
                 'core.context_processors.user_feature_flags',
                 'core.context_processors.deployment_info',
             ],

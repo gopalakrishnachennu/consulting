@@ -2474,6 +2474,11 @@ class RawJobCheckLiveStatusView(SuperuserRequiredMixin, View):
         raw_job.save(update_fields=["is_active", "raw_payload", "updated_at"])
         _invalidate_rawjobs_dashboard_cache()
 
+        if state == "DEAD":
+            from harvest.dead_link_review import flag_dead_raw_jobs_for_review
+
+            flag_dead_raw_jobs_for_review([raw_job.id], checked_at=now)
+
         linked_jobs = list(
             Job.objects.filter(
                 source_raw_job=raw_job,
@@ -6795,3 +6800,126 @@ class RoleReclassifyApplyView(SuperuserRequiredMixin, View):
             f"Watch the Live Ops Monitor.",
         )
         return redirect(request.POST.get("next") or "harvest-role-categories")
+
+
+class DeadLinkReviewView(SuperuserRequiredMixin, View):
+    """Admin queue for dead posting links on pipeline-touching raw jobs."""
+
+    template_name = "harvest/dead_link_review.html"
+    PAGE_SIZE = 50
+
+    def _base_qs(self, tab: str):
+        from harvest.models import DeadLinkReviewItem
+
+        qs = DeadLinkReviewItem.objects.select_related(
+            "raw_job",
+            "raw_job__company",
+            "linked_job",
+            "reviewed_by",
+        )
+        if tab == "resolved":
+            return qs.exclude(status=DeadLinkReviewItem.Status.PENDING)
+        return qs.filter(status=DeadLinkReviewItem.Status.PENDING)
+
+    def _apply_filters(self, qs, params):
+        platform = (params.get("platform") or "").strip()
+        search_q = (params.get("q") or "").strip()
+        if platform:
+            qs = qs.filter(raw_job__platform_slug=platform)
+        if search_q:
+            qs = qs.filter(
+                Q(raw_job__title__icontains=search_q)
+                | Q(raw_job__company_name__icontains=search_q)
+                | Q(raw_job__external_id__icontains=search_q)
+                | Q(link_health_reason__icontains=search_q)
+            )
+        if params.get("has_submissions") == "1":
+            qs = qs.filter(submission_count__gt=0)
+        return qs
+
+    def get(self, request):
+        from harvest.dead_link_review import dead_link_review_queue_summary
+        from harvest.models import DeadLinkReviewItem
+
+        tab = (request.GET.get("tab") or "pending").strip() or "pending"
+        qs = self._apply_filters(self._base_qs(tab), request.GET)
+        total = qs.count()
+        page = max(1, int(request.GET.get("page") or 1))
+        offset = (page - 1) * self.PAGE_SIZE
+        items = list(qs[offset: offset + self.PAGE_SIZE])
+
+        platforms = list(
+            DeadLinkReviewItem.objects.filter(status=DeadLinkReviewItem.Status.PENDING)
+            .values_list("raw_job__platform_slug", flat=True)
+            .distinct()
+            .order_by("raw_job__platform_slug")
+        )
+        summary = dead_link_review_queue_summary()
+        resolved_count = DeadLinkReviewItem.objects.exclude(
+            status=DeadLinkReviewItem.Status.PENDING,
+        ).count()
+
+        return render(
+            request,
+            self.template_name,
+            {
+                "items": items,
+                "tab": tab,
+                "total": total,
+                "page": page,
+                "page_size": self.PAGE_SIZE,
+                "has_next": offset + self.PAGE_SIZE < total,
+                "has_prev": page > 1,
+                "summary": summary,
+                "resolved_count": resolved_count,
+                "platforms": [p for p in platforms if p],
+                "selected_platform": (request.GET.get("platform") or "").strip(),
+                "search_q": (request.GET.get("q") or "").strip(),
+                "has_submissions": request.GET.get("has_submissions") == "1",
+            },
+        )
+
+    def post(self, request):
+        from harvest.dead_link_review import apply_dead_link_review_action
+
+        action = (request.POST.get("action") or "").strip().lower()
+        note = (request.POST.get("note") or "").strip()
+        raw_ids = request.POST.getlist("item_ids")
+        item_ids = [int(x) for x in raw_ids if str(x).isdigit()]
+        if not item_ids:
+            messages.error(request, "Select at least one row.")
+            return redirect(request.get_full_path())
+
+        if action not in {"dismiss", "archive", "purge"}:
+            messages.error(request, "Unknown action.")
+            return redirect(request.get_full_path())
+
+        if action == "purge" and request.POST.get("confirm_purge") != "yes":
+            messages.error(request, "Confirm purge to permanently delete raw rows and payload snapshots.")
+            return redirect(request.get_full_path())
+
+        result = apply_dead_link_review_action(
+            item_ids,
+            action,
+            actor=request.user,
+            note=note,
+        )
+        if result["errors"]:
+            messages.warning(
+                request,
+                f"Processed {result['processed']}/{result['requested']}. "
+                f"Errors: {'; '.join(result['errors'][:3])}",
+            )
+        elif action == "dismiss":
+            messages.success(request, f"Dismissed {result['dismissed']} item(s) — links restored to active monitoring.")
+        elif action == "archive":
+            messages.success(
+                request,
+                f"Archived {result['archived_jobs']} linked job(s) across {result['processed']} item(s).",
+            )
+        elif action == "purge":
+            messages.success(
+                request,
+                f"Purged {result['purged_raw_jobs']} raw row(s); archived {result['archived_jobs']} linked job(s).",
+            )
+        return redirect(reverse("harvest-dead-link-review") + "?tab=pending")

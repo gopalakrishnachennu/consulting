@@ -3,6 +3,7 @@ from django.db.models import Count
 
 from .models import (
     CompanyPlatformLabel,
+    DeadLinkReviewItem,
     HarvestFilterSnapshot,
     HarvestEngineConfig,
     HarvestOpsRun,
@@ -192,3 +193,22 @@ class HarvestOpsRunAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False
+
+
+@admin.register(DeadLinkReviewItem)
+class DeadLinkReviewItemAdmin(admin.ModelAdmin):
+    list_display = [
+        "id",
+        "raw_job",
+        "linked_job",
+        "status",
+        "link_health_reason",
+        "submission_count",
+        "flagged_at",
+        "reviewed_at",
+        "reviewed_by",
+    ]
+    list_filter = ["status", "link_health_state"]
+    search_fields = ["raw_job__title", "raw_job__company_name", "link_health_reason"]
+    raw_id_fields = ["raw_job", "linked_job", "reviewed_by"]
+    readonly_fields = ["flagged_at", "updated_at"]

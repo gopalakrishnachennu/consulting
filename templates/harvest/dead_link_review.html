@@ -1,0 +1,205 @@
+{% extends 'base.html' %}
+{% block content %}
+{% include 'jobs/_pipeline_subnav.html' %}
+
+<div class="max-w-[1600px] mx-auto px-4 sm:px-6 pb-12">
+
+  {% for msg in messages %}
+  <div class="mb-3 px-4 py-3 rounded-lg text-sm font-medium
+    {% if msg.tags == 'success' %}bg-emerald-50 border border-emerald-200 text-emerald-800
+    {% elif msg.tags == 'error' %}bg-red-50 border border-red-200 text-red-800
+    {% else %}bg-amber-50 border border-amber-200 text-amber-800{% endif %}">
+    {{ msg }}
+  </div>
+  {% endfor %}
+
+  <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+    <div>
+      <p class="text-xs font-semibold uppercase tracking-wider text-gray-500">Harvest Operations</p>
+      <h1 class="mt-1 text-2xl font-bold tracking-tight text-gray-950">Dead Link Review</h1>
+      <p class="mt-1 text-sm text-gray-500">
+        Daily link checks flag definitive dead postings on synced or pool jobs. Approve archive or purge here — raw junk without pipeline impact is auto-purged by nightly cleanup.
+      </p>
+    </div>
+    <form method="get" class="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <input type="hidden" name="tab" value="{{ tab }}">
+      <input type="search" name="q" value="{{ search_q }}" placeholder="Search title, company, req id..."
+             class="h-10 min-w-[220px] rounded-lg border border-gray-300 bg-white px-3 text-sm">
+      <select name="platform" class="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm">
+        <option value="">All platforms</option>
+        {% for platform in platforms %}
+        <option value="{{ platform }}" {% if selected_platform == platform %}selected{% endif %}>{{ platform }}</option>
+        {% endfor %}
+      </select>
+      <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+        <input type="checkbox" name="has_submissions" value="1" {% if has_submissions %}checked{% endif %} class="rounded border-gray-300">
+        Has submissions
+      </label>
+      <button type="submit" class="h-10 rounded-lg bg-gray-900 px-4 text-sm font-semibold text-white hover:bg-gray-800">Filter</button>
+    </form>
+  </div>
+
+  <div class="grid grid-cols-2 gap-3 md:grid-cols-4 mb-4">
+    <a href="?tab=pending"
+       class="rounded-xl border bg-white p-4 {% if tab == 'pending' %}border-red-300 ring-1 ring-red-200{% else %}border-gray-200{% endif %}">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Pending</div>
+      <div class="mt-1 text-2xl font-bold text-gray-900">{{ summary.pending }}</div>
+    </a>
+    <div class="rounded-xl border border-gray-200 bg-white p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">With submissions</div>
+      <div class="mt-1 text-2xl font-bold text-amber-700">{{ summary.with_submissions }}</div>
+    </div>
+    <div class="rounded-xl border border-gray-200 bg-white p-4">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Synced raw rows</div>
+      <div class="mt-1 text-2xl font-bold text-gray-900">{{ summary.synced }}</div>
+    </div>
+    <a href="?tab=resolved"
+       class="rounded-xl border bg-white p-4 {% if tab == 'resolved' %}border-gray-400 ring-1 ring-gray-200{% else %}border-gray-200{% endif %}">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Resolved (history)</div>
+      <div class="mt-1 text-2xl font-bold text-gray-900">{{ resolved_count }}</div>
+    </a>
+  </div>
+
+  {% if tab == 'pending' and items %}
+  <form method="post" class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden"
+        x-data="{ purgeOpen: false, action: '' }">
+    {% csrf_token %}
+    <div class="px-5 py-3 border-b border-gray-100 flex flex-wrap items-center gap-3 justify-between">
+      <div class="text-sm text-gray-600"><strong>{{ total }}</strong> item(s) in queue</div>
+      <div class="flex flex-wrap items-center gap-2">
+        <input type="text" name="note" placeholder="Optional review note" class="rounded-lg border border-gray-300 px-3 py-2 text-sm w-48">
+        <button type="submit" name="action" value="dismiss"
+                class="px-4 py-2 rounded-lg text-sm font-semibold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition">
+          Dismiss (false positive)
+        </button>
+        <button type="submit" name="action" value="archive"
+                class="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-sm transition">
+          Archive linked jobs
+        </button>
+        <button type="button" @click="purgeOpen = true; action = 'purge'"
+                class="px-4 py-2 rounded-lg text-sm font-bold text-red-600 bg-red-50 border border-red-200 hover:bg-red-100 transition">
+          Purge raw storage
+        </button>
+      </div>
+    </div>
+
+    <div x-show="purgeOpen" x-cloak class="px-5 py-4 border-b border-red-100 bg-red-50">
+      <p class="text-sm text-red-800 font-medium">Permanently delete selected raw rows and payload snapshots. Linked jobs will be archived first.</p>
+      <label class="mt-2 flex items-center gap-2 text-sm text-red-900">
+        <input type="checkbox" name="confirm_purge" value="yes" class="rounded border-red-300">
+        I understand this cannot be undone
+      </label>
+      <div class="mt-3 flex gap-2">
+        <button type="submit" name="action" value="purge"
+                class="px-4 py-2 rounded-lg text-sm font-bold text-white bg-red-600 hover:bg-red-700">Confirm purge</button>
+        <button type="button" @click="purgeOpen = false" class="px-4 py-2 rounded-lg text-sm font-semibold text-gray-600 border border-gray-200 bg-white">Cancel</button>
+      </div>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-100 bg-gray-50">
+            <th class="px-4 py-3 w-10"><input type="checkbox" onclick="document.querySelectorAll('.dlr-check').forEach(c => c.checked = this.checked)" class="rounded border-gray-300"></th>
+            <th class="px-4 py-3">Job</th>
+            <th class="px-4 py-3">Platform</th>
+            <th class="px-4 py-3">Link health</th>
+            <th class="px-4 py-3">Pipeline</th>
+            <th class="px-4 py-3">Flagged</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          {% for item in items %}
+          <tr class="hover:bg-gray-50 transition">
+            <td class="px-4 py-3">
+              <input type="checkbox" class="dlr-check rounded border-gray-300" name="item_ids" value="{{ item.id }}">
+            </td>
+            <td class="px-4 py-3">
+              <div class="font-semibold text-gray-900 line-clamp-2 max-w-md">
+                <a href="{% url 'harvest-rawjob-detail' item.raw_job_id %}" class="brand-link">{{ item.raw_job.title|default:"(no title)" }}</a>
+              </div>
+              <div class="text-xs text-gray-500 truncate max-w-md">{{ item.raw_job.company_name }}</div>
+              {% if item.raw_job.original_url %}
+              <a href="{{ item.raw_job.original_url }}" target="_blank" rel="noopener" class="text-xs text-blue-600 hover:underline">Open posting ↗</a>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-gray-600">{{ item.raw_job.platform_slug|default:"—" }}</td>
+            <td class="px-4 py-3">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-700">
+                <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                {{ item.link_health_state|default:"DEAD" }}
+              </span>
+              <div class="text-xs text-gray-500 mt-1 truncate max-w-[200px]" title="{{ item.link_health_reason }}">{{ item.link_health_reason|default:"—" }}</div>
+            </td>
+            <td class="px-4 py-3 text-xs text-gray-600">
+              <div>Sync: {{ item.raw_job.sync_status }}</div>
+              {% if item.linked_job_id %}
+              <a href="{% url 'job-detail' item.linked_job_id %}" class="text-blue-600 hover:underline">Job #{{ item.linked_job_id }}</a>
+              {% endif %}
+              {% if item.submission_count %}
+              <div class="text-amber-700 font-semibold">{{ item.submission_count }} submission(s)</div>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{{ item.flagged_at|date:"M j, Y H:i" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+  {% elif tab == 'resolved' and items %}
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-100 bg-gray-50">
+          <th class="px-4 py-3">Job</th>
+          <th class="px-4 py-3">Outcome</th>
+          <th class="px-4 py-3">Reviewed</th>
+          <th class="px-4 py-3">Note</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-50">
+        {% for item in items %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-4 py-3">
+            {% if item.raw_job_id %}
+            <a href="{% url 'harvest-rawjob-detail' item.raw_job_id %}" class="brand-link">{{ item.raw_job.title|default:"Raw #"|add:item.raw_job_id }}</a>
+            {% else %}
+            <span class="text-gray-400">Purged raw #{{ item.raw_job_id }}</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 capitalize">{{ item.get_status_display }}</td>
+          <td class="px-4 py-3 text-xs text-gray-500">
+            {% if item.reviewed_at %}{{ item.reviewed_at|date:"M j, Y H:i" }}{% endif %}
+            {% if item.reviewed_by %} · {{ item.reviewed_by.username }}{% endif %}
+          </td>
+          <td class="px-4 py-3 text-xs text-gray-500 truncate max-w-xs">{{ item.review_note|default:"—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="bg-white rounded-xl border border-gray-200 p-10 text-center text-gray-500">
+  {% if tab == 'pending' %}
+    <p class="font-medium text-gray-800">No dead links waiting for review.</p>
+    <p class="mt-1 text-sm">Nightly validation runs at 03:00 UTC. Never-synced dead rows are auto-purged without appearing here.</p>
+  {% else %}
+    <p class="font-medium text-gray-800">No resolved review history yet.</p>
+  {% endif %}
+  </div>
+  {% endif %}
+
+  {% if has_prev or has_next %}
+  <div class="mt-4 flex justify-between text-sm">
+    {% if has_prev %}
+    <a href="?tab={{ tab }}&page={{ page|add:'-1' }}{% if search_q %}&q={{ search_q|urlencode }}{% endif %}{% if selected_platform %}&platform={{ selected_platform|urlencode }}{% endif %}" class="text-blue-600 hover:underline">← Previous</a>
+    {% else %}<span></span>{% endif %}
+    {% if has_next %}
+    <a href="?tab={{ tab }}&page={{ page|add:'1' }}{% if search_q %}&q={{ search_q|urlencode }}{% endif %}{% if selected_platform %}&platform={{ selected_platform|urlencode }}{% endif %}" class="text-blue-600 hover:underline">Next →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

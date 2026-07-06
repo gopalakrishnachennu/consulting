@@ -2854,6 +2854,16 @@ def validate_raw_job_urls_task(
                         raw.updated_at = now
                     RawJob.objects.bulk_update(raw_updates, ["is_active", "raw_payload", "updated_at"])
 
+                    dead_raw_ids = [
+                        raw.id
+                        for raw in raw_updates
+                        if ((raw.raw_payload or {}).get("link_health") or {}).get("state") == "DEAD"
+                    ]
+                    if dead_raw_ids:
+                        from harvest.dead_link_review import flag_dead_raw_jobs_for_review
+
+                        flag_dead_raw_jobs_for_review(dead_raw_ids, checked_at=now)
+
                     try:
                         from jobs.link_health import (
                             JOB_LINK_HEALTH_UPDATE_FIELDS,
@@ -3001,19 +3011,42 @@ def cleanup_harvested_jobs_task(self):
         # dead). A safe buffer guards against a race with in-flight sync tasks —
         # only delete rows that have been inactive for at least pending_safe_minutes.
         pending_safe_cutoff = now - timedelta(minutes=pending_safe_minutes)
-        purged_pending = RawJob.objects.filter(
-            is_active=False,
-            sync_status=RawJob.SyncStatus.PENDING,
-            fetched_at__lt=pending_safe_cutoff,
-        ).delete()[0]
+        from jobs.models import Job
+
+        cleanup_exclude = (
+            Q(dead_link_review__status="pending")
+            | Q(sync_status=RawJob.SyncStatus.SYNCED)
+            | Q(
+                synced_jobs__status__in=[Job.Status.OPEN, Job.Status.POOL],
+                synced_jobs__is_archived=False,
+            )
+            | Q(synced_jobs__submissions__isnull=False)
+        )
+        purged_pending = (
+            RawJob.objects.filter(
+                is_active=False,
+                sync_status=RawJob.SyncStatus.PENDING,
+                fetched_at__lt=pending_safe_cutoff,
+            )
+            .exclude(cleanup_exclude)
+            .distinct()
+            .delete()[0]
+        )
 
         # Phase 3: purge remaining inactive rows older than configured threshold
-        # (SKIPPED/FAILED rows where the job posting is gone)
+        # (SKIPPED/FAILED rows where the job posting is gone). Pipeline-touching
+        # rows (synced, linked jobs, submissions, pending admin review) are kept
+        # until an admin approves purge from the dead-link review queue.
         old_cutoff = now - timedelta(days=inactive_age_days)
-        purged_old = RawJob.objects.filter(
-            is_active=False,
-            fetched_at__lt=old_cutoff,
-        ).delete()[0]
+        purged_old = (
+            RawJob.objects.filter(
+                is_active=False,
+                fetched_at__lt=old_cutoff,
+            )
+            .exclude(cleanup_exclude)
+            .distinct()
+            .delete()[0]
+        )
 
         purged = purged_pending + purged_old
         logger.info(
