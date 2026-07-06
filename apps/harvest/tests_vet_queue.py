@@ -60,14 +60,14 @@ class VetQueueCountryTests(TestCase):
             company=self.company,
             title="US Analyst",
             company_name="Acme",
-            original_url="https://example.com/us",
+            original_url="https://example.com/vet-queue/us",
             country_code="US",
         )
         in_raw = RawJob.objects.create(
             company=self.company,
             title="IN Analyst",
             company_name="Acme",
-            original_url="https://example.com/in",
+            original_url="https://example.com/vet-queue/in",
             country_code="IN",
         )
         us_job = Job.objects.create(
@@ -98,14 +98,14 @@ class VetQueueCountryTests(TestCase):
             company=self.company,
             title="US",
             company_name="Acme",
-            original_url="https://example.com/1",
+            original_url="https://example.com/vet-queue/raw-us",
             country_code="US",
         )
         RawJob.objects.create(
             company=self.company,
             title="CA",
             company_name="Acme",
-            original_url="https://example.com/2",
+            original_url="https://example.com/vet-queue/raw-ca",
             country_code="CA",
         )
         qs = RawJob.objects.filter(raw_job_vet_country_q(["US"]))
@@ -117,7 +117,7 @@ class VetQueueCountryTests(TestCase):
             company=self.company,
             title="US role",
             company_name="Acme",
-            original_url="https://example.com/us",
+            original_url="https://example.com/vet-queue/job-us",
             country_code="US",
         )
         job = Job.objects.create(
