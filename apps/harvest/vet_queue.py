@@ -59,7 +59,7 @@ def vet_queue_job_queryset():
     from jobs.models import Job
 
     qs = Job.objects.filter(status=Job.Status.POOL, is_archived=False)
-    country_q = job_vet_country_q(get_vet_queue_pool_country_codes())
+    country_q = job_vet_pool_country_q(get_vet_queue_pool_country_codes())
     if country_q:
         qs = qs.filter(country_q)
     return qs
@@ -67,7 +67,7 @@ def vet_queue_job_queryset():
 
 def job_vet_country_q(codes: list[str] | None = None) -> Q:
     """Filter POOL/live Job rows to allowed vet-queue countries."""
-    codes = codes if codes is not None else get_vet_queue_country_codes()
+    codes = _normalize_country_codes(codes if codes is not None else get_vet_queue_country_codes())
     if not codes:
         return Q()
     q = Q(source_raw_job__country_code__in=codes)
@@ -78,3 +78,36 @@ def job_vet_country_q(codes: list[str] | None = None) -> Q:
             q |= Q(country__iexact=name)
         q |= Q(country__iexact=code)
     return q
+
+
+def _normalize_country_codes(codes: list[str]) -> list[str]:
+    return [str(code).strip().upper() for code in codes if str(code).strip()]
+
+
+def job_vet_pool_country_q(codes: list[str] | None = None) -> Q:
+    """Stricter POOL filter: exclude explicit non-target countries on Job or RawJob."""
+    codes = _normalize_country_codes(codes if codes is not None else get_vet_queue_pool_country_codes())
+    if not codes:
+        return Q()
+
+    include = Q(source_raw_job__country_code__in=codes)
+    for code in codes:
+        name = COUNTRY_CODE_TO_NAME.get(code, "")
+        if name:
+            include |= Q(country__iexact=name)
+        include |= Q(country__iexact=code)
+
+    exclude = Q()
+    for code, name in COUNTRY_CODE_TO_NAME.items():
+        if code in codes:
+            continue
+        exclude |= Q(country__iexact=name) | Q(country__iexact=code)
+        exclude |= Q(source_raw_job__country_code=code)
+
+    # Unknown/blank location rows should not appear in a USA-only vet list.
+    exclude |= (
+        (Q(country="") | Q(country__isnull=True))
+        & (Q(source_raw_job__isnull=True) | Q(source_raw_job__country_code=""))
+    )
+
+    return include & ~exclude

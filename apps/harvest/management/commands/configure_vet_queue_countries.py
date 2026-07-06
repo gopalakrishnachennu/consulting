@@ -71,13 +71,15 @@ class Command(BaseCommand):
             vet.vet_queue_country_codes = codes
             if options["disable_unknown"]:
                 vet.allow_unknown_country = False
-            vet.save()
+            vet.save(update_fields=["vet_queue_country_codes", "allow_unknown_country"])
             self.stdout.write(self.style.SUCCESS("Config updated."))
         else:
             self.stdout.write(self.style.WARNING("Preview only — pass --apply to write config."))
 
         if options["archive_pool"]:
-            allowed_q = job_vet_country_q(codes)
+            from harvest.vet_queue import job_vet_pool_country_q
+
+            allowed_q = job_vet_pool_country_q(codes)
             qs = Job.objects.filter(status=Job.Status.POOL, is_archived=False)
             to_archive = qs.filter(~allowed_q) if allowed_q else qs.none()
             count = to_archive.count()

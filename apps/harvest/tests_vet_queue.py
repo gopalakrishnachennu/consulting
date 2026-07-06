@@ -121,7 +121,28 @@ class VetQueueCountryTests(TestCase):
         self.assertEqual(qs.count(), 1)
         self.assertEqual(qs.first().country_code, "US")
 
-    def test_job_vet_country_q_matches_country_name(self):
+    def test_job_vet_pool_country_q_excludes_explicit_foreign_country(self):
+        self.vet.vet_queue_country_codes = ["US"]
+        self.vet.save(update_fields=["vet_queue_country_codes"])
+        raw = RawJob.objects.create(
+            company=self.company,
+            title="Canada role",
+            company_name="Acme",
+            original_url="https://example.com/vet-queue/ca-role",
+            url_hash=compute_url_hash("https://example.com/vet-queue/ca-role"),
+            country_code="US",
+        )
+        Job.objects.create(
+            title="Canada role",
+            company="Acme",
+            company_obj=self.company,
+            description="Role in Canada.",
+            country="Canada",
+            source_raw_job=raw,
+            status=Job.Status.POOL,
+            posted_by=self.admin,
+        )
+        self.assertEqual(vet_queue_job_queryset().count(), 0)
         raw_url = "https://example.com/vet-queue/job-us"
         raw = RawJob.objects.create(
             company=self.company,
