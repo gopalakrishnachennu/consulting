@@ -15,7 +15,7 @@ from .views import (
     # Vetting Queue / Validation Pipeline
     JobPoolView, JobPoolRevalidateView, JobApproveView, JobRejectView, JobBulkApproveView, JobPoolRefreshLinksView,
     # Unified Command Center
-    JobsPipelineView,
+    JobsPipelineView, RawJobRefetchJdView,
     # Phase 4: lineage + health
     JobTimelineView, PipelineHealthView,
     # Classification engine
@@ -37,6 +37,7 @@ from harvest.views import (
 urlpatterns = [
     path('', JobListView.as_view(), name='job-list'),
     path('pipeline/', JobsPipelineView.as_view(), name='jobs-pipeline'),
+    path('pipeline/raw-jobs/<int:pk>/refetch-jd/', RawJobRefetchJdView.as_view(), name='jobs-pipeline-rawjob-refetch-jd'),
     path('classification/queue/', ClassificationQueueV2View.as_view(), name='jobs-classification-queue'),
     path('classification/settings/', ClassificationSettingsV2View.as_view(), name='jobs-classification-settings'),
     path('classification/metrics/', ClassificationMetricsV2View.as_view(), name='jobs-classification-metrics'),

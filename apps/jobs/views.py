@@ -431,6 +431,8 @@ def build_rawjob_pipeline_row(raw_job, *, gate=None, country_label: str = "") ->
         "filter_decision": filter_decision,
         "filter_reason": raw_job.filter_reason or "",
         "is_test_run": bool(getattr(raw_job, "is_test_run", False)),
+        "company_id": getattr(raw_job, "company_id", None),
+        "original_url": (raw_job.original_url or "").strip(),
     }
 
 
@@ -1499,6 +1501,28 @@ class JobPoolRefreshLinksView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         return redirect(_jobs_pipeline_pool_url())
 
 
+class RawJobRefetchJdView(LoginRequiredMixin, EmployeeRequiredMixin, View):
+    """POST — queue JD refetch for a single RawJob (from pipeline or detail)."""
+
+    def post(self, request, pk):
+        from harvest.models import RawJob
+        from harvest.tasks import backfill_single_rawjob_description_task
+
+        raw_job = get_object_or_404(RawJob, pk=pk)
+        if not (raw_job.original_url or "").strip():
+            messages.error(request, "This row has no source URL to refetch from.")
+            return redirect(request.POST.get("next") or f"{reverse('jobs-pipeline')}?tab=raw")
+
+        RawJob.objects.filter(pk=raw_job.pk).update(jd_backfill_locked_at=None)
+        force_jarvis = request.POST.get("force_jarvis") in ("1", "true", "True")
+        task = backfill_single_rawjob_description_task.delay(raw_job.pk, force_jarvis=force_jarvis)
+        messages.success(
+            request,
+            f"JD refetch queued for Raw #{raw_job.pk} ({str(task.id)[:8]}…). Refresh in a minute.",
+        )
+        return redirect(request.POST.get("next") or request.META.get("HTTP_REFERER") or f"{reverse('jobs-pipeline')}?tab=raw")
+
+
 # ─── Jobs Command Center — unified pipeline hub ──────────────────────────────
 
 class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
@@ -1752,7 +1776,7 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
         qs = RawJob.objects.prefetch_related("classification_snapshot").order_by('-fetched_at')
         qs = apply_rawjob_filters(qs, request.GET)
         qs = qs.only(
-            "id", "company_name", "platform_slug", "title", "original_url",
+            "id", "company_id", "company_name", "platform_slug", "title", "original_url",
             "location_raw", "is_remote", "employment_type", "experience_level",
             "salary_min", "salary_max", "salary_raw", "posted_date", "fetched_at",
             "sync_status", "has_description", "is_active",
@@ -1827,6 +1851,14 @@ class JobsPipelineView(LoginRequiredMixin, EmployeeRequiredMixin, View):
                 "external_id": row["external_id"],
                 "posted": row["posted"],
                 "detail_url": str(reverse_lazy("harvest-rawjob-detail", args=[job.pk])),
+                "company_id": job.company_id,
+                "company_url": (
+                    str(reverse_lazy("company-detail", args=[job.company_id]))
+                    if job.company_id
+                    else ""
+                ),
+                "original_url": (job.original_url or "").strip(),
+                "refetch_jd_url": str(reverse_lazy("jobs-pipeline-rawjob-refetch-jd", args=[job.pk])),
             })
 
         return JsonResponse({

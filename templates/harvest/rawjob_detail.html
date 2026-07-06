@@ -270,6 +270,11 @@
           <h3 class="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Actions</h3>
           <div class="space-y-2">
             {% if rawjob.original_url %}
+            <form method="post" action="{% url 'jobs-pipeline-rawjob-refetch-jd' rawjob.pk %}">
+              {% csrf_token %}
+              <input type="hidden" name="next" value="{{ request.get_full_path }}">
+              <button type="submit" class="btn-secondary w-full justify-center border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100">Refetch job description</button>
+            </form>
             <form method="post" action="{% url 'harvest-rawjob-recheck-live' rawjob.pk %}">
               {% csrf_token %}
               <button type="submit" class="btn-secondary w-full justify-center border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100">Recheck active status</button>

@@ -2974,3 +2974,36 @@ class AutoCloseJobsTaskTests(TestCase):
         auto_close_jobs_task()
         self.dead_job.refresh_from_db()
         self.assertEqual(self.dead_job.status, Job.Status.CLOSED)
+
+
+class RawJobRefetchJdViewTests(TestCase):
+    def setUp(self):
+        from companies.models import Company
+        from harvest.models import RawJob
+
+        self.employee = User.objects.create_user(
+            username="refetch-emp",
+            password="testpass",
+            role=User.Role.EMPLOYEE,
+        )
+        self.company = Company.objects.create(name="Refetch Co")
+        self.raw = RawJob.objects.create(
+            company=self.company,
+            company_name=self.company.name,
+            title="Backend Engineer",
+            url_hash="refetch-jd-hash",
+            original_url="https://example.com/jobs/backend",
+            has_description=False,
+            filter_decision="STRONG",
+        )
+
+    @patch("harvest.tasks.backfill_single_rawjob_description_task.delay")
+    def test_employee_can_queue_single_jd_refetch(self, mocked_delay):
+        mocked_delay.return_value = SimpleNamespace(id="task-refetch-1")
+        self.client.force_login(self.employee)
+        url = reverse("jobs-pipeline-rawjob-refetch-jd", args=[self.raw.pk])
+        response = self.client.post(url, {"next": "/jobs/pipeline/?tab=raw"})
+        self.assertEqual(response.status_code, 302)
+        mocked_delay.assert_called_once_with(self.raw.pk, force_jarvis=False)
+        self.raw.refresh_from_db()
+        self.assertIsNone(self.raw.jd_backfill_locked_at)

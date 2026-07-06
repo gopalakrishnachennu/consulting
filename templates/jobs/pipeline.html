@@ -1387,18 +1387,22 @@
         <th class="tbl-th min-w-[180px]" data-raw-col="salary">Salary</th>
         <th class="tbl-th min-w-[150px]" data-raw-col="external_id">External ID</th>
         <th class="tbl-th min-w-[150px]" data-raw-col="category">Category</th>
-        <th class="tbl-th-right sticky right-0 z-20 min-w-[110px] bg-slate-50 shadow-[-1px_0_0_#e2e8f0]">Actions</th>
+        <th class="tbl-th-right sticky right-0 z-20 min-w-[150px] bg-slate-50 shadow-[-1px_0_0_#e2e8f0]">Actions</th>
       </tr>
     </thead>
     <tbody id="raw-jobs-tbody" class="divide-y divide-gray-100">
       {% for raw in tab_raw %}
       <tr class="tbl-row">
         <td class="tbl-td sticky left-0 z-10 min-w-[280px] bg-white shadow-[1px_0_0_#e2e8f0]">
-          <div class="font-semibold text-gray-900">{{ raw.title }}</div>
-          {% if raw.original_url %}<div class="mt-1 text-[11px] text-slate-400">Raw #{{ raw.pk }}</div>{% endif %}
+          <a href="{% url 'harvest-rawjob-detail' raw.pk %}" class="font-semibold text-indigo-700 hover:text-indigo-900 hover:underline line-clamp-2" title="{{ raw.title }}">{{ raw.title }}</a>
+          <div class="mt-1 text-[11px] text-slate-400">Raw #{{ raw.pk }}</div>
         </td>
         <td class="tbl-td min-w-[190px]">
-          <div class="font-medium text-slate-800">{{ raw.pipeline_row.company|default:"—" }}</div>
+          {% if raw.company_id %}
+          <a href="{% url 'company-detail' raw.company_id %}" class="font-medium text-indigo-700 hover:text-indigo-900 hover:underline line-clamp-2" title="{{ raw.pipeline_row.company|default:raw.company_name }}">{{ raw.pipeline_row.company|default:raw.company_name|default:"—" }}</a>
+          {% else %}
+          <div class="font-medium text-slate-800 line-clamp-2">{{ raw.pipeline_row.company|default:"—" }}</div>
+          {% endif %}
         </td>
         <td class="tbl-td">
           {% if raw.pipeline_row.platform %}<span class="badge-blue">{{ raw.pipeline_row.platform }}</span>
@@ -1447,7 +1451,25 @@
           {% if raw.pipeline_row.job_category %}<span class="text-xs text-indigo-500">{{ raw.pipeline_row.job_category }}</span>{% else %}<span class="text-gray-300 text-xs">—</span>{% endif %}
         </td>
         <td class="tbl-td-right sticky right-0 z-10 bg-white shadow-[-1px_0_0_#e2e8f0]">
-          <a href="{% url 'harvest-rawjob-detail' raw.pk %}" class="btn-ghost btn-xs">View</a>
+          <div class="flex items-center justify-end gap-1">
+            {% if raw.original_url %}
+            <a href="{{ raw.original_url }}" target="_blank" rel="noopener noreferrer" class="btn-ghost btn-xs p-1.5 text-slate-500 hover:text-indigo-700" title="Open live posting">
+              <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+              <span class="sr-only">Live link</span>
+            </a>
+            {% endif %}
+            {% if raw.original_url %}
+            <form method="post" action="{% url 'jobs-pipeline-rawjob-refetch-jd' raw.pk %}" class="inline">
+              {% csrf_token %}
+              <input type="hidden" name="next" value="{{ request.get_full_path }}">
+              <button type="submit" class="btn-ghost btn-xs p-1.5 text-slate-500 hover:text-amber-700" title="Refetch job description">
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                <span class="sr-only">Refetch JD</span>
+              </button>
+            </form>
+            {% endif %}
+            <a href="{% url 'harvest-rawjob-detail' raw.pk %}" class="btn-ghost btn-xs">View</a>
+          </div>
         </td>
       </tr>
       {% endfor %}
@@ -1665,6 +1687,15 @@
     return div.innerHTML;
   };
 
+  const getCsrf = () => {
+    const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : "";
+  };
+
+  const externalLinkIcon = `<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>`;
+  const refetchIcon = `<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>`;
+  const pagePath = window.location.pathname + window.location.search;
+
   const pipelineBadgeClass = (level) => {
     if (level === "success") return "badge-green";
     if (level === "progress") return "badge-blue";
@@ -1683,13 +1714,25 @@
     const active = job.is_active ? `<span class="badge-green">✓ Active</span>` : `<span class="badge-red">✗ Inactive</span>`;
     const gateBadgeClass = job.gate_pass ? "badge-green" : "badge-red";
     const gate = job.gate_code ? `<span class="${gateBadgeClass}">${esc(job.gate_code)}</span>` : "—";
+    const titleCell = job.detail_url
+      ? `<a href="${esc(job.detail_url)}" class="font-semibold text-indigo-700 hover:text-indigo-900 hover:underline line-clamp-2" title="${esc(job.title || "")}">${esc(job.title || "—")}</a>`
+      : `<div class="font-semibold text-gray-900">${esc(job.title || "—")}</div>`;
+    const companyCell = job.company_url
+      ? `<a href="${esc(job.company_url)}" class="font-medium text-indigo-700 hover:text-indigo-900 hover:underline line-clamp-2" title="${esc(job.company_name || "")}">${esc(job.company_name || "—")}</a>`
+      : `<div class="font-medium text-slate-800 line-clamp-2">${esc(job.company_name || "—")}</div>`;
+    const liveLink = job.original_url
+      ? `<a href="${esc(job.original_url)}" target="_blank" rel="noopener noreferrer" class="btn-ghost btn-xs p-1.5 text-slate-500 hover:text-indigo-700" title="Open live posting">${externalLinkIcon}<span class="sr-only">Live link</span></a>`
+      : "";
+    const refetchBtn = job.refetch_jd_url
+      ? `<form method="post" action="${esc(job.refetch_jd_url)}" class="inline"><input type="hidden" name="csrfmiddlewaretoken" value="${esc(getCsrf())}"><input type="hidden" name="next" value="${esc(pagePath)}"><button type="submit" class="btn-ghost btn-xs p-1.5 text-slate-500 hover:text-amber-700" title="Refetch job description">${refetchIcon}<span class="sr-only">Refetch JD</span></button></form>`
+      : "";
     return `
       <tr class="tbl-row">
         <td class="tbl-td sticky left-0 z-10 min-w-[280px] bg-white shadow-[1px_0_0_#e2e8f0]">
-          <div class="font-semibold text-gray-900">${esc(job.title || "—")}</div>
+          ${titleCell}
           <div class="mt-1 text-[11px] text-slate-400">Raw #${esc(job.id || "")}</div>
         </td>
-        <td class="tbl-td min-w-[190px]"><div class="font-medium text-slate-800">${esc(job.company_name || "—")}</div></td>
+        <td class="tbl-td min-w-[190px]">${companyCell}</td>
         <td class="tbl-td">${platform}</td>
         <td class="tbl-td">${domain}${domainMeta}</td>
         <td class="tbl-td min-w-[200px]">${pipelineCell}</td>
@@ -1704,7 +1747,11 @@
         <td class="tbl-td text-xs text-gray-500 min-w-[150px]" data-raw-col="external_id">${esc(job.external_id || "—")}</td>
         <td class="tbl-td min-w-[150px]" data-raw-col="category">${job.job_category ? `<span class="text-xs text-indigo-500">${esc(job.job_category)}</span>` : `<span class="text-gray-300 text-xs">—</span>`}</td>
         <td class="tbl-td-right sticky right-0 z-10 bg-white shadow-[-1px_0_0_#e2e8f0]">
-          <a href="${esc(job.detail_url)}" class="btn-ghost btn-xs">View</a>
+          <div class="flex items-center justify-end gap-1">
+            ${liveLink}
+            ${refetchBtn}
+            <a href="${esc(job.detail_url)}" class="btn-ghost btn-xs">View</a>
+          </div>
         </td>
       </tr>
     `;

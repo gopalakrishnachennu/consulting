@@ -5763,7 +5763,7 @@ def _backfill_descriptions_chunk_impl(
     max_retries=0,
 )
 def backfill_single_rawjob_description_task(raw_job_id: int, force_jarvis: bool = False) -> dict:
-    """Fetch a JD for one RawJob after manual skipped-title recovery."""
+    """Fetch a JD for one RawJob (manual refetch from pipeline/detail or skipped-title recovery)."""
     from .jarvis import JobJarvis
     from .models import RawJob
 
